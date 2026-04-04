@@ -13,7 +13,8 @@
       "autoApprove": [
         "create_issue",
         "search_repositories",
-        "create_pull_request"
+        "create_pull_request",
+        "add_issue_comment"
       ]
     },
     "playwright": {

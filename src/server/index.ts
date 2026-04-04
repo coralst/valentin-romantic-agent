@@ -1,6 +1,6 @@
 import { InMemoryStore } from './persistence/in-memory-store';
 import { InMemoryConversationMemory } from './persistence/conversation-memory';
-import { StubBedrockClient } from './agent/bedrock-client';
+import { AwsBedrockClient, StubBedrockClient } from './agent/bedrock-client';
 import { StubAgentCoreAdapter } from './agent/agentcore-adapter';
 import { AgentOrchestrator } from './agent/agent-orchestrator';
 import { PreferenceExtractor } from './extraction/preference-extractor';
@@ -9,17 +9,24 @@ import { WsGateway } from './api/ws-gateway';
 import { createHttpRoutes } from './api/http-routes';
 import type { ServerEvent } from '../shared/interfaces/ws-events';
 
-// TODO(yellow): replace stub Bedrock/AgentCore with real SDK when AWS credentials are available
-
 /** Initialize all dependencies and start the server */
 export function createServer() {
   // Persistence
   const store = new InMemoryStore();
   const memory = new InMemoryConversationMemory(store);
 
-  // AWS service stubs
-  const bedrockClient = new StubBedrockClient();
+  // AWS service clients — use real Bedrock SDK when AWS_REGION is set, stubs otherwise
+  const useRealAws = Boolean(process.env.AWS_REGION);
+  const bedrockClient = useRealAws
+    ? new AwsBedrockClient()
+    : new StubBedrockClient();
   const agentCore = new StubAgentCoreAdapter();
+
+  if (useRealAws) {
+    console.log(`[server] Using real AWS Bedrock (region: ${process.env.AWS_REGION}, model: ${process.env.BEDROCK_MODEL_ID ?? 'default'})`);
+  } else {
+    console.log('[server] AWS_REGION not set — using stub Bedrock client for local dev');
+  }
 
   // Emit function — will be wired to WsGateway after creation
   let gateway: WsGateway | null = null;

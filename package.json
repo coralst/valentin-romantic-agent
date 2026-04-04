@@ -11,6 +11,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.1024.0",
     "express": "^5.2.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

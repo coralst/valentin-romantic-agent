@@ -1,13 +1,13 @@
 {
   "enabled": true,
-  "name": "Push & Notify PR After Stop",
-  "description": "When the agent stops working, reminds it to push any uncommitted work to the feature branch and post a status comment on the GitHub PR.",
-  "version": "1",
+  "name": "Push & Notify PR",
+  "description": "Manually triggered: pushes uncommitted work to the feature branch, posts a status comment on the PR, and requests review from master-agent.",
+  "version": "1.0.0",
   "when": {
-    "type": "agentStop"
+    "type": "userTriggered"
   },
   "then": {
     "type": "askAgent",
-    "prompt": "Before finishing, check if there is any uncommitted or unpushed work:\\n\\n1. Run `git status` — if there are staged or unstaged changes, commit them with a conventional commit message and push to the current branch\\n2. Run `git log origin/HEAD..HEAD` — if there are unpushed commits, push them\\n3. If you were working on a feature branch with a GitHub PR, post a status update comment on the PR using the GitHub API. Use the agent persona format:\\n\\n```\\n**[emoji] [Agent Name]** — Status Update\\n\\n[What was accomplished in this session]\\n[What remains to be done, if anything]\\n[Current quality signal]\\n```\\n\\nDo NOT push to main directly. Only push to feature branches."
+    "prompt": "Before finishing, check if there is any uncommitted or unpushed work:\n\n1. Run `git status` — if there are staged or unstaged changes, commit them with a conventional commit message and push to the current branch.\n2. Run `git log @{upstream}..HEAD 2>/dev/null || git log origin/$(git branch --show-current)..HEAD` — if there are unpushed commits, push them.\n3. Do NOT push to main directly. Only push to feature branches.\n4. If you were working on a feature branch with a GitHub PR, post a status update AND review request comment on the PR using the GitHub MCP server. Use this format:\n\n```\n**[emoji] [Agent Name]** — Ready for Review\n\n[What was accomplished in this session]\n[What remains to be done, if anything]\n[Current quality signal: 🟢/🟡/🔴]\n\n@master-agent — requesting code review.\n```\n\nThis signals the master-agent to begin the CR process."
   }
 }

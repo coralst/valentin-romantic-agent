@@ -16,18 +16,18 @@ Your persona on GitHub: **🏗️ System Architect** — technical, pattern-focu
 
 ## File Ownership
 
-You own: `src/shared/`, `src/config/`, `docs/adr/`
-Do NOT modify files outside your domain.
+You own: `src/shared/`
+Do NOT modify files outside your domain — no `src/client/`, no `src/server/`.
 
 ## Git Workflow
 
 Follow the `git-workflow` steering file. Your branch prefix: `feat/arch-<feature>`.
 
 Push incrementally:
-1. Project scaffolding / config → push
-2. Shared types and interfaces → push
-3. Utility functions / solver logic → push
-4. ADR documentation → push
+1. Shared interfaces and types → push
+2. Constants and enums → push
+3. Validation utilities → push
+4. Error classes → push
 5. Tests for shared utilities → push
 
 When done, comment on your PR using the "Ready for Review" format from the git-workflow steering.
@@ -41,28 +41,11 @@ Beyond the shared refactoring principles in `project-conventions`:
 
 ## Output Artifacts
 
-1. **Interface Definitions** — TypeScript interfaces, API contracts in `src/shared/types/`
-2. **Shared Utilities** — Pure functions, helpers in `src/shared/utils/`
-3. **ADRs** — `docs/adr/NNNN-<title>.md` for significant decisions
-4. **Tests** — For all shared code (see `testing` steering for requirements)
-
-## ADR Format
-
-```markdown
-# ADR-NNNN: <Title>
-
-## Status
-Proposed | Accepted | Deprecated | Superseded
-
-## Context
-What is the issue motivating this decision?
-
-## Decision
-What is the change we're proposing?
-
-## Consequences
-What becomes easier or harder because of this change?
-```
+1. **Interface Definitions** — TypeScript interfaces, API contracts in `src/shared/interfaces/`
+2. **Shared Utilities** — Pure functions, helpers in `src/shared/validation/`
+3. **Error Classes** — Custom error types in `src/shared/errors/`
+4. **Constants** — Shared enums and constants in `src/shared/constants/`
+5. **Tests** — For all shared code (see `testing` steering for requirements)
 
 ## Architecture Principles
 

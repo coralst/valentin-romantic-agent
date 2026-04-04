@@ -14,7 +14,18 @@
         "create_issue",
         "search_repositories",
         "create_pull_request",
-        "add_issue_comment"
+        "add_issue_comment",
+        "create_pull_request_review",
+        "update_issue",
+        "merge_pull_request",
+        "create_branch",
+        "push_files",
+        "get_file_contents",
+        "list_commits",
+        "list_issues",
+        "get_pull_request",
+        "list_pull_requests",
+        "get_pull_request_status"
       ]
     },
     "playwright": {
@@ -22,7 +33,7 @@
       "args": [
         "@playwright/mcp@latest"
       ],
-      "disabled": true,
+      "disabled": false,
       "autoApprove": []
     }
   }

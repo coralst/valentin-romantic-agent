@@ -1,13 +1,13 @@
 {
   "enabled": true,
-  "name": "PR & Branch Check Before Task",
-  "description": "Before any spec task begins, verifies the Issue-first workflow: planning Issue exists with approved spec, Draft PR is linked, correct branch is checked out.",
-  "version": "1.0.0",
+  "name": "Pre-Task Workflow Gate",
+  "description": "Before any spec task begins, verifies the Issue-first workflow prerequisites are met. Blocks work if prerequisites are missing.",
+  "version": "1.1.0",
   "when": {
     "type": "preTaskExecution"
   },
   "then": {
     "type": "askAgent",
-    "prompt": "Before starting this task, verify the Issue-first workflow:\n\n1. Has a planning Issue been created on GitHub for this feature?\n2. Has the system-architect posted a technical spec in the Issue thread?\n3. Has the spec been approved by master-agent in the Issue?\n4. Has a Draft PR been created AFTER spec approval, linked with 'Resolves #N'?\n5. Is the correct feature branch checked out? (not main)\n6. Are the architecture contracts and shared types available?\n7. Are the test requirements defined in the PR description?\n8. Does this agent have clear file ownership for the files it will modify?\n\nIf any of these are missing, create them before proceeding. NEVER work directly on main."
+    "prompt": "HARD GATE: Verify ALL prerequisites before starting this task. If ANY check fails, STOP and report what is missing. Do NOT create missing items yourself — escalate to the user.\n\n## Checklist\n\n1. Is a GitHub Issue created for this feature with acceptance criteria?\n2. Has the system-architect posted a technical spec in the Issue thread?\n3. Has the spec been approved by master-agent?\n4. Has a Draft PR been created AFTER spec approval, linked with 'Resolves #N'?\n5. Is the correct feature branch checked out? (MUST NOT be main)\n6. Does this agent have clear file ownership for the files it will modify?\n7. Are test requirements defined in the PR description?\n\n## If any check fails\n\nReport exactly which checks failed and what needs to happen before work can begin. Format:\n\n```\n⛔ PRE-TASK GATE FAILED\n\n- [ ] Check N: [what is missing]\n- [ ] Check N: [what is missing]\n\nAction needed: [who needs to do what]\n```\n\nDo NOT proceed with the task. Do NOT create Issues, PRs, or branches to fill gaps.\n\n## Master-agent reminder\n\nIf you are the master-agent, also check: are there any open PRs with 'Ready for Review' comments that need CR before starting new work?"
   }
 }

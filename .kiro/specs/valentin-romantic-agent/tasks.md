@@ -22,7 +22,7 @@ This plan is organized by agent domain so each agent can work on an independent 
 
 ### 🏗️ [System Architect] — Branch: `feat/arch-valentin-shared-types`
 
-- [-] 1. Create shared interfaces and type definitions
+- [x] 1. Create shared interfaces and type definitions
   - [x] 1.1 Create `src/shared/interfaces/message.ts` with `ChatMessage` interface
     - Define `ChatMessage` with `id`, `sessionId`, `sender`, `content`, `timestamp` fields
     - Export `Sender` type union `'user' | 'agent'`
@@ -36,38 +36,38 @@ This plan is organized by agent domain so each agent can work on an independent 
   - [x] 1.3 Create `src/shared/interfaces/session.ts` with `SessionData` interface
     - Define `SessionData` with `id`, `createdAt`, `endedAt`, `messageCount`, `preferenceCount`
     - _Requirements: 3.4, 3.5_
-  - [ ] 1.4 Create `src/shared/interfaces/ws-events.ts` with `WsEnvelope`, `ClientEvent`, and `ServerEvent` types
+  - [x] 1.4 Create `src/shared/interfaces/ws-events.ts` with `WsEnvelope`, `ClientEvent`, and `ServerEvent` types
     - Define generic `WsEnvelope<T, P>` with `type`, `payload`, `timestamp`
     - Define all `ClientEvent` variants: `send_message`, `ping`
     - Define all `ServerEvent` variants: `agent_message`, `typing_start`, `typing_stop`, `preference_update`, `connection_status`, `session_init`, `error`, `pong`
     - _Requirements: 4.2, 6.4_
-  - [ ] 1.5 Create `src/shared/constants/categories.ts` with `PREFERENCE_CATEGORIES` array and category metadata
+  - [x] 1.5 Create `src/shared/constants/categories.ts` with `PREFERENCE_CATEGORIES` array and category metadata
     - Export `PREFERENCE_CATEGORIES` as const array of all 8 category strings
     - Export `CATEGORY_LABELS` map with display labels and descriptions per the design data model table
     - _Requirements: 2.4_
-  - [ ] 1.6 Create `src/shared/index.ts` barrel export re-exporting all interfaces, types, and constants
+  - [x] 1.6 Create `src/shared/index.ts` barrel export re-exporting all interfaces, types, and constants
     - _Requirements: 6.3_
-  - [ ]* 1.7 Write unit tests for shared types and constants (`src/shared/__tests__/shared-exports.test.ts`)
+  - [x]* 1.7 Write unit tests for shared types and constants (`src/shared/__tests__/shared-exports.test.ts`)
     - Verify all interfaces are importable from barrel
     - Verify `PREFERENCE_CATEGORIES` contains exactly 8 entries
     - Verify `CATEGORY_LABELS` has an entry for each category
     - _Requirements: 7.1_
 
 - [-] 2. Create shared validation utilities and error classes
-  - [ ] 2.1 Create `src/shared/validation/message-validator.ts`
+  - [x] 2.1 Create `src/shared/validation/message-validator.ts`
     - Implement `validateMessageContent(content: string): ValidationResult` — rejects empty/whitespace-only strings
     - Implement `validatePreference(pref: unknown): ValidationResult` — validates category is in enum, confidence is 0–1, key/value non-empty
     - Implement `validateSessionId(id: string): ValidationResult` — validates non-empty string format
     - _Requirements: 1.5, 2.2, 6.6_
-  - [ ] 2.2 Create `src/shared/errors/` directory with `base-error.ts`, `connection-error.ts`, `llm-error.ts`, `extraction-error.ts`, `validation-error.ts`, `session-error.ts`, `storage-error.ts`, `context-error.ts`
+  - [x] 2.2 Create `src/shared/errors/` directory with `base-error.ts`, `connection-error.ts`, `llm-error.ts`, `extraction-error.ts`, `validation-error.ts`, `session-error.ts`, `storage-error.ts`, `context-error.ts`
     - Implement abstract `AppError` extending `Error` with `code`, `statusCode`, `context` fields
     - Implement each concrete error class per the design error classification table
     - _Requirements: 6.3_
-  - [ ]* 2.3 Write unit tests for validation utilities (`src/shared/validation/message-validator.test.ts`)
+  - [x]* 2.3 Write unit tests for validation utilities (`src/shared/validation/message-validator.test.ts`)
     - Test empty string rejection, whitespace-only rejection, valid string acceptance
     - Test preference validation: valid preference passes, invalid category fails, out-of-range confidence fails
     - _Requirements: 7.1_
-  - [ ]* 2.4 Write unit tests for error classes (`src/shared/errors/__tests__/errors.test.ts`)
+  - [x]* 2.4 Write unit tests for error classes (`src/shared/errors/__tests__/errors.test.ts`)
     - Verify each error class has correct `code` and `statusCode`
     - Verify `context` is passed through constructor
     - _Requirements: 7.1_
@@ -319,7 +319,7 @@ This plan is organized by agent domain so each agent can work on an independent 
     - _Requirements: 7.3_
 
 - [ ] 14. Implement Agent Orchestrator and Bedrock client
-  - [ ] 14.1 Create `src/server/agent/bedrock-client.ts`
+  - [x] 14.1 Create `src/server/agent/bedrock-client.ts`
     - Wrap AWS Bedrock SDK for conversation generation (standard message API)
     - Wrap AWS Bedrock SDK for tool-use calls (preference extraction)
     - Accept model ID as configuration parameter

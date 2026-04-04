@@ -45,33 +45,42 @@ The PR is the "room" where coding and code review happen.
 
 ### Phase 5: Resolution
 
-15. **Master-agent** merges the PR via GitHub API (squash merge) once:
+15. **Master-agent** merges the PR via GitHub API (merge commit) once:
     - CI passes
     - At least one approving review from master-agent
     - All ❌ blocking issues are resolved
     - QA-agent has signed off (for user-facing changes)
 16. Merging the PR auto-closes the linked Issue via `Resolves #N`
-17. Delete the feature branch after merge
+17. Branch is auto-deleted by GitHub after merge
 
 ## Branch Strategy (Trunk-Based Development)
 
 - `main` is the trunk — always deployable
-- Feature branches are short-lived: `feat/<domain>-<feature>`
+- Feature branches are short-lived
 - One branch per agent per feature — no two agents on the same branch
 - Branches live max 1-2 days before merging to trunk
 - Delete branches after merge
 
 ## Branch Naming
 
+Format: `<type>/<agent-name>/<slug>-<PR-or-issue-number>`
+
 ```
-feat/<domain>-<feature>     — new feature work
-fix/<domain>-<issue>        — bug fixes
-refactor/<domain>-<scope>   — refactoring (no behavior change)
-docs/<scope>                — documentation only
-chore/<scope>               — tooling, config, dependencies
+feat/<agent-name>/<slug>-<number>   — new feature work
+fix/<agent-name>/<slug>-<number>    — bug fixes
 ```
 
-Domains: `frontend`, `backend`, `design`, `arch`, `infra`, `qa`
+Agent names: `frontend-dev`, `backend-dev`, `ui-designer`, `system-architect`, `qa-agent`, `master-agent`
+
+Examples:
+```
+feat/frontend-dev/chat-ui-12
+feat/backend-dev/ws-gateway-8
+fix/backend-dev/reconnect-timeout-15
+feat/ui-designer/design-tokens-5
+feat/system-architect/shared-types-3
+feat/qa-agent/e2e-onboarding-14
+```
 
 ## Commit Convention (Conventional Commits)
 
@@ -139,7 +148,7 @@ Agent personas:
 
 ### Merging PRs
 
-- Merge via GitHub API only (squash merge for clean history)
+- Merge via GitHub API only (merge commit for visible branch topology)
 - CI must pass before merge
 - At least one approving review comment from master-agent
 - All ❌ blocking issues must be resolved

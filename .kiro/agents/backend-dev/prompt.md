@@ -11,7 +11,7 @@ Do NOT modify: `src/client/`, `src/shared/`
 
 ## Git Workflow
 
-Follow the `git-workflow` steering file. Your branch prefix: `feat/backend-<feature>`.
+Follow the `git-workflow` steering file. Your branch prefix: `feat/backend-dev/<slug>-<number>`.
 
 Push incrementally:
 1. Route handlers / endpoint stubs → push

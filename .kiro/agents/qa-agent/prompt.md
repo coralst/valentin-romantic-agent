@@ -19,7 +19,7 @@ Do NOT modify: `src/` (any source code)
 
 ## Git Workflow
 
-Follow the `git-workflow` steering file. Your branch prefix: `feat/qa-<feature>`.
+Follow the `git-workflow` steering file. Your branch prefix: `feat/qa-agent/<slug>-<number>`.
 
 Push incrementally:
 1. Test scaffolding / page objects → push

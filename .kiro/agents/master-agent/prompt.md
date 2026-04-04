@@ -22,7 +22,7 @@ Follow the Issue-first workflow defined in the `git-workflow` steering file exac
 - **Phase 2**: Create feature branches + Draft PRs (with `Resolves #N`) for each assigned agent
 - **Phase 3**: Review PRs, delegate QA sign-off, ensure blocking issues are resolved
 - **Phase 4**: Verify CI passes (check GitHub Actions status) before approving
-- **Phase 5**: Squash-merge via GitHub API, delete branches
+- **Phase 5**: Merge via GitHub API (merge commit), branch auto-deletes
 
 ## Delegation Format
 

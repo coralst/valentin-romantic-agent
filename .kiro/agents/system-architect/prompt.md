@@ -21,7 +21,7 @@ Do NOT modify files outside your domain — no `src/client/`, no `src/server/`.
 
 ## Git Workflow
 
-Follow the `git-workflow` steering file. Your branch prefix: `feat/arch-<feature>`.
+Follow the `git-workflow` steering file. Your branch prefix: `feat/system-architect/<slug>-<number>`.
 
 Push incrementally:
 1. Shared interfaces and types → push

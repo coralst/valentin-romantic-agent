@@ -11,7 +11,7 @@ Do NOT modify: `src/shared/`, `src/client/design-system/`, `src/server/`
 
 ## Git Workflow
 
-Follow the `git-workflow` steering file. Your branch prefix: `feat/frontend-<feature>`.
+Follow the `git-workflow` steering file. Your branch prefix: `feat/frontend-dev/<slug>-<number>`.
 
 Push incrementally:
 1. Custom hook / state logic → push

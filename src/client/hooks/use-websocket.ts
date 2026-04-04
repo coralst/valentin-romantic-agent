@@ -94,7 +94,11 @@ export function useWebSocket({
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const wsUrl = url ?? `ws://${window.location.host}/ws`;
+  const wsUrl = url ?? (
+    window.location.protocol === 'https:'
+      ? `wss://${window.location.host}/ws`
+      : `ws://${window.location.host}/ws`
+  );
 
   const clearTimers = useCallback(() => {
     if (reconnectTimerRef.current) {

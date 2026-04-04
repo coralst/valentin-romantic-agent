@@ -25,7 +25,9 @@
         "list_issues",
         "get_pull_request",
         "list_pull_requests",
-        "get_pull_request_status"
+        "get_pull_request_status",
+        "delete_branch",
+        "create_or_update_file"
       ]
     },
     "playwright": {

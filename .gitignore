@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+.pnp.*
+.yarn/
+
+# Build output
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Kiro state & cache
+.kiro/state/
+.kiro/cache/
+.kiro/logs/
+
+# Test
+coverage/
+test-results/
+playwright-report/
+blob-report/
+
+# Misc
+*.log
+npm-debug.log*

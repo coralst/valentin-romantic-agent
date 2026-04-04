@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "CI + Standards Review After Task",
+  "description": "After a spec task completes, runs the CI pipeline then reviews modified files for ownership, naming, and security.",
+  "version": "1.0.0",
+  "when": {
+    "type": "postTaskExecution"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Run the following checks in order. Stop at the first failure.\n\n## Step 1 — CI Pipeline\n\n1. Run `npm run lint` — report pass/fail\n2. Run `npm test -- --run` — report pass/fail\n3. Run `npm run build` — report pass/fail\n\nIf any step fails, describe the error and suggest a fix. Do NOT proceed to Step 2.\n\n## Step 2 — Standards Review\n\nRun `git diff --name-only` to see what changed, then check:\n\n1. File ownership — did the agent only write within its domain?\n   - system-architect: src/shared/, docs/adr/\n   - frontend-dev: src/client/components/, src/client/hooks/, src/client/context/, src/client/App.tsx\n   - backend-dev: src/server/api/, src/server/agent/, src/server/extraction/, src/server/persistence/, src/server/index.ts, src/server/dev-server.ts\n   - ui-designer: src/client/design-system/\n   - qa-agent: e2e/, playwright.config.ts\n2. Naming — kebab-case for .ts files, PascalCase for .tsx components\n3. Code smells — functions >20 lines, parameter lists >3, duplicated code\n4. Security — no hardcoded secrets, PII, or magic values\n5. Imports — flow inward toward shared/, no circular deps\n\nReport any violations found."
+  }
+}

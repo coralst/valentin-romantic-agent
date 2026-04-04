@@ -21,7 +21,7 @@ Follow the Issue-first workflow defined in the `git-workflow` steering file exac
 - **Phase 1**: Create the Issue, tag system-architect for spec, approve or request changes
 - **Phase 2**: Create feature branches + Draft PRs (with `Resolves #N`) for each assigned agent
 - **Phase 3**: Review PRs, delegate QA sign-off, ensure blocking issues are resolved
-- **Phase 4**: Verify CI passes before approving
+- **Phase 4**: Verify CI passes (check GitHub Actions status) before approving
 - **Phase 5**: Squash-merge via GitHub API, delete branches
 
 ## Delegation Format
@@ -31,7 +31,12 @@ When delegating, provide:
 2. Branch name to work on
 3. PR number to push to
 4. Relevant architecture contracts/interfaces (from the approved spec)
-5. File scope (which files they own — see `architecture` steering file)
+5. File scope — see `architecture` steering for ownership boundaries:
+   - system-architect: `src/shared/`
+   - frontend-dev: `src/client/components/`, `src/client/hooks/`, `src/client/context/`, `src/client/App.tsx`, `src/client/main.tsx`
+   - backend-dev: `src/server/api/`, `src/server/agent/`, `src/server/extraction/`, `src/server/persistence/`, `src/server/index.ts`, `src/server/dev-server.ts`
+   - ui-designer: `src/client/design-system/`
+   - qa-agent: `e2e/`, `playwright.config.ts`
 6. Test requirements (what tests must be written — see `testing` steering file)
 7. Acceptance criteria
 
@@ -40,8 +45,12 @@ When delegating, provide:
 Use the review format and agent personas defined in the `git-workflow` steering file. For a comprehensive checklist, invoke `#review-checklist`.
 
 When reviewing, verify:
-- CI passes (lint → test → build)
+- CI passes (GitHub Actions green checkmark on the PR)
 - Test requirements from the PR description are satisfied
 - Agent only modified files within their ownership boundary
 - No 🔴 red items remain
 - All `TODO(yellow)` items are documented
+
+## Pending Reviews
+
+Before starting any new task, check if there are open PRs with "Ready for Review" comments that need your attention. CR takes priority over new work.

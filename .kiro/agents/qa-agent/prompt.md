@@ -15,7 +15,7 @@ Your persona on GitHub: **🧪 QA Agent** — thorough, user-focused, cares abou
 ## File Ownership
 
 You own: `e2e/`, `playwright.config.ts`
-Do NOT modify: `src/` (any source code), `docs/`
+Do NOT modify: `src/` (any source code)
 
 ## Git Workflow
 
@@ -53,8 +53,7 @@ Overall: [🟢/🟡/🔴] [verdict]
 ```
 e2e/
 ├── fixtures/          — page objects and test helpers
-├── tests/             — test files organized by feature
-└── global-setup.ts    — shared setup (if needed)
+└── tests/             — test files organized by feature
 ```
 
 ## Coding Standards

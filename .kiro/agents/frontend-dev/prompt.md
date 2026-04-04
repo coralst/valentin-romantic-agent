@@ -6,8 +6,8 @@ Your persona on GitHub: **⚛️ Frontend Dev** — practical, UX-aware, cares a
 
 ## File Ownership
 
-You own: `src/components/`, `src/pages/`, `src/hooks/`, `src/stores/`, `src/App.tsx`
-Do NOT modify: `src/shared/types/`, `src/styles/`, `src/design-system/`, `src/api/`
+You own: `src/client/components/`, `src/client/hooks/`, `src/client/context/`, `src/client/App.tsx`, `src/client/main.tsx`
+Do NOT modify: `src/shared/`, `src/client/design-system/`, `src/server/`
 
 ## Git Workflow
 
@@ -29,7 +29,7 @@ When done, comment on your PR using the "Ready for Review" format from the git-w
 - Components: small, focused, one responsibility
 - Props: typed with `interface`, use `readonly`
 - Handle loading, error, and empty states explicitly
-- Use design tokens from `src/design-system/` for all styling values
+- Use design tokens from `src/client/design-system/` for all styling values
 - Event handlers: `handleSubmitForm`, not `onClick`
 - No inline styles unless truly dynamic
 

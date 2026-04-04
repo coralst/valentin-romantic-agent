@@ -91,7 +91,8 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
         context.recentMessages,
       );
       responseContent = response;
-    } catch {
+    } catch (err) {
+      console.error('[orchestrator] Bedrock failed after retry:', err);
       responseContent =
         "I'm sorry, I'm having a little trouble right now. Could you try saying that again? I really want to hear about your partner.";
     }
@@ -128,6 +129,8 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
       );
       return response.content;
     } catch (firstError) {
+      console.warn('[orchestrator] Bedrock first attempt failed, retrying:', 
+        firstError instanceof Error ? firstError.message : firstError);
       // Retry once
       try {
         const response = await this.bedrockClient.generateResponse(

@@ -1,3 +1,11 @@
+import {
+  BedrockRuntimeClient,
+  ConverseCommand,
+  type Message,
+  type SystemContentBlock,
+  type Tool,
+  type ContentBlock,
+} from '@aws-sdk/client-bedrock-runtime';
 import type { ChatMessage } from '../../shared/interfaces/message';
 import { LlmError } from '../../shared/errors/llm-error';
 
@@ -35,42 +43,142 @@ export interface BedrockClient {
   ): Promise<ToolUseResponse>;
 }
 
-// TODO(yellow): integrate real AWS Bedrock SDK — replace this stub with actual SDK calls
-/** Stub Bedrock client that returns placeholder responses for local development */
-export class StubBedrockClient implements BedrockClient {
+const DEFAULT_MODEL_ID = 'anthropic.claude-3-haiku-20240307-v1:0';
+
+/** Map ChatMessage array to Bedrock Converse API message format */
+function toBedrockMessages(messages: ChatMessage[]): Message[] {
+  return messages.map((msg) => ({
+    role: msg.sender === 'user' ? 'user' as const : 'assistant' as const,
+    content: [{ text: msg.content }],
+  }));
+}
+
+/** Extract text content from Bedrock response content blocks */
+function extractTextFromBlocks(blocks: ContentBlock[] | undefined): string {
+  if (!blocks) return '';
+  return blocks
+    .filter((b): b is ContentBlock & { text: string } => 'text' in b && typeof b.text === 'string')
+    .map((b) => b.text)
+    .join('');
+}
+
+/** Real AWS Bedrock client using the Converse API */
+export class AwsBedrockClient implements BedrockClient {
+  private readonly client: BedrockRuntimeClient;
+  private readonly modelId: string;
+
+  constructor(region?: string, modelId?: string) {
+    this.client = new BedrockRuntimeClient({
+      region: region ?? process.env.AWS_REGION ?? 'us-east-1',
+      requestHandler: {
+        requestTimeout: 15_000, // 15s timeout per request
+      } as Record<string, unknown>,
+    });
+    this.modelId = modelId ?? process.env.BEDROCK_MODEL_ID ?? DEFAULT_MODEL_ID;
+  }
+
   async generateResponse(
     messages: ChatMessage[],
-    _systemPrompt: string,
+    systemPrompt: string,
   ): Promise<LlmResponse> {
     try {
-      const lastMessage = messages[messages.length - 1];
-      const content = lastMessage
-        ? `That's wonderful to hear! Tell me more about your partner's interests — I'd love to help you build a thoughtful profile of what they enjoy.`
-        : `Hello! I'm Valentin, your romantic concierge. Tell me about your special someone, and I'll help you remember every little detail that makes them unique.`;
+      const system: SystemContentBlock[] = [{ text: systemPrompt }];
+      const bedrockMessages = toBedrockMessages(messages);
+
+      const command = new ConverseCommand({
+        modelId: this.modelId,
+        system,
+        messages: bedrockMessages,
+      });
+
+      const response = await this.client.send(command);
+      const content = extractTextFromBlocks(response.output?.message?.content);
+
+      if (!content) {
+        throw new LlmError('Bedrock returned empty response', {
+          modelId: this.modelId,
+          stopReason: response.stopReason,
+        });
+      }
 
       return { content };
     } catch (err) {
-      throw new LlmError('Stub Bedrock generateResponse failed', {
+      if (err instanceof LlmError) throw err;
+      throw new LlmError('Bedrock generateResponse failed', {
+        modelId: this.modelId,
         cause: err instanceof Error ? err.message : String(err),
       });
     }
   }
 
   async extractWithTool(
-    _message: ChatMessage,
-    _history: ChatMessage[],
-    _toolSchema: ToolSchema,
+    message: ChatMessage,
+    history: ChatMessage[],
+    toolSchema: ToolSchema,
   ): Promise<ToolUseResponse> {
     try {
-      // Stub returns empty preferences — real implementation would parse LLM tool output
+      const allMessages = [...history, message];
+      const bedrockMessages = toBedrockMessages(allMessages);
+
+      const tool: Tool = {
+        toolSpec: {
+          name: toolSchema.name,
+          description: toolSchema.description,
+          inputSchema: {
+            // Bedrock SDK expects DocumentType which is a broad union — safe to cast here
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            json: toolSchema.input_schema as any,
+          },
+        },
+      };
+
+      const system: SystemContentBlock[] = [{
+        text: `Analyze the latest message in the conversation and extract any spouse/partner preferences using the ${toolSchema.name} tool. Only extract preferences that are clearly stated or strongly implied.`,
+      }];
+
+      const command = new ConverseCommand({
+        modelId: this.modelId,
+        system,
+        messages: bedrockMessages,
+        toolConfig: {
+          tools: [tool],
+          toolChoice: { tool: { name: toolSchema.name } },
+        },
+      });
+
+      const response = await this.client.send(command);
+      const blocks = response.output?.message?.content;
+
+      if (!blocks) {
+        throw new LlmError('Bedrock tool-use returned no content blocks', {
+          modelId: this.modelId,
+          stopReason: response.stopReason,
+        });
+      }
+
+      const toolUseBlock = blocks.find(
+        (b): b is ContentBlock & { toolUse: { name: string; input: Record<string, unknown> } } =>
+          'toolUse' in b && b.toolUse !== undefined,
+      );
+
+      if (!toolUseBlock) {
+        throw new LlmError('Bedrock response contained no tool-use block', {
+          modelId: this.modelId,
+          blockTypes: blocks.map((b) => Object.keys(b)).flat(),
+        });
+      }
+
       return {
-        toolName: 'extract_preferences',
-        input: { preferences: [] },
+        toolName: toolUseBlock.toolUse.name,
+        input: toolUseBlock.toolUse.input as Record<string, unknown>,
       };
     } catch (err) {
-      throw new LlmError('Stub Bedrock extractWithTool failed', {
+      if (err instanceof LlmError) throw err;
+      throw new LlmError('Bedrock extractWithTool failed', {
+        modelId: this.modelId,
         cause: err instanceof Error ? err.message : String(err),
       });
     }
   }
 }
+

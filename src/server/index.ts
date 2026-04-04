@@ -1,6 +1,6 @@
 import { InMemoryStore } from './persistence/in-memory-store';
 import { InMemoryConversationMemory } from './persistence/conversation-memory';
-import { StubBedrockClient } from './agent/bedrock-client';
+import { AwsBedrockClient } from './agent/bedrock-client';
 import { StubAgentCoreAdapter } from './agent/agentcore-adapter';
 import { AgentOrchestrator } from './agent/agent-orchestrator';
 import { PreferenceExtractor } from './extraction/preference-extractor';
@@ -9,17 +9,17 @@ import { WsGateway } from './api/ws-gateway';
 import { createHttpRoutes } from './api/http-routes';
 import type { ServerEvent } from '../shared/interfaces/ws-events';
 
-// TODO(yellow): replace stub Bedrock/AgentCore with real SDK when AWS credentials are available
-
 /** Initialize all dependencies and start the server */
 export function createServer() {
   // Persistence
   const store = new InMemoryStore();
   const memory = new InMemoryConversationMemory(store);
 
-  // AWS service stubs
-  const bedrockClient = new StubBedrockClient();
+  // AWS Bedrock — always use real LLM, no stubs
+  const bedrockClient = new AwsBedrockClient();
   const agentCore = new StubAgentCoreAdapter();
+
+  console.log(`[server] AWS Bedrock (region: ${process.env.AWS_REGION ?? 'us-east-1'}, model: ${process.env.BEDROCK_MODEL_ID ?? 'claude-3-haiku'})`);
 
   // Emit function — will be wired to WsGateway after creation
   let gateway: WsGateway | null = null;

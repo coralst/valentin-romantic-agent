@@ -442,7 +442,8 @@ src/
 │   │   └── use-websocket.ts
 │   ├── context/
 │   │   ├── chat-context.tsx
-│   │   └── preferences-context.tsx
+│   │   ├── preferences-context.tsx
+│   │   └── websocket-context.tsx
 │   ├── design-system/
 │   │   ├── tokens.ts
 │   │   └── global-styles.ts
@@ -465,6 +466,7 @@ src/
 │   │   ├── storage-interface.ts
 │   │   ├── in-memory-store.ts
 │   │   └── conversation-memory.ts
+│   ├── dev-server.ts
 │   └── index.ts
 ├── shared/                          # Shared types & utilities
 │   ├── interfaces/

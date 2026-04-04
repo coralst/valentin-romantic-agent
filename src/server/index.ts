@@ -26,9 +26,11 @@ export function createServer() {
   const emit = (event: ServerEvent): void => {
     if (!gateway) return;
 
-    // Broadcast to session if the event payload contains a sessionId
+    // Broadcast to session — sessionId may be at top level or nested in message
     const payload = event.payload as Record<string, unknown>;
-    const sessionId = payload.sessionId as string | undefined;
+    const sessionId =
+      (payload.sessionId as string | undefined) ??
+      ((payload.message as Record<string, unknown> | undefined)?.sessionId as string | undefined);
 
     if (sessionId) {
       gateway.broadcastToSession(sessionId, event);

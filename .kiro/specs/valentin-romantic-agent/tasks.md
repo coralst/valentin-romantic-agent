@@ -22,18 +22,18 @@ This plan is organized by agent domain so each agent can work on an independent 
 
 ### 🏗️ [System Architect] — Branch: `feat/arch-valentin-shared-types`
 
-- [ ] 1. Create shared interfaces and type definitions
-  - [ ] 1.1 Create `src/shared/interfaces/message.ts` with `ChatMessage` interface
+- [-] 1. Create shared interfaces and type definitions
+  - [x] 1.1 Create `src/shared/interfaces/message.ts` with `ChatMessage` interface
     - Define `ChatMessage` with `id`, `sessionId`, `sender`, `content`, `timestamp` fields
     - Export `Sender` type union `'user' | 'agent'`
     - _Requirements: 1.2, 1.3, 3.1_
-  - [ ] 1.2 Create `src/shared/interfaces/preference.ts` with `Preference`, `PreferenceWithHistory`, `PreferenceHistoryEntry`, and `PreferenceCategory` types
+  - [x] 1.2 Create `src/shared/interfaces/preference.ts` with `Preference`, `PreferenceWithHistory`, `PreferenceHistoryEntry`, and `PreferenceCategory` types
     - Define `PreferenceCategory` as union of 8 category strings
     - Define `Preference` with `id`, `sessionId`, `category`, `key`, `value`, `confidence`, `sourceMessageId`, `createdAt`, `updatedAt`
     - Define `PreferenceHistoryEntry` with `previousValue`, `changedAt`, `sourceMessageId`
     - Define `PreferenceWithHistory` extending `Preference` with `history` array
     - _Requirements: 2.2, 2.3, 2.4_
-  - [ ] 1.3 Create `src/shared/interfaces/session.ts` with `SessionData` interface
+  - [x] 1.3 Create `src/shared/interfaces/session.ts` with `SessionData` interface
     - Define `SessionData` with `id`, `createdAt`, `endedAt`, `messageCount`, `preferenceCount`
     - _Requirements: 3.4, 3.5_
   - [ ] 1.4 Create `src/shared/interfaces/ws-events.ts` with `WsEnvelope`, `ClientEvent`, and `ServerEvent` types
@@ -53,7 +53,7 @@ This plan is organized by agent domain so each agent can work on an independent 
     - Verify `CATEGORY_LABELS` has an entry for each category
     - _Requirements: 7.1_
 
-- [ ] 2. Create shared validation utilities and error classes
+- [-] 2. Create shared validation utilities and error classes
   - [ ] 2.1 Create `src/shared/validation/message-validator.ts`
     - Implement `validateMessageContent(content: string): ValidationResult` — rejects empty/whitespace-only strings
     - Implement `validatePreference(pref: unknown): ValidationResult` — validates category is in enum, confidence is 0–1, key/value non-empty
@@ -72,7 +72,7 @@ This plan is organized by agent domain so each agent can work on an independent 
     - Verify `context` is passed through constructor
     - _Requirements: 7.1_
 
-- [ ] 3. Create persistence layer interfaces and in-memory implementation
+- [-] 3. Create persistence layer interfaces and in-memory implementation
   - [ ] 3.1 Create `src/server/persistence/storage-interface.ts` with `StorageInterface` abstract interface
     - Define all methods: `savePreference`, `updatePreference`, `getPreferencesBySession`, `findPreference`, `saveMessage`, `getMessagesBySession`, `createSession`, `getSession`, `endSession`
     - _Requirements: 6.5_
@@ -112,7 +112,7 @@ This plan is organized by agent domain so each agent can work on an independent 
 
 ### 🎨 [UI Designer] — Branch: `feat/design-valentin-design-system`
 
-- [ ] 5. Create design system tokens and global styles
+- [-] 5. Create design system tokens and global styles
   - [ ] 5.1 Create `src/client/design-system/tokens.ts`
     - Define `colors` object with warm muted tones: dusty rose, champagne, soft burgundy, warm neutrals, plus semantic tokens (agent bubble, user bubble, background, text, border, highlight)
     - Define `typography` object with serif heading font family and sans-serif body font family, plus size scale

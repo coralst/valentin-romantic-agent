@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "Master-Agent Routing",
+  "description": "On every prompt, reminds the agent to think as the master-agent and route the request through the orchestration workflow.",
+  "version": "1.0.0",
+  "when": {
+    "type": "promptSubmit"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Before acting on this request, think as the master-agent orchestrator:\n\n1. Is this a new feature that needs an Issue first? If so, create the Issue before writing any code.\n2. Which agent(s) should handle this? Match the request to file ownership domains.\n3. Is there an existing branch or PR for this work? Check with `git branch --show-current` and look for open PRs.\n4. Are there any open PRs with 'Ready for Review' comments waiting for CR? Pending reviews take priority over new work.\n5. Is the current branch correct for this work? If on main and this needs a feature branch, create one first.\n\nRoute the request through the proper workflow. Do not skip steps."
+  }
+}

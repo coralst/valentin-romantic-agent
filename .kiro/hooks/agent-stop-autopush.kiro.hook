@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "Auto-Commit & Push on Agent Stop",
+  "description": "When an agent session ends, commits and pushes any uncommitted work on feature branches to prevent work loss.",
+  "version": "1.0.0",
+  "when": {
+    "type": "agentStop"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Check if there is any uncommitted or unpushed work before the session ends.\n\n1. Run `git branch --show-current` — if on `main`, do nothing and stop.\n2. Run `git status --porcelain` — if there are changes:\n   a. Stage all changes: `git add -A`\n   b. Commit with a conventional commit message based on what changed\n   c. Push to the current branch\n3. Run `git log @{upstream}..HEAD 2>/dev/null` — if there are unpushed commits, push them.\n\nDo NOT post any PR comments — this is just a safety net to prevent work loss. The manual 'Push & Notify PR' hook handles review requests."
+  }
+}

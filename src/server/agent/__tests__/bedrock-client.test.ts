@@ -56,7 +56,7 @@ describe('AwsBedrockClient', () => {
       ]);
     });
 
-    it('maps agent messages to assistant role', async () => {
+    it('skips leading agent messages and maps roles correctly', async () => {
       mockSend.mockResolvedValueOnce({
         output: { message: { content: [{ text: 'Response' }] } },
       });
@@ -64,8 +64,9 @@ describe('AwsBedrockClient', () => {
       await client.generateResponse([...sampleHistory, sampleMessage], 'System prompt');
 
       const cmd = mockSend.mock.calls[0][0];
-      expect(cmd.messages[0].role).toBe('assistant');
-      expect(cmd.messages[1].role).toBe('user');
+      // Leading agent message is skipped — only user message remains
+      expect(cmd.messages).toHaveLength(1);
+      expect(cmd.messages[0].role).toBe('user');
     });
 
     it('throws LlmError when Bedrock returns empty response', async () => {
@@ -129,7 +130,7 @@ describe('AwsBedrockClient', () => {
       expect(cmd.toolConfig.toolChoice).toEqual({ tool: { name: 'extract_preferences' } });
     });
 
-    it('includes full history plus current message in request', async () => {
+    it('skips leading agent messages in history', async () => {
       mockSend.mockResolvedValueOnce({
         output: {
           message: {
@@ -141,7 +142,9 @@ describe('AwsBedrockClient', () => {
       await client.extractWithTool(sampleMessage, sampleHistory, toolSchema);
 
       const cmd = mockSend.mock.calls[0][0];
-      expect(cmd.messages).toHaveLength(2);
+      // Leading agent message from history is skipped, only user message remains
+      expect(cmd.messages).toHaveLength(1);
+      expect(cmd.messages[0].role).toBe('user');
     });
 
     it('throws LlmError when no tool-use block in response', async () => {

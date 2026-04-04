@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "CI Pipeline After Task",
+  "description": "Runs the test suite after each spec task completes to catch regressions early.",
+  "version": "1.0.1",
+  "when": {
+    "type": "postTaskExecution"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Run the CI pipeline steps sequentially and report results:\n\n1. Run `npm run lint` (tsc --noEmit) — report pass/fail\n2. Run `npm test -- --run` — report pass/fail\n3. Run `npm run build` — report pass/fail\n\nIf any step fails, describe the error and suggest a fix. Do not proceed to the next step if the current one fails."
+  }
+}

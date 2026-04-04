@@ -11,6 +11,17 @@ export default defineConfig({
       '@server': path.resolve(__dirname, 'src/server'),
     },
   },
+  server: {
+    proxy: {
+      '/ws': {
+        target: 'http://localhost:3001',
+        ws: true,
+      },
+      '/api': {
+        target: 'http://localhost:3001',
+      },
+    },
+  },
   test: {
     environment: 'jsdom',
     globals: true,

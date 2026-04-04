@@ -36,16 +36,16 @@ This plan is organized by agent domain so each agent can work on an independent 
   - [x] 1.3 Create `src/shared/interfaces/session.ts` with `SessionData` interface
     - Define `SessionData` with `id`, `createdAt`, `endedAt`, `messageCount`, `preferenceCount`
     - _Requirements: 3.4, 3.5_
-  - [~] 1.4 Create `src/shared/interfaces/ws-events.ts` with `WsEnvelope`, `ClientEvent`, and `ServerEvent` types
+  - [ ] 1.4 Create `src/shared/interfaces/ws-events.ts` with `WsEnvelope`, `ClientEvent`, and `ServerEvent` types
     - Define generic `WsEnvelope<T, P>` with `type`, `payload`, `timestamp`
     - Define all `ClientEvent` variants: `send_message`, `ping`
     - Define all `ServerEvent` variants: `agent_message`, `typing_start`, `typing_stop`, `preference_update`, `connection_status`, `session_init`, `error`, `pong`
     - _Requirements: 4.2, 6.4_
-  - [~] 1.5 Create `src/shared/constants/categories.ts` with `PREFERENCE_CATEGORIES` array and category metadata
+  - [ ] 1.5 Create `src/shared/constants/categories.ts` with `PREFERENCE_CATEGORIES` array and category metadata
     - Export `PREFERENCE_CATEGORIES` as const array of all 8 category strings
     - Export `CATEGORY_LABELS` map with display labels and descriptions per the design data model table
     - _Requirements: 2.4_
-  - [~] 1.6 Create `src/shared/index.ts` barrel export re-exporting all interfaces, types, and constants
+  - [ ] 1.6 Create `src/shared/index.ts` barrel export re-exporting all interfaces, types, and constants
     - _Requirements: 6.3_
   - [ ]* 1.7 Write unit tests for shared types and constants (`src/shared/__tests__/shared-exports.test.ts`)
     - Verify all interfaces are importable from barrel
@@ -54,12 +54,12 @@ This plan is organized by agent domain so each agent can work on an independent 
     - _Requirements: 7.1_
 
 - [-] 2. Create shared validation utilities and error classes
-  - [~] 2.1 Create `src/shared/validation/message-validator.ts`
+  - [ ] 2.1 Create `src/shared/validation/message-validator.ts`
     - Implement `validateMessageContent(content: string): ValidationResult` — rejects empty/whitespace-only strings
     - Implement `validatePreference(pref: unknown): ValidationResult` — validates category is in enum, confidence is 0–1, key/value non-empty
     - Implement `validateSessionId(id: string): ValidationResult` — validates non-empty string format
     - _Requirements: 1.5, 2.2, 6.6_
-  - [~] 2.2 Create `src/shared/errors/` directory with `base-error.ts`, `connection-error.ts`, `llm-error.ts`, `extraction-error.ts`, `validation-error.ts`, `session-error.ts`, `storage-error.ts`, `context-error.ts`
+  - [ ] 2.2 Create `src/shared/errors/` directory with `base-error.ts`, `connection-error.ts`, `llm-error.ts`, `extraction-error.ts`, `validation-error.ts`, `session-error.ts`, `storage-error.ts`, `context-error.ts`
     - Implement abstract `AppError` extending `Error` with `code`, `statusCode`, `context` fields
     - Implement each concrete error class per the design error classification table
     - _Requirements: 6.3_
@@ -73,15 +73,15 @@ This plan is organized by agent domain so each agent can work on an independent 
     - _Requirements: 7.1_
 
 - [-] 3. Create persistence layer interfaces and in-memory implementation
-  - [~] 3.1 Create `src/server/persistence/storage-interface.ts` with `StorageInterface` abstract interface
+  - [ ] 3.1 Create `src/server/persistence/storage-interface.ts` with `StorageInterface` abstract interface
     - Define all methods: `savePreference`, `updatePreference`, `getPreferencesBySession`, `findPreference`, `saveMessage`, `getMessagesBySession`, `createSession`, `getSession`, `endSession`
     - _Requirements: 6.5_
-  - [~] 3.2 Create `src/server/persistence/in-memory-store.ts` implementing `StorageInterface`
+  - [ ] 3.2 Create `src/server/persistence/in-memory-store.ts` implementing `StorageInterface`
     - Use `Map` collections for sessions, messages, and preferences
     - Implement preference history tracking on `updatePreference` — push old value to history array
     - Implement `findPreference` matching by `sessionId + category + key`
     - _Requirements: 2.2, 2.3, 3.1, 3.4, 6.5_
-  - [~] 3.3 Create `src/server/persistence/conversation-memory.ts` implementing `ConversationMemory` interface
+  - [ ] 3.3 Create `src/server/persistence/conversation-memory.ts` implementing `ConversationMemory` interface
     - Implement `addMessage`, `getHistory`, `getContextWindow`
     - `getContextWindow` estimates token count and truncates with summary placeholder when over budget
     - _Requirements: 3.1, 3.2, 3.6_
@@ -113,7 +113,7 @@ This plan is organized by agent domain so each agent can work on an independent 
 ### 🎨 [UI Designer] — Branch: `feat/design-valentin-design-system`
 
 - [-] 5. Create design system tokens and global styles
-  - [~] 5.1 Create `src/client/design-system/tokens.ts`
+  - [ ] 5.1 Create `src/client/design-system/tokens.ts`
     - Define `colors` object with warm muted tones: dusty rose, champagne, soft burgundy, warm neutrals, plus semantic tokens (agent bubble, user bubble, background, text, border, highlight)
     - Define `typography` object with serif heading font family and sans-serif body font family, plus size scale
     - Define `spacing` object following 8px grid: `xs: 8`, `sm: 16`, `md: 24`, `lg: 32`, `xl: 40`, `xxl: 48`
@@ -122,7 +122,7 @@ This plan is organized by agent domain so each agent can work on an independent 
     - Define `shadows` tokens with subtle card shadows
     - Define `breakpoints` object with `mobile: 768` threshold
     - _Requirements: 5.1, 5.2, 5.3, 5.5, 5.7_
-  - [~] 5.2 Create `src/client/design-system/global-styles.ts`
+  - [ ] 5.2 Create `src/client/design-system/global-styles.ts`
     - Export CSS reset/base styles as template literal or style object
     - Apply typography tokens to body and headings
     - Set background color from tokens
@@ -142,19 +142,19 @@ This plan is organized by agent domain so each agent can work on an independent 
 
 ### ⚛️ [Frontend Dev] — Branch: `feat/frontend-valentin-chat-ui`
 
-- [~] 7. Implement state management hooks and context
-  - [~] 7.1 Create `src/client/hooks/use-chat-state.ts`
+- [ ] 7. Implement state management hooks and context
+  - [ ] 7.1 Create `src/client/hooks/use-chat-state.ts`
     - Implement `ChatState` interface and `ChatAction` union type per design
     - Implement `chatReducer` handling all action types: `SESSION_INIT`, `SEND_MESSAGE`, `RECEIVE_MESSAGE`, `SET_TYPING`, `SET_CONNECTION`, `SET_INPUT`, `CLEAR_INPUT`
     - Export `useChatState` hook wrapping `useReducer`
     - _Requirements: 1.2, 1.3, 1.4, 1.5_
-  - [~] 7.2 Create `src/client/hooks/use-preferences-state.ts`
+  - [ ] 7.2 Create `src/client/hooks/use-preferences-state.ts`
     - Implement `PreferencesState` interface and `PreferencesAction` union type per design
     - Implement `preferencesReducer` handling `ADD_PREFERENCE`, `UPDATE_PREFERENCE`, `CLEAR_HIGHLIGHT`
     - Group preferences by category in state
     - Export `usePreferencesState` hook wrapping `useReducer`
     - _Requirements: 4.3, 4.6_
-  - [~] 7.3 Create `src/client/context/chat-context.tsx` and `src/client/context/preferences-context.tsx`
+  - [ ] 7.3 Create `src/client/context/chat-context.tsx` and `src/client/context/preferences-context.tsx`
     - Create React Context providers wrapping the respective hooks
     - Export provider components and consumer hooks (`useChatContext`, `usePreferencesContext`)
     - _Requirements: 1.2, 4.3_
@@ -174,8 +174,8 @@ This plan is organized by agent domain so each agent can work on an independent 
     - Use fast-check with 100+ iterations
     - **Validates: Requirements 1.5**
 
-- [~] 8. Implement WebSocket client hook
-  - [~] 8.1 Create `src/client/hooks/use-websocket.ts`
+- [ ] 8. Implement WebSocket client hook
+  - [ ] 8.1 Create `src/client/hooks/use-websocket.ts`
     - Implement `useWebSocket` hook returning `{ sendMessage, connectionStatus, lastError }`
     - Auto-connect on mount, auto-reconnect with exponential backoff (1s, 2s, 4s, max 30s)
     - Dispatch incoming `ServerEvent` messages to chat and preferences reducers via context
@@ -187,32 +187,32 @@ This plan is organized by agent domain so each agent can work on an independent 
     - Test event dispatching to correct reducers
     - _Requirements: 7.2_
 
-- [~] 9. Implement Chat Panel components
-  - [~] 9.1 Create `src/client/components/MessageBubble.tsx`
+- [ ] 9. Implement Chat Panel components
+  - [ ] 9.1 Create `src/client/components/MessageBubble.tsx`
     - Render message content with distinct styling based on `sender` field (agent vs user)
     - Agent messages: left-aligned, agent background color, avatar placeholder
     - User messages: right-aligned, user background color
     - Apply design tokens for colors, spacing, border-radius
     - _Requirements: 5.4_
-  - [~] 9.2 Create `src/client/components/MessageHistory.tsx`
+  - [ ] 9.2 Create `src/client/components/MessageHistory.tsx`
     - Render list of `MessageBubble` components from chat state
     - Auto-scroll to bottom on new messages
     - _Requirements: 1.3_
-  - [~] 9.3 Create `src/client/components/MessageInput.tsx`
+  - [ ] 9.3 Create `src/client/components/MessageInput.tsx`
     - Text input with submit button
     - Validate non-empty before sending (use `validateMessageContent` from shared)
     - Clear input and return focus after submit
     - Handle Enter key to submit
     - _Requirements: 1.2, 1.5_
-  - [~] 9.4 Create `src/client/components/TypingIndicator.tsx`
+  - [ ] 9.4 Create `src/client/components/TypingIndicator.tsx`
     - Animated dots indicator, visible only when `isTyping` is true in chat state
     - Use animation duration tokens from design system
     - _Requirements: 1.4, 5.7_
-  - [~] 9.5 Create `src/client/components/ConnectionBanner.tsx`
+  - [ ] 9.5 Create `src/client/components/ConnectionBanner.tsx`
     - Show banner when `connectionStatus` is `'reconnecting'` or `'disconnected'`
     - Display appropriate message for each status
     - _Requirements: 1.6_
-  - [~] 9.6 Create `src/client/components/ChatPanel.tsx`
+  - [ ] 9.6 Create `src/client/components/ChatPanel.tsx`
     - Compose `MessageHistory`, `MessageInput`, `TypingIndicator`, `ConnectionBanner`
     - Wire to `useChatContext` for state and dispatch
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6_
@@ -232,22 +232,22 @@ This plan is organized by agent domain so each agent can work on an independent 
     - Test ConnectionBanner shows on disconnect
     - _Requirements: 7.2_
 
-- [~] 10. Implement Profile Dashboard components
-  - [~] 10.1 Create `src/client/components/PreferenceCard.tsx`
+- [ ] 10. Implement Profile Dashboard components
+  - [ ] 10.1 Create `src/client/components/PreferenceCard.tsx`
     - Display preference key, value, confidence badge
     - _Requirements: 4.3_
-  - [~] 10.2 Create `src/client/components/PreferenceHighlight.tsx`
+  - [ ] 10.2 Create `src/client/components/PreferenceHighlight.tsx`
     - Wrap PreferenceCard with highlight animation on update
     - Auto-clear highlight after animation duration from design tokens
     - _Requirements: 4.6, 5.7_
-  - [~] 10.3 Create `src/client/components/CategoryGroup.tsx`
+  - [ ] 10.3 Create `src/client/components/CategoryGroup.tsx`
     - Collapsible section with category label and item count
     - Render list of `PreferenceCard` components for that category
     - _Requirements: 4.4_
-  - [~] 10.4 Create `src/client/components/EmptyState.tsx`
+  - [ ] 10.4 Create `src/client/components/EmptyState.tsx`
     - Encouraging message when no preferences extracted yet
     - _Requirements: 4.5_
-  - [~] 10.5 Create `src/client/components/ProfileDashboard.tsx`
+  - [ ] 10.5 Create `src/client/components/ProfileDashboard.tsx`
     - Compose `CategoryGroup` components grouped by category from preferences state
     - Show `EmptyState` when preferences are empty
     - Wire to `usePreferencesContext`
@@ -268,16 +268,16 @@ This plan is organized by agent domain so each agent can work on an independent 
     - Test PreferenceCard displays key/value
     - _Requirements: 7.2_
 
-- [~] 11. Implement App layout and mobile navigation
-  - [~] 11.1 Create `src/client/components/MobileNav.tsx`
+- [ ] 11. Implement App layout and mobile navigation
+  - [ ] 11.1 Create `src/client/components/MobileNav.tsx`
     - Tab-based toggle between Chat and Profile panels below 768px viewport
     - _Requirements: 5.6_
-  - [~] 11.2 Create `src/client/components/AppLayout.tsx`
+  - [ ] 11.2 Create `src/client/components/AppLayout.tsx`
     - Side-by-side dual-panel layout (ChatPanel left, ProfileDashboard right)
     - Switch to single-panel + MobileNav below 768px breakpoint
     - Apply design tokens for spacing and transitions
     - _Requirements: 4.1, 5.6, 5.7_
-  - [~] 11.3 Create `src/client/App.tsx` and `src/client/main.tsx`
+  - [ ] 11.3 Create `src/client/App.tsx` and `src/client/main.tsx`
     - Wire context providers (ChatContext, PreferencesContext)
     - Render AppLayout
     - Add top-level React Error Boundary
@@ -293,21 +293,21 @@ This plan is organized by agent domain so each agent can work on an independent 
 
 ### 🔧 [Backend Dev] — Branch: `feat/backend-valentin-agent-services`
 
-- [~] 13. Implement API layer (WebSocket gateway and HTTP routes)
-  - [~] 13.1 Create `src/server/api/ws-gateway.ts`
+- [ ] 13. Implement API layer (WebSocket gateway and HTTP routes)
+  - [ ] 13.1 Create `src/server/api/ws-gateway.ts`
     - Implement WebSocket server accepting client connections
     - Parse incoming `ClientEvent` envelopes, validate structure
     - Route events to `event-router`
     - Broadcast `ServerEvent` messages to connected clients by session
     - Implement ping/pong handling
     - _Requirements: 1.6, 4.2, 6.4_
-  - [~] 13.2 Create `src/server/api/event-router.ts`
+  - [ ] 13.2 Create `src/server/api/event-router.ts`
     - Route `send_message` events to `AgentOrchestrator.handleMessage`
     - Emit `typing_start` before orchestrator call, `typing_stop` after
     - Emit `agent_message` with orchestrator response
     - Emit `preference_update` when extraction pipeline produces results
     - _Requirements: 1.2, 1.4, 4.2_
-  - [~] 13.3 Create `src/server/api/http-routes.ts`
+  - [ ] 13.3 Create `src/server/api/http-routes.ts`
     - `GET /health` — health check endpoint
     - `POST /session` — create new session, return `sessionId`
     - `GET /session/:id/preferences` — return preferences for session
@@ -318,23 +318,23 @@ This plan is organized by agent domain so each agent can work on an independent 
     - Test invalid event type returns error event
     - _Requirements: 7.3_
 
-- [~] 14. Implement Agent Orchestrator and Bedrock client
-  - [~] 14.1 Create `src/server/agent/bedrock-client.ts`
+- [ ] 14. Implement Agent Orchestrator and Bedrock client
+  - [ ] 14.1 Create `src/server/agent/bedrock-client.ts`
     - Wrap AWS Bedrock SDK for conversation generation (standard message API)
     - Wrap AWS Bedrock SDK for tool-use calls (preference extraction)
     - Accept model ID as configuration parameter
     - Handle Bedrock API errors, wrap in `LlmError`
     - _Requirements: 6.2_
-  - [~] 14.2 Create `src/server/agent/prompts.ts`
+  - [ ] 14.2 Create `src/server/agent/prompts.ts`
     - Define Valentin's system prompt (warm, sophisticated, curious personality)
     - Define preference extraction tool schema (`extract_preferences` tool)
     - _Requirements: 1.1, 2.1_
-  - [~] 14.3 Create `src/server/agent/agentcore-adapter.ts`
+  - [ ] 14.3 Create `src/server/agent/agentcore-adapter.ts`
     - Wrap AWS AgentCore SDK for agent registration on startup
     - Map user sessions to AgentCore sessions
     - Handle AgentCore tool orchestration callbacks
     - _Requirements: 6.1_
-  - [~] 14.4 Create `src/server/agent/agent-orchestrator.ts` implementing `AgentOrchestrator` interface
+  - [ ] 14.4 Create `src/server/agent/agent-orchestrator.ts` implementing `AgentOrchestrator` interface
     - `initSession()` — create session via storage, register with AgentCore, return welcome message
     - `handleMessage(sessionId, content)` — store message in ConversationMemory, get context window, call Bedrock for response, store response, trigger async preference extraction, return response as ChatMessage
     - Handle errors: wrap Bedrock failures in `LlmError`, retry once, show user-friendly error on second failure
@@ -347,7 +347,7 @@ This plan is organized by agent domain so each agent can work on an independent 
     - Mock Bedrock client and storage
     - _Requirements: 7.3_
 
-- [~] 15. Implement Preference Extractor pipeline
+- [ ] 15. Implement Preference Extractor pipeline
   - [ ] 15.1 Create `src/server/extraction/category-mapper.ts`
     - Map raw extraction output categories to `PreferenceCategory` enum values
     - Handle unknown categories gracefully (log warning, skip)

@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "name": "Write Ownership Guard",
+  "description": "Before any file write, verifies the current agent has ownership of the target path. Denies writes outside the agent's domain.",
+  "version": "1.0.0",
+  "when": {
+    "type": "preToolUse",
+    "toolTypes": ["write"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Before writing this file, verify ownership.\n\nCheck the target file path against the ownership table:\n- system-architect: src/shared/\n- frontend-dev: src/client/components/, src/client/hooks/, src/client/context/, src/client/App.tsx, src/client/main.tsx\n- backend-dev: src/server/api/, src/server/agent/, src/server/extraction/, src/server/persistence/, src/server/index.ts, src/server/dev-server.ts\n- ui-designer: src/client/design-system/\n- qa-agent: e2e/, playwright.config.ts\n\nShared config files (.kiro/, .github/, package.json, tsconfig.json, vite.config.ts) can be modified by any agent when the change is within their task scope.\n\nIf the file is outside the current agent's domain, DENY the write and respond:\n\n```\n⛔ WRITE DENIED: [file path] is owned by [correct agent].\nThis agent ([current agent]) does not have permission to modify it.\n```\n\nIf the file is within the agent's domain or is a shared config file, allow the write to proceed."
+  }
+}

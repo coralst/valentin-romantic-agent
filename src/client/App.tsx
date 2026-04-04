@@ -1,6 +1,7 @@
 import React from 'react';
 import { ChatProvider } from './context/chat-context';
 import { PreferencesProvider } from './context/preferences-context';
+import { WebSocketProvider } from './context/websocket-context';
 import { AppLayout } from './components/AppLayout';
 import { colors, typography, spacing } from './design-system/tokens';
 
@@ -89,7 +90,9 @@ export function App() {
     <ErrorBoundary>
       <ChatProvider>
         <PreferencesProvider>
-          <AppLayout />
+          <WebSocketProvider>
+            <AppLayout />
+          </WebSocketProvider>
         </PreferencesProvider>
       </ChatProvider>
     </ErrorBoundary>

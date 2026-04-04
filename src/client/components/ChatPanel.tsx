@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { useChatContext } from '../context/chat-context';
+import { useWebSocketContext } from '../context/websocket-context';
 import { MessageHistory } from './MessageHistory';
 import { MessageInput } from './MessageInput';
 import { TypingIndicator } from './TypingIndicator';
@@ -16,6 +17,7 @@ const panelStyle: React.CSSProperties = {
 
 export function ChatPanel() {
   const { state, dispatch } = useChatContext();
+  const { sendMessage } = useWebSocketContext();
 
   const handleSubmit = () => {
     const content = state.inputValue.trim();
@@ -30,6 +32,7 @@ export function ChatPanel() {
     };
 
     dispatch({ type: 'SEND_MESSAGE', message });
+    sendMessage(content);
   };
 
   return (

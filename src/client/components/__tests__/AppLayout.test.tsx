@@ -5,6 +5,15 @@ import { ChatProvider } from '../../context/chat-context';
 import { PreferencesProvider } from '../../context/preferences-context';
 import { AppLayout } from '../AppLayout';
 
+// Mock the websocket-context so ChatPanel can render without a real WS
+vi.mock('../../context/websocket-context', () => ({
+  useWebSocketContext: () => ({
+    sendMessage: () => {},
+    connectionStatus: 'connected' as const,
+    lastError: null,
+  }),
+}));
+
 function renderWithProviders(ui: React.ReactElement) {
   return render(
     <ChatProvider>

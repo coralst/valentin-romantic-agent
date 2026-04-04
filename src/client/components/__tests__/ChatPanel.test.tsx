@@ -1,11 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import React from 'react';
 import { ChatProvider } from '../../context/chat-context';
 import { PreferencesProvider } from '../../context/preferences-context';
 import { ChatPanel } from '../ChatPanel';
 import { ConnectionBanner } from '../ConnectionBanner';
 import { MessageInput } from '../MessageInput';
+
+// Mock the websocket-context module so ChatPanel can import useWebSocketContext
+vi.mock('../../context/websocket-context', () => ({
+  useWebSocketContext: () => ({
+    sendMessage: () => {},
+    connectionStatus: 'connected' as const,
+    lastError: null,
+  }),
+}));
 
 function renderWithProviders(ui: React.ReactElement) {
   return render(

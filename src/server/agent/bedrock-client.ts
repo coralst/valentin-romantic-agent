@@ -43,7 +43,7 @@ export interface BedrockClient {
   ): Promise<ToolUseResponse>;
 }
 
-const DEFAULT_MODEL_ID = 'anthropic.claude-3-sonnet-20240229-v1:0';
+const DEFAULT_MODEL_ID = 'anthropic.claude-3-haiku-20240307-v1:0';
 
 /** Map ChatMessage array to Bedrock Converse API message format */
 function toBedrockMessages(messages: ChatMessage[]): Message[] {
@@ -179,40 +179,3 @@ export class AwsBedrockClient implements BedrockClient {
   }
 }
 
-/** Stub Bedrock client that returns placeholder responses for local development */
-export class StubBedrockClient implements BedrockClient {
-  async generateResponse(
-    messages: ChatMessage[],
-    _systemPrompt: string,
-  ): Promise<LlmResponse> {
-    try {
-      const lastMessage = messages[messages.length - 1];
-      const content = lastMessage
-        ? `That's wonderful to hear! Tell me more about your partner's interests — I'd love to help you build a thoughtful profile of what they enjoy.`
-        : `Hello! I'm Valentin, your romantic concierge. Tell me about your special someone, and I'll help you remember every little detail that makes them unique.`;
-
-      return { content };
-    } catch (err) {
-      throw new LlmError('Stub Bedrock generateResponse failed', {
-        cause: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-
-  async extractWithTool(
-    _message: ChatMessage,
-    _history: ChatMessage[],
-    _toolSchema: ToolSchema,
-  ): Promise<ToolUseResponse> {
-    try {
-      return {
-        toolName: 'extract_preferences',
-        input: { preferences: [] },
-      };
-    } catch (err) {
-      throw new LlmError('Stub Bedrock extractWithTool failed', {
-        cause: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-}

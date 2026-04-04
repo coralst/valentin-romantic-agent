@@ -1,5 +1,5 @@
 import type { ConnectionStatus } from '../hooks/use-chat-state';
-import { colors, spacing, typography } from '../design-system/tokens';
+import { colors, spacing, typography, borderRadius } from '../design-system/tokens';
 
 interface ConnectionBannerProps {
   status: ConnectionStatus;
@@ -10,6 +10,8 @@ const bannerStyle: React.CSSProperties = {
   textAlign: 'center',
   fontSize: typography.sizes.sm,
   fontWeight: typography.weights.medium,
+  margin: `${spacing.xs}px ${spacing.sm}px 0`,
+  borderRadius: borderRadius.md,
 };
 
 const messages: Record<Exclude<ConnectionStatus, 'connected'>, string> = {
@@ -24,7 +26,7 @@ const bannerColors: Record<Exclude<ConnectionStatus, 'connected'>, string> = {
 
 const textColors: Record<Exclude<ConnectionStatus, 'connected'>, string> = {
   reconnecting: colors.text,
-  disconnected: colors.warmIvory,
+  disconnected: colors.textOnAccent,
 };
 
 export function ConnectionBanner({ status }: ConnectionBannerProps) {

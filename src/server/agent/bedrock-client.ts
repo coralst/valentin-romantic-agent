@@ -70,6 +70,9 @@ export class AwsBedrockClient implements BedrockClient {
   constructor(region?: string, modelId?: string) {
     this.client = new BedrockRuntimeClient({
       region: region ?? process.env.AWS_REGION ?? 'us-east-1',
+      requestHandler: {
+        requestTimeout: 15_000, // 15s timeout per request
+      } as Record<string, unknown>,
     });
     this.modelId = modelId ?? process.env.BEDROCK_MODEL_ID ?? DEFAULT_MODEL_ID;
   }

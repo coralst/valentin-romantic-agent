@@ -2,16 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import fc from 'fast-check';
 import { MessageBubble } from '../MessageBubble';
-import type { ChatMessage, Sender } from '../../../shared/interfaces/message';
+import type { ChatMessage } from '../../../shared/interfaces/message';
 
-const chatMessageArb = (sender: Sender) =>
-  fc.record({
-    id: fc.uuid(),
-    sessionId: fc.uuid(),
-    sender: fc.constant(sender),
-    content: fc.string({ minLength: 1, maxLength: 200 }),
-    timestamp: fc.date().map((d) => d.toISOString()),
-  });
+/** Arbitrary that produces a valid ISO timestamp string */
+const isoTimestampArb = fc
+  .integer({ min: 0, max: 4_102_444_800_000 }) // 0 to ~2100-01-01
+  .map((ms) => new Date(ms).toISOString());
 
 describe('MessageBubble', () => {
   /**
@@ -25,9 +21,9 @@ describe('MessageBubble', () => {
         fc.string({ minLength: 1, maxLength: 100 }),
         fc.uuid(),
         fc.uuid(),
-        fc.date(),
-        (content, id, sessionId, date) => {
-          const baseMsg = { id, sessionId, content, timestamp: date.toISOString() };
+        isoTimestampArb,
+        (content, id, sessionId, timestamp) => {
+          const baseMsg = { id, sessionId, content, timestamp };
 
           const agentMsg: ChatMessage = { ...baseMsg, sender: 'agent' };
           const userMsg: ChatMessage = { ...baseMsg, sender: 'user' };

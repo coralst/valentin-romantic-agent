@@ -45,9 +45,15 @@ export interface BedrockClient {
 
 const DEFAULT_MODEL_ID = 'anthropic.claude-3-haiku-20240307-v1:0';
 
-/** Map ChatMessage array to Bedrock Converse API message format */
+/** Map ChatMessage array to Bedrock Converse API message format.
+ *  Bedrock requires conversations to start with a user message,
+ *  so we skip any leading agent/assistant messages. */
 function toBedrockMessages(messages: ChatMessage[]): Message[] {
-  return messages.map((msg) => ({
+  // Drop leading assistant messages — Bedrock requires user-first
+  const startIdx = messages.findIndex((m) => m.sender === 'user');
+  const trimmed = startIdx >= 0 ? messages.slice(startIdx) : messages;
+
+  return trimmed.map((msg) => ({
     role: msg.sender === 'user' ? 'user' as const : 'assistant' as const,
     content: [{ text: msg.content }],
   }));
@@ -70,9 +76,6 @@ export class AwsBedrockClient implements BedrockClient {
   constructor(region?: string, modelId?: string) {
     this.client = new BedrockRuntimeClient({
       region: region ?? process.env.AWS_REGION ?? 'us-east-1',
-      requestHandler: {
-        requestTimeout: 15_000, // 15s timeout per request
-      } as Record<string, unknown>,
     });
     this.modelId = modelId ?? process.env.BEDROCK_MODEL_ID ?? DEFAULT_MODEL_ID;
   }
@@ -104,9 +107,13 @@ export class AwsBedrockClient implements BedrockClient {
       return { content };
     } catch (err) {
       if (err instanceof LlmError) throw err;
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const errName = err instanceof Error ? err.name : 'Unknown';
+      console.error(`[bedrock] generateResponse failed: ${errName}: ${errMsg}`);
       throw new LlmError('Bedrock generateResponse failed', {
         modelId: this.modelId,
-        cause: err instanceof Error ? err.message : String(err),
+        errorName: errName,
+        cause: errMsg,
       });
     }
   }
@@ -174,9 +181,13 @@ export class AwsBedrockClient implements BedrockClient {
       };
     } catch (err) {
       if (err instanceof LlmError) throw err;
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const errName = err instanceof Error ? err.name : 'Unknown';
+      console.error(`[bedrock] extractWithTool failed: ${errName}: ${errMsg}`);
       throw new LlmError('Bedrock extractWithTool failed', {
         modelId: this.modelId,
-        cause: err instanceof Error ? err.message : String(err),
+        errorName: errName,
+        cause: errMsg,
       });
     }
   }

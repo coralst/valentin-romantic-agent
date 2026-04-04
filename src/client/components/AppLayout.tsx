@@ -2,20 +2,31 @@ import { useState, useEffect } from 'react';
 import { ChatPanel } from './ChatPanel';
 import { ProfileDashboard } from './ProfileDashboard';
 import { MobileNav } from './MobileNav';
-import { breakpoints, spacing, colors, typography } from '../design-system/tokens';
+import { breakpoints, spacing, colors, typography, shadows } from '../design-system/tokens';
 
 const headerStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: spacing.sm,
-  padding: `${spacing.xs}px ${spacing.sm}px`,
-  borderBottom: `1px solid ${colors.border}`,
-  backgroundColor: colors.background,
+  padding: `${spacing.xs + 4}px ${spacing.md}px`,
+  background: colors.headerGradient,
+  backdropFilter: 'blur(12px)',
+  boxShadow: shadows.header,
+  position: 'relative',
+  zIndex: 10,
 };
 
 const logoStyle: React.CSSProperties = {
-  height: 80,
+  height: 40,
   objectFit: 'contain',
+};
+
+const brandStyle: React.CSSProperties = {
+  fontFamily: typography.headingFontFamily,
+  fontSize: typography.sizes.lg,
+  fontWeight: typography.weights.bold,
+  color: colors.softBurgundy,
+  letterSpacing: '-0.01em',
 };
 
 const desktopStyle: React.CSSProperties = {
@@ -28,11 +39,15 @@ const desktopStyle: React.CSSProperties = {
 const leftPanelStyle: React.CSSProperties = {
   flex: 1,
   minWidth: 0,
-  borderRight: '1px solid #E0D5CC',
+};
+
+const dividerStyle: React.CSSProperties = {
+  width: 1,
+  backgroundColor: colors.borderSubtle,
 };
 
 const rightPanelStyle: React.CSSProperties = {
-  width: 400,
+  width: 380,
   flexShrink: 0,
 };
 
@@ -53,6 +68,7 @@ const outerStyle: React.CSSProperties = {
   flexDirection: 'column',
   height: '100vh',
   width: '100%',
+  backgroundColor: colors.background,
 };
 
 export function AppLayout() {
@@ -73,6 +89,7 @@ export function AppLayout() {
       <div style={outerStyle} data-testid="app-layout" data-layout="mobile">
         <header style={headerStyle}>
           <img src="/logo.png" alt="Valentin logo" style={logoStyle} />
+          <span style={brandStyle}>Valentin</span>
         </header>
         <MobileNav activePanel={activePanel} onPanelChange={setActivePanel} />
         <div style={mobilePanelStyle}>
@@ -86,11 +103,13 @@ export function AppLayout() {
     <div style={outerStyle} data-testid="app-layout" data-layout="desktop">
       <header style={headerStyle}>
         <img src="/logo.png" alt="Valentin logo" style={logoStyle} />
+        <span style={brandStyle}>Valentin</span>
       </header>
       <div style={desktopStyle}>
         <div style={leftPanelStyle}>
           <ChatPanel />
         </div>
+        <div style={dividerStyle} />
         <div style={rightPanelStyle}>
           <ProfileDashboard />
         </div>

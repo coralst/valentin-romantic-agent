@@ -1,5 +1,5 @@
 import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
-import { colors, spacing, borderRadius, typography, shadows } from '../design-system/tokens';
+import { colors, spacing, borderRadius, typography } from '../design-system/tokens';
 
 interface PreferenceCardProps {
   preference: PreferenceWithHistory;
@@ -7,14 +7,13 @@ interface PreferenceCardProps {
 }
 
 const cardStyle: React.CSSProperties = {
-  padding: spacing.sm,
+  padding: `${spacing.xs}px ${spacing.sm}px`,
   borderRadius: borderRadius.md,
   backgroundColor: colors.surface,
-  boxShadow: shadows.subtle,
   display: 'flex',
   justifyContent: 'space-between',
   alignItems: 'center',
-  marginBottom: spacing.xs,
+  marginBottom: 4,
   transition: 'background-color 300ms ease',
 };
 
@@ -26,17 +25,19 @@ const highlightedCardStyle: React.CSSProperties = {
 const keyValueStyle: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
-  gap: 2,
+  gap: 1,
 };
 
 const keyStyle: React.CSSProperties = {
-  fontSize: typography.sizes.sm,
+  fontSize: typography.sizes.xs,
   color: colors.textSecondary,
   fontWeight: typography.weights.medium,
+  textTransform: 'uppercase' as const,
+  letterSpacing: '0.04em',
 };
 
 const valueStyle: React.CSSProperties = {
-  fontSize: typography.sizes.base,
+  fontSize: typography.sizes.sm,
   color: colors.text,
   fontWeight: typography.weights.normal,
 };
@@ -46,7 +47,7 @@ const badgeStyle: React.CSSProperties = {
   fontWeight: typography.weights.semibold,
   padding: `2px ${spacing.xs}px`,
   borderRadius: borderRadius.full,
-  backgroundColor: colors.champagne,
+  backgroundColor: colors.background,
   color: colors.softBurgundy,
   whiteSpace: 'nowrap',
 };

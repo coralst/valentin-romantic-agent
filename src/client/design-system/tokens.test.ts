@@ -2,8 +2,6 @@ import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
 import { colors, typography, spacing, animation, borderRadius, shadows, breakpoints } from './tokens';
 
-// --- 5.3: Unit tests for design tokens ---
-
 describe('design tokens', () => {
   it('exports all expected token groups', () => {
     expect(colors).toBeDefined();
@@ -15,10 +13,10 @@ describe('design tokens', () => {
     expect(breakpoints).toBeDefined();
   });
 
-  it('all color tokens are valid hex or CSS color values', () => {
-    const hexOrCssColor = /^#[0-9A-Fa-f]{3,8}$|^rgb|^hsl|^[a-z]+$/;
+  it('all color tokens are valid hex, CSS color, or gradient values', () => {
+    const validColor = /^#[0-9A-Fa-f]{3,8}$|^rgb|^hsl|^linear-gradient|^[a-z]+$/;
     for (const [key, value] of Object.entries(colors)) {
-      expect(value, `colors.${key} should be a valid color`).toMatch(hexOrCssColor);
+      expect(value, `colors.${key} should be a valid color`).toMatch(validColor);
     }
   });
 
@@ -53,10 +51,6 @@ describe('design tokens', () => {
     expect(colors.highlight).toBeDefined();
   });
 });
-
-// --- 5.4: Property test — Design token constraints (Property 11) ---
-// Feature: valentin-romantic-agent, Property 11: Design token constraints
-// **Validates: Requirements 5.3, 5.7**
 
 describe('Property 11: Design token constraints', () => {
   const spacingEntries = Object.entries(spacing) as [string, number][];

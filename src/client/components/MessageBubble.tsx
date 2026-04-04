@@ -1,39 +1,32 @@
 import type { ChatMessage } from '../../shared/interfaces/message';
-import { colors, spacing, borderRadius, typography } from '../design-system/tokens';
+import { colors, spacing, borderRadius, typography, shadows } from '../design-system/tokens';
 
 interface MessageBubbleProps {
   message: ChatMessage;
 }
 
-const baseStyle: React.CSSProperties = {
-  maxWidth: '75%',
-  padding: `${spacing.sm}px ${spacing.md}px`,
-  borderRadius: borderRadius.lg,
-  fontSize: typography.sizes.base,
-  lineHeight: typography.lineHeights.normal,
-  wordBreak: 'break-word',
-};
-
 const agentWrapperStyle: React.CSSProperties = {
   display: 'flex',
-  alignItems: 'flex-start',
+  alignItems: 'flex-end',
   gap: spacing.xs,
   justifyContent: 'flex-start',
   marginBottom: spacing.sm,
+  paddingRight: spacing.xxl,
 };
 
 const userWrapperStyle: React.CSSProperties = {
   display: 'flex',
   justifyContent: 'flex-end',
   marginBottom: spacing.sm,
+  paddingLeft: spacing.xxl,
 };
 
 const avatarStyle: React.CSSProperties = {
   width: 32,
   height: 32,
   borderRadius: borderRadius.full,
-  backgroundColor: colors.softBurgundy,
-  color: colors.warmIvory,
+  background: colors.accentGradient,
+  color: colors.textOnAccent,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -43,27 +36,44 @@ const avatarStyle: React.CSSProperties = {
   flexShrink: 0,
 };
 
+const agentBubbleStyle: React.CSSProperties = {
+  maxWidth: '80%',
+  padding: `${spacing.xs + 4}px ${spacing.sm}px`,
+  borderRadius: `${borderRadius.lg} ${borderRadius.lg} ${borderRadius.lg} 4px`,
+  fontSize: typography.sizes.base,
+  lineHeight: typography.lineHeights.normal,
+  wordBreak: 'break-word',
+  backgroundColor: colors.agentBubble,
+  color: colors.text,
+  boxShadow: shadows.bubble,
+};
+
+const userBubbleStyle: React.CSSProperties = {
+  maxWidth: '80%',
+  padding: `${spacing.xs + 4}px ${spacing.sm}px`,
+  borderRadius: `${borderRadius.lg} ${borderRadius.lg} 4px ${borderRadius.lg}`,
+  fontSize: typography.sizes.base,
+  lineHeight: typography.lineHeights.normal,
+  wordBreak: 'break-word',
+  background: colors.accentGradient,
+  color: colors.userBubbleText,
+};
+
 export function MessageBubble({ message }: MessageBubbleProps) {
   const isAgent = message.sender === 'agent';
-
-  const bubbleStyle: React.CSSProperties = {
-    ...baseStyle,
-    backgroundColor: isAgent ? colors.agentBubble : colors.userBubble,
-    color: colors.text,
-  };
 
   if (isAgent) {
     return (
       <div style={agentWrapperStyle} data-testid="message-bubble" data-sender="agent">
         <div style={avatarStyle} aria-hidden="true">V</div>
-        <div style={bubbleStyle}>{message.content}</div>
+        <div style={agentBubbleStyle}>{message.content}</div>
       </div>
     );
   }
 
   return (
     <div style={userWrapperStyle} data-testid="message-bubble" data-sender="user">
-      <div style={bubbleStyle}>{message.content}</div>
+      <div style={userBubbleStyle}>{message.content}</div>
     </div>
   );
 }

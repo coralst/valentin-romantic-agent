@@ -1,4 +1,4 @@
-import { colors, spacing, typography } from '../design-system/tokens';
+import { colors, spacing, typography, borderRadius } from '../design-system/tokens';
 
 type Panel = 'chat' | 'profile';
 
@@ -9,20 +9,23 @@ interface MobileNavProps {
 
 const navStyle: React.CSSProperties = {
   display: 'flex',
-  borderBottom: `1px solid ${colors.border}`,
+  gap: 4,
+  padding: `${spacing.xs}px ${spacing.sm}px`,
   backgroundColor: colors.surface,
+  borderBottom: `1px solid ${colors.borderSubtle}`,
 };
 
 const tabBaseStyle: React.CSSProperties = {
   flex: 1,
-  padding: `${spacing.sm}px`,
+  padding: `${spacing.xs}px`,
   textAlign: 'center',
-  fontSize: typography.sizes.base,
+  fontSize: typography.sizes.sm,
   fontWeight: typography.weights.medium,
   fontFamily: typography.bodyFontFamily,
   cursor: 'pointer',
   border: 'none',
   backgroundColor: 'transparent',
+  borderRadius: borderRadius.md,
   transition: 'all 200ms ease',
 };
 
@@ -30,7 +33,7 @@ function getTabStyle(isActive: boolean): React.CSSProperties {
   return {
     ...tabBaseStyle,
     color: isActive ? colors.softBurgundy : colors.textSecondary,
-    borderBottom: isActive ? `2px solid ${colors.softBurgundy}` : '2px solid transparent',
+    backgroundColor: isActive ? colors.background : 'transparent',
     fontWeight: isActive ? typography.weights.semibold : typography.weights.medium,
   };
 }

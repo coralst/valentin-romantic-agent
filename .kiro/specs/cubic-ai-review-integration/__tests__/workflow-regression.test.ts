@@ -97,6 +97,26 @@ describe('merge gate must not break', () => {
     const d = evaluateMergeGate({ ...greenState(), comments: [cubicComment] });
     expect(d.mergeable).toBe(false); // no master-agent token present
   });
+
+  it('stays CLOSED when a Cubic comment merely QUOTES the approval token (Req 2.3)', () => {
+    // Cubic echoing the token in a summary must never satisfy the gate.
+    const cubicEcho = {
+      body: `## Cubic Review\n\nThe master will post ${APPROVAL_TOKEN} when ready.`,
+      authorLogin: CUBIC_AUTHOR,
+      isMasterAgent: false,
+    };
+    expect(evaluateMergeGate({ ...greenState(), comments: [cubicEcho] }).mergeable).toBe(false);
+  });
+
+  it('stays CLOSED when a sub-agent comment contains the token without master persona', () => {
+    // Same-account sub-agent comment: token present, but not a master-agent approval.
+    const subAgentEcho = {
+      body: `Thanks! Once ${APPROVAL_TOKEN} is posted we can merge.`,
+      authorLogin: 'coralst',
+      isMasterAgent: false,
+    };
+    expect(evaluateMergeGate({ ...greenState(), comments: [subAgentEcho] }).mergeable).toBe(false);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

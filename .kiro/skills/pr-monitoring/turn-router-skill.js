@@ -153,6 +153,11 @@ function subAgentsParticipated(comments) {
   if (!Array.isArray(comments)) return [];
   const seen = [];
   for (const c of comments) {
+    // A bot / third-party reviewer (e.g. Cubic) can quote or echo a persona
+    // header in its body; the persona regex would then wrongly credit it as a
+    // genuine sub-agent turn and satisfy the rubber-stamp gate on its own. Only
+    // our recognized personas — never a bot author — count as participation.
+    if (gate.isBotAuthor(c && c.authorLogin)) continue;
     const author = identifyAuthorPersona(c && c.body);
     if (author && author !== 'master-agent' && !seen.includes(author)) {
       seen.push(author);

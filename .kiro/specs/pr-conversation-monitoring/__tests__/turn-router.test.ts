@@ -146,6 +146,19 @@ describe('subAgentsParticipated', () => {
     ];
     expect(subAgentsParticipated(comments)).toEqual([]);
   });
+
+  it('does not count a bot comment that echoes a persona header as participation', () => {
+    // A Cubic bot comment quoting a sub-agent persona header must NOT be
+    // credited as a genuine sub-agent turn — participation is keyed on the
+    // recognized persona AND a non-bot authorLogin.
+    const comments = [
+      {
+        body: '**🏗️ System Architect** review summary (auto-generated)\n\nLGTM, no issues found.',
+        authorLogin: 'cubic-dev[bot]',
+      },
+    ];
+    expect(subAgentsParticipated(comments)).toEqual([]);
+  });
 });
 
 describe('evaluateConversationGate (merge backstop)', () => {
@@ -190,5 +203,22 @@ describe('evaluateConversationGate (merge backstop)', () => {
     const d = evaluateConversationGate({ comments, ciGreen: true, blockingIssues: 0 });
     expect(d.mergeable).toBe(false);
     expect(d.reasons.join(' ')).toMatch(/qa-agent/);
+  });
+
+  it('blocks a bot comment echoing a persona from satisfying the gate on its own', () => {
+    // The only non-master comment is authored by a bot (Cubic) that echoes a
+    // sub-agent persona header. It must not count as participation, so the
+    // rubber-stamp gate must still fire with the "no sub-agent participated"
+    // reason — proving the compose path (subAgentsParticipated + the gate).
+    const comments = [
+      {
+        body: '**🏗️ System Architect** automated review\n\nNo blocking issues.',
+        authorLogin: 'cubic-dev[bot]',
+      },
+      { body: buildApprovalComment({ ciGreen: true, blockingResolved: true, qaSignedOff: true }), authorLogin: 'coralst' },
+    ];
+    const d = evaluateConversationGate({ comments, ciGreen: true, blockingIssues: 0 });
+    expect(d.mergeable).toBe(false);
+    expect(d.reasons.join(' ')).toMatch(/no sub-agent participated/i);
   });
 });

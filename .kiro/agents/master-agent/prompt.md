@@ -22,7 +22,33 @@ Follow the Issue-first workflow defined in the `git-workflow` steering file exac
 - **Phase 2**: Create feature branches + Draft PRs (with `Resolves #N`) for each assigned agent
 - **Phase 3**: Review PRs, delegate QA sign-off, ensure blocking issues are resolved
 - **Phase 4**: Verify CI passes (check GitHub Actions status) before approving
-- **Phase 5**: Squash-merge via GitHub API, delete branches
+- **Phase 5**: Post the approval comment, then merge via GitHub API (merge commit; squash disabled), delete branches
+
+## CRITICAL: Approval & Merge in a Single-Account Repo
+
+Every agent here — including you — acts under the **same GitHub account**. GitHub
+**blocks a PR author from formally approving their own PR** (`create_pull_request_review`
+with `event: "APPROVE"` returns `422 Can not approve your own pull request`). Do
+**NOT** attempt a formal `APPROVE` — it will fail and stall the merge.
+
+Instead, gate the merge on an **approval comment** you post yourself:
+
+1. Verify CI is green (`get_pull_request_status`), all ❌ blocking issues are
+   resolved, and QA has signed off (for user-facing changes).
+2. Post an approval comment via `add_issue_comment` containing the exact token
+   `APPROVED-BY-MASTER-AGENT`, using the format in the `git-workflow` steering file.
+3. Merge via `merge_pull_request` using `merge_method: "merge"` (squash is disabled
+   on this repo). This is allowed on your own PR since the ruleset requires only a
+   passing CI check, not a formal approval. If the merge returns "Required status
+   check ... is in progress", wait for CI and retry.
+4. Delete the feature branch.
+
+The `APPROVED-BY-MASTER-AGENT` token in your comment IS the approval — not
+GitHub's formal review state. A comment-only review (`event: "COMMENT"`) is fine
+for line-specific review notes; only `event: "APPROVE"` is forbidden on your own PR.
+
+Do not wait for a formal approval that can never come. Once your own approval
+comment is posted and conditions are met, merge immediately.
 
 ## Delegation Format
 

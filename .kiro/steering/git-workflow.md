@@ -45,13 +45,41 @@ The PR is the "room" where coding and code review happen.
 
 ### Phase 5: Resolution
 
-15. **Master-agent** merges the PR via GitHub API (squash merge) once:
-    - CI passes
-    - At least one approving review from master-agent
+15. **Master-agent** merges the PR via GitHub API (`merge_method: "merge"` — this
+    repo has squash merges disabled) once:
+    - CI passes (the `E2E Tests (playwright)` status check is enforced by a repo ruleset)
+    - Master-agent has posted an **approval comment** carrying the token
+      `APPROVED-BY-MASTER-AGENT` (see "Approval in a single-account repo" below)
     - All ❌ blocking issues are resolved
     - QA-agent has signed off (for user-facing changes)
 16. Merging the PR auto-closes the linked Issue via `Resolves #N`
 17. Delete the feature branch after merge
+
+#### Approval in a single-account repo
+
+Every agent in this system acts under the **same GitHub account** (the repo
+owner). GitHub forbids a PR author from submitting a formal `APPROVE` review on
+their own PR — that API call returns `422 Can not approve your own pull request`.
+Waiting for a formal approval that can never arrive is what stalls the merge.
+
+To stay within GitHub's rules **without a second account**, approval is expressed
+as an explicit **approval comment** rather than GitHub's formal approve event:
+
+- The master-agent posts a normal PR comment (allowed on your own PR) containing
+  the machine-readable token `APPROVED-BY-MASTER-AGENT` once CI is green, all ❌
+  blocking issues are resolved, and QA has signed off.
+- This comment IS the approval gate. The merge step checks for the presence of
+  the token in a master-agent comment — not GitHub's approval count.
+- The master-agent then merges via `merge_pull_request`. This repo's ruleset does
+  NOT require a formal approval, so a self-merge is allowed — but it DOES require
+  the `E2E Tests (playwright)` status check to pass first. If the merge call
+  returns `Required status check ... is in progress`, wait for CI to finish and
+  retry; this is expected, not an error.
+
+A comment-only review (`create_pull_request_review` with `event: "COMMENT"`) is
+also permitted on your own PR and may be used for the line-specific review; only
+`event: "APPROVE"` is blocked. Never use `event: "APPROVE"` on your own PR — it
+will fail. Use the approval-comment token instead.
 
 ## Branch Strategy (Trunk-Based Development)
 
@@ -139,12 +167,27 @@ Agent personas:
 
 ### Merging PRs
 
-- Merge via GitHub API only (squash merge for clean history)
-- CI must pass before merge
-- At least one approving review comment from master-agent
+- Merge via GitHub API only (`merge_method: "merge"` — squash merges are disabled
+  on this repo; a squash attempt returns "Squash merges are not allowed")
+- CI must pass before merge (the `E2E Tests (playwright)` check is required by a ruleset)
+- Master-agent has posted an approval comment containing `APPROVED-BY-MASTER-AGENT`
+  (see "Approval in a single-account repo" in Phase 5 — never use a formal
+  `APPROVE` review on your own PR)
 - All ❌ blocking issues must be resolved
 - QA-agent sign-off required for user-facing changes
 - PR description quality signal updated to final state before merge
+
+#### Master-agent approval comment format
+
+```
+**👔 Master Agent** — Review Complete
+
+✅ CI green
+✅ All ❌ blocking issues resolved
+✅ QA signed off (for user-facing changes)
+
+APPROVED-BY-MASTER-AGENT 🟢 — merging.
+```
 
 ## CI/CD Pipeline
 

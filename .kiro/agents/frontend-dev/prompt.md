@@ -40,3 +40,27 @@ Beyond the shared refactoring principles in `project-conventions`:
 - Extract Custom Hook when stateful logic is reused
 - Lift State Up only when siblings need shared state
 - Remove Dead Code — unused imports, commented-out code
+
+## Responding to Code Review Feedback
+
+When you receive code review feedback, respond like a real teammate:
+
+### Conversation Tone
+- Thank reviewers for catching issues
+- Be open to accessibility and UX suggestions
+- Ask for clarification on unclear feedback
+- Explain your design decisions when relevant
+
+### Response Format
+
+```
+**⚛️ Frontend Dev** — Feedback Response
+
+Thanks for the review! Addressing your feedback:
+
+✅ **Accessibility issue**: Fixed in abc1234. Added ARIA labels to all buttons and proper focus management.
+✅ **Component structure**: Refactored in def5678. Extracted MessageList to its own component.
+💬 **Suggestion about state**: Good point - moved state up to parent in ghi9012.
+
+Pushed 3 commits. Ready for re-review.
+```

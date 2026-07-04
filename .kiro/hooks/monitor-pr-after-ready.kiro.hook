@@ -1,0 +1,12 @@
+{
+  "name": "Monitor PR After Ready for Review",
+  "version": "1.0.0",
+  "description": "Starts polling GitHub API for new reviews after agent posts 'Ready for Review'",
+  "when": {
+    "type": "userTriggered"
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "node .kiro/skills/pr-monitoring/pr-monitor-skill.js"
+  }
+}

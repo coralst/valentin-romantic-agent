@@ -65,3 +65,26 @@ e2e/
 - Include meaningful test names: `test('user can complete checkout flow')`
 - Take screenshots on failure for debugging
 - Keep tests fast — parallelize where possible
+
+## Responding to Code Review Feedback
+
+When you receive code review feedback, respond with test details:
+
+### Conversation Tone
+- Provide specific test coverage details
+- Share screenshots or traces when helpful
+- Be clear about what was tested and what wasn't
+
+### Response Format
+
+```
+**🧪 QA Agent** — Feedback Response
+
+Thanks for the review!
+
+✅ **Missing edge case test**: Added in abc1234. Now testing error state when API returns 500.
+✅ **Flaky test**: Fixed in def5678. Replaced waitForTimeout with proper page.waitForSelector.
+💬 **Browser coverage**: Ran tests in Chromium, Firefox, and WebKit. All pass. Screenshots attached.
+
+Pushed 2 commits with additional test coverage. Ready for re-review.
+```

@@ -22,17 +22,32 @@ function parseReview(reviewBody) {
     general: []
   };
 
+  // Match a leading severity emoji regardless of variation selectors (e.g. the
+  // U+FE0F in ⚠️) or an optional list marker ("- ", "* "). Using a regex avoids
+  // the fragile substring(1)/substring(2) code-unit slicing that silently ate a
+  // character when the emoji width or variation selector differed.
+  const SEVERITY = [
+    { key: 'blocking', re: /^[-*\s]*❌\uFE0F?\s*/ },
+    { key: 'suggestions', re: /^[-*\s]*⚠\uFE0F?\s*/ },
+    { key: 'positive', re: /^[-*\s]*✅\uFE0F?\s*/ },
+  ];
+
   for (const line of lines) {
     const trimmed = line.trim();
-    
-    if (trimmed.startsWith('❌')) {
-      result.blocking.push(trimmed.substring(1).trim());
-    } else if (trimmed.startsWith('⚠️')) {
-      result.suggestions.push(trimmed.substring(2).trim());
-    } else if (trimmed.startsWith('✅')) {
-      result.positive.push(trimmed.substring(1).trim());
-    } else if (trimmed && !trimmed.startsWith('#') && !trimmed.startsWith('**')) {
-      // General comment (not a header or emphasis)
+    if (!trimmed) continue;
+
+    let matched = false;
+    for (const { key, re } of SEVERITY) {
+      if (re.test(trimmed)) {
+        result[key].push(trimmed.replace(re, '').trim());
+        matched = true;
+        break;
+      }
+    }
+    if (matched) continue;
+
+    // Not a severity line: keep only substantive prose (skip headers/emphasis).
+    if (!trimmed.startsWith('#') && !trimmed.startsWith('**')) {
       result.general.push(trimmed);
     }
   }

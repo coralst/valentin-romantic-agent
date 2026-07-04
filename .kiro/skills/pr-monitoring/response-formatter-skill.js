@@ -64,9 +64,12 @@ function createResponseTemplate(agentType, blockingIssues = []) {
   template += `Thanks for the review! Here's what I've addressed:\n\n`;
 
   if (blockingIssues.length > 0) {
+    // Use a neutral "in progress" marker (▫️), NOT ✅ — a checkmark implies the
+    // fix is already verified, which is false in a fill-in template. The agent
+    // flips each item to ✅ only after the fix is committed.
     blockingIssues.forEach((issue, i) => {
-      template += `✅ **Issue ${i + 1}**: ${issue}\n`;
-      template += `   - Fixed in [commit hash]. [Explanation of fix]\n\n`;
+      template += `▫️ **Issue ${i + 1}**: ${issue}\n`;
+      template += `   - [ ] Fix in [commit hash]. [Explanation of fix]\n\n`;
     });
   }
 

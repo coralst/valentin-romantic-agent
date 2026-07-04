@@ -43,7 +43,13 @@ export interface BedrockClient {
   ): Promise<ToolUseResponse>;
 }
 
-const DEFAULT_MODEL_ID = 'anthropic.claude-3-haiku-20240307-v1:0';
+/**
+ * Default model. Claude 3 Haiku was retired ("Legacy") by the provider, so we
+ * target the current active Sonnet via its cross-region inference profile.
+ * Newer Claude models are only invokable through an inference-profile ID
+ * (region-prefixed), not a bare foundation-model ID.
+ */
+const DEFAULT_MODEL_ID = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0';
 
 /** Map ChatMessage array to Bedrock Converse API message format.
  *  Bedrock requires conversations to start with a user message,

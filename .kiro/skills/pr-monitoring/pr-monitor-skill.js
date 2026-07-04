@@ -43,6 +43,9 @@ function stateFile(prNumber) {
 function signalFile(prNumber) {
   return path.join(KIRO_DIR, `.pr-feedback-${prNumber}.json`);
 }
+function logFile(prNumber) {
+  return path.join(KIRO_DIR, `.pr-monitor-${prNumber}.log`);
+}
 
 // ── Config resolution ────────────────────────────────────────────────────────
 function getConfig() {
@@ -243,7 +246,14 @@ function writeMarker(cfg) {
 }
 
 function cleanup(prNumber) {
-  for (const f of [markerFile(prNumber), stateFile(prNumber), signalFile(prNumber)]) {
+  // Remove the log file too so both exit paths (this cleanup and the
+  // stop-pr-monitoring hook) leave the same clean state — no orphaned logs.
+  for (const f of [
+    markerFile(prNumber),
+    stateFile(prNumber),
+    signalFile(prNumber),
+    logFile(prNumber),
+  ]) {
     if (fs.existsSync(f)) fs.unlinkSync(f);
   }
 }
@@ -312,6 +322,7 @@ module.exports = {
   markerFile,
   stateFile,
   signalFile,
+  logFile,
   hasNewFeedback,
   isApproved,
   latestTimestamp,

@@ -1,4 +1,5 @@
 {
+  "enabled": true,
   "name": "Handle PR Feedback",
   "version": "2.0.0",
   "description": "Invoked when the poller has written a per-PR feedback signal file. Reads the parsed findings and has the owning agent respond to each blocking (❌) and suggestion (⚠️) item.",

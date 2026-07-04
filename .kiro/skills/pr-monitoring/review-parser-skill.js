@@ -92,6 +92,59 @@ function formatForAgent(parsedReviews) {
   return message;
 }
 
+/**
+ * The GitHub login/author identity Cubic posts under. Configurable because Cubic's
+ * bot identity can change; documented in the cubic-ai-review-integration spec.
+ */
+const CUBIC_AUTHOR = 'cubic-dev-ai[bot]';
+
+/**
+ * Classify a comment's author as one of the recognized reviewers.
+ * @param {string|undefined} authorLogin
+ * @param {object} [opts] - { masterAgentLogin, cubicAuthor }
+ * @returns {'cubic'|'master-agent'|'unknown'}
+ */
+function classifyAuthor(authorLogin, opts = {}) {
+  const cubic = (opts.cubicAuthor || CUBIC_AUTHOR).toLowerCase();
+  const login = (authorLogin || '').toLowerCase();
+  if (!login) return 'unknown';
+  if (login === cubic || login.includes('cubic')) return 'cubic';
+  if (opts.masterAgentLogin && login === opts.masterAgentLogin.toLowerCase()) {
+    return 'master-agent';
+  }
+  return 'unknown';
+}
+
+/**
+ * Ownership map: file path prefix → owning sub-agent. Mirrors architecture.md.
+ */
+const OWNERSHIP = [
+  ['src/client/design-system/', 'ui-designer'],
+  ['src/client/components/', 'frontend-dev'],
+  ['src/client/hooks/', 'frontend-dev'],
+  ['src/client/context/', 'frontend-dev'],
+  ['src/client/App.tsx', 'frontend-dev'],
+  ['src/client/main.tsx', 'frontend-dev'],
+  ['src/server/', 'backend-dev'],
+  ['src/shared/', 'system-architect'],
+  ['e2e/', 'qa-agent'],
+  ['playwright.config.ts', 'qa-agent'],
+];
+
+/**
+ * Attribute a file path to an owning agent, or null when it cannot be uniquely
+ * attributed (caller routes null to the master-agent for triage).
+ * @param {string|undefined} filePath
+ * @returns {string|null}
+ */
+function attributeOwner(filePath) {
+  if (!filePath || typeof filePath !== 'string') return null;
+  for (const [prefix, owner] of OWNERSHIP) {
+    if (filePath.startsWith(prefix)) return owner;
+  }
+  return null;
+}
+
 // CLI usage
 if (require.main === module) {
   const reviewBody = process.argv[2];
@@ -105,4 +158,11 @@ if (require.main === module) {
   console.log(JSON.stringify(parsed, null, 2));
 }
 
-module.exports = { parseReview, parseReviews, formatForAgent };
+module.exports = {
+  parseReview,
+  parseReviews,
+  formatForAgent,
+  classifyAuthor,
+  attributeOwner,
+  CUBIC_AUTHOR,
+};

@@ -76,4 +76,20 @@ describe('MessageBubble', () => {
     expect(bubble.textContent).not.toContain('V');
     expect(bubble.textContent).toContain('Hi there');
   });
+
+  it('exposes full agent message content even when animating (a11y, no regression)', () => {
+    const msg: ChatMessage = {
+      id: '3',
+      sessionId: 's1',
+      sender: 'agent',
+      content: 'This should be fully readable by screen readers',
+      timestamp: new Date().toISOString(),
+    };
+    // Animated: the visually-hidden span must still carry the complete text.
+    render(<MessageBubble message={msg} animate />);
+    const bubble = screen.getByTestId('message-bubble');
+    expect(bubble.textContent).toContain(
+      'This should be fully readable by screen readers',
+    );
+  });
 });

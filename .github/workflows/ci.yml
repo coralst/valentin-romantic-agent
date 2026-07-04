@@ -1,13 +1,18 @@
 name: CI/CD
 
 on:
+  # Run on PRs (against main) and on direct pushes to main only. Feature-branch
+  # pushes are covered by the PR event, so this avoids running CI twice per PR
+  # (a push build + a pull_request build) with two separate status contexts.
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
     branches: [main]
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # Key on the PR head ref when present so the push and pull_request events for
+  # the same branch share a group and de-duplicate instead of running twice.
+  group: ci-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -48,6 +53,23 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run smoke-test
+
+  workflow-regression:
+    name: Workflow Automation Regression (unit tier)
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Runs on EVERY PR (not path-filtered) so the merge-gate + conversation
+      # machinery is always covered by the main CI surface, not only by the
+      # separate path-filtered workflow. This closes the gap where a red
+      # regression tier could not block a merge.
+      - run: npx vitest --run .kiro/specs/cubic-ai-review-integration/__tests__ .kiro/specs/pr-conversation-monitoring/__tests__
 
   build:
     name: Build (vite)

@@ -3,6 +3,10 @@ name: Workflow Automation Regression
 # Guardrail (cubic-ai-review-integration Req 11–13): whenever a PR touches the
 # agentic workflow-automation content, verify the multi-agent conversation flow and
 # the merge gate machinery still work — so master can never silently break again.
+#
+# NOTE: The deterministic unit tier ALSO runs as the `workflow-regression` job in
+# ci.yml on every PR, so it is covered by the main CI surface regardless of paths.
+# This path-filtered workflow additionally carries the self-cleaning LIVE tier.
 
 on:
   pull_request:
@@ -13,7 +17,9 @@ on:
       - '.kiro/hooks/**'
       - '.kiro/skills/pr-monitoring/**'
       - '.kiro/specs/cubic-ai-review-integration/**'
+      - '.kiro/specs/pr-conversation-monitoring/**'
       - '.github/workflows/workflow-automation-regression.yml'
+      - '.github/workflows/ci.yml'
 
 concurrency:
   group: wf-regression-${{ github.ref }}

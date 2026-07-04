@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { configDefaults } from 'vitest/config';
 import path from 'path';
 
 export default defineConfig({
@@ -26,6 +27,8 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test-setup.ts'],
-    exclude: ['node_modules', 'e2e/**'],
+    // Preserve Vitest's built-in excludes (node_modules, dist, .idea, etc.)
+    // instead of replacing them; only add the Playwright e2e dir on top.
+    exclude: [...configDefaults.exclude, 'e2e/**'],
   },
 });

@@ -12,7 +12,7 @@ const panelStyle: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   height: '100%',
-  backgroundColor: colors.surface,
+  backgroundColor: colors.background,
 };
 
 export function ChatPanel() {

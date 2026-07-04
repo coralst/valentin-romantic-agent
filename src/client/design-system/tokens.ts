@@ -1,30 +1,38 @@
 /**
- * Design tokens for Valentin — warm, sophisticated, romantic palette.
+ * Design tokens for Valentin — modern, warm, sophisticated romantic palette.
  * All spacing values follow an 8px grid. Animation durations stay within 200–400ms.
  */
 
 export const colors = {
   // Core palette
-  dustyRose: '#C4A0A5',
-  champagne: '#F5E6CC',
-  softBurgundy: '#8B3A4A',
-  warmIvory: '#FAF6F0',
+  dustyRose: '#D4A0A8',
+  champagne: '#F7EDE2',
+  softBurgundy: '#9B3A52',
+  warmIvory: '#FDFAF7',
   warmTaupe: '#B8A99A',
   deepPlum: '#5C2434',
-  blush: '#E8C4C8',
-  cream: '#FFF8F0',
+  blush: '#F2D4D8',
+  cream: '#FFF9F5',
 
   // Semantic tokens
-  agentBubble: '#F5E6CC',
-  userBubble: '#C4A0A5',
-  background: '#FAF6F0',
+  agentBubble: '#FFFFFF',
+  userBubble: '#9B3A52',
+  userBubbleText: '#FFFFFF',
+  background: '#F8F5F2',
   surface: '#FFFFFF',
-  text: '#3D2B2B',
-  textSecondary: '#7A6565',
-  border: '#E0D5CC',
-  highlight: '#E8C4C8',
-  error: '#C0392B',
-  success: '#5C8A5C',
+  surfaceElevated: 'rgba(255, 255, 255, 0.85)',
+  text: '#2D2024',
+  textSecondary: '#8A7A7E',
+  textOnAccent: '#FFFFFF',
+  border: '#EDE6E0',
+  borderSubtle: '#F2ECE7',
+  highlight: '#F2D4D8',
+  error: '#D94452',
+  success: '#4A9B6A',
+
+  // Gradient accents
+  accentGradient: 'linear-gradient(135deg, #9B3A52 0%, #C4566E 100%)',
+  headerGradient: 'linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(248,245,242,0.9) 100%)',
 } as const;
 
 export const typography = {
@@ -33,8 +41,8 @@ export const typography = {
   sizes: {
     xs: '0.75rem',
     sm: '0.875rem',
-    base: '1rem',
-    md: '1.125rem',
+    base: '0.9375rem',
+    md: '1.0625rem',
     lg: '1.25rem',
     xl: '1.5rem',
     xxl: '2rem',
@@ -75,17 +83,21 @@ export const animation = {
 } as const;
 
 export const borderRadius = {
-  sm: '4px',
-  md: '8px',
-  lg: '12px',
-  xl: '16px',
+  sm: '6px',
+  md: '10px',
+  lg: '16px',
+  xl: '20px',
+  xxl: '24px',
   full: '9999px',
 } as const;
 
 export const shadows = {
-  card: '0 2px 8px rgba(61, 43, 43, 0.08)',
-  cardHover: '0 4px 16px rgba(61, 43, 43, 0.12)',
-  subtle: '0 1px 3px rgba(61, 43, 43, 0.06)',
+  card: '0 1px 3px rgba(45, 32, 36, 0.06), 0 4px 12px rgba(45, 32, 36, 0.04)',
+  cardHover: '0 2px 8px rgba(45, 32, 36, 0.08), 0 8px 24px rgba(45, 32, 36, 0.06)',
+  subtle: '0 1px 2px rgba(45, 32, 36, 0.04)',
+  bubble: '0 1px 4px rgba(45, 32, 36, 0.06)',
+  input: '0 2px 8px rgba(45, 32, 36, 0.04)',
+  header: '0 1px 0 rgba(45, 32, 36, 0.06)',
 } as const;
 
 export const breakpoints = {

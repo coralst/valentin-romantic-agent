@@ -73,6 +73,22 @@ from the natural-voice exemplars in each agent prompt. In supervised mode
 `invokeSubAgent` is unavailable, so the master drives turns manually; the hooks
 still apply.
 
+### When the gate blocks
+
+A refused merge is expected behaviour, not a bug. `evaluateConversationGate`
+returns `{ mergeable: false, reasons[] }` when the conversation is not properly
+closed — typically one of:
+
+- the last comment is a sub-agent's (the master has not closed yet),
+- a tagged sub-agent never replied (`allTaggedResponded` reports it),
+- the closing comment lacks a valid `APPROVED-BY-MASTER-AGENT` token, or
+- CI is not green.
+
+The corrective turn is always the same: the master ensures every tagged agent
+has replied (invoke any that are still owed), then posts the closing comment
+carrying the token so the master has the last word. Only then is the merge
+retried. The `pre-merge-conversation-gate` hook enforces this automatically.
+
 ## Conversation style
 
 Write like a real developer in a real PR review — prose, not fill-in-the-blank

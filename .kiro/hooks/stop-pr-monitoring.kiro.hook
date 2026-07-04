@@ -1,12 +1,13 @@
 {
+  "enabled": true,
   "name": "Stop PR Monitoring",
-  "version": "1.0.0",
-  "description": "Terminates PR polling when APPROVE review detected or PR is closed",
+  "version": "2.0.0",
+  "description": "Terminates the background poller for a SPECIFIC PR (by PR_NUMBER) using the PID recorded in its per-PR marker file, then clears that PR's marker/state/signal/log files. Scoped to one PR so concurrent monitors for other PRs keep running.",
   "when": {
     "type": "userTriggered"
   },
   "then": {
     "type": "runCommand",
-    "command": "pkill -f 'pr-monitor-skill.js' || true"
+    "command": "M=.kiro/.pr-monitoring-active-${PR_NUMBER}.json; if [ -f \"$M\" ]; then PID=$(node -e \"try{process.stdout.write(String(require('./'+process.argv[1]).pid||''))}catch(e){}\" \"$M\" 2>/dev/null); [ -n \"$PID\" ] && kill \"$PID\" 2>/dev/null; fi; rm -f .kiro/.pr-monitoring-active-${PR_NUMBER}.json .kiro/.pr-monitoring-state-${PR_NUMBER}.json .kiro/.pr-feedback-${PR_NUMBER}.json .kiro/.pr-monitor-${PR_NUMBER}.log 2>/dev/null; echo \"stopped monitoring for PR ${PR_NUMBER}\"; true"
   }
 }

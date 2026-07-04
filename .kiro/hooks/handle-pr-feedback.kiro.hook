@@ -1,12 +1,12 @@
 {
   "name": "Handle PR Feedback",
-  "version": "1.0.0",
-  "description": "Invoked when new PR review feedback is detected, parses and delivers to agent",
+  "version": "2.0.0",
+  "description": "Invoked when the poller has written a per-PR feedback signal file. Reads the parsed findings and has the owning agent respond to each blocking (❌) and suggestion (⚠️) item.",
   "when": {
     "type": "userTriggered"
   },
   "then": {
     "type": "askAgent",
-    "prompt": "You have new code review feedback on your PR. Parse the review comments and respond to each blocking issue (❌) and suggestion (⚠️). Use the review-parser skill to extract structured feedback, then post your response addressing each point. Be collegial and appreciative in your response."
+    "prompt": "New code review feedback was detected on your PR. Read the parsed feedback signal file at `.kiro/.pr-feedback-<PR_NUMBER>.json` (it was written by the pr-monitor skill and contains reviews already parsed into blocking/suggestions/positive by review-parser-skill.js). For each ❌ blocking issue, either push a commit that fixes it or post a documented explanation. For each ⚠️ suggestion, apply it or note why you deferred it. Then post a single response comment using response-formatter-skill.js (which sets your persona emoji and appends the 'Ready for re-review' signal) via the GitHub Power. Be collegial and appreciative. Do NOT approve or merge your own PR — only the master-agent posts the APPROVED-BY-MASTER-AGENT token."
   }
 }

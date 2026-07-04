@@ -1,12 +1,13 @@
 {
+  "enabled": true,
   "name": "Monitor PR After Ready for Review",
-  "version": "1.0.0",
-  "description": "Starts polling GitHub API for new reviews after agent posts 'Ready for Review'",
+  "version": "2.0.0",
+  "description": "Starts a detached background poller that watches the current PR for new review feedback and writes a per-PR signal file when feedback arrives. Runs detached so it never blocks the agent. Requires PR_NUMBER, REPO_OWNER, REPO_NAME in the environment.",
   "when": {
     "type": "userTriggered"
   },
   "then": {
     "type": "runCommand",
-    "command": "node .kiro/skills/pr-monitoring/pr-monitor-skill.js"
+    "command": "nohup node .kiro/skills/pr-monitoring/pr-monitor-skill.js --watch > .kiro/.pr-monitor-${PR_NUMBER:-unknown}.log 2>&1 & echo \"pr-monitor started (pid $!) for PR ${PR_NUMBER:-unknown}\""
   }
 }

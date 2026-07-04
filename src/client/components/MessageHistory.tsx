@@ -20,10 +20,17 @@ export function MessageHistory({ messages }: MessageHistoryProps) {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
 
+  const lastMessage = messages[messages.length - 1];
+
   return (
     <div role="log" style={containerStyle} aria-label="Message history">
       {messages.map((msg) => (
-        <MessageBubble key={msg.id} message={msg} />
+        <MessageBubble
+          key={msg.id}
+          message={msg}
+          // Only the newest message animates; earlier ones render fully.
+          animate={msg.id === lastMessage?.id && msg.sender === 'agent'}
+        />
       ))}
       <div ref={bottomRef} />
     </div>

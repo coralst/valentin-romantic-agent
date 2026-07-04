@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   isPreferenceCategory,
   getCategoryLabel,
+  preferenceCategoryCount,
 } from '../category-helpers';
 import { PREFERENCE_CATEGORIES } from '../categories';
 
@@ -29,5 +30,17 @@ describe('getCategoryLabel', () => {
 
   it('returns undefined for an unknown category', () => {
     expect(getCategoryLabel('weather')).toBeUndefined();
+  });
+});
+
+describe('preferenceCategoryCount', () => {
+  it('matches the length of the category constant', () => {
+    expect(preferenceCategoryCount()).toBe(PREFERENCE_CATEGORIES.length);
+  });
+
+  it('returns a positive integer', () => {
+    const count = preferenceCategoryCount();
+    expect(count).toBeGreaterThan(0);
+    expect(Number.isInteger(count)).toBe(true);
   });
 });

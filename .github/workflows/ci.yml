@@ -16,16 +16,21 @@ concurrency:
   cancel-in-progress: true
 
 # NOTE ON REQUIRED CHECKS (path-aware CI without breaking the merge gate):
-# This workflow has NO workflow-level `paths:` filter on purpose. Individual
-# heavy jobs (smoke/build/e2e) are gated with JOB-LEVEL `if:` conditions driven
-# by the always-running `changes` detector below.
+# This workflow has NO workflow-level `paths:` filter on purpose. The two heavy
+# required jobs (build/e2e) ALWAYS RUN and always report `success` — the
+# path-awareness is applied at the STEP level, not by skipping the job.
 #   - A workflow-level path skip leaves a required check stuck in "Expected" /
 #     pending forever -> PR becomes unmergeable.
-#   - A JOB-LEVEL `if:` skip reports the check as "Skipped", which branch
-#     protection / rulesets count as PASSED.
-# So the four required check names (Lint, Unit Tests, Build, E2E) are always
-# reported on every run, whether the job executes or is skipped. This needs NO
-# ruleset/admin change.
+#   - A JOB-LEVEL `if:` skip reports the check as "Skipped". This repo's RULESET
+#     treats a skipped required check as NOT satisfied (it wants a `success`
+#     conclusion), so job-level skips made every .kiro/**- or docs-only PR
+#     unmergeable ("N of N required status checks are expected").
+#   - Therefore build/e2e run unconditionally (subject only to their upstreams
+#     passing) and use STEP-LEVEL `if:` guards keyed off the `changes` detector:
+#     when no relevant app code changed, the heavy steps are skipped and a cheap
+#     no-op step reports the job green. The four required check names (Lint,
+#     Unit Tests, Build, E2E) thus always conclude `success` on a healthy PR,
+#     whether or not app code changed. This needs NO ruleset/admin change.
 #
 # lint + test + workflow-regression always run: they are fast and they guard the
 # .kiro/** merge-gate machinery, which lives outside src/.
@@ -127,39 +132,59 @@ jobs:
     name: Build (vite)
     runs-on: ubuntu-latest
     needs: [changes, test, smoke]
-    # The bundle only changes with app code (frontend), shared deps, or build config.
-    # `always()` so a skipped `smoke` does not cascade-skip build; we still require
-    # `test` to pass and block if `smoke` actually ran and failed.
-    if: ${{ always() && needs.test.result == 'success' && needs.smoke.result != 'failure' && (needs.changes.outputs.frontend == 'true' || needs.changes.outputs.shared == 'true' || needs.changes.outputs.config == 'true') }}
+    # ALWAYS runs so the required check always concludes (a job-level skip would
+    # leave it unsatisfied under this repo's ruleset). `always()` so a skipped
+    # `smoke` does not cascade-skip it; still require `test` to pass and block if
+    # `smoke` actually ran and failed. The heavy build is STEP-gated below on
+    # whether app code (frontend), shared deps, or build config actually changed.
+    if: ${{ always() && needs.test.result == 'success' && needs.smoke.result != 'failure' }}
+    env:
+      RUN_BUILD: ${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.shared == 'true' || needs.changes.outputs.config == 'true' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
+        if: ${{ env.RUN_BUILD == 'true' }}
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - run: npm run build
+      - if: ${{ env.RUN_BUILD == 'true' }}
+        run: npm ci
+      - if: ${{ env.RUN_BUILD == 'true' }}
+        run: npm run build
       - uses: actions/upload-artifact@v4
+        if: ${{ env.RUN_BUILD == 'true' }}
         with:
           name: frontend-dist
           path: dist/
           retention-days: 7
+      - if: ${{ env.RUN_BUILD != 'true' }}
+        run: echo "No app code changed — build not required for this PR. Reporting success."
 
   e2e:
     name: E2E Tests (playwright)
     runs-on: ubuntu-latest
     needs: [changes, build]
-    # E2E boots its own dev servers (it does not consume the build artifact), so it
-    # can run even when `build` is skipped (e.g. a backend-only change). It runs
-    # whenever any app code or the e2e harness changes. `always()` prevents a
-    # skipped `build` from cascade-skipping e2e; a failed `build` still blocks it.
-    if: ${{ always() && needs.build.result != 'failure' && (needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.shared == 'true' || needs.changes.outputs.config == 'true' || needs.changes.outputs.e2e == 'true') }}
+    # ALWAYS runs so the required check always concludes (a job-level skip would
+    # leave it unsatisfied under this repo's ruleset). E2E boots its own dev
+    # servers (it does not consume the build artifact), so it can run even when
+    # `build` did no work. `always()` prevents a skipped/no-op `build` from
+    # cascade-skipping e2e; a failed `build` still blocks it. The heavy Playwright
+    # run is STEP-gated below on whether any app code or the e2e harness changed.
+    if: ${{ always() && needs.build.result != 'failure' }}
+    env:
+      RUN_E2E: ${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.shared == 'true' || needs.changes.outputs.config == 'true' || needs.changes.outputs.e2e == 'true' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
+        if: ${{ env.RUN_E2E == 'true' }}
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: npx playwright test
+      - if: ${{ env.RUN_E2E == 'true' }}
+        run: npm ci
+      - if: ${{ env.RUN_E2E == 'true' }}
+        run: npx playwright install --with-deps chromium
+      - if: ${{ env.RUN_E2E == 'true' }}
+        run: npx playwright test
+      - if: ${{ env.RUN_E2E != 'true' }}
+        run: echo "No app code or e2e harness changed — E2E not required for this PR. Reporting success."

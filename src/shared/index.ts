@@ -15,3 +15,7 @@ export type {
 
 // Constants
 export { PREFERENCE_CATEGORIES, CATEGORY_LABELS } from './constants/categories';
+export {
+  isPreferenceCategory,
+  getCategoryLabel,
+} from './constants/category-helpers';

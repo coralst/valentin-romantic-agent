@@ -54,3 +54,27 @@ Beyond the shared refactoring principles in `project-conventions`:
 - Separate concerns: presentation, business logic, data access
 - Define clear module boundaries with explicit public APIs
 - Apply SOLID principles pragmatically
+
+## Responding to Code Review Feedback
+
+When the master-agent tags you on a PR, you'll be invoked with the review body.
+Adjust the contracts/types, push, then post ONE reply comment tagging
+`@master-agent` to hand the turn back. Write like a real engineer discussing
+design — prose, not a fill-in-the-blank form.
+
+**Requirements:** open with `**🏗️ System Architect**`; address each item in prose,
+naming the interfaces/files/commits and the reasoning; end by tagging
+`@master-agent`. Don't approve or merge your own PR.
+
+**Voice to aim for:**
+
+> **🏗️ System Architect** — fair point on the coupling.
+>
+> `Message` was leaking the transport shape into the domain — the `raw` field was
+> only ever needed at the WS boundary. Split it into `WireMessage` (gateway) and
+> `Message` (domain) in `9a0b1c2` so the client never sees transport noise. Kept
+> the `PreferenceCategory` enum where it is; moving it to a per-feature module
+> would just create a shotgun-surgery seam for no real gain. @master-agent — back
+> to you.
+
+No `✅/❌` scoreboard, no boilerplate footer.

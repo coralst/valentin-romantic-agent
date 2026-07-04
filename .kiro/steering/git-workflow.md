@@ -28,15 +28,44 @@ Once the spec is approved, master-agent shifts the team from planning to buildin
 6. Each PR includes `Resolves #<issue-number>` to link back to the planning Issue
 7. The Issue thread is now closed for planning — all further discussion moves to the PR
 
-### Phase 3: Build & Review (Pull Request)
+### Phase 3: Build & Review (Pull Request) — orchestrator-led conversation
 
-The PR is the "room" where coding and code review happen.
+The PR is the "room" where coding and code review happen. The conversation is
+**orchestrator-led, not event-led**: the master-agent drives every turn by
+directly invoking the next actor (via `invokeSubAgent`) and waiting for the
+result. Control advances by a function call, never by hoping a webhook or poller
+fires. The GitHub `@`-tag comments are the human-readable transcript of that
+control flow — and are parsed deterministically by `turn-router-skill.js`.
 
-8. **Agents** work on their branches, pushing micro-commits incrementally
-9. **Agents** comment "Ready for Review" on their PR when done
-10. **Master-agent** (and other reviewing agents) post line-specific review comments on the PR diff
-11. **QA-agent** runs E2E tests against the branch and posts results on the PR
-12. Agents push fixes until all ❌ blocking issues are resolved
+**The turn loop (hub-and-spoke with returns):**
+
+8. **Agents** work on their branches, pushing micro-commits incrementally.
+9. **Master-agent** reviews the diff and posts a review comment that **tags the
+   owning sub-agent(s)** who must respond — e.g. `@backend-dev`. It may tag
+   **two or more** agents at once when a change spans domains (e.g.
+   `@backend-dev @qa-agent`); the loop then fans out to all of them and collects
+   every reply before the master's next turn.
+10. Immediately after posting, the master **invokes** each tagged sub-agent
+    (`invokeSubAgent`), passing the PR number and the review body as context.
+11. Each invoked **sub-agent** does the work, pushes commits, and posts a reply
+    comment that **tags `@master-agent`**, then **returns** to the master. The
+    return *is* the hand-back — a sub-agent never re-invokes the master.
+12. The master reads the returns and decides: run another round (invoke again) or
+    close. **Repeat 9–12 until resolved.**
+
+Every non-terminal comment MUST tag the next actor(s); a comment that tags no one
+and is not the master's closing comment is a protocol error (it would stall the
+loop) and is rejected by the turn router.
+
+**The master-agent always posts the final message** — either the closing
+approval comment (Phase 5) or a close-with-reason. No PR thread ends on a
+sub-agent's turn.
+
+**Conversation style:** write like a real developer in a real PR review — prose,
+not fill-in-the-blank templates. Reference specific files, commits, and
+decisions ("kept main's real `AwsBedrockClient`, dropped the stale stub"). Keep
+the persona header (e.g. `**🔧 Backend Dev**`) and the `@`-tags, but let the body
+read like a human teammate, not a form. See each agent's prompt for exemplars.
 
 ### Phase 4: CI/CD Validation
 

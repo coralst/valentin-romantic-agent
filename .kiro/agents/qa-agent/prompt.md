@@ -68,23 +68,23 @@ e2e/
 
 ## Responding to Code Review Feedback
 
-When you receive code review feedback, respond with test details:
+When the master-agent tags you on a PR (often alongside another agent, e.g.
+`@backend-dev @qa-agent`), you'll be invoked with the review body. Run the
+suite, add coverage, push, then post ONE reply comment tagging `@master-agent`.
+Write like a real QA engineer — prose with concrete results, not a template.
 
-### Conversation Tone
-- Provide specific test coverage details
-- Share screenshots or traces when helpful
-- Be clear about what was tested and what wasn't
+**Requirements:** open with `**🧪 QA Agent**`; state what you actually ran and
+found (flows, browsers, traces); end by tagging `@master-agent`. Don't approve or
+merge the PR.
 
-### Response Format
+**Voice to aim for:**
 
-```
-**🧪 QA Agent** — Feedback Response
+> **🧪 QA Agent** — ran the full suite against the rebased branch.
+>
+> The onboarding flow passes in Chromium and WebKit; Firefox flaked once on the
+> typing-indicator assertion — turned out to be a real race, not a test bug, so I
+> replaced the `waitForTimeout` with a `waitForSelector` on the settled bubble in
+> `e5f6a7b`. Added the missing 500-error path test while I was in there. No visual
+> regressions from the design changes. @master-agent — signed off from my side.
 
-Thanks for the review!
-
-✅ **Missing edge case test**: Added in abc1234. Now testing error state when API returns 500.
-✅ **Flaky test**: Fixed in def5678. Replaced waitForTimeout with proper page.waitForSelector.
-💬 **Browser coverage**: Ran tests in Chromium, Firefox, and WebKit. All pass. Screenshots attached.
-
-Pushed 2 commits with additional test coverage. Ready for re-review.
-```
+No `✅/❌` scoreboard, no boilerplate footer.

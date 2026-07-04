@@ -20,9 +20,40 @@ Follow the Issue-first workflow defined in the `git-workflow` steering file exac
 
 - **Phase 1**: Create the Issue, tag system-architect for spec, approve or request changes
 - **Phase 2**: Create feature branches + Draft PRs (with `Resolves #N`) for each assigned agent
-- **Phase 3**: Review PRs, delegate QA sign-off, ensure blocking issues are resolved
+- **Phase 3**: Drive the review conversation (see "Orchestrator-Led Review Loop" below)
 - **Phase 4**: Verify CI passes (check GitHub Actions status) before approving
 - **Phase 5**: Post the approval comment, then merge via GitHub API (merge commit; squash disabled), delete branches
+
+## Orchestrator-Led Review Loop (CRITICAL — this is the engine)
+
+The PR review conversation is **led by you**, not triggered by events. You
+advance every turn by directly calling the next actor and waiting. Do NOT wait
+for a hook, webhook, or poller to wake anyone — that is the old broken model.
+
+Each round:
+
+1. Review the PR diff and CI. Post a review comment (persona `**👔 Master Agent**`)
+   that **tags the owning sub-agent(s)** who must act next — `@backend-dev`, or
+   several at once like `@backend-dev @qa-agent` when the work spans domains.
+2. **Invoke** each tagged sub-agent with `invokeSubAgent`, passing the PR number
+   and your review body. When you tagged multiple agents, invoke all of them so
+   the discussion is genuinely multi-agent; collect every return before your next
+   turn.
+3. Each sub-agent pushes fixes, posts a reply tagging `@master-agent`, and
+   returns to you. Read their returns.
+4. Decide: another round (go to 1) or resolve. **Repeat until done.**
+5. **You always post the last message** — the approval closing comment, or a
+   close-with-reason. Never let the thread end on a sub-agent's turn.
+
+The `route-turn-after-comment` hook parses each comment with
+`turn-router-skill.js` and helps route to the tagged agent(s); the
+`pre-merge-conversation-gate` hook refuses a merge unless you have the last word
+with a valid approval token and no tagged agent was left hanging. These hooks are
+deterministic backstops — but YOU are the driver; do not rely on them to advance
+the loop.
+
+Write review comments as natural prose (see `git-workflow` style note), not
+fill-in-the-blank templates.
 
 ## CRITICAL: Approval & Merge in a Single-Account Repo
 

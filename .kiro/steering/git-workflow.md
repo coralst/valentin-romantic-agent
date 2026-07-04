@@ -76,7 +76,10 @@ read like a human teammate, not a form. See each agent's prompt for exemplars.
 
 15. **Master-agent** merges the PR via GitHub API (`merge_method: "merge"` — this
     repo has squash merges disabled) once:
-    - CI passes (the `E2E Tests (playwright)` status check is enforced by a repo ruleset)
+    - CI passes. The repo ruleset enforces **four** required checks: `Lint (tsc --noEmit)`,
+      `Unit Tests (vitest)`, `Build (vite)`, and `E2E Tests (playwright)`. Note that
+      when `ci.yml`'s path filters skip `Build`/`E2E` for a change touching no app
+      code, the skipped checks still count as satisfied by the ruleset.
     - Master-agent has posted an **approval comment** carrying the token
       `APPROVED-BY-MASTER-AGENT` (see "Approval in a single-account repo" below)
     - All ❌ blocking issues are resolved
@@ -101,9 +104,9 @@ as an explicit **approval comment** rather than GitHub's formal approve event:
   the token in a master-agent comment — not GitHub's approval count.
 - The master-agent then merges via `merge_pull_request`. This repo's ruleset does
   NOT require a formal approval, so a self-merge is allowed — but it DOES require
-  the `E2E Tests (playwright)` status check to pass first. If the merge call
-  returns `Required status check ... is in progress`, wait for CI to finish and
-  retry; this is expected, not an error.
+  the four status checks above to pass (or be skipped by the path filters) first.
+  If the merge call returns `Required status check ... is in progress`, wait for CI
+  to finish and retry; this is expected, not an error.
 
 A comment-only review (`create_pull_request_review` with `event: "COMMENT"`) is
 also permitted on your own PR and may be used for the line-specific review; only
@@ -198,7 +201,8 @@ Agent personas:
 
 - Merge via GitHub API only (`merge_method: "merge"` — squash merges are disabled
   on this repo; a squash attempt returns "Squash merges are not allowed")
-- CI must pass before merge (the `E2E Tests (playwright)` check is required by a ruleset)
+- CI must pass before merge (the ruleset requires four checks: `Lint (tsc --noEmit)`,
+  `Unit Tests (vitest)`, `Build (vite)`, `E2E Tests (playwright)`; path-skipped checks count as satisfied)
 - Master-agent has posted an approval comment containing `APPROVED-BY-MASTER-AGENT`
   (see "Approval in a single-account repo" in Phase 5 — never use a formal
   `APPROVE` review on your own PR)

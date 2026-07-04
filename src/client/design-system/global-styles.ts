@@ -30,6 +30,7 @@ export const globalStyles = `
     font-weight: ${typography.weights.bold};
     line-height: ${typography.lineHeights.tight};
     color: ${colors.text};
+    letter-spacing: -0.01em;
   }
 
   h1 { font-size: ${typography.sizes.xxl}; }
@@ -56,5 +57,27 @@ export const globalStyles = `
   input, textarea {
     font-family: ${typography.bodyFontFamily};
     font-size: ${typography.sizes.base};
+  }
+
+  ::selection {
+    background-color: ${colors.blush};
+    color: ${colors.text};
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: ${colors.border};
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: ${colors.warmTaupe};
   }
 `;

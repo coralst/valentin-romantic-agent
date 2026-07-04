@@ -8,6 +8,7 @@
     "dev:server": "npx tsx src/server/dev-server.ts",
     "dev:full": "npx tsx src/server/dev-server.ts & vite --open; wait",
     "smoke-test": "npx tsx scripts/smoke-test.ts",
+    "verify-model": "npx tsx scripts/verify-model.ts",
     "build": "vite build",
     "test": "vitest --run",
     "lint": "tsc --noEmit"

@@ -7,71 +7,97 @@
  * This abstracts away the GitHub API details from other skills.
  */
 
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 
-function exec(command) {
+/**
+ * Run `gh` with an argv array (never a shell string) so that comment bodies and
+ * other arguments cannot be interpreted by a shell. This closes the command
+ * injection surface that string interpolation opened (backticks, $(), quotes).
+ * @param {string[]} args - argv passed directly to gh
+ * @param {string} [stdin] - optional stdin payload (used for --body-file -)
+ * @returns {string|null} stdout, or null on failure
+ */
+function ghExec(args, stdin) {
   try {
-    return execSync(command, { 
+    return execFileSync('gh', args, {
       encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'ignore']
+      stdio: stdin !== undefined ? ['pipe', 'pipe', 'ignore'] : ['ignore', 'pipe', 'ignore'],
+      input: stdin,
     });
   } catch (error) {
-    console.error(`Command failed: ${command}`);
+    console.error(`gh command failed: gh ${args.join(' ')}`);
     console.error(error.message);
     return null;
   }
 }
 
 function fetchPRReviews(owner, repo, prNumber) {
-  const cmd = `gh pr view ${prNumber} --repo ${owner}/${repo} --json reviews --jq '.reviews'`;
-  const output = exec(cmd);
+  const output = ghExec([
+    'pr', 'view', String(prNumber), '--repo', `${owner}/${repo}`,
+    '--json', 'reviews', '--jq', '.reviews',
+  ]);
   return output ? JSON.parse(output) : [];
 }
 
 function fetchPRComments(owner, repo, prNumber) {
-  const cmd = `gh pr view ${prNumber} --repo ${owner}/${repo} --json comments --jq '.comments'`;
-  const output = exec(cmd);
+  const output = ghExec([
+    'pr', 'view', String(prNumber), '--repo', `${owner}/${repo}`,
+    '--json', 'comments', '--jq', '.comments',
+  ]);
   return output ? JSON.parse(output) : [];
 }
 
+/**
+ * Post a PR comment. The body is streamed via `--body-file -` (stdin) so
+ * multi-line markdown is preserved verbatim — no `\n`-escaping and no shell
+ * quoting. This fixes the defect where multi-line comments rendered as a single
+ * line containing literal "\n" sequences.
+ */
 function postPRComment(owner, repo, prNumber, body) {
-  const escapedBody = body.replace(/"/g, '\\"').replace(/\n/g, '\\n');
-  const cmd = `gh pr comment ${prNumber} --repo ${owner}/${repo} --body "${escapedBody}"`;
-  const output = exec(cmd);
+  const output = ghExec(
+    ['pr', 'comment', String(prNumber), '--repo', `${owner}/${repo}`, '--body-file', '-'],
+    body,
+  );
   return output !== null;
 }
 
 function getPRStatus(owner, repo, prNumber) {
-  const cmd = `gh pr view ${prNumber} --repo ${owner}/${repo} --json state,isDraft,reviewDecision --jq '{state: .state, isDraft: .isDraft, reviewDecision: .reviewDecision}'`;
-  const output = exec(cmd);
-  return output ? JSON.parse(output) : { state: 'UNKNOWN', isDraft: false, reviewDecision: null };
+  const output = ghExec([
+    'pr', 'view', String(prNumber), '--repo', `${owner}/${repo}`,
+    '--json', 'state,isDraft,reviewDecision',
+    '--jq', '{state: .state, isDraft: .isDraft, reviewDecision: .reviewDecision}',
+  ]);
+  return output
+    ? JSON.parse(output)
+    : { state: 'UNKNOWN', isDraft: false, reviewDecision: null };
 }
 
 function getPRDetails(owner, repo, prNumber) {
-  const cmd = `gh pr view ${prNumber} --repo ${owner}/${repo} --json number,title,state,author,reviews,comments,commits`;
-  const output = exec(cmd);
+  const output = ghExec([
+    'pr', 'view', String(prNumber), '--repo', `${owner}/${repo}`,
+    '--json', 'number,title,state,author,reviews,comments,commits',
+  ]);
   return output ? JSON.parse(output) : null;
 }
 
 function listOpenPRs(owner, repo) {
-  const cmd = `gh pr list --repo ${owner}/${repo} --json number,title,author,state --limit 50`;
-  const output = exec(cmd);
+  const output = ghExec([
+    'pr', 'list', '--repo', `${owner}/${repo}`,
+    '--json', 'number,title,author,state', '--limit', '50',
+  ]);
   return output ? JSON.parse(output) : [];
 }
 
-function approvePR(owner, repo, prNumber, comment = '') {
-  const commentFlag = comment ? `--body "${comment.replace(/"/g, '\\"')}"` : '';
-  const cmd = `gh pr review ${prNumber} --repo ${owner}/${repo} --approve ${commentFlag}`;
-  const output = exec(cmd);
-  return output !== null;
-}
-
-function requestChanges(owner, repo, prNumber, body) {
-  const escapedBody = body.replace(/"/g, '\\"').replace(/\n/g, '\\n');
-  const cmd = `gh pr review ${prNumber} --repo ${owner}/${repo} --request-changes --body "${escapedBody}"`;
-  const output = exec(cmd);
-  return output !== null;
-}
+/**
+ * NOTE: There is intentionally no `approvePR` helper here.
+ *
+ * In this single-account repo a formal `gh pr review --approve` on your own PR
+ * always fails with HTTP 422 ("Can not approve your own pull request"). Approval
+ * is expressed as a master-agent COMMENT carrying the APPROVED-BY-MASTER-AGENT
+ * token (see approval-gate-skill.js and git-workflow.md). Use `postPRComment`
+ * with that token instead. A `requestChanges` review is likewise omitted; the
+ * master-agent posts blocking (❌) items as a normal comment via `postPRComment`.
+ */
 
 // CLI usage
 if (require.main === module) {
@@ -109,12 +135,11 @@ if (require.main === module) {
 }
 
 module.exports = {
+  ghExec,
   fetchPRReviews,
   fetchPRComments,
   postPRComment,
   getPRStatus,
   getPRDetails,
   listOpenPRs,
-  approvePR,
-  requestChanges
 };

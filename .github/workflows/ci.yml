@@ -15,7 +15,57 @@ concurrency:
   group: ci-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
+# NOTE ON REQUIRED CHECKS (path-aware CI without breaking the merge gate):
+# This workflow has NO workflow-level `paths:` filter on purpose. Individual
+# heavy jobs (smoke/build/e2e) are gated with JOB-LEVEL `if:` conditions driven
+# by the always-running `changes` detector below.
+#   - A workflow-level path skip leaves a required check stuck in "Expected" /
+#     pending forever -> PR becomes unmergeable.
+#   - A JOB-LEVEL `if:` skip reports the check as "Skipped", which branch
+#     protection / rulesets count as PASSED.
+# So the four required check names (Lint, Unit Tests, Build, E2E) are always
+# reported on every run, whether the job executes or is skipped. This needs NO
+# ruleset/admin change.
+#
+# lint + test + workflow-regression always run: they are fast and they guard the
+# .kiro/** merge-gate machinery, which lives outside src/.
+
 jobs:
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      backend: ${{ steps.filter.outputs.backend }}
+      shared: ${{ steps.filter.outputs.shared }}
+      e2e: ${{ steps.filter.outputs.e2e }}
+      config: ${{ steps.filter.outputs.config }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            frontend:
+              - 'src/client/**'
+              - 'index.html'
+              - 'public/**'
+            backend:
+              - 'src/server/**'
+            shared:
+              - 'src/shared/**'
+            e2e:
+              - 'e2e/**'
+              - 'playwright.config.ts'
+            config:
+              - 'package.json'
+              - 'package-lock.json'
+              - 'vite.config.ts'
+              - 'tsconfig.json'
+
   lint:
     name: Lint (tsc --noEmit)
     runs-on: ubuntu-latest
@@ -44,7 +94,9 @@ jobs:
   smoke:
     name: Smoke Test (server boot)
     runs-on: ubuntu-latest
-    needs: lint
+    needs: [changes, lint]
+    # Server boot only matters when the server, its shared deps, or build config change.
+    if: ${{ always() && needs.lint.result == 'success' && (needs.changes.outputs.backend == 'true' || needs.changes.outputs.shared == 'true' || needs.changes.outputs.config == 'true') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -74,7 +126,11 @@ jobs:
   build:
     name: Build (vite)
     runs-on: ubuntu-latest
-    needs: [test, smoke]
+    needs: [changes, test, smoke]
+    # The bundle only changes with app code (frontend), shared deps, or build config.
+    # `always()` so a skipped `smoke` does not cascade-skip build; we still require
+    # `test` to pass and block if `smoke` actually ran and failed.
+    if: ${{ always() && needs.test.result == 'success' && needs.smoke.result != 'failure' && (needs.changes.outputs.frontend == 'true' || needs.changes.outputs.shared == 'true' || needs.changes.outputs.config == 'true') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -92,7 +148,12 @@ jobs:
   e2e:
     name: E2E Tests (playwright)
     runs-on: ubuntu-latest
-    needs: build
+    needs: [changes, build]
+    # E2E boots its own dev servers (it does not consume the build artifact), so it
+    # can run even when `build` is skipped (e.g. a backend-only change). It runs
+    # whenever any app code or the e2e harness changes. `always()` prevents a
+    # skipped `build` from cascade-skipping e2e; a failed `build` still blocks it.
+    if: ${{ always() && needs.build.result != 'failure' && (needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.shared == 'true' || needs.changes.outputs.config == 'true' || needs.changes.outputs.e2e == 'true') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

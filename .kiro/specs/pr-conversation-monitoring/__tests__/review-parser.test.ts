@@ -36,6 +36,17 @@ describe('parseReview severity extraction', () => {
     expect(parsed.suggestions).toEqual(['tighten types']);
   });
 
+  it('handles ordered-list (numbered) severity lines round-trip', () => {
+    // formatForAgent emits findings as "1. ❌ ...", so the parser must accept
+    // ordered markers too — otherwise its own output is not re-parseable.
+    const body = ['1. ❌ SQL injection risk', '2) ⚠️ memoize selector', '3. ✅ good coverage'].join('\n');
+    const parsed = parseReview(body);
+    expect(parsed.blocking).toEqual(['SQL injection risk']);
+    expect(parsed.suggestions).toEqual(['memoize selector']);
+    expect(parsed.positive).toEqual(['good coverage']);
+    expect(parsed.general).toHaveLength(0);
+  });
+
   it('routes prose to general but skips headers and emphasis', () => {
     const body = ['# Review', '**Bold header**', 'This is a general note.'].join('\n');
     const parsed = parseReview(body);

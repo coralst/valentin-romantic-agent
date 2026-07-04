@@ -15,8 +15,10 @@ import monitor from '../../../skills/pr-monitoring/pr-monitor-skill.js';
 // @ts-expect-error - JS skill module without type declarations
 import gate from '../../../skills/pr-monitoring/approval-gate-skill.js';
 
-const { hasNewFeedback, isApproved, latestTimestamp, markerFile, stateFile, signalFile } = monitor;
+const { hasNewFeedback, isApproved, latestTimestamp, markerFile, stateFile, signalFile, logFile, cleanup } =
+  monitor;
 const { buildApprovalComment } = gate;
+import * as fs from 'fs';
 
 describe('per-PR file keying (concurrency safety)', () => {
   it('produces distinct marker/state/signal paths per PR number', () => {
@@ -26,6 +28,23 @@ describe('per-PR file keying (concurrency safety)', () => {
     // marker/state/signal for the same PR are distinct files
     const set = new Set([markerFile(42), stateFile(42), signalFile(42)]);
     expect(set.size).toBe(3);
+  });
+
+  it('exposes a per-PR log path keyed by PR number', () => {
+    expect(logFile(42)).toContain('42');
+    expect(logFile(42)).not.toBe(logFile(43));
+  });
+});
+
+describe('cleanup removes ALL per-PR files including the log', () => {
+  it('deletes marker/state/signal/log so no residue is left behind', () => {
+    const pr = 987654;
+    const files = [markerFile(pr), stateFile(pr), signalFile(pr), logFile(pr)];
+    for (const f of files) fs.writeFileSync(f, 'x');
+    cleanup(pr);
+    for (const f of files) {
+      expect(fs.existsSync(f), `${f} should be removed by cleanup`).toBe(false);
+    }
   });
 });
 

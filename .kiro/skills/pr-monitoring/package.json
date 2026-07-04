@@ -1,0 +1,7 @@
+{
+  "name": "pr-monitoring-skills",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "CommonJS PR-monitoring skill scripts. The repo root package.json is an ES module ('type':'module'); these scripts use require()/module.exports and are executed directly by node (e.g. from .kiro hooks), so this local marker pins them to CommonJS regardless of the root setting."
+}

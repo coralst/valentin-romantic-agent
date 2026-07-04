@@ -1,194 +1,321 @@
 #!/usr/bin/env node
 
 /**
- * PR Monitor Skill - Polls GitHub API for new reviews
- * 
- * This script polls a PR every 1-2 minutes for new reviews.
- * When new reviews are detected, it triggers the handle-pr-feedback hook.
- * Stops when APPROVE review is detected or PR is closed.
- * 
- * Required env vars: GITHUB_TOKEN, PR_NUMBER, REPO_OWNER, REPO_NAME
+ * PR Monitor Skill - Detects new PR review feedback and signals the agent.
+ *
+ * Two run modes:
+ *   --once   Single poll, then exit. Intended to be invoked on a schedule by a
+ *            hook so nothing long-lived blocks the agent. This is the default in
+ *            CI/hook contexts.
+ *   --watch  Long-lived loop (setInterval). Only for a detached/background
+ *            process, never from a blocking `runCommand` hook.
+ *
+ * Detection is real, not a no-op: when new feedback is found the poller writes a
+ * per-PR signal file (.kiro/.pr-feedback-<pr>.json) containing the parsed
+ * findings. The handle-pr-feedback hook consumes that file and invokes the
+ * owning agent. All state/marker/signal files are keyed by PR number so multiple
+ * PRs can be monitored concurrently without clobbering each other.
+ *
+ * Stop conditions: the PR is closed/merged, OR a master-agent approval COMMENT
+ * carrying APPROVED-BY-MASTER-AGENT is present. (A formal GitHub APPROVE never
+ * occurs in this single-account repo — see approval-gate-skill.js.)
+ *
+ * Env: PR_NUMBER (required unless derivable), REPO_OWNER, REPO_NAME.
  */
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 
-// Configuration
-const POLL_INTERVAL_MS = 90 * 1000; // 1.5 minutes
-const MARKER_FILE = '.kiro/.pr-monitoring-active';
-const STATE_FILE = '.kiro/.pr-monitoring-state.json';
+const gate = require('./approval-gate-skill.js');
+const parser = require('./review-parser-skill.js');
 
-// Read from environment or state file
+const POLL_INTERVAL_MS = 90 * 1000; // 1.5 minutes (within the 1-2 min requirement)
+const KIRO_DIR = '.kiro';
+
+// ── Per-PR file paths (concurrency-safe) ─────────────────────────────────────
+function markerFile(prNumber) {
+  return path.join(KIRO_DIR, `.pr-monitoring-active-${prNumber}.json`);
+}
+function stateFile(prNumber) {
+  return path.join(KIRO_DIR, `.pr-monitoring-state-${prNumber}.json`);
+}
+function signalFile(prNumber) {
+  return path.join(KIRO_DIR, `.pr-feedback-${prNumber}.json`);
+}
+
+// ── Config resolution ────────────────────────────────────────────────────────
 function getConfig() {
   const prNumber = process.env.PR_NUMBER || getPRFromBranch();
-  const repoOwner = process.env.REPO_OWNER || 'coralst';
-  const repoName = process.env.REPO_NAME || 'valentin-romantic-agent';
-  
+  const repoOwner = process.env.REPO_OWNER;
+  const repoName = process.env.REPO_NAME;
   return { prNumber, repoOwner, repoName };
 }
 
+/**
+ * Derive a PR number from the current branch when possible. Supports both the
+ * legacy `pr-<n>` marker and the actual repo convention (feat/<domain>-<feat>)
+ * by asking gh for the PR associated with the current branch.
+ */
 function getPRFromBranch() {
   try {
-    // Try to find PR number from branch name or git config
-    const branch = execSync('git branch --show-current', { encoding: 'utf-8' }).trim();
-    // Extract number from branch if present (e.g., fix/pr-123 -> 123)
-    const match = branch.match(/pr-(\d+)/);
-    return match ? match[1] : null;
+    const branch = execFileSync('git', ['branch', '--show-current'], {
+      encoding: 'utf-8',
+    }).trim();
+    const marker = branch.match(/pr-(\d+)/);
+    if (marker) return marker[1];
+    // Ask gh which PR (if any) is open for this branch.
+    const out = execFileSync(
+      'gh',
+      ['pr', 'view', '--json', 'number', '--jq', '.number'],
+      { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] }
+    ).trim();
+    return out || null;
   } catch {
     return null;
   }
 }
 
-function loadState() {
+// ── State ─────────────────────────────────────────────────────────────────────
+function loadState(prNumber) {
   try {
-    if (fs.existsSync(STATE_FILE)) {
-      return JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
-    }
+    const f = stateFile(prNumber);
+    if (fs.existsSync(f)) return JSON.parse(fs.readFileSync(f, 'utf-8'));
   } catch {
-    // Ignore parse errors
+    // ignore parse errors, start fresh
   }
   return { lastReviewedAt: null, reviewCount: 0 };
 }
 
-function saveState(state) {
-  fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+function saveState(prNumber, state) {
+  fs.mkdirSync(KIRO_DIR, { recursive: true });
+  fs.writeFileSync(stateFile(prNumber), JSON.stringify(state, null, 2));
 }
 
-function fetchPRReviews(owner, repo, prNumber) {
-  try {
-    // Use GitHub CLI (gh) to fetch reviews
-    const cmd = `gh pr view ${prNumber} --repo ${owner}/${repo} --json reviews --jq '.reviews'`;
-    const output = execSync(cmd, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] });
-    return JSON.parse(output);
-  } catch (error) {
-    console.error('Failed to fetch PR reviews:', error.message);
-    return [];
+// ── GitHub reads (with simple backoff on transient failures) ─────────────────
+function ghJson(args, { retries = 3 } = {}) {
+  let attempt = 0;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    try {
+      const out = execFileSync('gh', args, {
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      return out ? JSON.parse(out) : null;
+    } catch (error) {
+      attempt += 1;
+      if (attempt > retries) {
+        console.error(`gh read failed after ${retries} retries:`, error.message);
+        return null;
+      }
+      // Exponential backoff for rate limits / transient network errors.
+      const waitMs = 2 ** attempt * 500;
+      sleepSync(waitMs);
+    }
   }
 }
 
-function getPRStatus(owner, repo, prNumber) {
-  try {
-    const cmd = `gh pr view ${prNumber} --repo ${owner}/${repo} --json state,reviews --jq '{state: .state, reviewCount: (.reviews | length)}'`;
-    const output = execSync(cmd, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] });
-    return JSON.parse(output);
-  } catch (error) {
-    console.error('Failed to get PR status:', error.message);
-    return { state: 'UNKNOWN', reviewCount: 0 };
+function sleepSync(ms) {
+  // Block synchronously without a busy loop (Atomics.wait on a throwaway buffer).
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function fetchReviews(owner, repo, prNumber) {
+  return (
+    ghJson([
+      'pr', 'view', String(prNumber), '--repo', `${owner}/${repo}`,
+      '--json', 'reviews', '--jq', '.reviews',
+    ]) || []
+  );
+}
+
+function fetchComments(owner, repo, prNumber) {
+  return (
+    ghJson([
+      'pr', 'view', String(prNumber), '--repo', `${owner}/${repo}`,
+      '--json', 'comments', '--jq', '.comments',
+    ]) || []
+  );
+}
+
+function fetchState(owner, repo, prNumber) {
+  const res = ghJson([
+    'pr', 'view', String(prNumber), '--repo', `${owner}/${repo}`,
+    '--json', 'state', '--jq', '.state',
+  ]);
+  return typeof res === 'string' ? res : 'UNKNOWN';
+}
+
+// ── Detection helpers (pure, exported for tests) ─────────────────────────────
+function hasNewFeedback(items, lastReviewedAt) {
+  if (!Array.isArray(items) || items.length === 0) return false;
+  if (!lastReviewedAt) return true;
+  const last = new Date(lastReviewedAt).getTime();
+  return items.some((it) => {
+    const ts = it.submittedAt || it.createdAt;
+    return ts && new Date(ts).getTime() > last;
+  });
+}
+
+/**
+ * Approval is a master-agent COMMENT bearing the token — never a formal APPROVE
+ * review (which is impossible on your own PR here). We also accept the rare case
+ * of a genuine formal APPROVE (e.g. a second human account) for forward-compat.
+ */
+function isApproved(reviews, comments) {
+  const approvedReview = (reviews || []).some((r) => r.state === 'APPROVED');
+  const approvedComment = (comments || []).some((c) =>
+    gate.isMasterApprovalComment({
+      body: c.body,
+      authorLogin: c.author && c.author.login,
+    })
+  );
+  return approvedReview || approvedComment;
+}
+
+function latestTimestamp(items) {
+  return items
+    .map((it) => it.submittedAt || it.createdAt)
+    .filter(Boolean)
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
+}
+
+/**
+ * Write the parsed feedback signal the handle-pr-feedback hook consumes. This is
+ * the real replacement for the old `console.log('would be triggered here')`.
+ */
+function writeFeedbackSignal(prNumber, payload) {
+  fs.mkdirSync(KIRO_DIR, { recursive: true });
+  fs.writeFileSync(signalFile(prNumber), JSON.stringify(payload, null, 2));
+}
+
+// ── Core single poll ─────────────────────────────────────────────────────────
+function pollOnce(cfg) {
+  const { prNumber, repoOwner, repoName } = cfg;
+  const prState = fetchState(repoOwner, repoName, prNumber);
+  if (prState === 'CLOSED' || prState === 'MERGED') {
+    cleanup(prNumber);
+    return { done: true, reason: prState };
+  }
+
+  const reviews = fetchReviews(repoOwner, repoName, prNumber);
+  const comments = fetchComments(repoOwner, repoName, prNumber);
+
+  if (isApproved(reviews, comments)) {
+    cleanup(prNumber);
+    return { done: true, reason: 'APPROVED' };
+  }
+
+  const state = loadState(prNumber);
+  const feedbackItems = [...reviews, ...comments];
+  if (hasNewFeedback(feedbackItems, state.lastReviewedAt)) {
+    const parsedReviews = parser.parseReviews(
+      reviews.map((r) => ({
+        id: r.id,
+        author: r.author,
+        state: r.state,
+        submittedAt: r.submittedAt,
+        body: r.body,
+      }))
+    );
+    writeFeedbackSignal(prNumber, {
+      prNumber,
+      repoOwner,
+      repoName,
+      detectedAt: new Date().toISOString(),
+      reviews: parsedReviews,
+    });
+    state.lastReviewedAt = latestTimestamp(feedbackItems) || state.lastReviewedAt;
+    state.reviewCount = reviews.length;
+    saveState(prNumber, state);
+    return { done: false, newFeedback: true };
+  }
+  return { done: false, newFeedback: false };
+}
+
+function writeMarker(cfg) {
+  fs.mkdirSync(KIRO_DIR, { recursive: true });
+  fs.writeFileSync(
+    markerFile(cfg.prNumber),
+    JSON.stringify({ ...cfg, pid: process.pid, startedAt: new Date().toISOString() }, null, 2)
+  );
+}
+
+function cleanup(prNumber) {
+  for (const f of [markerFile(prNumber), stateFile(prNumber), signalFile(prNumber)]) {
+    if (fs.existsSync(f)) fs.unlinkSync(f);
   }
 }
 
-function hasNewReviews(reviews, lastReviewedAt) {
-  if (!lastReviewedAt) return reviews.length > 0;
-  
-  const lastTime = new Date(lastReviewedAt);
-  return reviews.some(review => new Date(review.submittedAt) > lastTime);
-}
-
-function hasApprove(reviews) {
-  return reviews.some(review => review.state === 'APPROVED');
-}
-
-function startMonitoring() {
-  const { prNumber, repoOwner, repoName } = getConfig();
-  
-  if (!prNumber) {
-    console.error('PR_NUMBER not found. Set env var or ensure branch name includes PR number.');
+function resolveConfigOrExit() {
+  const cfg = getConfig();
+  if (!cfg.prNumber) {
+    console.error(
+      'PR_NUMBER not found. Set PR_NUMBER or run on a branch with an open PR.'
+    );
     process.exit(1);
   }
+  if (!cfg.repoOwner || !cfg.repoName) {
+    console.error(
+      'REPO_OWNER and REPO_NAME are required (no hardcoded fallback).'
+    );
+    process.exit(1);
+  }
+  return cfg;
+}
 
-  console.log(`Starting PR monitoring for ${repoOwner}/${repoName}#${prNumber}`);
-  console.log(`Polling every ${POLL_INTERVAL_MS / 1000} seconds...`);
+function runOnce() {
+  const cfg = resolveConfigOrExit();
+  writeMarker(cfg);
+  const result = pollOnce(cfg);
+  console.log(JSON.stringify({ pr: cfg.prNumber, ...result }));
+  process.exit(0);
+}
 
-  // Create marker file
-  fs.mkdirSync(path.dirname(MARKER_FILE), { recursive: true });
-  fs.writeFileSync(MARKER_FILE, JSON.stringify({
-    prNumber,
-    repoOwner,
-    repoName,
-    startedAt: new Date().toISOString()
-  }));
-
-  const poll = () => {
+function runWatch() {
+  const cfg = resolveConfigOrExit();
+  writeMarker(cfg);
+  console.log(
+    `Watching ${cfg.repoOwner}/${cfg.repoName}#${cfg.prNumber} every ${POLL_INTERVAL_MS / 1000}s`
+  );
+  const tick = () => {
     try {
-      const state = loadState();
-      const prStatus = getPRStatus(repoOwner, repoName, prNumber);
-
-      // Stop if PR is closed or merged
-      if (prStatus.state === 'CLOSED' || prStatus.state === 'MERGED') {
-        console.log(`PR is ${prStatus.state}. Stopping monitoring.`);
-        cleanup();
+      const result = pollOnce(cfg);
+      if (result.done) {
+        console.log(`Monitoring stopped: ${result.reason}`);
+        clearInterval(id);
         process.exit(0);
       }
-
-      const reviews = fetchPRReviews(repoOwner, repoName, prNumber);
-
-      // Stop if APPROVE found
-      if (hasApprove(reviews)) {
-        console.log('APPROVE review detected. Stopping monitoring.');
-        cleanup();
-        process.exit(0);
-      }
-
-      // Check for new reviews
-      if (hasNewReviews(reviews, state.lastReviewedAt)) {
-        console.log('New reviews detected! Triggering feedback handler...');
-        
-        // Update state
-        const latestReview = reviews.sort((a, b) => 
-          new Date(b.submittedAt) - new Date(a.submittedAt)
-        )[0];
-        
-        state.lastReviewedAt = latestReview.submittedAt;
-        state.reviewCount = reviews.length;
-        saveState(state);
-
-        // Trigger feedback handling (this would invoke the handle-pr-feedback hook)
-        console.log('Feedback handler would be triggered here.');
-        // In a real implementation, this would use Kiro's hook system
-      } else {
-        console.log(`No new reviews. (${reviews.length} total reviews checked)`);
-      }
-
     } catch (error) {
-      console.error('Error during polling:', error.message);
-      // Continue polling despite errors
+      console.error('Poll error (continuing):', error.message);
     }
   };
-
-  // Initial poll
-  poll();
-
-  // Set up interval
-  const intervalId = setInterval(poll, POLL_INTERVAL_MS);
-
-  // Handle cleanup on exit
-  process.on('SIGTERM', () => {
-    clearInterval(intervalId);
-    cleanup();
+  const id = setInterval(tick, POLL_INTERVAL_MS);
+  tick();
+  const stop = () => {
+    clearInterval(id);
+    cleanup(cfg.prNumber);
     process.exit(0);
-  });
-
-  process.on('SIGINT', () => {
-    clearInterval(intervalId);
-    cleanup();
-    process.exit(0);
-  });
+  };
+  process.on('SIGTERM', stop);
+  process.on('SIGINT', stop);
 }
 
-function cleanup() {
-  if (fs.existsSync(MARKER_FILE)) {
-    fs.unlinkSync(MARKER_FILE);
-  }
-  if (fs.existsSync(STATE_FILE)) {
-    fs.unlinkSync(STATE_FILE);
-  }
-}
-
-// Run if executed directly
 if (require.main === module) {
-  startMonitoring();
+  const mode = process.argv.includes('--watch') ? 'watch' : 'once';
+  if (mode === 'watch') runWatch();
+  else runOnce();
 }
 
-module.exports = { startMonitoring, fetchPRReviews, getPRStatus };
+module.exports = {
+  markerFile,
+  stateFile,
+  signalFile,
+  hasNewFeedback,
+  isApproved,
+  latestTimestamp,
+  pollOnce,
+  cleanup,
+  getConfig,
+};

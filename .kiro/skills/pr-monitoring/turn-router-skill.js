@@ -143,6 +143,30 @@ function lastWordIsMaster(comments) {
 }
 
 /**
+ * The set of sub-agents (everyone except the master) who authored at least one
+ * comment in the thread. Used to prove a genuine review actually happened rather
+ * than the master rubber-stamping its own PR with a lone approval comment.
+ * @param {Array<object>} comments - chronological [{ body, authorLogin }]
+ * @returns {string[]} sub-agent keys that participated, order-preserved
+ */
+function subAgentsParticipated(comments) {
+  if (!Array.isArray(comments)) return [];
+  const seen = [];
+  for (const c of comments) {
+    // A bot / third-party reviewer (e.g. Cubic) can quote or echo a persona
+    // header in its body; the persona regex would then wrongly credit it as a
+    // genuine sub-agent turn and satisfy the rubber-stamp gate on its own. Only
+    // our recognized personas — never a bot author — count as participation.
+    if (gate.isBotAuthor(c && c.authorLogin)) continue;
+    const author = identifyAuthorPersona(c && c.body);
+    if (author && author !== 'master-agent' && !seen.includes(author)) {
+      seen.push(author);
+    }
+  }
+  return seen;
+}
+
+/**
  * Verify every sub-agent the master (or anyone) tagged has a subsequent comment
  * authored by that agent — i.e. nobody was left hanging. Order matters: a reply
  * only counts if it appears AFTER the tag.
@@ -185,6 +209,14 @@ function evaluateConversationGate(state) {
   if (!last || !gate.isMasterApprovalComment({ body: last.body, authorLogin: last.authorLogin })) {
     reasons.push('The closing comment does not carry a valid APPROVED-BY-MASTER-AGENT token.');
   }
+  // A lone master approval with no sub-agent turn is a rubber-stamp, not a
+  // review. At least one owning sub-agent must have participated in the thread.
+  if (subAgentsParticipated(comments).length === 0) {
+    reasons.push(
+      'No sub-agent participated — the master cannot review and approve its own ' +
+        'work in one turn. Tag and engage the owning agent (e.g. @system-architect) first.'
+    );
+  }
   const tagged = allTaggedResponded(comments);
   if (!tagged.ok) {
     reasons.push(`Tagged agent(s) have not replied: ${tagged.awaiting.map((a) => '@' + a).join(', ')}.`);
@@ -216,6 +248,7 @@ module.exports = {
   identifyAuthorPersona,
   parseTurn,
   lastWordIsMaster,
+  subAgentsParticipated,
   allTaggedResponded,
   evaluateConversationGate,
 };

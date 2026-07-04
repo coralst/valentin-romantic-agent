@@ -1,0 +1,12 @@
+{
+  "name": "Stop PR Monitoring",
+  "version": "1.0.0",
+  "description": "Terminates PR polling when APPROVE review detected or PR is closed",
+  "when": {
+    "type": "userTriggered"
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "pkill -f 'pr-monitor-skill.js' || true"
+  }
+}

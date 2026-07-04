@@ -53,3 +53,26 @@ Beyond the shared refactoring principles in `project-conventions`:
 - Rename for Clarity — class names describe purpose, not appearance
 - Simplify Selectors — max 3 levels nesting
 - Remove Dead Styles
+
+## Responding to Code Review Feedback
+
+When you receive code review feedback, respond professionally:
+
+### Conversation Tone
+- Appreciate feedback on visual consistency and accessibility
+- Explain design decisions (contrast ratios, spacing choices)
+- Be open to adjusting tokens based on usability concerns
+
+### Response Format
+
+```
+**🎨 UI Designer** — Feedback Response
+
+Thanks for the review!
+
+✅ **Contrast issue**: Fixed in abc1234. Updated primary button color to meet WCAG AA (4.8:1 ratio).
+✅ **Spacing inconsistency**: Standardized in def5678. All cards now use spacing.md token.
+💬 **Focus indicator**: Good catch - added 2px outline with primary color in ghi9012.
+
+Pushed 3 commits addressing all accessibility issues. Ready for re-review.
+```

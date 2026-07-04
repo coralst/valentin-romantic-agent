@@ -20,6 +20,7 @@ const {
   identifyAuthorPersona,
   parseTurn,
   lastWordIsMaster,
+  subAgentsParticipated,
   allTaggedResponded,
   evaluateConversationGate,
 } = router;
@@ -130,6 +131,23 @@ describe('allTaggedResponded', () => {
   });
 });
 
+describe('subAgentsParticipated', () => {
+  it('lists sub-agents that authored a comment, excluding the master', () => {
+    const comments = [
+      { body: '**👔 Master Agent** — @system-architect please add the helpers' },
+      { body: '**🏗️ System Architect** — done in abc1234 @master-agent' },
+    ];
+    expect(subAgentsParticipated(comments)).toEqual(['system-architect']);
+  });
+
+  it('is empty when only the master has spoken', () => {
+    const comments = [
+      { body: buildApprovalComment({ ciGreen: true, blockingResolved: true, qaSignedOff: true }) },
+    ];
+    expect(subAgentsParticipated(comments)).toEqual([]);
+  });
+});
+
 describe('evaluateConversationGate (merge backstop)', () => {
   const goodThread = () => [
     { body: '**👔 Master Agent** — @backend-dev fix validation' },
@@ -152,6 +170,15 @@ describe('evaluateConversationGate (merge backstop)', () => {
   it('blocks when CI is not green', () => {
     const d = evaluateConversationGate({ comments: goodThread(), ciGreen: false, blockingIssues: 0 });
     expect(d.mergeable).toBe(false);
+  });
+
+  it('blocks a lone master approval with no sub-agent turn (rubber-stamp)', () => {
+    const comments = [
+      { body: buildApprovalComment({ ciGreen: true, blockingResolved: true, qaSignedOff: true }), authorLogin: 'coralst' },
+    ];
+    const d = evaluateConversationGate({ comments, ciGreen: true, blockingIssues: 0 });
+    expect(d.mergeable).toBe(false);
+    expect(d.reasons.join(' ')).toMatch(/no sub-agent participated/i);
   });
 
   it('blocks when a tagged agent never replied', () => {

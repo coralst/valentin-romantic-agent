@@ -38,3 +38,6 @@ blob-report/
 # Misc
 *.log
 npm-debug.log*
+
+# Playwright MCP session logs
+.playwright-mcp/

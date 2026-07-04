@@ -80,6 +80,11 @@ export class AwsBedrockClient implements BedrockClient {
     this.modelId = modelId ?? process.env.BEDROCK_MODEL_ID ?? DEFAULT_MODEL_ID;
   }
 
+  /** The Bedrock model id this client is configured to invoke. */
+  getModelId(): string {
+    return this.modelId;
+  }
+
   async generateResponse(
     messages: ChatMessage[],
     systemPrompt: string,
@@ -92,6 +97,11 @@ export class AwsBedrockClient implements BedrockClient {
         modelId: this.modelId,
         system,
         messages: bedrockMessages,
+        inferenceConfig: {
+          maxTokens: 512,
+          temperature: 0.8,
+          topP: 0.9,
+        },
       });
 
       const response = await this.client.send(command);

@@ -17,6 +17,15 @@
 const APPROVAL_TOKEN = 'APPROVED-BY-MASTER-AGENT';
 
 /**
+ * The master-agent persona signature that must accompany the approval token.
+ * The master-agent signs every review with the 👔 persona header (see the
+ * approval-comment format in git-workflow.md). Requiring this marker prevents a
+ * sub-agent — or a quoted/echoed token in some other comment — from satisfying
+ * the gate simply by containing the token string.
+ */
+const MASTER_PERSONA = /👔\s*master\s*agent/i;
+
+/**
  * Detect whether a body of text contains the master-agent approval token.
  * @param {string} body - a PR comment or review body
  * @returns {boolean}
@@ -27,25 +36,46 @@ function hasApprovalToken(body) {
 }
 
 /**
- * Determine whether an approval comment came from the master-agent.
- * The master-agent signs comments with the "Master Agent" persona. We accept
- * either the persona signature or an explicit authorIsMasterAgent flag.
- * @param {object} comment - { body, authorLogin, isMasterAgent }
- * @param {string} [ownerLogin] - the single account login (author of all comments)
+ * Heuristic: does this login look like a bot / third-party reviewer (e.g. the
+ * Cubic GitHub App) rather than one of our own agents? Such authors must NEVER
+ * be able to open the merge gate, even if their comment quotes the token.
+ * @param {string} [authorLogin]
  * @returns {boolean}
  */
-function isMasterApprovalComment(comment, ownerLogin) {
+function isBotAuthor(authorLogin) {
+  if (typeof authorLogin !== 'string' || authorLogin === '') return false;
+  const login = authorLogin.toLowerCase();
+  return login.endsWith('[bot]') || login.includes('cubic');
+}
+
+/**
+ * Determine whether an approval comment came from the master-agent.
+ *
+ * In a single-account repo the author login CANNOT distinguish the master-agent
+ * from a sub-agent (everything is authored by the repo owner). So token presence
+ * alone — or "authored by the owner" — is NOT sufficient: that would let any
+ * sub-agent comment, or a Cubic comment quoting the token, open the gate.
+ *
+ * We therefore require the approval token AND one of:
+ *   - an explicit, caller-verified `isMasterAgent` flag, or
+ *   - the master-agent persona signature (👔 Master Agent) in the body.
+ * A recognized bot/third-party author is rejected outright.
+ *
+ * @param {object} comment - { body, authorLogin, isMasterAgent }
+ * @returns {boolean}
+ */
+function isMasterApprovalComment(comment) {
   if (!comment || !hasApprovalToken(comment.body)) return false;
-  // In a single-account repo the author login is always the owner, so we
-  // identify the master-agent by its persona signature in the body, or an
-  // explicit flag set by the caller.
+  // Explicit, caller-verified master-agent authorship is the strongest signal.
   if (comment.isMasterAgent === true) return true;
-  if (typeof comment.body === 'string' && /master agent/i.test(comment.body)) {
+  // A third-party reviewer (Cubic, other bots) can never approve, even if it
+  // quotes the token in a summary comment. Checked before the persona heuristic
+  // so a bot cannot spoof the persona string either.
+  if (isBotAuthor(comment.authorLogin)) return false;
+  // Otherwise require the master-agent persona signature in the body.
+  if (typeof comment.body === 'string' && MASTER_PERSONA.test(comment.body)) {
     return true;
   }
-  // Fallback: if an ownerLogin is provided and matches, the token alone is
-  // sufficient (only the master-agent is instructed to post it).
-  if (ownerLogin && comment.authorLogin === ownerLogin) return true;
   return false;
 }
 
@@ -59,7 +89,6 @@ function isMasterApprovalComment(comment, ownerLogin) {
  * @param {boolean} state.qaSignedOff - QA sign-off (only required when isUserFacing)
  * @param {boolean} state.isUserFacing - whether the change is user-facing
  * @param {Array<object>} state.comments - PR comments [{ body, authorLogin, isMasterAgent }]
- * @param {string} [state.ownerLogin] - the single account login
  * @returns {{ mergeable: boolean, reasons: string[] }}
  */
 function evaluateMergeGate(state) {
@@ -80,7 +109,7 @@ function evaluateMergeGate(state) {
   }
 
   const comments = Array.isArray(s.comments) ? s.comments : [];
-  const approved = comments.some((c) => isMasterApprovalComment(c, s.ownerLogin));
+  const approved = comments.some((c) => isMasterApprovalComment(c));
   if (!approved) {
     reasons.push(
       `No master-agent approval comment found (missing ${APPROVAL_TOKEN} token).`
@@ -145,6 +174,7 @@ if (require.main === module) {
 module.exports = {
   APPROVAL_TOKEN,
   hasApprovalToken,
+  isBotAuthor,
   isMasterApprovalComment,
   evaluateMergeGate,
   isForbiddenSelfApproval,

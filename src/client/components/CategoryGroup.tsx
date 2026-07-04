@@ -13,10 +13,10 @@ interface CategoryGroupProps {
 }
 
 const groupStyle: React.CSSProperties = {
-  marginBottom: spacing.md,
+  marginBottom: spacing.sm,
   borderRadius: borderRadius.lg,
   backgroundColor: colors.surface,
-  boxShadow: shadows.card,
+  border: `1px solid ${colors.borderSubtle}`,
   overflow: 'hidden',
 };
 
@@ -24,27 +24,40 @@ const headerStyle: React.CSSProperties = {
   display: 'flex',
   justifyContent: 'space-between',
   alignItems: 'center',
-  padding: `${spacing.sm}px ${spacing.md}px`,
+  padding: `${spacing.xs + 4}px ${spacing.sm}px`,
   cursor: 'pointer',
-  backgroundColor: colors.cream,
+  backgroundColor: colors.surface,
   userSelect: 'none',
+  transition: 'background-color 150ms ease',
 };
 
 const labelStyle: React.CSSProperties = {
-  fontFamily: typography.headingFontFamily,
-  fontSize: typography.sizes.md,
+  fontFamily: typography.bodyFontFamily,
+  fontSize: typography.sizes.sm,
   fontWeight: typography.weights.semibold,
   color: colors.text,
+  display: 'flex',
+  alignItems: 'center',
+  gap: spacing.xs,
+};
+
+const chevronStyle: React.CSSProperties = {
+  fontSize: typography.sizes.xs,
+  color: colors.textSecondary,
+  transition: 'transform 200ms ease',
 };
 
 const countStyle: React.CSSProperties = {
-  fontSize: typography.sizes.sm,
+  fontSize: typography.sizes.xs,
   color: colors.textSecondary,
   fontWeight: typography.weights.medium,
+  backgroundColor: colors.background,
+  padding: `2px ${spacing.xs}px`,
+  borderRadius: borderRadius.full,
 };
 
 const listStyle: React.CSSProperties = {
-  padding: spacing.sm,
+  padding: `0 ${spacing.xs}px ${spacing.xs}px`,
 };
 
 export function CategoryGroup({ category, preferences, highlightedIds, onHighlightEnd }: CategoryGroupProps) {
@@ -62,7 +75,8 @@ export function CategoryGroup({ category, preferences, highlightedIds, onHighlig
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setIsOpen(!isOpen); }}
       >
         <span style={labelStyle}>
-          {isOpen ? '▾' : '▸'} {meta.label}
+          <span style={{ ...chevronStyle, transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>▸</span>
+          {meta.label}
         </span>
         <span style={countStyle}>{preferences.length}</span>
       </div>

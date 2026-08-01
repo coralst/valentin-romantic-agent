@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { ChatPanel } from './ChatPanel';
-import { ProfileDashboard } from './ProfileDashboard';
+import { PartnerProfilePanel } from './PartnerProfilePanel';
 import { MobileNav } from './MobileNav';
+import { ProfileStoreProvider } from '../context/profile-store-context';
+import { useChatContext } from '../context/chat-context';
 import { breakpoints, spacing, colors, typography, shadows } from '../design-system/tokens';
 
 const headerStyle: React.CSSProperties = {
@@ -74,6 +76,7 @@ const outerStyle: React.CSSProperties = {
 export function AppLayout() {
   const [isMobile, setIsMobile] = useState(false);
   const [activePanel, setActivePanel] = useState<'chat' | 'profile'>('chat');
+  const { state: chatState } = useChatContext();
 
   useEffect(() => {
     const mql = window.matchMedia(`(max-width: ${breakpoints.mobile - 1}px)`);
@@ -84,6 +87,12 @@ export function AppLayout() {
     return () => mql.removeEventListener('change', handler);
   }, []);
 
+  const profilePanel = (
+    <ProfileStoreProvider sessionId={chatState.sessionId}>
+      <PartnerProfilePanel />
+    </ProfileStoreProvider>
+  );
+
   if (isMobile) {
     return (
       <div style={outerStyle} data-testid="app-layout" data-layout="mobile">
@@ -93,7 +102,7 @@ export function AppLayout() {
         </header>
         <MobileNav activePanel={activePanel} onPanelChange={setActivePanel} />
         <div style={mobilePanelStyle}>
-          {activePanel === 'chat' ? <ChatPanel /> : <ProfileDashboard />}
+          {activePanel === 'chat' ? <ChatPanel /> : profilePanel}
         </div>
       </div>
     );
@@ -111,7 +120,7 @@ export function AppLayout() {
         </div>
         <div style={dividerStyle} />
         <div style={rightPanelStyle}>
-          <ProfileDashboard />
+          {profilePanel}
         </div>
       </div>
     </div>

@@ -1,0 +1,56 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options: [dev, staging, prod]
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run build:server
+
+      # Docker build + push to ECR
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+      - run: |
+          docker build -t ${{ steps.ecr.outputs.registry }}/valentin-backend:${{ github.sha }} .
+          docker push ${{ steps.ecr.outputs.registry }}/valentin-backend:${{ github.sha }}
+
+      # Update ECS service
+      - run: |
+          aws ecs update-service \
+            --cluster valentin-cluster-${{ github.event.inputs.environment || 'dev' }} \
+            --service valentin-service-${{ github.event.inputs.environment || 'dev' }} \
+            --force-new-deployment
+
+      # Deploy frontend to S3
+      - run: aws s3 sync dist/ s3://valentin-static-${{ github.event.inputs.environment || 'dev' }}/ --delete
+
+      # Invalidate CloudFront
+      - run: |
+          DIST_ID=$(aws cloudfront list-distributions --query "DistributionList.Items[?Comment=='valentin-${{ github.event.inputs.environment || 'dev' }}'].Id" --output text)
+          aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "/*"

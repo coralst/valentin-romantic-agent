@@ -268,8 +268,8 @@ export function ProfileField({ definition, value, onSave, onClear, isHighlighted
                 data-testid={`input-${definition.id}`}
               />
             )}
-            <button style={saveButtonStyle} onClick={handleSave} aria-label="Save">Save</button>
-            <button style={cancelButtonStyle} onClick={handleCancel} aria-label="Cancel">Cancel</button>
+            <button type="button" style={saveButtonStyle} onClick={handleSave} aria-label="Save">Save</button>
+            <button type="button" style={cancelButtonStyle} onClick={handleCancel} aria-label="Cancel">Cancel</button>
           </div>
           {value?.source === 'manual' && (
             <button
@@ -293,7 +293,7 @@ export function ProfileField({ definition, value, onSave, onClear, isHighlighted
                 {value.source === 'discovered' ? `${Math.round((value.confidence ?? 1) * 100)}%` : 'manual'}
               </span>
               {isTentative && (
-                <span style={{ ...badgeStyle, backgroundColor: colors.champagne, color: colors.warmTaupe }}>
+                <span style={{ ...badgeStyle, backgroundColor: colors.champagne, color: colors.softBurgundy }}>
                   tentative
                 </span>
               )}

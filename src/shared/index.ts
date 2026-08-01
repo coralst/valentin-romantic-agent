@@ -18,4 +18,5 @@ export { PREFERENCE_CATEGORIES, CATEGORY_LABELS } from './constants/categories';
 export {
   isPreferenceCategory,
   getCategoryLabel,
+  preferenceCategoryCount,
 } from './constants/category-helpers';

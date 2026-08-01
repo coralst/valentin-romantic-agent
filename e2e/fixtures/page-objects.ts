@@ -25,17 +25,25 @@ export class ChatPage {
 }
 
 /**
- * Page object for the Profile Dashboard — categories, cards, empty state.
+ * Page object for the Partner Profile Panel — avatar, fields, calendar, empty state.
  */
 export class ProfilePage {
   readonly categoryGroups: Locator;
   readonly preferenceCards: Locator;
   readonly emptyState: Locator;
+  readonly panel: Locator;
+  readonly avatar: Locator;
+  readonly completionSummary: Locator;
+  readonly occasionCalendar: Locator;
 
   constructor(private readonly page: Page) {
     this.categoryGroups = page.getByTestId('category-group');
     this.preferenceCards = page.getByTestId('preference-card');
-    this.emptyState = page.getByTestId('empty-state');
+    this.emptyState = page.getByTestId('empty-encouragement');
+    this.panel = page.getByTestId('partner-profile-panel');
+    this.avatar = page.getByTestId('partner-avatar');
+    this.completionSummary = page.getByTestId('completion-summary');
+    this.occasionCalendar = page.getByTestId('occasion-calendar');
   }
 }
 

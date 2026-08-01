@@ -1,34 +1,48 @@
 #!/usr/bin/env node
 import * as cdk from 'aws-cdk-lib';
-import { ComputeStack } from '../lib/compute-stack';
-import { CdnStack } from '../lib/cdn-stack';
-import { AuthStack } from '../lib/auth-stack';
+import { NetworkStack } from '../lib/network-stack';
+import { DataStack } from '../lib/data-stack';
+import { SafetyStack } from '../lib/safety-stack';
+import { MonitoringStack } from '../lib/monitoring-stack';
+import { getConfig } from '../config/environments';
 
 const app = new cdk.App();
-
 const env = app.node.tryGetContext('env') || 'dev';
-const awsEnv = {
-  account: process.env.CDK_DEFAULT_ACCOUNT,
-  region: process.env.CDK_DEFAULT_REGION || 'us-east-1',
+const config = getConfig(env);
+
+const stackEnv: cdk.Environment = {
+  region: config.region,
+  account: config.account ?? process.env.CDK_DEFAULT_ACCOUNT,
 };
 
-// Compute stack (ECS Fargate + ALB)
-const compute = new ComputeStack(app, `ValentinCompute-${env}`, {
-  environment: env,
-  env: awsEnv,
+const networkStack = new NetworkStack(app, `Valentin-Network-${env}`, {
+  config,
+  env: stackEnv,
+  description: `Valentin VPC and networking (${env})`,
 });
 
-// CDN stack (CloudFront + WAF + S3)
-new CdnStack(app, `ValentinCdn-${env}`, {
-  environment: env,
-  alb: compute.loadBalancer,
-  env: awsEnv,
+const dataStack = new DataStack(app, `Valentin-Data-${env}`, {
+  config,
+  env: stackEnv,
+  description: `Valentin DynamoDB and S3 storage (${env})`,
 });
 
-// Auth stack (Cognito)
-new AuthStack(app, `ValentinAuth-${env}`, {
-  environment: env,
-  env: awsEnv,
+const safetyStack = new SafetyStack(app, `Valentin-Safety-${env}`, {
+  config,
+  env: stackEnv,
+  description: `Valentin Bedrock Guardrails (${env})`,
 });
 
-app.synth();
+const monitoringStack = new MonitoringStack(app, `Valentin-Monitoring-${env}`, {
+  config,
+  env: stackEnv,
+  description: `Valentin CloudWatch monitoring (${env})`,
+});
+
+// Add dependencies — monitoring needs data stack for table name references
+monitoringStack.addStackDependency(dataStack);
+
+// Tag all resources
+cdk.Tags.of(app).add('Project', 'Valentin');
+cdk.Tags.of(app).add('Environment', env);
+cdk.Tags.of(app).add('ManagedBy', 'CDK');

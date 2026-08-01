@@ -1,27 +1,16 @@
-FROM node:22-slim AS builder
-
+FROM node:22-alpine AS builder
 WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci --production=false
+COPY package*.json ./
+RUN npm ci
+COPY tsconfig.json tsconfig.server.json ./
+COPY src/ src/
+RUN npx tsc --project tsconfig.server.json
 
-COPY tsconfig.server.json ./
-COPY src/ ./src/
-RUN npm run build:server
-
-# Production image
-FROM node:22-slim
-
+FROM node:22-alpine
 WORKDIR /app
-ENV NODE_ENV=production
-
-COPY package.json package-lock.json ./
+COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
-
-COPY --from=builder /app/dist-server ./dist-server
-
+COPY --from=builder /app/dist-server/ ./dist-server/
 EXPOSE 3001
-
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-  CMD node -e "fetch('http://localhost:3001/api/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
-
-CMD ["node", "--experimental-specifier-resolution=node", "dist-server/server/prod-server.js"]
+HEALTHCHECK --interval=30s --timeout=5s CMD wget -qO- http://localhost:3001/api/health || exit 1
+CMD ["node", "dist-server/server/dev-server.js"]

@@ -1,32 +1,44 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Tear down Valentin infrastructure using CDK
+# Usage: ./scripts/teardown.sh [env]
+# env: dev (default), staging, prod
+
 ENV="${1:-dev}"
+REGION="${AWS_REGION:-us-east-1}"
 
-echo "=== Tearing down Valentin ${ENV} environment ==="
-echo ""
-echo "WARNING: This will destroy all infrastructure for the '${ENV}' environment."
-echo "Data in DynamoDB and S3 will be preserved (RETAIN policy)."
-echo ""
-read -p "Are you sure? (yes/no): " CONFIRM
+echo "=== Tearing down Valentin infrastructure (env=$ENV, region=$REGION) ==="
 
-if [ "${CONFIRM}" != "yes" ]; then
-  echo "Aborted."
-  exit 0
+# Validate environment
+if [[ ! "$ENV" =~ ^(dev|staging|prod)$ ]]; then
+  echo "ERROR: Invalid environment '$ENV'. Must be dev, staging, or prod."
+  exit 1
 fi
 
-cd infra
+# Safety check for production
+if [[ "$ENV" == "prod" ]]; then
+  echo ""
+  echo "WARNING: You are about to destroy PRODUCTION infrastructure!"
+  echo "This will permanently delete all data including DynamoDB tables and S3 buckets."
+  echo ""
+  read -rp "Type 'destroy-production' to confirm: " confirm
+  if [[ "$confirm" != "destroy-production" ]]; then
+    echo "Aborted."
+    exit 1
+  fi
+fi
 
-echo "[1/3] Destroying CDN stack..."
-npx cdk destroy "ValentinCdn-${ENV}" --context env="${ENV}" --force
+cd "$(dirname "$0")/../infra"
 
-echo "[2/3] Destroying Auth stack..."
-npx cdk destroy "ValentinAuth-${ENV}" --context env="${ENV}" --force
+# Destroy all stacks
+echo "--- Destroying stacks..."
+npx cdk destroy --all \
+  --context env="$ENV" \
+  --force
 
-echo "[3/3] Destroying Compute stack..."
-npx cdk destroy "ValentinCompute-${ENV}" --context env="${ENV}" --force
+# Clean up outputs file
+rm -f "cdk-outputs-${ENV}.json"
 
-echo "=== Teardown of ${ENV} complete ==="
 echo ""
-echo "Note: ECR repository, S3 bucket, and User Pool were retained."
-echo "Delete them manually if no longer needed."
+echo "=== Teardown complete (env=$ENV) ==="

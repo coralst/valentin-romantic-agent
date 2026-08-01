@@ -5,9 +5,11 @@ import {
   type SystemContentBlock,
   type Tool,
   type ContentBlock,
+  type GuardrailConfiguration,
 } from '@aws-sdk/client-bedrock-runtime';
 import type { ChatMessage } from '../../shared/interfaces/message';
 import { LlmError } from '../../shared/errors/llm-error';
+import { config } from '../config';
 
 /** Schema definition for a Bedrock tool-use call */
 export interface ToolSchema {
@@ -74,6 +76,16 @@ function extractTextFromBlocks(blocks: ContentBlock[] | undefined): string {
     .join('');
 }
 
+/** Build guardrail config if environment variables are set */
+function buildGuardrailConfig(): GuardrailConfiguration | undefined {
+  if (!config.bedrockGuardrailId) return undefined;
+  return {
+    guardrailIdentifier: config.bedrockGuardrailId,
+    guardrailVersion: config.bedrockGuardrailVersion ?? 'DRAFT',
+    trace: 'enabled' as const,
+  };
+}
+
 /** Real AWS Bedrock client using the Converse API */
 export class AwsBedrockClient implements BedrockClient {
   private readonly client: BedrockRuntimeClient;
@@ -108,9 +120,17 @@ export class AwsBedrockClient implements BedrockClient {
           // Claude Sonnet 4.5 rejects temperature and topP together — use temperature only.
           temperature: 0.8,
         },
+        guardrailConfig: buildGuardrailConfig(),
       });
 
       const response = await this.client.send(command);
+
+      // Handle guardrail intervention — return the blocked message instead of throwing
+      if (response.stopReason === 'guardrail_intervened') {
+        const blockedContent = extractTextFromBlocks(response.output?.message?.content);
+        return { content: blockedContent || 'I can only help with learning about your partner. Could you tell me more about their preferences?' };
+      }
+
       const content = extractTextFromBlocks(response.output?.message?.content);
 
       if (!content) {
@@ -167,9 +187,19 @@ export class AwsBedrockClient implements BedrockClient {
           tools: [tool],
           toolChoice: { tool: { name: toolSchema.name } },
         },
+        guardrailConfig: buildGuardrailConfig(),
       });
 
       const response = await this.client.send(command);
+
+      // Handle guardrail intervention — return empty extraction
+      if (response.stopReason === 'guardrail_intervened') {
+        return {
+          toolName: toolSchema.name,
+          input: { preferences: [] },
+        };
+      }
+
       const blocks = response.output?.message?.content;
 
       if (!blocks) {

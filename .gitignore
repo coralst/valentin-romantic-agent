@@ -5,9 +5,15 @@ node_modules/
 
 # Build output
 dist/
+dist-server/
 build/
 out/
 *.tsbuildinfo
+
+# CDK
+infra/cdk.out/
+infra/cdk-outputs-*.json
+infra/node_modules/
 
 # Environment
 .env

@@ -23,13 +23,16 @@ function parseReview(reviewBody) {
   };
 
   // Match a leading severity emoji regardless of variation selectors (e.g. the
-  // U+FE0F in ⚠️) or an optional list marker ("- ", "* "). Using a regex avoids
-  // the fragile substring(1)/substring(2) code-unit slicing that silently ate a
-  // character when the emoji width or variation selector differed.
+  // U+FE0F in ⚠️) or an optional list marker: bullet ("- ", "* ") OR ordered
+  // ("1. ", "2) "). Ordered markers matter because formatForAgent emits findings
+  // as numbered lists, so parser output must be round-trip parseable. Using a
+  // regex avoids the fragile substring(1)/substring(2) code-unit slicing that
+  // silently ate a character when the emoji width or variation selector differed.
+  const LIST_MARKER = /^[-*\s]*(?:\d+[.)]\s*)?/.source;
   const SEVERITY = [
-    { key: 'blocking', re: /^[-*\s]*❌\uFE0F?\s*/ },
-    { key: 'suggestions', re: /^[-*\s]*⚠\uFE0F?\s*/ },
-    { key: 'positive', re: /^[-*\s]*✅\uFE0F?\s*/ },
+    { key: 'blocking', re: new RegExp(`${LIST_MARKER}❌\uFE0F?\\s*`) },
+    { key: 'suggestions', re: new RegExp(`${LIST_MARKER}⚠\uFE0F?\\s*`) },
+    { key: 'positive', re: new RegExp(`${LIST_MARKER}✅\uFE0F?\\s*`) },
   ];
 
   for (const line of lines) {

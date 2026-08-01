@@ -48,9 +48,9 @@ test.describe('Onboarding Flow', () => {
     await expect(agentBubble).toHaveCount(initialAgentCount + 1, { timeout: 15_000 });
   });
 
-  test('Profile Dashboard shows empty state initially', async ({ page }) => {
+  test('Profile Panel shows empty encouragement initially', async ({ page }) => {
     // At desktop width both panels are visible, so the empty state should show
     await expect(app.profile.emptyState).toBeVisible({ timeout: 10_000 });
-    await expect(app.profile.emptyState).toContainText('No preferences yet');
+    await expect(app.profile.emptyState).toContainText('Keep chatting with Valentin');
   });
 });

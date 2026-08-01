@@ -59,7 +59,7 @@ describe('AppLayout', () => {
     const layout = screen.getByTestId('app-layout');
     expect(layout.getAttribute('data-layout')).toBe('desktop');
     expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
-    expect(screen.getByTestId('profile-dashboard')).toBeInTheDocument();
+    expect(screen.getByTestId('partner-profile-panel')).toBeInTheDocument();
   });
 
   it('renders MobileNav at mobile width', () => {
@@ -77,12 +77,12 @@ describe('AppLayout', () => {
 
     // Default is chat
     expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
-    expect(screen.queryByTestId('profile-dashboard')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('partner-profile-panel')).not.toBeInTheDocument();
 
     // Switch to profile
     await user.click(screen.getByRole('tab', { name: 'Profile' }));
     expect(screen.queryByTestId('chat-panel')).not.toBeInTheDocument();
-    expect(screen.getByTestId('profile-dashboard')).toBeInTheDocument();
+    expect(screen.getByTestId('partner-profile-panel')).toBeInTheDocument();
 
     // Switch back to chat
     await user.click(screen.getByRole('tab', { name: 'Chat' }));

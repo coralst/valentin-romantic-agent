@@ -20,3 +20,12 @@ export function isPreferenceCategory(
 export function getCategoryLabel(value: string): string | undefined {
   return isPreferenceCategory(value) ? CATEGORY_LABELS[value].label : undefined;
 }
+
+/**
+ * The total number of defined preference categories. A tiny convenience for
+ * callers that render progress ("3 of N categories captured") without importing
+ * and measuring the constant array themselves.
+ */
+export function preferenceCategoryCount(): number {
+  return PREFERENCE_CATEGORIES.length;
+}

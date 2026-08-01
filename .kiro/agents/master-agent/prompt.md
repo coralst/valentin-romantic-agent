@@ -69,9 +69,10 @@ Instead, gate the merge on an **approval comment** you post yourself:
 2. Post an approval comment via `add_issue_comment` containing the exact token
    `APPROVED-BY-MASTER-AGENT`, using the format in the `git-workflow` steering file.
 3. Merge via `merge_pull_request` using `merge_method: "merge"` (squash is disabled
-   on this repo). This is allowed on your own PR since the ruleset requires only a
-   passing CI check, not a formal approval. If the merge returns "Required status
-   check ... is in progress", wait for CI and retry.
+   on this repo). This is allowed on your own PR since the ruleset requires passing
+   CI checks (Lint, Unit Tests, Build, E2E — path-skipped ones count as satisfied),
+   not a formal approval. If the merge returns "Required status check ... is in
+   progress", wait for CI and retry.
 4. Delete the feature branch.
 
 The `APPROVED-BY-MASTER-AGENT` token in your comment IS the approval — not

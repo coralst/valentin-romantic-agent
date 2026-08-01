@@ -9,6 +9,32 @@ import { WsGateway } from './api/ws-gateway';
 import { createHttpRoutes } from './api/http-routes';
 import type { ServerEvent } from '../shared/interfaces/ws-events';
 
+/**
+ * Resolve the session a ServerEvent should be broadcast to.
+ *
+ * Different event types carry the sessionId in different places:
+ * - `typing_start` / `typing_stop` put it at the top level of the payload
+ * - `agent_message` nests it inside `payload.message`
+ * - `preference_update` nests it inside `payload.preference`
+ *
+ * Returns undefined when no session can be determined, in which case the event
+ * cannot be routed to any client.
+ */
+export function resolveBroadcastSessionId(
+  payload: Record<string, unknown>,
+): string | undefined {
+  const nested = (key: string): string | undefined =>
+    (payload[key] as Record<string, unknown> | undefined)?.sessionId as
+      | string
+      | undefined;
+
+  return (
+    (payload.sessionId as string | undefined) ??
+    nested('message') ??
+    nested('preference')
+  );
+}
+
 /** Initialize all dependencies and start the server */
 export function createServer() {
   // Persistence
@@ -26,11 +52,9 @@ export function createServer() {
   const emit = (event: ServerEvent): void => {
     if (!gateway) return;
 
-    // Broadcast to session — sessionId may be at top level or nested in message
-    const payload = event.payload as Record<string, unknown>;
-    const sessionId =
-      (payload.sessionId as string | undefined) ??
-      ((payload.message as Record<string, unknown> | undefined)?.sessionId as string | undefined);
+    const sessionId = resolveBroadcastSessionId(
+      event.payload as Record<string, unknown>,
+    );
 
     if (sessionId) {
       gateway.broadcastToSession(sessionId, event);

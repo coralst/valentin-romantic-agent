@@ -1,5 +1,43 @@
 import { describe, it, expect } from 'vitest';
-import { createServer } from '../index';
+import { createServer, resolveBroadcastSessionId } from '../index';
+
+describe('resolveBroadcastSessionId', () => {
+  it('reads a top-level sessionId (typing_start / typing_stop)', () => {
+    expect(resolveBroadcastSessionId({ sessionId: 'session-1' })).toBe(
+      'session-1',
+    );
+  });
+
+  it('reads a sessionId nested in a message (agent_message)', () => {
+    expect(
+      resolveBroadcastSessionId({ message: { sessionId: 'session-2' } }),
+    ).toBe('session-2');
+  });
+
+  it('reads a sessionId nested in a preference (preference_update)', () => {
+    expect(
+      resolveBroadcastSessionId({
+        preference: { sessionId: 'session-3' },
+        isNew: true,
+      }),
+    ).toBe('session-3');
+  });
+
+  it('returns undefined when no sessionId is present anywhere', () => {
+    expect(
+      resolveBroadcastSessionId({ code: 'ERR', message: 'no session here' }),
+    ).toBeUndefined();
+  });
+
+  it('prefers a top-level sessionId over nested ones', () => {
+    expect(
+      resolveBroadcastSessionId({
+        sessionId: 'top',
+        message: { sessionId: 'nested' },
+      }),
+    ).toBe('top');
+  });
+});
 
 describe('createServer', () => {
   it('initializes without errors', () => {

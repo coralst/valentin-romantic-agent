@@ -2,7 +2,9 @@ import { useState, useEffect } from 'react';
 import { ChatPanel } from './ChatPanel';
 import { ProfileDashboard } from './ProfileDashboard';
 import { MobileNav } from './MobileNav';
-import { breakpoints, spacing, colors, typography, shadows } from '../design-system/tokens';
+import { SessionSidebar } from './SessionSidebar';
+import { useSessionContext } from '../context/session-context';
+import { breakpoints, spacing, colors, typography, shadows, animation, borderRadius } from '../design-system/tokens';
 
 const headerStyle: React.CSSProperties = {
   display: 'flex',
@@ -71,9 +73,26 @@ const outerStyle: React.CSSProperties = {
   backgroundColor: colors.background,
 };
 
+const menuButtonStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 32,
+  height: 32,
+  border: 'none',
+  borderRadius: borderRadius.sm,
+  backgroundColor: 'transparent',
+  cursor: 'pointer',
+  fontSize: typography.sizes.md,
+  color: colors.textSecondary,
+  marginRight: spacing.xs,
+  transition: `background-color ${animation.durations.fast}ms ${animation.easing.easeInOut}`,
+};
+
 export function AppLayout() {
   const [isMobile, setIsMobile] = useState(false);
   const [activePanel, setActivePanel] = useState<'chat' | 'profile'>('chat');
+  const { setSidebarOpen } = useSessionContext();
 
   useEffect(() => {
     const mql = window.matchMedia(`(max-width: ${breakpoints.mobile - 1}px)`);
@@ -88,6 +107,14 @@ export function AppLayout() {
     return (
       <div style={outerStyle} data-testid="app-layout" data-layout="mobile">
         <header style={headerStyle}>
+          <button
+            style={menuButtonStyle}
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Open session history"
+            data-testid="sidebar-menu-button"
+          >
+            &#9776;
+          </button>
           <img src="/logo.png" alt="Valentin logo" style={logoStyle} />
           <span style={brandStyle}>Valentin</span>
         </header>
@@ -95,6 +122,7 @@ export function AppLayout() {
         <div style={mobilePanelStyle}>
           {activePanel === 'chat' ? <ChatPanel /> : <ProfileDashboard />}
         </div>
+        <SessionSidebar isMobile={true} />
       </div>
     );
   }
@@ -106,6 +134,7 @@ export function AppLayout() {
         <span style={brandStyle}>Valentin</span>
       </header>
       <div style={desktopStyle}>
+        <SessionSidebar isMobile={false} />
         <div style={leftPanelStyle}>
           <ChatPanel />
         </div>

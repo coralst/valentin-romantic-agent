@@ -105,8 +105,8 @@ export class AwsBedrockClient implements BedrockClient {
         messages: bedrockMessages,
         inferenceConfig: {
           maxTokens: 512,
+          // Claude Sonnet 4.5 rejects temperature and topP together — use temperature only.
           temperature: 0.8,
-          topP: 0.9,
         },
       });
 

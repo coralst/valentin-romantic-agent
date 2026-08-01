@@ -1,0 +1,217 @@
+import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react';
+import type { ChatMessage } from '../../shared/interfaces/message';
+import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
+import {
+  type StoredSession,
+  loadSessions,
+  saveSessions,
+  saveSession,
+  deleteSession as deleteSessionFromStore,
+  createNewSession,
+  loadSidebarCollapsed,
+  saveSidebarCollapsed,
+} from '../hooks/use-session-store';
+
+/** Session state managed by the context */
+export interface SessionState {
+  sessions: StoredSession[];
+  activeSessionId: string | null;
+  sidebarCollapsed: boolean;
+  sidebarOpen: boolean; // for mobile overlay
+}
+
+/** Actions the session reducer handles */
+export type SessionAction =
+  | { type: 'LOAD_SESSIONS'; sessions: StoredSession[]; activeId: string | null; collapsed: boolean }
+  | { type: 'SET_ACTIVE'; id: string }
+  | { type: 'ADD_SESSION'; session: StoredSession }
+  | { type: 'DELETE_SESSION'; id: string }
+  | { type: 'UPDATE_SESSION'; id: string; messages: ChatMessage[]; preferences: PreferenceWithHistory[]; partnerName?: string | null }
+  | { type: 'TOGGLE_SIDEBAR' }
+  | { type: 'SET_SIDEBAR_OPEN'; open: boolean };
+
+const initialState: SessionState = {
+  sessions: [],
+  activeSessionId: null,
+  sidebarCollapsed: false,
+  sidebarOpen: false,
+};
+
+function sessionReducer(state: SessionState, action: SessionAction): SessionState {
+  switch (action.type) {
+    case 'LOAD_SESSIONS':
+      return {
+        ...state,
+        sessions: action.sessions,
+        activeSessionId: action.activeId,
+        sidebarCollapsed: action.collapsed,
+      };
+
+    case 'SET_ACTIVE':
+      return {
+        ...state,
+        activeSessionId: action.id,
+        sidebarOpen: false, // close mobile overlay on selection
+      };
+
+    case 'ADD_SESSION':
+      return {
+        ...state,
+        sessions: [action.session, ...state.sessions],
+        activeSessionId: action.session.id,
+        sidebarOpen: false,
+      };
+
+    case 'DELETE_SESSION': {
+      const filtered = state.sessions.filter((s) => s.id !== action.id);
+      let nextActiveId = state.activeSessionId;
+      if (state.activeSessionId === action.id) {
+        nextActiveId = filtered.length > 0 ? filtered[0].id : null;
+      }
+      return {
+        ...state,
+        sessions: filtered,
+        activeSessionId: nextActiveId,
+      };
+    }
+
+    case 'UPDATE_SESSION': {
+      const updated = state.sessions.map((s) => {
+        if (s.id !== action.id) return s;
+        return {
+          ...s,
+          messages: action.messages,
+          preferences: action.preferences,
+          messageCount: action.messages.length,
+          lastActivity: new Date().toISOString(),
+          partnerName: action.partnerName !== undefined ? action.partnerName : s.partnerName,
+        };
+      });
+      // Re-sort by lastActivity descending
+      updated.sort(
+        (a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime(),
+      );
+      return {
+        ...state,
+        sessions: updated,
+      };
+    }
+
+    case 'TOGGLE_SIDEBAR': {
+      const newCollapsed = !state.sidebarCollapsed;
+      saveSidebarCollapsed(newCollapsed);
+      return {
+        ...state,
+        sidebarCollapsed: newCollapsed,
+      };
+    }
+
+    case 'SET_SIDEBAR_OPEN':
+      return {
+        ...state,
+        sidebarOpen: action.open,
+      };
+
+    default:
+      return state;
+  }
+}
+
+interface SessionContextValue {
+  state: SessionState;
+  activeSession: StoredSession | null;
+  createSession: () => StoredSession;
+  switchSession: (id: string) => void;
+  removeSession: (id: string) => void;
+  updateActiveSession: (messages: ChatMessage[], preferences: PreferenceWithHistory[], partnerName?: string | null) => void;
+  toggleSidebar: () => void;
+  setSidebarOpen: (open: boolean) => void;
+}
+
+const SessionContext = createContext<SessionContextValue | null>(null);
+
+/** Provider that wraps children with session history state */
+export function SessionProvider({ children }: { children: React.ReactNode }) {
+  const [state, dispatch] = useReducer(sessionReducer, initialState);
+
+  // Load sessions on mount
+  useEffect(() => {
+    const sessions = loadSessions();
+    const collapsed = loadSidebarCollapsed();
+    const activeId = sessions.length > 0 ? sessions[0].id : null;
+    dispatch({ type: 'LOAD_SESSIONS', sessions, activeId, collapsed });
+  }, []);
+
+  // Persist sessions whenever they change (after initial load)
+  useEffect(() => {
+    if (state.sessions.length > 0) {
+      saveSessions(state.sessions);
+    }
+  }, [state.sessions]);
+
+  const activeSession = state.sessions.find((s) => s.id === state.activeSessionId) ?? null;
+
+  const createSession = useCallback((): StoredSession => {
+    const session = createNewSession();
+    saveSession(session);
+    dispatch({ type: 'ADD_SESSION', session });
+    return session;
+  }, []);
+
+  const switchSession = useCallback((id: string) => {
+    dispatch({ type: 'SET_ACTIVE', id });
+  }, []);
+
+  const removeSession = useCallback((id: string) => {
+    deleteSessionFromStore(id);
+    dispatch({ type: 'DELETE_SESSION', id });
+  }, []);
+
+  const updateActiveSession = useCallback(
+    (messages: ChatMessage[], preferences: PreferenceWithHistory[], partnerName?: string | null) => {
+      if (!state.activeSessionId) return;
+      dispatch({
+        type: 'UPDATE_SESSION',
+        id: state.activeSessionId,
+        messages,
+        preferences,
+        partnerName,
+      });
+    },
+    [state.activeSessionId],
+  );
+
+  const toggleSidebar = useCallback(() => {
+    dispatch({ type: 'TOGGLE_SIDEBAR' });
+  }, []);
+
+  const setSidebarOpen = useCallback((open: boolean) => {
+    dispatch({ type: 'SET_SIDEBAR_OPEN', open });
+  }, []);
+
+  return (
+    <SessionContext.Provider
+      value={{
+        state,
+        activeSession,
+        createSession,
+        switchSession,
+        removeSession,
+        updateActiveSession,
+        toggleSidebar,
+        setSidebarOpen,
+      }}
+    >
+      {children}
+    </SessionContext.Provider>
+  );
+}
+
+/** Consumer hook — throws if used outside SessionProvider */
+export function useSessionContext(): SessionContextValue {
+  const ctx = useContext(SessionContext);
+  if (!ctx) {
+    throw new Error('useSessionContext must be used within a SessionProvider');
+  }
+  return ctx;
+}

@@ -10,8 +10,12 @@
     "smoke-test": "npx tsx scripts/smoke-test.ts",
     "verify-model": "npx tsx scripts/verify-model.ts",
     "build": "vite build",
+    "build:server": "tsc --project tsconfig.server.json",
     "test": "vitest --run",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "deploy:dev": "bash scripts/deploy.sh dev",
+    "deploy:prod": "bash scripts/deploy.sh prod",
+    "teardown": "bash scripts/teardown.sh"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1024.0",

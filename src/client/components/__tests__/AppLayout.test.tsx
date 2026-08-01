@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ChatProvider } from '../../context/chat-context';
 import { PreferencesProvider } from '../../context/preferences-context';
+import { SessionProvider } from '../../context/session-context';
 import { AppLayout } from '../AppLayout';
 
 // Mock the websocket-context so ChatPanel can render without a real WS
@@ -16,9 +17,11 @@ vi.mock('../../context/websocket-context', () => ({
 
 function renderWithProviders(ui: React.ReactElement) {
   return render(
-    <ChatProvider>
-      <PreferencesProvider>{ui}</PreferencesProvider>
-    </ChatProvider>,
+    <SessionProvider>
+      <ChatProvider>
+        <PreferencesProvider>{ui}</PreferencesProvider>
+      </ChatProvider>
+    </SessionProvider>,
   );
 }
 

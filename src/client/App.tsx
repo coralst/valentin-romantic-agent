@@ -2,6 +2,7 @@ import React from 'react';
 import { ChatProvider } from './context/chat-context';
 import { PreferencesProvider } from './context/preferences-context';
 import { WebSocketProvider } from './context/websocket-context';
+import { SessionProvider } from './context/session-context';
 import { AppLayout } from './components/AppLayout';
 import { colors, typography, spacing } from './design-system/tokens';
 
@@ -88,13 +89,15 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
 export function App() {
   return (
     <ErrorBoundary>
-      <ChatProvider>
-        <PreferencesProvider>
-          <WebSocketProvider>
-            <AppLayout />
-          </WebSocketProvider>
-        </PreferencesProvider>
-      </ChatProvider>
+      <SessionProvider>
+        <ChatProvider>
+          <PreferencesProvider>
+            <WebSocketProvider>
+              <AppLayout />
+            </WebSocketProvider>
+          </PreferencesProvider>
+        </ChatProvider>
+      </SessionProvider>
     </ErrorBoundary>
   );
 }

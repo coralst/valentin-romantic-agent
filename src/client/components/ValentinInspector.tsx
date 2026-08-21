@@ -34,7 +34,7 @@ const COPY = {
   clearLabel: 'Clear feed',
 } as const;
 
-const PANEL_WIDTH = 520;
+const PANEL_WIDTH = 600;
 
 /** Tiers in render order, with the row heading shown beside each. */
 const TIER_ORDER: readonly { tier: ArchitectureTier; heading: string }[] = [
@@ -174,7 +174,7 @@ const connectorStyle: React.CSSProperties = {
 
 const nodeBaseStyle: React.CSSProperties = {
   flex: 1,
-  minWidth: 120,
+  minWidth: 0,
   padding: `${spacing.xs + 2}px ${spacing.xs + 2}px`,
   border: `2px solid ${colors.border}`,
   borderRadius: borderRadius.md,
@@ -193,18 +193,17 @@ const nodeLabelStyle: React.CSSProperties = {
   fontSize: typography.sizes.base,
   fontWeight: typography.weights.semibold,
   color: colors.text,
-  whiteSpace: 'nowrap',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
+  lineHeight: typography.lineHeights.tight,
+  // Component names must never truncate — they are the point of the diagram.
+  overflowWrap: 'break-word',
 };
 
 const nodeCaptionStyle: React.CSSProperties = {
   fontSize: typography.sizes.xs,
   color: colors.textSecondary,
-  marginTop: 1,
-  whiteSpace: 'nowrap',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
+  marginTop: 2,
+  lineHeight: typography.lineHeights.tight,
+  overflowWrap: 'break-word',
 };
 
 const feedSectionStyle: React.CSSProperties = {
@@ -327,12 +326,14 @@ export function InspectorToggle({ onOpen, isOpen = false, ref }: InspectorToggle
 interface ArchitectureNodeBoxProps {
   node: ArchitectureNode;
   isActive: boolean;
+  /** Transition applied as the highlight settles; omitted for reduced motion. */
+  transition?: string;
 }
 
-function ArchitectureNodeBox({ node, isActive }: ArchitectureNodeBoxProps) {
+function ArchitectureNodeBox({ node, isActive, transition }: ArchitectureNodeBoxProps) {
   return (
     <div
-      style={isActive ? nodeActiveStyle : nodeBaseStyle}
+      style={{ ...(isActive ? nodeActiveStyle : nodeBaseStyle), transition }}
       data-testid={`inspector-node-${node.id}`}
       data-active={isActive ? 'true' : 'false'}
     >
@@ -348,6 +349,15 @@ interface ArchitectureDiagramProps {
 }
 
 function ArchitectureDiagram({ activeNodes }: ArchitectureDiagramProps) {
+  const transition = useMemo(
+    () =>
+      prefersReducedMotion()
+        ? undefined
+        : `background-color ${animation.durations.slow}ms ${animation.easing.easeOut}, border-color ${animation.durations.slow}ms ${animation.easing.easeOut}, box-shadow ${animation.durations.slow}ms ${animation.easing.easeOut}`,
+    [],
+  );
+
+
   return (
     <div style={diagramStyle} data-testid="inspector-diagram">
       {TIER_ORDER.map(({ tier, heading }, index) => (
@@ -361,6 +371,7 @@ function ArchitectureDiagram({ activeNodes }: ArchitectureDiagramProps) {
                   key={node.id}
                   node={node}
                   isActive={activeNodes.has(node.id)}
+                  transition={transition}
                 />
               ))}
             </div>

@@ -21,8 +21,12 @@ import {
  */
 export const INSPECTOR_BUFFER_LIMIT = 100;
 
-/** How long a node stays highlighted after its event arrives. */
-export const NODE_HIGHLIGHT_MS = 1200;
+/**
+ * How long a node stays highlighted after its event arrives. Deliberately
+ * generous: on a projector, a flash shorter than this reads as noise rather
+ * than as "this component just did something".
+ */
+export const NODE_HIGHLIGHT_MS = 1800;
 
 /** A single entry in the Inspector's event feed. */
 export interface InspectorEvent {

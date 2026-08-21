@@ -91,10 +91,22 @@ const menuButtonStyle: React.CSSProperties = {
   transition: `background-color ${animation.durations.fast}ms ${animation.easing.easeInOut}`,
 };
 
+/**
+ * Owns the profile store for the whole layout, so surfaces outside the
+ * profile panel (e.g. the demo toolbar) can read and clear profile state.
+ */
 export function AppLayout() {
+  const { state: chatState } = useChatContext();
+  return (
+    <ProfileStoreProvider sessionId={chatState.sessionId}>
+      <AppLayoutContent />
+    </ProfileStoreProvider>
+  );
+}
+
+function AppLayoutContent() {
   const [isMobile, setIsMobile] = useState(false);
   const [activePanel, setActivePanel] = useState<'chat' | 'profile'>('chat');
-  const { state: chatState } = useChatContext();
   const { setSidebarOpen } = useSessionContext();
 
   useEffect(() => {
@@ -106,11 +118,7 @@ export function AppLayout() {
     return () => mql.removeEventListener('change', handler);
   }, []);
 
-  const profilePanel = (
-    <ProfileStoreProvider sessionId={chatState.sessionId}>
-      <PartnerProfilePanel />
-    </ProfileStoreProvider>
-  );
+  const profilePanel = <PartnerProfilePanel />;
 
   if (isMobile) {
     return (

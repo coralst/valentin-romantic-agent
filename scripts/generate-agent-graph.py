@@ -71,6 +71,40 @@ def agent_of(pr: dict) -> str:
     }.get(stem, "infra")
 
 
+# Personas sign their comments with a header line, which is how review
+# participation is attributed: every comment comes from the same GitHub account,
+# so the persona signature in the body is the only real author signal.
+PERSONA_SIGNATURES = {
+    "master":    ("Master Agent", "👔"),
+    "architect": ("System Architect", "🏗"),
+    "frontend":  ("Frontend Dev", "⚛"),
+    "backend":   ("Backend Dev", "🔧"),
+    "design":    ("UI Designer", "🎨"),
+    "qa":        ("QA Agent", "🧪"),
+}
+
+
+def fetch_participation() -> dict[str, dict]:
+    """Map PR number -> {agent: comment count}, by persona signature."""
+    raw = subprocess.check_output(
+        ["gh", "api", "--paginate",
+         "repos/coralst/valentin-romantic-agent/issues/comments?per_page=100",
+         "--jq", '.[] | {n:(.issue_url|split("/")|last), b:.body}'],
+        cwd=ROOT, text=True)
+    out: dict[str, dict] = {}
+    for line in raw.splitlines():
+        if not line.strip():
+            continue
+        rec = json.loads(line)
+        # The signature sits at the top of the comment, not buried in the body.
+        head = "\n".join((rec["b"] or "").splitlines()[:4])
+        for key, marks in PERSONA_SIGNATURES.items():
+            if any(m in head for m in marks):
+                out.setdefault(rec["n"], {}).setdefault(key, 0)
+                out[rec["n"]][key] += 1
+    return out
+
+
 def fetch() -> list[dict]:
     fields = "number,title,headRefName,state,createdAt,mergedAt,additions,deletions,changedFiles,labels,comments"
     jq = ('[.[]|{n:.number,t:.title,ref:.headRefName,st:.state,c:.createdAt,'
@@ -80,6 +114,9 @@ def fetch() -> list[dict]:
         ["gh", "pr", "list", "--state", "all", "--limit", "300",
          "--json", fields, "--jq", jq], cwd=ROOT, text=True)
     data = sorted(json.loads(raw), key=lambda p: p["n"])
+    participation = fetch_participation()
+    for pr in data:
+        pr["by"] = participation.get(str(pr["n"]), {})
     commits = subprocess.check_output(
         ["git", "rev-list", "--count", "origin/main"], cwd=ROOT, text=True).strip()
     merges = subprocess.check_output(
@@ -146,6 +183,15 @@ def build(prs: list[dict], commits: int, merges: int) -> str:
         adds[p["agent"]] += p["add"]
     merged = [p for p in prs if p["st"] == "MERGED"]
 
+    # Review participation: a persona that commented on a PR it did not author.
+    reviewed = Counter()
+    said = Counter()
+    for p in prs:
+        for key, n in (p.get("by") or {}).items():
+            said[key] += n
+            if key != p["agent"]:
+                reviewed[key] += 1
+
     o: list[str] = []
     o.append(f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" '
              f'height="{height}" viewBox="0 0 {width} {height}" '
@@ -189,6 +235,12 @@ def build(prs: list[dict], commits: int, merges: int) -> str:
     o.append(f'<text x="{lx + 20}" y="{ly}" fill="{MUTED}" font-size="11">'
              f'reviewed, then closed without merging</text>')
     lx += 258
+    o.append(f'<path d="M{lx + 1} {ly - 7} L{lx + 6.2} {ly - 1.2} L{lx + 11.4} {ly - 7}" '
+             f'fill="none" stroke="{MUTED}" stroke-width="2.1" stroke-linecap="round" '
+             f'stroke-linejoin="round"/>')
+    o.append(f'<text x="{lx + 20}" y="{ly}" fill="{MUTED}" font-size="11">'
+             f'reviewed this PR without authoring it</text>')
+    lx += 252
     o.append(f'<line x1="{lx}" y1="{ly - 11}" x2="{lx}" y2="{ly + 3}" stroke="{MUTED}" '
              f'stroke-width="2"/>')
     o.append(f'<text x="{lx + 13}" y="{ly}" fill="{MUTED}" font-size="11">'
@@ -222,7 +274,8 @@ def build(prs: list[dict], commits: int, merges: int) -> str:
                  f'font-family="ui-monospace,SFMono-Regular,Menlo,monospace">'
                  f'{esc(owns)}</text>')
         o.append(f'<text x="62" y="{y + 19}" fill="{MUTED}" font-size="10.5">'
-                 f'{per_agent.get(key, 0)} PRs · +{adds.get(key, 0):,} lines</text>')
+                 f'{per_agent.get(key, 0)} authored · {reviewed.get(key, 0)} reviewed'
+                 f'{f" · +{adds[key]:,}" if adds.get(key) else ""}</text>')
 
     # ── per-agent thread: connect that agent's own PRs in order ──────────
     for key, _, colour, _ in AGENTS:
@@ -232,6 +285,28 @@ def build(prs: list[dict], commits: int, merges: int) -> str:
             o.append(f'<path d="M{xs[0]} {y} L{xs[-1]} {y}" stroke="{colour}" '
                      f'stroke-width="1.6" opacity="0.28" stroke-dasharray="1 5" '
                      f'stroke-linecap="round"/>')
+
+    # ── review participation ────────────────────────────────────────────
+    # A chevron in an agent's lane means that agent reviewed this PR without
+    # authoring it. This is what makes the orchestrator visible: the Master
+    # Agent authors almost nothing but shows up on nearly every column.
+    colour_of = {k: c for k, _, c, _ in AGENTS}
+    for pr in prs:
+        x = x_of[pr["n"]]
+        for key, n in sorted((pr.get("by") or {}).items()):
+            if key == pr["agent"] or key not in lane_y:
+                continue
+            y = lane_y[key]
+            colour = colour_of[key]
+            o.append(f'<g><title>#{pr["n"]} — reviewed by {key} '
+                     f'({n} comment{"s" if n != 1 else ""})</title>')
+            o.append(f'<path d="M{x - 5.2} {y - 4.4} L{x} {y + 1.4} L{x + 5.2} {y - 4.4}" '
+                     f'fill="none" stroke="{colour}" stroke-width="2.1" '
+                     f'stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>')
+            # A hair line up toward main: the turn was handed back here.
+            o.append(f'<line x1="{x}" y1="{y - 8}" x2="{x}" y2="{y - 15}" '
+                     f'stroke="{colour}" stroke-width="1.1" opacity="0.30"/>')
+            o.append('</g>')
 
     # ── the PRs ─────────────────────────────────────────────────────────
     for pr in prs:

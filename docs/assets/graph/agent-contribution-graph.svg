@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="2700" height="762" viewBox="0 0 2700 762" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" role="img" aria-labelledby="gtitle gdesc">
+<svg xmlns="http://www.w3.org/2000/svg" width="2741" height="762" viewBox="0 0 2741 762" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" role="img" aria-labelledby="gtitle gdesc">
 <title id="gtitle">Agent contribution graph</title>
-<desc id="gdesc">56 pull requests across 7 agent personas and 4 working sessions. Each node is one pull request, sized by files changed, connected to the main branch where it merged.</desc>
+<desc id="gdesc">57 pull requests across 7 agent personas and 4 working sessions. Each node is one pull request, sized by files changed, connected to the main branch where it merged.</desc>
 <defs>
 <linearGradient id="lane-master" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#7B68EE" stop-opacity="0.20"/><stop offset="1" stop-color="#7B68EE" stop-opacity="0.03"/></linearGradient>
 <linearGradient id="lane-architect" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#FF8C00" stop-opacity="0.20"/><stop offset="1" stop-color="#FF8C00" stop-opacity="0.03"/></linearGradient>
@@ -11,9 +11,9 @@
 <linearGradient id="lane-infra" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#8B949E" stop-opacity="0.20"/><stop offset="1" stop-color="#8B949E" stop-opacity="0.03"/></linearGradient>
 <filter id="glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
 </defs>
-<rect width="2700" height="762" fill="#0d1117"/>
+<rect width="2741" height="762" fill="#0d1117"/>
 <text x="34" y="46" fill="#e6edf3" font-size="25" font-weight="700">Who built Valentin</text>
-<text x="34" y="72" fill="#8b949e" font-size="13.5">56 pull requests · 48 merged · 165 commits · 68 merge commits · six agent personas, disjoint ownership</text>
+<text x="34" y="72" fill="#8b949e" font-size="13.5">57 pull requests · 49 merged · 176 commits · 69 merge commits · six agent personas, disjoint ownership</text>
 <circle cx="41" cy="88" r="7" fill="#8b949e"/>
 <text x="54" y="92" fill="#8b949e" font-size="11">one PR · size = files changed</text>
 <circle cx="237" cy="88" r="6" fill="#8b949e"/>
@@ -21,8 +21,10 @@
 <text x="254" y="92" fill="#8b949e" font-size="11">drew a multi-agent review thread (3+ comments)</text>
 <circle cx="543" cy="88" r="6.5" fill="#0d1117" stroke="#8b949e" stroke-width="2.2" stroke-dasharray="3 2.4"/>
 <text x="556" y="92" fill="#8b949e" font-size="11">reviewed, then closed without merging</text>
-<line x1="794" y1="81" x2="794" y2="95" stroke="#8b949e" stroke-width="2"/>
-<text x="807" y="92" fill="#8b949e" font-size="11">merged into main</text>
+<path d="M795 85 L800.2 90.8 L805.4 85" fill="none" stroke="#8b949e" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="814" y="92" fill="#8b949e" font-size="11">reviewed this PR without authoring it</text>
+<line x1="1046" y1="81" x2="1046" y2="95" stroke="#8b949e" stroke-width="2"/>
+<text x="1059" y="92" fill="#8b949e" font-size="11">merged into main</text>
 <rect x="244" y="108" width="586" height="586" fill="#ffffff" opacity="0.022" rx="9"/>
 <text x="537.0" y="124" fill="#e6edf3" font-size="12" font-weight="650" text-anchor="middle">Session 1 · 2026-04-04</text>
 <text x="537.0" y="138" fill="#8b949e" font-size="10.5" text-anchor="middle">14 PRs opened</text>
@@ -32,12 +34,12 @@
 <rect x="1919" y="108" width="504" height="586" fill="#ffffff" opacity="0.022" rx="9"/>
 <text x="2171.0" y="124" fill="#e6edf3" font-size="12" font-weight="650" text-anchor="middle">Session 3 · 2026-08-01</text>
 <text x="2171.0" y="138" fill="#8b949e" font-size="10.5" text-anchor="middle">12 PRs opened</text>
-<rect x="2449" y="108" width="217" height="586" fill="#ffffff" opacity="0.022" rx="9"/>
-<text x="2557.5" y="124" fill="#e6edf3" font-size="12" font-weight="650" text-anchor="middle">Session 4 · 2026-08-21</text>
-<text x="2557.5" y="138" fill="#8b949e" font-size="10.5" text-anchor="middle">5 PRs opened</text>
-<line x1="220" y1="150" x2="2680" y2="150" stroke="#f0f6fc" stroke-width="3.4" stroke-linecap="round"/>
+<rect x="2449" y="108" width="258" height="586" fill="#ffffff" opacity="0.022" rx="9"/>
+<text x="2578.0" y="124" fill="#e6edf3" font-size="12" font-weight="650" text-anchor="middle">Session 4 · 2026-08-21</text>
+<text x="2578.0" y="138" fill="#8b949e" font-size="10.5" text-anchor="middle">6 PRs opened</text>
+<line x1="220" y1="150" x2="2721" y2="150" stroke="#f0f6fc" stroke-width="3.4" stroke-linecap="round"/>
 <text x="210" y="154.5" fill="#f0f6fc" font-size="13" font-weight="700" text-anchor="end">main</text>
-<rect x="226" y="198" width="2446" height="52" fill="url(#lane-master)" rx="8"/>
+<rect x="226" y="198" width="2487" height="52" fill="url(#lane-master)" rx="8"/>
 <g transform="translate(24,207) scale(0.33)">
     <path d="M48 8 C26 8 10 25 10 46 V80 Q10 85 15 82.5 L21 79 Q24 77.5 27 79 L33 82.5 Q36 84 39 82.5 L45 79 Q48 77.5 51 79 L57 82.5 Q60 84 63 82.5 L69 79 Q72 77.5 75 79 L81 82.5 Q86 85 86 80 V46 C86 25 70 8 48 8 Z" fill="#7B68EE" opacity="0.95"/>
     <ellipse cx="37" cy="44" rx="8.5" ry="10" fill="#fff"/>
@@ -51,8 +53,8 @@
   </g>
 <text x="62" y="215" fill="#e6edf3" font-size="13" font-weight="650">Master Agent</text>
 <text x="62" y="229" fill="#7B68EE" font-size="9.5" opacity="0.9" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">orchestrator</text>
-<text x="62" y="243" fill="#8b949e" font-size="10.5">2 PRs · +252 lines</text>
-<rect x="226" y="268" width="2446" height="52" fill="url(#lane-architect)" rx="8"/>
+<text x="62" y="243" fill="#8b949e" font-size="10.5">2 authored · 40 reviewed · +252</text>
+<rect x="226" y="268" width="2487" height="52" fill="url(#lane-architect)" rx="8"/>
 <g transform="translate(24,277) scale(0.33)">
     <path d="M48 8 C26 8 10 25 10 46 V80 Q10 85 15 82.5 L21 79 Q24 77.5 27 79 L33 82.5 Q36 84 39 82.5 L45 79 Q48 77.5 51 79 L57 82.5 Q60 84 63 82.5 L69 79 Q72 77.5 75 79 L81 82.5 Q86 85 86 80 V46 C86 25 70 8 48 8 Z" fill="#FF8C00" opacity="0.95"/>
     <ellipse cx="37" cy="44" rx="8.5" ry="10" fill="#fff"/>
@@ -66,8 +68,8 @@
   </g>
 <text x="62" y="285" fill="#e6edf3" font-size="13" font-weight="650">System Architect</text>
 <text x="62" y="299" fill="#FF8C00" font-size="9.5" opacity="0.9" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">src/shared/</text>
-<text x="62" y="313" fill="#8b949e" font-size="10.5">5 PRs · +4,850 lines</text>
-<rect x="226" y="338" width="2446" height="52" fill="url(#lane-frontend)" rx="8"/>
+<text x="62" y="313" fill="#8b949e" font-size="10.5">5 authored · 4 reviewed · +4,850</text>
+<rect x="226" y="338" width="2487" height="52" fill="url(#lane-frontend)" rx="8"/>
 <g transform="translate(24,347) scale(0.33)">
     <path d="M48 8 C26 8 10 25 10 46 V80 Q10 85 15 82.5 L21 79 Q24 77.5 27 79 L33 82.5 Q36 84 39 82.5 L45 79 Q48 77.5 51 79 L57 82.5 Q60 84 63 82.5 L69 79 Q72 77.5 75 79 L81 82.5 Q86 85 86 80 V46 C86 25 70 8 48 8 Z" fill="#1E90FF" opacity="0.95"/>
     <ellipse cx="37" cy="44" rx="8.5" ry="10" fill="#fff"/>
@@ -81,8 +83,8 @@
   </g>
 <text x="62" y="355" fill="#e6edf3" font-size="13" font-weight="650">Frontend Dev</text>
 <text x="62" y="369" fill="#1E90FF" font-size="9.5" opacity="0.9" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">src/client/</text>
-<text x="62" y="383" fill="#8b949e" font-size="10.5">7 PRs · +9,914 lines</text>
-<rect x="226" y="408" width="2446" height="52" fill="url(#lane-backend)" rx="8"/>
+<text x="62" y="383" fill="#8b949e" font-size="10.5">7 authored · 0 reviewed · +9,914</text>
+<rect x="226" y="408" width="2487" height="52" fill="url(#lane-backend)" rx="8"/>
 <g transform="translate(24,417) scale(0.33)">
     <path d="M48 8 C26 8 10 25 10 46 V80 Q10 85 15 82.5 L21 79 Q24 77.5 27 79 L33 82.5 Q36 84 39 82.5 L45 79 Q48 77.5 51 79 L57 82.5 Q60 84 63 82.5 L69 79 Q72 77.5 75 79 L81 82.5 Q86 85 86 80 V46 C86 25 70 8 48 8 Z" fill="#32CD32" opacity="0.95"/>
     <ellipse cx="37" cy="44" rx="8.5" ry="10" fill="#fff"/>
@@ -96,8 +98,8 @@
   </g>
 <text x="62" y="425" fill="#e6edf3" font-size="13" font-weight="650">Backend Dev</text>
 <text x="62" y="439" fill="#32CD32" font-size="9.5" opacity="0.9" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">src/server/</text>
-<text x="62" y="453" fill="#8b949e" font-size="10.5">8 PRs · +6,060 lines</text>
-<rect x="226" y="478" width="2446" height="52" fill="url(#lane-design)" rx="8"/>
+<text x="62" y="453" fill="#8b949e" font-size="10.5">8 authored · 5 reviewed · +6,060</text>
+<rect x="226" y="478" width="2487" height="52" fill="url(#lane-design)" rx="8"/>
 <g transform="translate(24,487) scale(0.33)">
     <path d="M48 8 C26 8 10 25 10 46 V80 Q10 85 15 82.5 L21 79 Q24 77.5 27 79 L33 82.5 Q36 84 39 82.5 L45 79 Q48 77.5 51 79 L57 82.5 Q60 84 63 82.5 L69 79 Q72 77.5 75 79 L81 82.5 Q86 85 86 80 V46 C86 25 70 8 48 8 Z" fill="#FF69B4" opacity="0.95"/>
     <ellipse cx="37" cy="44" rx="8.5" ry="10" fill="#fff"/>
@@ -111,8 +113,8 @@
   </g>
 <text x="62" y="495" fill="#e6edf3" font-size="13" font-weight="650">UI Designer</text>
 <text x="62" y="509" fill="#FF69B4" font-size="9.5" opacity="0.9" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">design-system/</text>
-<text x="62" y="523" fill="#8b949e" font-size="10.5">2 PRs · +651 lines</text>
-<rect x="226" y="548" width="2446" height="52" fill="url(#lane-qa)" rx="8"/>
+<text x="62" y="523" fill="#8b949e" font-size="10.5">2 authored · 2 reviewed · +651</text>
+<rect x="226" y="548" width="2487" height="52" fill="url(#lane-qa)" rx="8"/>
 <g transform="translate(24,557) scale(0.33)">
     <path d="M48 8 C26 8 10 25 10 46 V80 Q10 85 15 82.5 L21 79 Q24 77.5 27 79 L33 82.5 Q36 84 39 82.5 L45 79 Q48 77.5 51 79 L57 82.5 Q60 84 63 82.5 L69 79 Q72 77.5 75 79 L81 82.5 Q86 85 86 80 V46 C86 25 70 8 48 8 Z" fill="#FF4500" opacity="0.95"/>
     <ellipse cx="37" cy="44" rx="8.5" ry="10" fill="#fff"/>
@@ -126,8 +128,8 @@
   </g>
 <text x="62" y="565" fill="#e6edf3" font-size="13" font-weight="650">QA Agent</text>
 <text x="62" y="579" fill="#FF4500" font-size="9.5" opacity="0.9" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">e2e/</text>
-<text x="62" y="593" fill="#8b949e" font-size="10.5">1 PRs · +379 lines</text>
-<rect x="226" y="618" width="2446" height="52" fill="url(#lane-infra)" rx="8"/>
+<text x="62" y="593" fill="#8b949e" font-size="10.5">1 authored · 5 reviewed · +379</text>
+<rect x="226" y="618" width="2487" height="52" fill="url(#lane-infra)" rx="8"/>
 <g transform="translate(24,627) scale(0.33)">
     <path d="M48 8 C26 8 10 25 10 46 V80 Q10 85 15 82.5 L21 79 Q24 77.5 27 79 L33 82.5 Q36 84 39 82.5 L45 79 Q48 77.5 51 79 L57 82.5 Q60 84 63 82.5 L69 79 Q72 77.5 75 79 L81 82.5 Q86 85 86 80 V46 C86 25 70 8 48 8 Z" fill="#8B949E" opacity="0.95"/>
     <ellipse cx="37" cy="44" rx="8.5" ry="10" fill="#fff"/>
@@ -141,13 +143,237 @@
   </g>
 <text x="62" y="635" fill="#e6edf3" font-size="13" font-weight="650">Infra / Workflow</text>
 <text x="62" y="649" fill="#8B949E" font-size="9.5" opacity="0.9" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">.kiro/ · .github/</text>
-<text x="62" y="663" fill="#8b949e" font-size="10.5">31 PRs · +10,664 lines</text>
+<text x="62" y="663" fill="#8b949e" font-size="10.5">32 authored · 0 reviewed · +12,443</text>
 <path d="M639.5 224 L1579.5 224" stroke="#7B68EE" stroke-width="1.6" opacity="0.28" stroke-dasharray="1 5" stroke-linecap="round"/>
 <path d="M270.5 294 L2191.5 294" stroke="#FF8C00" stroke-width="1.6" opacity="0.28" stroke-dasharray="1 5" stroke-linecap="round"/>
 <path d="M311.5 364 L2598.5 364" stroke="#1E90FF" stroke-width="1.6" opacity="0.28" stroke-dasharray="1 5" stroke-linecap="round"/>
 <path d="M352.5 434 L2516.5 434" stroke="#32CD32" stroke-width="1.6" opacity="0.28" stroke-dasharray="1 5" stroke-linecap="round"/>
 <path d="M721.5 504 L1005.5 504" stroke="#FF69B4" stroke-width="1.6" opacity="0.28" stroke-dasharray="1 5" stroke-linecap="round"/>
-<path d="M393.5 644 L2639.5 644" stroke="#8B949E" stroke-width="1.6" opacity="0.28" stroke-dasharray="1 5" stroke-linecap="round"/>
+<path d="M393.5 644 L2680.5 644" stroke="#8B949E" stroke-width="1.6" opacity="0.28" stroke-dasharray="1 5" stroke-linecap="round"/>
+<g><title>#2 — reviewed by design (1 comment)</title>
+<path d="M265.3 499.6 L270.5 505.4 L275.7 499.6" fill="none" stroke="#FF69B4" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="270.5" y1="496" x2="270.5" y2="489" stroke="#FF69B4" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#2 — reviewed by master (1 comment)</title>
+<path d="M265.3 219.6 L270.5 225.4 L275.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="270.5" y1="216" x2="270.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#3 — reviewed by master (1 comment)</title>
+<path d="M306.3 219.6 L311.5 225.4 L316.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="311.5" y1="216" x2="311.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#4 — reviewed by master (1 comment)</title>
+<path d="M347.3 219.6 L352.5 225.4 L357.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="352.5" y1="216" x2="352.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#5 — reviewed by master (1 comment)</title>
+<path d="M388.3 219.6 L393.5 225.4 L398.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="393.5" y1="216" x2="393.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#6 — reviewed by master (1 comment)</title>
+<path d="M429.3 219.6 L434.5 225.4 L439.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="434.5" y1="216" x2="434.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#8 — reviewed by master (1 comment)</title>
+<path d="M470.3 219.6 L475.5 225.4 L480.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="475.5" y1="216" x2="475.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#10 — reviewed by master (1 comment)</title>
+<path d="M511.3 219.6 L516.5 225.4 L521.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="516.5" y1="216" x2="516.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#15 — reviewed by master (1 comment)</title>
+<path d="M675.3 219.6 L680.5 225.4 L685.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="680.5" y1="216" x2="680.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#16 — reviewed by backend (2 comments)</title>
+<path d="M716.3 429.6 L721.5 435.4 L726.7 429.6" fill="none" stroke="#32CD32" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="721.5" y1="426" x2="721.5" y2="419" stroke="#32CD32" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#16 — reviewed by master (2 comments)</title>
+<path d="M716.3 219.6 L721.5 225.4 L726.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="721.5" y1="216" x2="721.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#16 — reviewed by qa (1 comment)</title>
+<path d="M716.3 569.6 L721.5 575.4 L726.7 569.6" fill="none" stroke="#FF4500" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="721.5" y1="566" x2="721.5" y2="559" stroke="#FF4500" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#19 — reviewed by architect (1 comment)</title>
+<path d="M877.3 289.6 L882.5 295.4 L887.7 289.6" fill="none" stroke="#FF8C00" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="882.5" y1="286" x2="882.5" y2="279" stroke="#FF8C00" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#19 — reviewed by backend (1 comment)</title>
+<path d="M877.3 429.6 L882.5 435.4 L887.7 429.6" fill="none" stroke="#32CD32" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="882.5" y1="426" x2="882.5" y2="419" stroke="#32CD32" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#19 — reviewed by master (2 comments)</title>
+<path d="M877.3 219.6 L882.5 225.4 L887.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="882.5" y1="216" x2="882.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#20 — reviewed by master (1 comment)</title>
+<path d="M918.3 219.6 L923.5 225.4 L928.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="923.5" y1="216" x2="923.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#21 — reviewed by master (1 comment)</title>
+<path d="M959.3 219.6 L964.5 225.4 L969.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="964.5" y1="216" x2="964.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#22 — reviewed by master (1 comment)</title>
+<path d="M1000.3 219.6 L1005.5 225.4 L1010.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1005.5" y1="216" x2="1005.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#23 — reviewed by master (2 comments)</title>
+<path d="M1041.3 219.6 L1046.5 225.4 L1051.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1046.5" y1="216" x2="1046.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#24 — reviewed by master (2 comments)</title>
+<path d="M1082.3 219.6 L1087.5 225.4 L1092.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1087.5" y1="216" x2="1087.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#25 — reviewed by master (1 comment)</title>
+<path d="M1123.3 219.6 L1128.5 225.4 L1133.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1128.5" y1="216" x2="1128.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#26 — reviewed by qa (1 comment)</title>
+<path d="M1164.3 569.6 L1169.5 575.4 L1174.7 569.6" fill="none" stroke="#FF4500" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1169.5" y1="566" x2="1169.5" y2="559" stroke="#FF4500" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#27 — reviewed by qa (1 comment)</title>
+<path d="M1205.3 569.6 L1210.5 575.4 L1215.7 569.6" fill="none" stroke="#FF4500" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1210.5" y1="566" x2="1210.5" y2="559" stroke="#FF4500" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#28 — reviewed by qa (1 comment)</title>
+<path d="M1246.3 569.6 L1251.5 575.4 L1256.7 569.6" fill="none" stroke="#FF4500" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1251.5" y1="566" x2="1251.5" y2="559" stroke="#FF4500" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#30 — reviewed by master (1 comment)</title>
+<path d="M1287.3 219.6 L1292.5 225.4 L1297.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1292.5" y1="216" x2="1292.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#31 — reviewed by master (1 comment)</title>
+<path d="M1328.3 219.6 L1333.5 225.4 L1338.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1333.5" y1="216" x2="1333.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#32 — reviewed by master (1 comment)</title>
+<path d="M1369.3 219.6 L1374.5 225.4 L1379.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1374.5" y1="216" x2="1374.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#33 — reviewed by master (1 comment)</title>
+<path d="M1410.3 219.6 L1415.5 225.4 L1420.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1415.5" y1="216" x2="1415.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#34 — reviewed by master (1 comment)</title>
+<path d="M1451.3 219.6 L1456.5 225.4 L1461.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1456.5" y1="216" x2="1456.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#35 — reviewed by master (1 comment)</title>
+<path d="M1492.3 219.6 L1497.5 225.4 L1502.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1497.5" y1="216" x2="1497.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#36 — reviewed by master (1 comment)</title>
+<path d="M1533.3 219.6 L1538.5 225.4 L1543.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1538.5" y1="216" x2="1538.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#38 — reviewed by master (1 comment)</title>
+<path d="M1615.3 219.6 L1620.5 225.4 L1625.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1620.5" y1="216" x2="1620.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#39 — reviewed by backend (1 comment)</title>
+<path d="M1656.3 429.6 L1661.5 435.4 L1666.7 429.6" fill="none" stroke="#32CD32" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1661.5" y1="426" x2="1661.5" y2="419" stroke="#32CD32" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#39 — reviewed by master (2 comments)</title>
+<path d="M1656.3 219.6 L1661.5 225.4 L1666.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1661.5" y1="216" x2="1661.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#39 — reviewed by qa (1 comment)</title>
+<path d="M1656.3 569.6 L1661.5 575.4 L1666.7 569.6" fill="none" stroke="#FF4500" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1661.5" y1="566" x2="1661.5" y2="559" stroke="#FF4500" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#40 — reviewed by architect (2 comments)</title>
+<path d="M1697.3 289.6 L1702.5 295.4 L1707.7 289.6" fill="none" stroke="#FF8C00" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1702.5" y1="286" x2="1702.5" y2="279" stroke="#FF8C00" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#40 — reviewed by master (4 comments)</title>
+<path d="M1697.3 219.6 L1702.5 225.4 L1707.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1702.5" y1="216" x2="1702.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#41 — reviewed by master (1 comment)</title>
+<path d="M1738.3 219.6 L1743.5 225.4 L1748.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1743.5" y1="216" x2="1743.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#42 — reviewed by architect (1 comment)</title>
+<path d="M1779.3 289.6 L1784.5 295.4 L1789.7 289.6" fill="none" stroke="#FF8C00" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1784.5" y1="286" x2="1784.5" y2="279" stroke="#FF8C00" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#42 — reviewed by master (2 comments)</title>
+<path d="M1779.3 219.6 L1784.5 225.4 L1789.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1784.5" y1="216" x2="1784.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#43 — reviewed by architect (1 comment)</title>
+<path d="M1820.3 289.6 L1825.5 295.4 L1830.7 289.6" fill="none" stroke="#FF8C00" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1825.5" y1="286" x2="1825.5" y2="279" stroke="#FF8C00" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#43 — reviewed by master (2 comments)</title>
+<path d="M1820.3 219.6 L1825.5 225.4 L1830.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1825.5" y1="216" x2="1825.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#44 — reviewed by master (2 comments)</title>
+<path d="M1861.3 219.6 L1866.5 225.4 L1871.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1866.5" y1="216" x2="1866.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#45 — reviewed by master (1 comment)</title>
+<path d="M1940.3 219.6 L1945.5 225.4 L1950.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1945.5" y1="216" x2="1945.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#46 — reviewed by master (1 comment)</title>
+<path d="M1981.3 219.6 L1986.5 225.4 L1991.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="1986.5" y1="216" x2="1986.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#47 — reviewed by master (1 comment)</title>
+<path d="M2022.3 219.6 L2027.5 225.4 L2032.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="2027.5" y1="216" x2="2027.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#48 — reviewed by master (1 comment)</title>
+<path d="M2063.3 219.6 L2068.5 225.4 L2073.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="2068.5" y1="216" x2="2068.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#50 — reviewed by master (2 comments)</title>
+<path d="M2104.3 219.6 L2109.5 225.4 L2114.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="2109.5" y1="216" x2="2109.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#52 — reviewed by backend (1 comment)</title>
+<path d="M2145.3 429.6 L2150.5 435.4 L2155.7 429.6" fill="none" stroke="#32CD32" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="2150.5" y1="426" x2="2150.5" y2="419" stroke="#32CD32" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#52 — reviewed by master (2 comments)</title>
+<path d="M2145.3 219.6 L2150.5 225.4 L2155.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="2150.5" y1="216" x2="2150.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#56 — reviewed by master (2 comments)</title>
+<path d="M2186.3 219.6 L2191.5 225.4 L2196.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="2191.5" y1="216" x2="2191.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#57 — reviewed by master (2 comments)</title>
+<path d="M2227.3 219.6 L2232.5 225.4 L2237.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="2232.5" y1="216" x2="2232.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#58 — reviewed by design (1 comment)</title>
+<path d="M2268.3 499.6 L2273.5 505.4 L2278.7 499.6" fill="none" stroke="#FF69B4" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="2273.5" y1="496" x2="2273.5" y2="489" stroke="#FF69B4" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#58 — reviewed by master (3 comments)</title>
+<path d="M2268.3 219.6 L2273.5 225.4 L2278.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="2273.5" y1="216" x2="2273.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#61 — reviewed by backend (1 comment)</title>
+<path d="M2350.3 429.6 L2355.5 435.4 L2360.7 429.6" fill="none" stroke="#32CD32" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="2355.5" y1="426" x2="2355.5" y2="419" stroke="#32CD32" stroke-width="1.1" opacity="0.30"/>
+</g>
+<g><title>#67 — reviewed by master (1 comment)</title>
+<path d="M2634.3 219.6 L2639.5 225.4 L2644.7 219.6" fill="none" stroke="#7B68EE" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
+<line x1="2639.5" y1="216" x2="2639.5" y2="209" stroke="#7B68EE" stroke-width="1.1" opacity="0.30"/>
+</g>
 <g><title>#2 feat(arch): shared types, validation, persistence, design tokens — architect, 35 files, +4590/-13, 2 review comments</title>
 <path d="M270.5 278.5 C270.5 214.8 270.5 214.8 270.5 150" stroke="#FF8C00" stroke-width="2" fill="none" opacity="0.62"/>
 <circle cx="270.5" cy="150" r="4.2" fill="#FF8C00" stroke="#0d1117" stroke-width="1.6"/>
@@ -487,10 +713,11 @@
 <circle cx="2516.5" cy="434" r="12.06" fill="#32CD32" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
 <text x="2516.5" y="437.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">64</text>
 </g>
-<g><title>#65 feat(frontend): add Valentin Inspector — live architecture slide-over — frontend, 14 files, +1777/-13, 0 review comments (closed unmerged)</title>
-<path d="M2557.5 351.45 L2557.5 291.24" stroke="#1E90FF" stroke-width="1.8" fill="none" opacity="0.40" stroke-dasharray="3 3"/>
-<circle cx="2557.5" cy="364" r="12.55" fill="#0d1117" stroke="#1E90FF" stroke-width="2.4" stroke-dasharray="3 2.4"/>
-<text x="2557.5" y="367.3" fill="#1E90FF" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">65</text>
+<g><title>#65 feat(frontend): add Valentin Inspector — live architecture slide-over — frontend, 14 files, +1777/-13, 1 review comments</title>
+<path d="M2557.5 351.45 C2557.5 246.3 2557.5 246.3 2557.5 150" stroke="#1E90FF" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="2557.5" cy="150" r="4.2" fill="#1E90FF" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="2557.5" cy="364" r="12.55" fill="#1E90FF" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="2557.5" y="367.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">65</text>
 </g>
 <g><title>#66 feat(frontend): demo toolbar for one-click profile load and reset — frontend, 6 files, +604/-6, 1 review comments</title>
 <path d="M2598.5 353.71 C2598.5 246.3 2598.5 246.3 2598.5 150" stroke="#1E90FF" stroke-width="2" fill="none" opacity="0.62"/>
@@ -504,20 +731,25 @@
 <circle cx="2639.5" cy="644" r="12.55" fill="#8B949E" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
 <text x="2639.5" y="647.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">67</text>
 </g>
-<line x1="30" y1="696" x2="2670" y2="696" stroke="#30363d" stroke-width="1"/>
-<text x="34" y="722" fill="#e6edf3" font-size="17" font-weight="700">56</text>
+<g><title>#68 docs(infra): visualise the agent workflow from the real PR history — infra, 5 files, +1779/-9, 0 review comments (closed unmerged)</title>
+<path d="M2680.5 634.09 L2680.5 476.03999999999996" stroke="#8B949E" stroke-width="1.8" fill="none" opacity="0.40" stroke-dasharray="3 3"/>
+<circle cx="2680.5" cy="644" r="9.91" fill="#0d1117" stroke="#8B949E" stroke-width="2.4" stroke-dasharray="3 2.4"/>
+<text x="2680.5" y="647.3" fill="#8B949E" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">68</text>
+</g>
+<line x1="30" y1="696" x2="2711" y2="696" stroke="#30363d" stroke-width="1"/>
+<text x="34" y="722" fill="#e6edf3" font-size="17" font-weight="700">57</text>
 <text x="34" y="737" fill="#8b949e" font-size="10">pull requests</text>
-<text x="151.2" y="722" fill="#e6edf3" font-size="17" font-weight="700">48</text>
+<text x="151.2" y="722" fill="#e6edf3" font-size="17" font-weight="700">49</text>
 <text x="151.2" y="737" fill="#8b949e" font-size="10">merged</text>
-<text x="223.6" y="722" fill="#e6edf3" font-size="17" font-weight="700">92</text>
+<text x="223.6" y="722" fill="#e6edf3" font-size="17" font-weight="700">93</text>
 <text x="223.6" y="737" fill="#8b949e" font-size="10">review comments</text>
-<text x="353.6" y="722" fill="#e6edf3" font-size="17" font-weight="700">+32,770</text>
+<text x="353.6" y="722" fill="#e6edf3" font-size="17" font-weight="700">+34,549</text>
 <text x="353.6" y="737" fill="#8b949e" font-size="10">lines added</text>
-<text x="464.6" y="722" fill="#e6edf3" font-size="17" font-weight="700">−1,954</text>
+<text x="464.6" y="722" fill="#e6edf3" font-size="17" font-weight="700">−1,963</text>
 <text x="464.6" y="737" fill="#8b949e" font-size="10">lines removed</text>
-<text x="581.8000000000001" y="722" fill="#e6edf3" font-size="17" font-weight="700">431</text>
+<text x="581.8000000000001" y="722" fill="#e6edf3" font-size="17" font-weight="700">436</text>
 <text x="581.8000000000001" y="737" fill="#8b949e" font-size="10">files touched</text>
 <text x="699.0000000000001" y="722" fill="#e6edf3" font-size="17" font-weight="700">4</text>
 <text x="699.0000000000001" y="737" fill="#8b949e" font-size="10">working sessions</text>
-<text x="2668" y="730" fill="#8b949e" font-size="10" text-anchor="end" opacity="0.7">generated by scripts/generate-agent-graph.py from the live PR history</text>
+<text x="2709" y="730" fill="#8b949e" font-size="10" text-anchor="end" opacity="0.7">generated by scripts/generate-agent-graph.py from the live PR history</text>
 </svg>

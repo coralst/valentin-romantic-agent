@@ -1,0 +1,60 @@
+name: Agent Graph
+
+# Keeps the agent contribution graph in step with the PR history. Runs after any
+# PR closes, on a daily schedule as a backstop, and on demand.
+on:
+  pull_request_target:
+    types: [closed]
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: agent-graph
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          # The generator counts commits and merges on main, so it needs the
+          # full history rather than a shallow clone.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Regenerate the graph from the live PR history
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/generate-agent-graph.py --refresh
+
+      - name: Commit if the graph changed
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- docs/assets/graph/; then
+            echo "Graph is already current — nothing to commit."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/assets/graph/
+          summary=$(python3 -c "
+import json
+d = json.load(open('docs/assets/graph/pr-history.json'))
+merged = sum(1 for p in d['prs'] if p['st'] == 'MERGED')
+print(f\"{len(d['prs'])} PRs, {merged} merged, {d['commits']} commits\")
+")
+          git commit -m "chore(infra): refresh agent contribution graph
+
+Regenerated from the live PR history: ${summary}.
+
+Automated by .github/workflows/agent-graph.yml."
+          git push origin HEAD:main

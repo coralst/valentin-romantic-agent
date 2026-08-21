@@ -129,11 +129,15 @@ parallel agent work safe.
 
 ## The work, as a graph
 
-Every node below is a real pull request. Every ring is a real review
-conversation. Nothing here is illustrative — it's generated straight from this
-repository's PR history by
-[`scripts/generate-agent-graph.py`](scripts/generate-agent-graph.py), so it
-cannot drift from the truth.
+Every node below is a real pull request. Every chevron is a real review comment.
+Nothing here is illustrative — it's generated straight from this repository's PR
+history by [`scripts/generate-agent-graph.py`](scripts/generate-agent-graph.py),
+and [a workflow](.github/workflows/agent-graph.yml) regenerates it whenever a PR
+closes, so it cannot drift out of date.
+
+🖱️ **[Open the interactive version →](https://coralst.github.io/valentin-romantic-agent/graph.html)**
+— hover any node for the PR title, diff size and reviewers; click to open the PR;
+click a lane to isolate one agent; filter by agent, session, or search.
 
 <p align="center">
   <img src="docs/assets/graph/agent-contribution-graph.svg"
@@ -145,11 +149,21 @@ All 56 PRs were opened across four sessions, so a linear time axis collapses int
 four vertical stacks and hides the fan-out completely — which is exactly why
 GitHub's own network graph reads as empty here.
 
-Three things worth noticing:
+Read it as **one node per PR** in its author's lane, sized by files changed, with
+a line rising to the point on `main` where it merged. A **chevron** means that
+agent *reviewed* a PR it didn't author. Concentric rings mark PRs that drew a
+back-and-forth review thread; hollow dashed nodes were reviewed and closed
+without merging.
+
+Four things worth noticing:
 
 - **The fan-out is real.** Within a single session, five different lanes are open
   at once, each on its own branch, each merging back independently. That's not
   one agent renamed six times — it's disjoint ownership running in parallel.
+- **The orchestrator authors almost nothing.** The Master Agent wrote 2 PRs but
+  shows up on **40** of them — the chevrons running the length of its lane are
+  review turns. Counting only authorship makes an orchestrator look idle, which
+  is exactly backwards: it's the busiest actor in the repo.
 - **The biggest lane is the workflow itself.** 31 of the 56 PRs and +10,664 lines
   went into `.kiro/` and `.github/` — the agents, hooks, turn router, and merge
   gate. The methodology was *built*, iterated, and debugged, not declared.

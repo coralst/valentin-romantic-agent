@@ -346,11 +346,26 @@ cannot drift from what the repo actually contains:
        alt="Agent contribution graph: 56 pull requests across seven lanes, grouped into four working sessions, each connected up to the main branch where it merged.">
 </p>
 
+🖱️ **[Open the interactive version](https://coralst.github.io/valentin-romantic-agent/graph.html)** —
+hover for PR titles, diff sizes and reviewers, click through to any PR, isolate a
+single agent, or filter by session.
+
 Read it as: **one node per pull request**, sized by files changed, sitting in its
-owning agent's lane, with a line rising to the point on `main` where it merged.
+*author's* lane, with a line rising to the point on `main` where it merged. A
+**chevron** in a lane means that agent *reviewed* that PR without authoring it.
 Concentric rings mark PRs that drew a genuine back-and-forth review thread;
 hollow, dashed nodes are proposals that were reviewed and **closed without
 merging**.
+
+Review participation is attributed by **persona signature**, not by GitHub
+account. Every comment in this repo comes from the same account, so the
+`👔 Master Agent` / `🧪 QA Agent` header each persona writes at the top of its
+comments is the only real author signal — and it's what the generator parses.
+
+This distinction matters more than it sounds. Measured by authorship alone the
+Master Agent looks nearly absent (2 PRs); measured by participation it appears on
+**40 of 57** PRs and accounts for 61 of the 93 review comments. An orchestrator
+that wrote lots of code would be a sign the design had failed.
 
 The x-axis is PR sequence grouped by working session, not wall-clock time — all
 56 PRs were opened across four sessions, so a linear time axis degenerates into

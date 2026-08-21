@@ -1,6 +1,6 @@
 {
- "commits": 165,
- "merges": 68,
+ "commits": 176,
+ "merges": 69,
  "prs": [
   {
    "add": 4590,
@@ -15,7 +15,12 @@
    "nc": 2,
    "ref": "feat/arch-valentin-shared-types",
    "st": "MERGED",
-   "t": "feat(arch): shared types, validation, persistence, design tokens"
+   "t": "feat(arch): shared types, validation, persistence, design tokens",
+   "by": {
+    "architect": 2,
+    "master": 1,
+    "design": 1
+   }
   },
   {
    "add": 2029,
@@ -30,7 +35,11 @@
    "nc": 2,
    "ref": "feat/frontend-valentin-chat-ui",
    "st": "MERGED",
-   "t": "feat(frontend): chat UI, profile dashboard, state management, responsive layout"
+   "t": "feat(frontend): chat UI, profile dashboard, state management, responsive layout",
+   "by": {
+    "frontend": 2,
+    "master": 1
+   }
   },
   {
    "add": 1535,
@@ -45,7 +54,11 @@
    "nc": 2,
    "ref": "feat/backend-valentin-agent-services",
    "st": "MERGED",
-   "t": "feat(backend): API layer, agent orchestrator, preference extractor, server wiring"
+   "t": "feat(backend): API layer, agent orchestrator, preference extractor, server wiring",
+   "by": {
+    "backend": 2,
+    "master": 1
+   }
   },
   {
    "add": 2,
@@ -60,7 +73,10 @@
    "nc": 1,
    "ref": "chore/infra-mcp-autoapprove",
    "st": "MERGED",
-   "t": "chore(infra): add add_issue_comment to MCP autoApprove"
+   "t": "chore(infra): add add_issue_comment to MCP autoApprove",
+   "by": {
+    "master": 1
+   }
   },
   {
    "add": 1070,
@@ -75,7 +91,10 @@
    "nc": 1,
    "ref": "feat/backend-valentin-dev-server",
    "st": "MERGED",
-   "t": "feat(backend): dev server + logo integration"
+   "t": "feat(backend): dev server + logo integration",
+   "by": {
+    "master": 1
+   }
   },
   {
    "add": 379,
@@ -90,7 +109,11 @@
    "nc": 2,
    "ref": "feat/qa-valentin-e2e-tests",
    "st": "MERGED",
-   "t": "\ud83e\uddea QA: E2E Playwright tests \u2014 onboarding, responsive, connection recovery"
+   "t": "\ud83e\uddea QA: E2E Playwright tests \u2014 onboarding, responsive, connection recovery",
+   "by": {
+    "qa": 1,
+    "master": 1
+   }
   },
   {
    "add": 91,
@@ -105,7 +128,10 @@
    "nc": 1,
    "ref": "docs/spec-sync-with-implementation",
    "st": "CLOSED",
-   "t": "docs(shared): sync spec with implemented codebase"
+   "t": "docs(shared): sync spec with implemented codebase",
+   "by": {
+    "master": 1
+   }
   },
   {
    "add": 113,
@@ -120,7 +146,8 @@
    "nc": 0,
    "ref": "fix/infra-kiro-stack-fixes",
    "st": "MERGED",
-   "t": "fix(infra): Kiro stack fixes \u2014 hooks, steering, agents, MCP, CI"
+   "t": "fix(infra): Kiro stack fixes \u2014 hooks, steering, agents, MCP, CI",
+   "by": {}
   },
   {
    "add": 67,
@@ -135,7 +162,8 @@
    "nc": 0,
    "ref": "feat/infra-agentic-automation",
    "st": "CLOSED",
-   "t": "feat(infra): agentic automation \u2014 agentStop, write guard, routing, autoApprove"
+   "t": "feat(infra): agentic automation \u2014 agentStop, write guard, routing, autoApprove",
+   "by": {}
   },
   {
    "add": 67,
@@ -150,7 +178,10 @@
    "nc": 2,
    "ref": "feat/master-agent/agentic-automation-12",
    "st": "CLOSED",
-   "t": "feat(infra): agentic automation \u2014 hooks, merge strategy, branch naming (#13)"
+   "t": "feat(infra): agentic automation \u2014 hooks, merge strategy, branch naming (#13)",
+   "by": {
+    "master": 2
+   }
   },
   {
    "add": 1892,
@@ -165,7 +196,10 @@
    "nc": 1,
    "ref": "feat/backend-dev/bedrock-sdk-14",
    "st": "MERGED",
-   "t": "feat(backend): implement real AWS Bedrock SDK integration"
+   "t": "feat(backend): implement real AWS Bedrock SDK integration",
+   "by": {
+    "master": 1
+   }
   },
   {
    "add": 371,
@@ -180,7 +214,12 @@
    "nc": 4,
    "ref": "feat/design-modernize-ui",
    "st": "MERGED",
-   "t": "style(design): modernize UI \u2014 refined palette, gradient accents, polished components"
+   "t": "style(design): modernize UI \u2014 refined palette, gradient accents, polished components",
+   "by": {
+    "master": 2,
+    "backend": 2,
+    "qa": 1
+   }
   },
   {
    "add": 26,
@@ -195,7 +234,8 @@
    "nc": 0,
    "ref": "fix/backend-dev/bedrock-converse-fix-16",
    "st": "MERGED",
-   "t": "fix(backend): skip leading assistant messages for Bedrock Converse API"
+   "t": "fix(backend): skip leading assistant messages for Bedrock Converse API",
+   "by": {}
   },
   {
    "add": 1,
@@ -210,7 +250,8 @@
    "nc": 0,
    "ref": "fix/infra/dev-full-script",
    "st": "MERGED",
-   "t": "chore(infra): add dev:full script"
+   "t": "chore(infra): add dev:full script",
+   "by": {}
   },
   {
    "add": 2985,
@@ -225,7 +266,12 @@
    "nc": 3,
    "ref": "fix/pr-conversation-monitoring",
    "st": "MERGED",
-   "t": "fix(pr-monitoring): enable iterative PR conversations after Ready for Review"
+   "t": "fix(pr-monitoring): enable iterative PR conversations after Ready for Review",
+   "by": {
+    "architect": 1,
+    "backend": 1,
+    "master": 2
+   }
   },
   {
    "add": 4,
@@ -240,7 +286,10 @@
    "nc": 1,
    "ref": "chore/approval-gate-selftest",
    "st": "MERGED",
-   "t": "chore(infra): approval-gate self-test (throwaway)"
+   "t": "chore(infra): approval-gate self-test (throwaway)",
+   "by": {
+    "master": 1
+   }
   },
   {
    "add": 358,
@@ -253,7 +302,10 @@
    "nc": 1,
    "ref": "chore/cleanup-selftest",
    "st": "MERGED",
-   "t": "fix(infra): comment-based approval gate for single-account merges"
+   "t": "fix(infra): comment-based approval gate for single-account merges",
+   "by": {
+    "master": 1
+   }
   },
   {
    "add": 280,
@@ -268,7 +320,10 @@
    "nc": 1,
    "ref": "style/design-modernize-ui-16",
    "st": "MERGED",
-   "t": "style(design): modernize UI \u2014 refined palette, gradient accents, polished components"
+   "t": "style(design): modernize UI \u2014 refined palette, gradient accents, polished components",
+   "by": {
+    "master": 1
+   }
   },
   {
    "add": 80,
@@ -283,7 +338,10 @@
    "nc": 2,
    "ref": "chore/infra-smoke-test-16",
    "st": "CLOSED",
-   "t": "chore(infra): add server boot smoke test and CI smoke job"
+   "t": "chore(infra): add server boot smoke test and CI smoke job",
+   "by": {
+    "master": 2
+   }
   },
   {
    "add": 882,
@@ -298,7 +356,10 @@
    "nc": 2,
    "ref": "test/infra-workflow-regression",
    "st": "MERGED",
-   "t": "test(infra): workflow-automation regression suite + path-filtered CI"
+   "t": "test(infra): workflow-automation regression suite + path-filtered CI",
+   "by": {
+    "master": 2
+   }
   },
   {
    "add": 0,
@@ -313,7 +374,10 @@
    "nc": 1,
    "ref": "chore/infra-smoke-test-16",
    "st": "MERGED",
-   "t": "chore(infra): add server boot smoke test and CI smoke job"
+   "t": "chore(infra): add server boot smoke test and CI smoke job",
+   "by": {
+    "master": 1
+   }
   },
   {
    "add": 233,
@@ -328,7 +392,10 @@
    "nc": 1,
    "ref": "feat/frontend-typewriter-effect",
    "st": "MERGED",
-   "t": "feat(frontend): typewriter effect for agent messages"
+   "t": "feat(frontend): typewriter effect for agent messages",
+   "by": {
+    "qa": 1
+   }
   },
   {
    "add": 116,
@@ -343,7 +410,10 @@
    "nc": 1,
    "ref": "fix/backend-conversation-naturalness",
    "st": "MERGED",
-   "t": "fix(backend): vary response length and sampling for natural conversation"
+   "t": "fix(backend): vary response length and sampling for natural conversation",
+   "by": {
+    "qa": 1
+   }
   },
   {
    "add": 7,
@@ -358,7 +428,10 @@
    "nc": 1,
    "ref": "fix/backend-sonnet-model",
    "st": "MERGED",
-   "t": "fix(backend): switch default model from retired Haiku 3 to active Sonnet 4.5"
+   "t": "fix(backend): switch default model from retired Haiku 3 to active Sonnet 4.5",
+   "by": {
+    "qa": 1
+   }
   },
   {
    "add": 96,
@@ -373,7 +446,10 @@
    "nc": 1,
    "ref": "fix/infra-merge-gate-hardening",
    "st": "MERGED",
-   "t": "fix(infra): harden merge-gate approval-token detection against spoofing"
+   "t": "fix(infra): harden merge-gate approval-token detection against spoofing",
+   "by": {
+    "master": 1
+   }
   },
   {
    "add": 165,
@@ -388,7 +464,10 @@
    "nc": 1,
    "ref": "fix/infra-pr-comment-posting",
    "st": "MERGED",
-   "t": "fix(infra): post PR comments safely; drop self-approve footguns"
+   "t": "fix(infra): post PR comments safely; drop self-approve footguns",
+   "by": {
+    "master": 1
+   }
   },
   {
    "add": 374,
@@ -403,7 +482,10 @@
    "nc": 1,
    "ref": "fix/infra-pr-monitor",
    "st": "MERGED",
-   "t": "fix(infra): make PR monitor dispatch, start, and stop correctly"
+   "t": "fix(infra): make PR monitor dispatch, start, and stop correctly",
+   "by": {
+    "master": 1
+   }
   },
   {
    "add": 79,
@@ -418,7 +500,10 @@
    "nc": 1,
    "ref": "fix/infra-review-parser",
    "st": "MERGED",
-   "t": "fix(infra): robust severity parsing and honest response template"
+   "t": "fix(infra): robust severity parsing and honest response template",
+   "by": {
+    "master": 1
+   }
   },
   {
    "add": 34,
@@ -433,7 +518,10 @@
    "nc": 1,
    "ref": "fix/infra-ci-gating",
    "st": "MERGED",
-   "t": "fix(infra): gate on the regression unit tier and de-duplicate CI"
+   "t": "fix(infra): gate on the regression unit tier and de-duplicate CI",
+   "by": {
+    "master": 1
+   }
   },
   {
    "add": 1,
@@ -448,7 +536,10 @@
    "nc": 1,
    "ref": "test/workflow-selftest-live",
    "st": "CLOSED",
-   "t": "test(qa): throwaway workflow self-test (do not merge)"
+   "t": "test(qa): throwaway workflow self-test (do not merge)",
+   "by": {
+    "master": 1
+   }
   },
   {
    "add": 64,
@@ -463,7 +554,10 @@
    "nc": 1,
    "ref": "feat/infra-ci-path-aware",
    "st": "MERGED",
-   "t": "ci(infra): path-aware CI \u2014 skip smoke/build/e2e on non-app changes"
+   "t": "ci(infra): path-aware CI \u2014 skip smoke/build/e2e on non-app changes",
+   "by": {
+    "master": 1
+   }
   },
   {
    "add": 185,
@@ -478,7 +572,10 @@
    "nc": 1,
    "ref": "feat/master-conversation-protocol",
    "st": "MERGED",
-   "t": "feat(infra): orchestrator-led PR review loop with multi-agent tagging"
+   "t": "feat(infra): orchestrator-led PR review loop with multi-agent tagging",
+   "by": {
+    "master": 1
+   }
   },
   {
    "add": 416,
@@ -493,7 +590,10 @@
    "nc": 1,
    "ref": "feat/infra-turn-router-hooks",
    "st": "MERGED",
-   "t": "feat(infra): deterministic turn-router skill + hooks for the review loop"
+   "t": "feat(infra): deterministic turn-router skill + hooks for the review loop",
+   "by": {
+    "master": 1
+   }
   },
   {
    "add": 1,
@@ -508,7 +608,12 @@
    "nc": 4,
    "ref": "test/workflow-selftest-loop",
    "st": "CLOSED",
-   "t": "test(qa): throwaway \u2014 orchestrator-led multi-agent loop demo (do not merge)"
+   "t": "test(qa): throwaway \u2014 orchestrator-led multi-agent loop demo (do not merge)",
+   "by": {
+    "master": 2,
+    "backend": 1,
+    "qa": 1
+   }
   },
   {
    "add": 97,
@@ -523,7 +628,11 @@
    "nc": 6,
    "ref": "docs/workflow-required-checks",
    "st": "MERGED",
-   "t": "docs(infra): document the orchestrator-led PR review loop"
+   "t": "docs(infra): document the orchestrator-led PR review loop",
+   "by": {
+    "master": 4,
+    "architect": 2
+   }
   },
   {
    "add": 59,
@@ -538,7 +647,10 @@
    "nc": 1,
    "ref": "feat/shared-category-helpers",
    "st": "MERGED",
-   "t": "feat(shared): add category lookup helpers"
+   "t": "feat(shared): add category lookup helpers",
+   "by": {
+    "master": 1
+   }
   },
   {
    "add": 94,
@@ -553,7 +665,11 @@
    "nc": 3,
    "ref": "fix/infra-rubber-stamp-gate",
    "st": "MERGED",
-   "t": "fix(infra): block rubber-stamp merges and match Power-routed calls"
+   "t": "fix(infra): block rubber-stamp merges and match Power-routed calls",
+   "by": {
+    "master": 2,
+    "architect": 1
+   }
   },
   {
    "add": 47,
@@ -568,7 +684,11 @@
    "nc": 3,
    "ref": "fix/infra-ci-required-checks",
    "st": "MERGED",
-   "t": "fix(infra): make Build and E2E required checks always conclude success"
+   "t": "fix(infra): make Build and E2E required checks always conclude success",
+   "by": {
+    "master": 2,
+    "architect": 1
+   }
   },
   {
    "add": 32,
@@ -583,7 +703,11 @@
    "nc": 3,
    "ref": "feat/arch-preference-category-count",
    "st": "MERGED",
-   "t": "feat(shared): add preferenceCategoryCount helper"
+   "t": "feat(shared): add preferenceCategoryCount helper",
+   "by": {
+    "master": 2,
+    "architect": 1
+   }
   },
   {
    "add": 574,
@@ -598,7 +722,10 @@
    "nc": 1,
    "ref": "fix/backend-bedrock-inference-and-preference-broadcast",
    "st": "MERGED",
-   "t": "fix(backend): unbreak chat replies and preference dashboard updates"
+   "t": "fix(backend): unbreak chat replies and preference dashboard updates",
+   "by": {
+    "master": 1
+   }
   },
   {
    "add": 13,
@@ -611,7 +738,10 @@
    "nc": 1,
    "ref": "docs/correct-required-checks",
    "st": "MERGED",
-   "t": "docs(infra): correct the required-checks description (four checks, not just E2E)"
+   "t": "docs(infra): correct the required-checks description (four checks, not just E2E)",
+   "by": {
+    "master": 1
+   }
   },
   {
    "add": 53,
@@ -626,7 +756,10 @@
    "nc": 1,
    "ref": "fix/infra-parser-hook-cleanup",
    "st": "MERGED",
-   "t": "fix(infra): parser ordered-list support, log cleanup, hook enabled flag"
+   "t": "fix(infra): parser ordered-list support, log cleanup, hook enabled flag",
+   "by": {
+    "master": 1
+   }
   },
   {
    "add": 11,
@@ -641,7 +774,10 @@
    "nc": 1,
    "ref": "fix/infra-mcp-token-env-var",
    "st": "MERGED",
-   "t": "fix(infra): point the GitHub MCP server at the live token variable"
+   "t": "fix(infra): point the GitHub MCP server at the live token variable",
+   "by": {
+    "master": 1
+   }
   },
   {
    "add": 1,
@@ -656,7 +792,10 @@
    "nc": 3,
    "ref": "test/workflow-selftest-verify",
    "st": "CLOSED",
-   "t": "test: verify workflow automation capability"
+   "t": "test: verify workflow automation capability",
+   "by": {
+    "master": 2
+   }
   },
   {
    "add": 4,
@@ -671,7 +810,11 @@
    "nc": 3,
    "ref": "test/workflow-selftest-review-flow",
    "st": "MERGED",
-   "t": "test: review conversation flow verification"
+   "t": "test: review conversation flow verification",
+   "by": {
+    "master": 2,
+    "backend": 1
+   }
   },
   {
    "add": 78,
@@ -686,7 +829,11 @@
    "nc": 3,
    "ref": "chore/arch-valentin-tasks-update",
    "st": "MERGED",
-   "t": "chore(arch): update tasks.md to reflect implemented state"
+   "t": "chore(arch): update tasks.md to reflect implemented state",
+   "by": {
+    "master": 2,
+    "architect": 1
+   }
   },
   {
    "add": 1376,
@@ -701,7 +848,11 @@
    "nc": 3,
    "ref": "feat/frontend-session-history-sidebar",
    "st": "MERGED",
-   "t": "feat(frontend): add session history sidebar with localStorage persistence"
+   "t": "feat(frontend): add session history sidebar with localStorage persistence",
+   "by": {
+    "master": 2,
+    "frontend": 1
+   }
   },
   {
    "add": 3329,
@@ -716,7 +867,12 @@
    "nc": 5,
    "ref": "feat/frontend-partner-profile-panel",
    "st": "MERGED",
-   "t": "feat(frontend): implement Partner Profile Panel"
+   "t": "feat(frontend): implement Partner Profile Panel",
+   "by": {
+    "master": 3,
+    "frontend": 1,
+    "design": 1
+   }
   },
   {
    "add": 0,
@@ -729,7 +885,8 @@
    "nc": 0,
    "ref": "chore/cleanup-test-files",
    "st": "MERGED",
-   "t": "chore: remove workflow verification test file"
+   "t": "chore: remove workflow verification test file",
+   "by": {}
   },
   {
    "add": 1041,
@@ -744,7 +901,10 @@
    "nc": 3,
    "ref": "feat/infra-compute",
    "st": "MERGED",
-   "t": "feat(infra): Sprint 2 - ECS Fargate compute, CDN, auth, and deploy pipeline"
+   "t": "feat(infra): Sprint 2 - ECS Fargate compute, CDN, auth, and deploy pipeline",
+   "by": {
+    "backend": 1
+   }
   },
   {
    "add": 1969,
@@ -759,7 +919,8 @@
    "nc": 3,
    "ref": "feat/infra-foundation",
    "st": "MERGED",
-   "t": "feat(infra): Sprint 1 production infrastructure foundation"
+   "t": "feat(infra): Sprint 1 production infrastructure foundation",
+   "by": {}
   },
   {
    "add": 566,
@@ -774,7 +935,8 @@
    "nc": 1,
    "ref": "feat/frontend-session-entry-actions",
    "st": "MERGED",
-   "t": "feat(frontend): session rename/delete, session-switch rehydration, message formatting, and deployable infra"
+   "t": "feat(frontend): session rename/delete, session-switch rehydration, message formatting, and deployable infra",
+   "by": {}
   },
   {
    "add": 840,
@@ -789,7 +951,8 @@
    "nc": 1,
    "ref": "feat/backend-demo-seed",
    "st": "MERGED",
-   "t": "feat(backend): server-side demo seeding and reset"
+   "t": "feat(backend): server-side demo seeding and reset",
+   "by": {}
   },
   {
    "add": 1777,
@@ -799,12 +962,13 @@
    "labels": [
     "agent: frontend"
    ],
-   "m": null,
+   "m": "2026-08-21T15:45:36Z",
    "n": 65,
-   "nc": 0,
+   "nc": 1,
    "ref": "feat/frontend-valentin-inspector",
-   "st": "OPEN",
-   "t": "feat(frontend): add Valentin Inspector \u2014 live architecture slide-over"
+   "st": "MERGED",
+   "t": "feat(frontend): add Valentin Inspector \u2014 live architecture slide-over",
+   "by": {}
   },
   {
    "add": 604,
@@ -817,7 +981,8 @@
    "nc": 1,
    "ref": "feat/frontend-demo-controls",
    "st": "MERGED",
-   "t": "feat(frontend): demo toolbar for one-click profile load and reset"
+   "t": "feat(frontend): demo toolbar for one-click profile load and reset",
+   "by": {}
   },
   {
    "add": 1612,
@@ -833,7 +998,26 @@
    "nc": 1,
    "ref": "docs/infra-agent-methodology-showcase",
    "st": "MERGED",
-   "t": "docs(infra): lead with the agentic methodology and give each agent a face"
+   "t": "docs(infra): lead with the agentic methodology and give each agent a face",
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 1779,
+   "c": "2026-08-21T15:50:03Z",
+   "cf": 5,
+   "del": 9,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": null,
+   "n": 68,
+   "nc": 0,
+   "ref": "docs/infra-agent-contribution-graph",
+   "st": "OPEN",
+   "t": "docs(infra): visualise the agent workflow from the real PR history",
+   "by": {}
   }
  ]
 }

@@ -43,7 +43,12 @@ const COPY = {
   clearLabel: 'Clear feed',
 } as const;
 
-const PANEL_WIDTH = 600;
+/**
+ * Wide enough for full component names and event details at projector
+ * distance, narrow enough to leave the chat and profile columns usable
+ * side-by-side when docked.
+ */
+const PANEL_WIDTH = 560;
 
 /** Tiers in render order, with the row heading shown beside each. */
 const TIER_ORDER: readonly { tier: ArchitectureTier; heading: string }[] = [

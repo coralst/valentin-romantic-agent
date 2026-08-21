@@ -66,7 +66,11 @@ export function deriveCautions(
     if (!pattern) continue;
 
     cautions.push({
-      id: preference.id,
+      // Keyed on category+key rather than `preference.id`: the id is assigned by
+      // the server and changes when a preference is re-extracted, which remounts
+      // the row and loses its identity for no reason. category+key is stable
+      // across re-extraction and is present even on a partial record.
+      id: `${preference.category}:${preference.key}`,
       title: `${titleCase(preference.key)}: ${preference.value}`,
       consequence: CONSEQUENCE_BY_PATTERN[pattern] ?? 'Worth checking before you commit.',
     });

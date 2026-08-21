@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { BriefRail } from '../BriefRail';
 import { ChatProvider } from '../../context/chat-context';
@@ -81,8 +81,20 @@ function preference(overrides: Partial<PreferenceWithHistory>): PreferenceWithHi
   };
 }
 
+/**
+ * React reports a duplicate/missing `key` through `console.error` rather than by
+ * throwing, so a render bug like that passes a green suite silently. Spying lets
+ * the key regression test below assert on it.
+ */
+let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+
 beforeEach(() => {
   localStorage.clear();
+  consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+});
+
+afterEach(() => {
+  consoleErrorSpy.mockRestore();
 });
 
 describe('BriefRail — legacy selector aliasing', () => {
@@ -199,6 +211,21 @@ describe('BriefRail — keep in mind', () => {
       { fieldId: 'surprise_preference', value: 'Loves Surprises' },
     ]);
     expect(screen.queryByTestId('brief-keep-in-mind')).not.toBeInTheDocument();
+  });
+
+  it('keys each caution stably, without depending on the server-assigned id', () => {
+    // Caught by a browser console warning, not by a failing assertion: two
+    // cautions from records with no `id` both keyed on undefined. The key comes
+    // from category+key now, which also survives re-extraction reassigning ids.
+    renderRail(
+      [{ fieldId: 'partner_name', value: 'Coral' }],
+      [
+        preference({ id: '', key: 'allergies', value: 'shellfish' }),
+        preference({ id: '', key: 'dislikes', value: 'aniseed' }),
+      ],
+    );
+    expect(screen.getAllByTestId('brief-caution')).toHaveLength(2);
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
   });
 
   it('does not mistake an ordinary preference for a constraint', () => {

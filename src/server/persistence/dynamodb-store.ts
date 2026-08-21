@@ -215,6 +215,7 @@ export class DynamoDBStore implements StorageInterface {
       sessionId: pref.sessionId,
       category: pref.category,
       key: pref.key,
+      fieldId: pref.fieldId ?? null,
       value: pref.value,
       confidence: pref.confidence,
       sourceMessageId: pref.sourceMessageId,
@@ -441,6 +442,9 @@ export class DynamoDBStore implements StorageInterface {
       sessionId: item.sessionId as string,
       category: item.category as PreferenceCategory,
       key: item.key as string,
+      // Absent on rows written before the field id existed — null, not undefined,
+      // so the client's fallback path is taken deliberately rather than by accident.
+      fieldId: (item.fieldId as string | null | undefined) ?? null,
       value: item.value as string,
       confidence: item.confidence as number,
       sourceMessageId: item.sourceMessageId as string,

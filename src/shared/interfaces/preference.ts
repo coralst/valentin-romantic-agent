@@ -15,6 +15,17 @@ export interface Preference {
   sessionId: string;
   category: PreferenceCategory;
   key: string;
+  /**
+   * The profile field this preference fills, chosen by the extraction model from
+   * a constrained enum, or `null`/absent for a real-but-off-registry fact (an
+   * allergy, a dislike).
+   *
+   * This is the authoritative route from a preference to a profile field. The
+   * client falls back to resolving `category` + `key` only when this is absent —
+   * which covers preferences persisted before this field existed, and seeded
+   * demo data.
+   */
+  fieldId?: string | null;
   value: string;
   /** Confidence score between 0.0 and 1.0 */
   confidence: number;

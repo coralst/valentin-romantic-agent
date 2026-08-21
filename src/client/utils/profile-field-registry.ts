@@ -46,6 +46,7 @@ export const PROFILE_FIELD_REGISTRY: readonly ProfileFieldDefinition[] = [
     mappings: [
       { category: 'personality_traits', key: 'name' },
       { category: 'personality_traits', key: 'partner name' },
+      { category: 'personality_traits', key: 'first name' },
     ],
   },
   {
@@ -65,6 +66,11 @@ export const PROFILE_FIELD_REGISTRY: readonly ProfileFieldDefinition[] = [
     mappings: [
       { category: 'important_dates', key: 'birthday' },
       { category: 'important_dates', key: 'birth date' },
+      // Extraction reaches for these constantly; a birth month or an age is a
+      // birthday detail, not a separate fact.
+      { category: 'important_dates', key: 'birth month' },
+      { category: 'important_dates', key: 'birthday month' },
+      { category: 'important_dates', key: 'age' },
     ],
   },
   {
@@ -134,6 +140,7 @@ export const PROFILE_FIELD_REGISTRY: readonly ProfileFieldDefinition[] = [
     mappings: [
       { category: 'food', key: 'favorite cuisine' },
       { category: 'food', key: 'cuisine' },
+      { category: 'food', key: 'favorite food' },
     ],
   },
   {
@@ -144,6 +151,7 @@ export const PROFILE_FIELD_REGISTRY: readonly ProfileFieldDefinition[] = [
     mappings: [
       { category: 'music', key: 'genre' },
       { category: 'music', key: 'favorite genre' },
+      { category: 'music', key: 'favorite artist' },
     ],
   },
   {
@@ -155,6 +163,7 @@ export const PROFILE_FIELD_REGISTRY: readonly ProfileFieldDefinition[] = [
       { category: 'hobbies', key: 'hobbies' },
       { category: 'hobbies', key: 'hobby' },
       { category: 'hobbies', key: 'activities' },
+      { category: 'hobbies', key: 'interests' },
     ],
   },
   {

@@ -29,6 +29,7 @@ export class InMemoryStore implements StorageInterface {
       sessionId: pref.sessionId,
       category: pref.category,
       key: pref.key,
+      fieldId: pref.fieldId ?? null,
       value: pref.value,
       confidence: pref.confidence,
       sourceMessageId: pref.sourceMessageId,

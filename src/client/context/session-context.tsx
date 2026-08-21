@@ -148,7 +148,22 @@ interface SessionContextValue {
   switchSession: (id: string) => void;
   removeSession: (id: string) => void;
   renameSession: (id: string, title: string) => void;
-  updateActiveSession: (messages: ChatMessage[], preferences: PreferenceWithHistory[], partnerName?: string | null) => void;
+  /**
+   * Write a transcript into the session with the given id.
+   *
+   * Addressed by explicit id rather than "whichever session is active", because
+   * the caller may be flushing the *outgoing* session's messages during a
+   * switch. Writing those to the newly active session would corrupt it — see
+   * the note in `use-session-persistence.ts`.
+   *
+   * Passing `partnerName` as `undefined` leaves the stored value untouched.
+   */
+  persistSession: (
+    id: string,
+    messages: ChatMessage[],
+    preferences: PreferenceWithHistory[],
+    partnerName?: string | null,
+  ) => void;
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
 }
@@ -202,18 +217,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'RENAME_SESSION', id, title });
   }, []);
 
-  const updateActiveSession = useCallback(
-    (messages: ChatMessage[], preferences: PreferenceWithHistory[], partnerName?: string | null) => {
-      if (!state.activeSessionId) return;
-      dispatch({
-        type: 'UPDATE_SESSION',
-        id: state.activeSessionId,
-        messages,
-        preferences,
-        partnerName,
-      });
+  const persistSession = useCallback(
+    (
+      id: string,
+      messages: ChatMessage[],
+      preferences: PreferenceWithHistory[],
+      partnerName?: string | null,
+    ) => {
+      if (!id) return;
+      dispatch({ type: 'UPDATE_SESSION', id, messages, preferences, partnerName });
     },
-    [state.activeSessionId],
+    [],
   );
 
   const toggleSidebar = useCallback(() => {
@@ -234,7 +248,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         switchSession,
         removeSession,
         renameSession,
-        updateActiveSession,
+        persistSession,
         toggleSidebar,
         setSidebarOpen,
       }}

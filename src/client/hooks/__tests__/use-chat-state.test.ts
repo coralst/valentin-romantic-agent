@@ -115,3 +115,75 @@ describe('chatReducer — property tests', () => {
     );
   });
 });
+
+describe('chatReducer — SESSION_INIT', () => {
+  const welcome: ChatMessage = {
+    id: 'welcome-1',
+    sessionId: 'sess',
+    sender: 'agent',
+    content: "Hello! I'm Valentin, your romantic concierge.",
+    timestamp: '2026-08-21T10:00:00.000Z',
+  };
+
+  it('adds the welcome message to an empty transcript', () => {
+    const next = chatReducer(makeState([], ''), {
+      type: 'SESSION_INIT',
+      sessionId: 'sess-1',
+      welcomeMessage: welcome,
+    });
+
+    expect(next.sessionId).toBe('sess-1');
+    expect(next.messages).toEqual([welcome]);
+  });
+
+  /**
+   * REGRESSION GUARD. The server greets on every connect, so a reconnect or a
+   * reload re-delivers `session_init`. Appending unconditionally re-greeted a
+   * restored conversation and — because transcripts are now persisted — saved
+   * the duplicate, so the greeting accumulated on every reload.
+   */
+  it('does not re-append the welcome message to a restored transcript', () => {
+    const restored: ChatMessage[] = [
+      {
+        id: 'msg-1',
+        sessionId: 'sess',
+        sender: 'user',
+        content: 'Alice loves jazz',
+        timestamp: '2026-08-21T10:01:00.000Z',
+      },
+    ];
+
+    let state = makeState(restored, '');
+    // Three reconnects in a row.
+    for (let i = 0; i < 3; i += 1) {
+      state = chatReducer(state, {
+        type: 'SESSION_INIT',
+        sessionId: 'sess-1',
+        welcomeMessage: welcome,
+      });
+    }
+
+    expect(state.messages).toEqual(restored);
+    expect(state.messages.filter((m) => m.id === 'welcome-1')).toHaveLength(0);
+  });
+
+  it('still adopts the server session id when the transcript is restored', () => {
+    const restored: ChatMessage[] = [
+      {
+        id: 'msg-1',
+        sessionId: 'sess',
+        sender: 'user',
+        content: 'hi',
+        timestamp: '2026-08-21T10:01:00.000Z',
+      },
+    ];
+
+    const next = chatReducer(makeState(restored, ''), {
+      type: 'SESSION_INIT',
+      sessionId: 'server-session-9',
+      welcomeMessage: welcome,
+    });
+
+    expect(next.sessionId).toBe('server-session-9');
+  });
+});

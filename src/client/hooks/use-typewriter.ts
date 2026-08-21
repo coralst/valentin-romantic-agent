@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { prefersReducedMotion } from '../utils/motion-preference';
 
 /** Options controlling the typewriter reveal. */
 export interface UseTypewriterOptions {
@@ -14,17 +15,6 @@ export interface UseTypewriterResult {
   displayedText: string;
   /** True once the full text has been revealed. */
   isComplete: boolean;
-}
-
-/**
- * Detect the user's reduced-motion preference. Guarded for SSR/jsdom where
- * matchMedia may be undefined.
- */
-function prefersReducedMotion(): boolean {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-    return false;
-  }
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
 const DEFAULT_SPEED_MS = 18;

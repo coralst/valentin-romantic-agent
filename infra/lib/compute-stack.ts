@@ -16,15 +16,15 @@ export interface ComputeStackProps extends cdk.StackProps {
 /**
  * ECS Fargate compute stack for the Valentin backend.
  *
- * Creates: ECS Cluster, ECR repo, Task Definition, Fargate Service,
- * ALB with health-check and sticky sessions, auto-scaling, and
- * security groups.
+ * Creates: ECS Cluster, Task Definition, Fargate Service, ALB with
+ * health-check and sticky sessions, auto-scaling, and security groups.
+ * The ECR repository is imported, not created.
  */
 export class ComputeStack extends cdk.Stack {
   public readonly cluster: ecs.Cluster;
   public readonly service: ecs.FargateService;
   public readonly loadBalancer: elbv2.ApplicationLoadBalancer;
-  public readonly ecrRepository: ecr.Repository;
+  public readonly ecrRepository: ecr.IRepository;
 
   constructor(scope: Construct, id: string, props: ComputeStackProps) {
     super(scope, id, props);
@@ -39,16 +39,15 @@ export class ComputeStack extends cdk.Stack {
         natGateways: 1,
       });
 
-    // --- ECR Repository (import existing or create) ---
+    // --- ECR Repository ---
+    // Imported rather than declared: deploy.sh builds and pushes the image
+    // before `cdk deploy` runs, so the repository already exists and must
+    // not be managed by this stack.
     this.ecrRepository = ecr.Repository.fromRepositoryName(
-      this, 'BackendRepo', `valentin-backend-${env}`
-    ) as unknown as ecr.Repository;
-    const _lifecycleRules = [
-        {
-          maxImageCount: 10,
-          description: 'Keep last 10 images',
-        },
-    ];
+      this,
+      'BackendRepo',
+      `valentin-backend-${env}`,
+    );
 
     // --- ECS Cluster ---
     this.cluster = new ecs.Cluster(this, 'Cluster', {

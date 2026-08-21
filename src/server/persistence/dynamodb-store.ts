@@ -232,6 +232,11 @@ export class DynamoDBStore implements StorageInterface {
       entityType: 'Preference',
     };
 
+    // Timed across both writes, because both are what a save actually costs.
+    // `span-bridge.ts` reads this duration for the DynamoDB node in the
+    // architecture drawer; the store itself knows nothing about that.
+    const startedAt = Date.now();
+
     await this.docClient.send(
       new PutCommand({ TableName: this.tableName, Item: item }),
     );
@@ -246,7 +251,12 @@ export class DynamoDBStore implements StorageInterface {
       }),
     );
 
-    logger.info('preference.saved', { sessionId: pref.sessionId, category: pref.category, key: pref.key });
+    logger.info('preference.saved', {
+      sessionId: pref.sessionId,
+      category: pref.category,
+      key: pref.key,
+      durationMs: Date.now() - startedAt,
+    });
     return record;
   }
 

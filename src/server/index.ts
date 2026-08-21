@@ -7,6 +7,7 @@ import { PreferenceExtractor } from './extraction/preference-extractor';
 import { EventRouter } from './api/event-router';
 import { WsGateway } from './api/ws-gateway';
 import { createHttpRoutes } from './api/http-routes';
+import { startSpanBridge } from './telemetry/span-bridge';
 import type { ServerEvent } from '../shared/interfaces/ws-events';
 
 /**
@@ -77,6 +78,11 @@ export function createServer() {
     agentCore,
     extractor,
   );
+
+  // Telemetry — turns the server's own log lines into `aws_span` events. Not
+  // load-bearing: remove this and the drawer still opens and still highlights
+  // from WebSocket events, it just loses the measured durations.
+  startSpanBridge(emit);
 
   // API layer
   eventRouter = new EventRouter(orchestrator, emit);

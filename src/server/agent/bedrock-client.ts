@@ -1,6 +1,7 @@
 import {
   BedrockRuntimeClient,
   ConverseCommand,
+  type ConverseCommandOutput,
   type Message,
   type SystemContentBlock,
   type Tool,
@@ -10,6 +11,7 @@ import {
 import type { ChatMessage } from '../../shared/interfaces/message';
 import { LlmError } from '../../shared/errors/llm-error';
 import { config } from '../config';
+import { logger } from '../logging';
 
 /** Schema definition for a Bedrock tool-use call */
 export interface ToolSchema {
@@ -76,6 +78,19 @@ function extractTextFromBlocks(blocks: ContentBlock[] | undefined): string {
     .join('');
 }
 
+/**
+ * The session a batch of messages belongs to.
+ *
+ * Every message in a Converse call comes from one conversation, so any of them
+ * will do; the last is used because a trimmed history can start anywhere. Falls
+ * back to `'unknown'` rather than throwing — a span that cannot be attributed
+ * is worth less than one that can, but not so little that it should be allowed
+ * to break the reply it was measuring.
+ */
+function sessionIdOf(messages: ChatMessage[]): string {
+  return messages[messages.length - 1]?.sessionId ?? 'unknown';
+}
+
 /** Build guardrail config if environment variables are set */
 function buildGuardrailConfig(): GuardrailConfiguration | undefined {
   if (!config.bedrockGuardrailId) return undefined;
@@ -103,6 +118,47 @@ export class AwsBedrockClient implements BedrockClient {
     return this.modelId;
   }
 
+  /**
+   * Send a Converse command, timing it and logging the result.
+   *
+   * The duration has to be measured around the SDK call itself — this is the
+   * one number in the system nobody can estimate, and it is the number the
+   * architecture drawer shows for the Bedrock node. `span-bridge.ts` turns this
+   * log line into an `aws_span`; nothing here knows that, which is the point of
+   * routing telemetry through the log seam rather than wiring an emitter in.
+   *
+   * Logs on the failure path too, and before rethrowing: a Converse call that
+   * took four seconds and then threw is the single most useful thing to see on
+   * stage, and it is exactly what a success-only wrapper hides.
+   */
+  private async sendTimed(
+    command: ConverseCommand,
+    operation: string,
+    sessionId: string,
+  ): Promise<ConverseCommandOutput> {
+    const startedAt = Date.now();
+    try {
+      const response = await this.client.send(command);
+      logger.info('bedrock.converse', {
+        sessionId,
+        operation,
+        modelId: this.modelId,
+        durationMs: Date.now() - startedAt,
+        ok: true,
+      });
+      return response;
+    } catch (err) {
+      logger.info('bedrock.converse', {
+        sessionId,
+        operation,
+        modelId: this.modelId,
+        durationMs: Date.now() - startedAt,
+        ok: false,
+      });
+      throw err;
+    }
+  }
+
   async generateResponse(
     messages: ChatMessage[],
     systemPrompt: string,
@@ -123,7 +179,11 @@ export class AwsBedrockClient implements BedrockClient {
         guardrailConfig: buildGuardrailConfig(),
       });
 
-      const response = await this.client.send(command);
+      const response = await this.sendTimed(
+        command,
+        'chat-reply',
+        sessionIdOf(messages),
+      );
 
       // Handle guardrail intervention — return the blocked message instead of throwing
       if (response.stopReason === 'guardrail_intervened') {
@@ -190,7 +250,11 @@ export class AwsBedrockClient implements BedrockClient {
         guardrailConfig: buildGuardrailConfig(),
       });
 
-      const response = await this.client.send(command);
+      const response = await this.sendTimed(
+        command,
+        'extract-preferences',
+        message.sessionId,
+      );
 
       // Handle guardrail intervention — return empty extraction
       if (response.stopReason === 'guardrail_intervened') {

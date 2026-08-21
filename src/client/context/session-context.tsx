@@ -131,6 +131,8 @@ interface SessionContextValue {
   state: SessionState;
   activeSession: StoredSession | null;
   createSession: () => StoredSession;
+  /** Insert an already-built session (e.g. one created server-side) into the store */
+  adoptSession: (session: StoredSession) => void;
   switchSession: (id: string) => void;
   removeSession: (id: string) => void;
   renameSession: (id: string, title: string) => void;
@@ -167,6 +169,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     saveSession(session);
     dispatch({ type: 'ADD_SESSION', session });
     return session;
+  }, []);
+
+  const adoptSession = useCallback((session: StoredSession) => {
+    saveSession(session);
+    dispatch({ type: 'ADD_SESSION', session });
   }, []);
 
   const switchSession = useCallback((id: string) => {
@@ -211,6 +218,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         state,
         activeSession,
         createSession,
+        adoptSession,
         switchSession,
         removeSession,
         renameSession,

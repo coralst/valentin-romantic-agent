@@ -24,6 +24,7 @@ export type ProfileStoreAction =
   | { type: 'CLEAR_MANUAL_VALUE'; fieldId: string }
   | { type: 'SET_DISCOVERED_VALUE'; fieldId: string; value: string; confidence: number }
   | { type: 'RESTORE'; state: Partial<ProfileStoreState> }
+  | { type: 'CLEAR_ALL_VALUES' }
   | { type: 'STORAGE_ERROR'; message: string }
   | { type: 'CLEAR_STORAGE_ERROR' };
 
@@ -91,6 +92,15 @@ export function profileStoreReducer(
         ...state,
         partnerPhoto: action.state.partnerPhoto ?? null,
         manualValues: action.state.manualValues ?? {},
+      };
+
+    case 'CLEAR_ALL_VALUES':
+      return {
+        ...state,
+        partnerPhoto: null,
+        manualValues: {},
+        discoveredValues: {},
+        storageError: null,
       };
 
     case 'STORAGE_ERROR':

@@ -18,6 +18,21 @@ interface IconRailProps {
   onViewChange?: (view: RailView) => void;
   /** Opens the conversation history — the ☰ button. Mobile only in practice. */
   onOpenSessions: () => void;
+  /**
+   * True when the full-page dossier is the surface on screen.
+   *
+   * Separate from `activeView` on purpose: on desktop `activeView` is `null`
+   * because chat and brief are both visible, but the dossier genuinely *is* a
+   * single active surface and the ♥ has to say so.
+   */
+  isDossierActive?: boolean;
+  /** Toggles the dossier. When absent the ♥ falls back to `onViewChange`. */
+  onToggleDossier?: () => void;
+  /**
+   * Attached to the ♥. Closing the dossier — via `.back` or Escape — returns
+   * focus here rather than stranding it on a removed element.
+   */
+  dossierToggleRef?: React.RefObject<HTMLButtonElement | null>;
 }
 
 const INACTIVE_ICON_COLOR = 'rgba(255, 253, 251, 0.6)';
@@ -130,6 +145,9 @@ export function IconRail({
   activeView,
   onViewChange,
   onOpenSessions,
+  isDossierActive = false,
+  onToggleDossier,
+  dossierToggleRef,
 }: IconRailProps) {
   const [isDemoOpen, setDemoOpen] = useState(false);
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
@@ -178,6 +196,20 @@ export function IconRail({
     };
   }, [isDemoOpen]);
 
+  /*
+   * Two independent notions of "active", collapsed into one pair of flags.
+   *
+   * `activeView` is the mobile panel switch, where exactly one of chat/brief is
+   * on screen. `isDossierActive` is the desktop full-page surface, where
+   * `activeView` is deliberately `null` because chat and brief share the window.
+   * The ♥ lights up for either, and `aria-pressed` is only meaningful when at
+   * least one of them is actually a single-surface state — on plain desktop chat
+   * both buttons stay unpressed, which is what `IconRail.test.tsx:76` asserts.
+   */
+  const isProfileActive = isDossierActive || activeView === 'profile';
+  const isChatActive = !isDossierActive && activeView === 'chat';
+  const hasSurfaceState = isDossierActive || activeView !== null;
+
   return (
     <nav
       style={getRailStyle(orientation)}
@@ -191,9 +223,9 @@ export function IconRail({
 
       <button
         type="button"
-        style={getIconButtonStyle(activeView === 'chat')}
+        style={getIconButtonStyle(isChatActive)}
         aria-label="Conversation"
-        aria-pressed={activeView === null ? undefined : activeView === 'chat'}
+        aria-pressed={hasSurfaceState ? isChatActive : undefined}
         onClick={() => onViewChange?.('chat')}
         data-testid="rail-chat-button"
       >
@@ -201,11 +233,12 @@ export function IconRail({
       </button>
 
       <button
+        ref={dossierToggleRef}
         type="button"
-        style={getIconButtonStyle(activeView === 'profile')}
+        style={getIconButtonStyle(isProfileActive)}
         aria-label="Her profile"
-        aria-pressed={activeView === null ? undefined : activeView === 'profile'}
-        onClick={() => onViewChange?.('profile')}
+        aria-pressed={hasSurfaceState ? isProfileActive : undefined}
+        onClick={() => (onToggleDossier ? onToggleDossier() : onViewChange?.('profile'))}
         data-testid="rail-profile-button"
       >
         &#9829;

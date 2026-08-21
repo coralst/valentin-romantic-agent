@@ -96,6 +96,17 @@ function renderIngestion() {
         view.result.current.profile.dispatch({ type: 'SET_MANUAL_VALUE', fieldId, value });
       });
     },
+    /** What the dossier's ✗ dispatches. */
+    rejectField(fieldId: string) {
+      act(() => {
+        view.result.current.profile.dispatch({ type: 'CLEAR_DISCOVERED_VALUE', fieldId });
+      });
+    },
+    addPreferences(preferences: PreferenceWithHistory[]) {
+      act(() => {
+        view.result.current.preferences.dispatch({ type: 'LOAD_PREFERENCES', preferences });
+      });
+    },
   };
 }
 
@@ -240,6 +251,59 @@ describe('usePreferenceIngestion', () => {
       expect(view.result.current.profile.getFieldValue('favorite_cuisine')?.value).toBe('Thai');
       // Both dispatches land in a single batched effect pass, and nothing follows.
       expect(view.discoveredWriteBatches).toBe(1);
+    });
+  });
+
+  /*
+   * Found in the Stage 6 screenshots, not by reasoning: pressing the dossier's ✗
+   * ten times cleared exactly one field. Rejecting a guess removes the discovered
+   * *value*, but the preference that produced it is still in the preferences
+   * store, so the next pass of this effect put it straight back.
+   */
+  describe('rejected values stay rejected', () => {
+    it('does not re-ingest a value the user has rejected', () => {
+      const view = renderIngestion();
+
+      view.addPreference(makePreference({ category: 'food', key: 'cuisine', value: 'Italian' }));
+      expect(view.result.current.profile.getFieldValue('favorite_cuisine')?.value).toBe('Italian');
+
+      view.rejectField('favorite_cuisine');
+      expect(view.result.current.profile.getFieldValue('favorite_cuisine')).toBeNull();
+
+      // A further extraction arriving must not resurrect the rejected field, even
+      // though the original preference is still sitting in the store.
+      view.addPreference(
+        makePreference({ id: 'p-2', category: 'music', key: 'genre', value: 'Jazz' }),
+      );
+
+      expect(view.result.current.profile.getFieldValue('favorite_cuisine')).toBeNull();
+      expect(view.result.current.profile.getFieldValue('music_genre')?.value).toBe('Jazz');
+    });
+
+    it('lets a manual answer override an earlier rejection', () => {
+      const view = renderIngestion();
+
+      view.addPreference(makePreference({ category: 'food', key: 'cuisine', value: 'Italian' }));
+      view.rejectField('favorite_cuisine');
+      view.setManualValue('favorite_cuisine', 'Thai');
+
+      expect(view.result.current.profile.getFieldValue('favorite_cuisine')?.value).toBe('Thai');
+      // The rejection is lifted, so a *different* later discovery can be offered
+      // as a guess again rather than being suppressed forever.
+      expect(view.result.current.profile.state.rejectedFieldIds).not.toContain('favorite_cuisine');
+    });
+
+    it('rejects each field independently', () => {
+      const view = renderIngestion();
+
+      view.addPreferences([
+        makePreference({ id: 'p-1', category: 'food', key: 'cuisine', value: 'Italian' }),
+        makePreference({ id: 'p-2', category: 'music', key: 'genre', value: 'Jazz' }),
+      ]);
+      view.rejectField('favorite_cuisine');
+
+      expect(view.result.current.profile.getFieldValue('favorite_cuisine')).toBeNull();
+      expect(view.result.current.profile.getFieldValue('music_genre')?.value).toBe('Jazz');
     });
   });
 

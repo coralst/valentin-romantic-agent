@@ -19,27 +19,19 @@ import { GoodToKnow, type Chip } from './brief/GoodToKnow';
 import { ValentinNudge } from './brief/ValentinNudge';
 import { TallyFooter } from './brief/TallyFooter';
 import { onClaret } from './brief/rail-tones';
+import { useOptionalViewContext } from '../context/view-context';
 import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
 
 /*
- * TODO(yellow) — Stage 6 rescues the unmapped extraction output.
+ * The unmapped extraction output is rescued, as of Stage 6.
  *
- * `PartnerProfilePanel` used to route every preference that `resolveField()`
- * could not match onto one of the 18 registry fields into an "Other
- * Discoveries" group. Neither mockup has that module, so the rail does not
- * render it, and that output is currently invisible: an extraction like
- * `hobbies: "she collects vinyl"` still lands in the preferences store but has
- * nowhere on screen to go.
- *
- * Stage 6 brings it back as an "Also mentioned" board card. `CategoryGroup.tsx`
- * and `PreferenceCard.tsx` are deliberately kept in the tree, unreferenced but
- * compiling, so that stage has something to mount rather than having to rebuild
- * the grouping from scratch. Do not delete them, and do not consider this rail
- * feature-complete until that card exists.
- *
- * `KeepInMind` already rescues the *most consequential* slice of it — the
- * allergy/avoidance keys — because a dinner suggestion that ignores an allergy
- * is worse than no suggestion, and that could not wait two stages.
+ * Preferences that `resolveField()` cannot match onto one of the 18 registry
+ * fields now render in the dossier's "Also mentioned" card
+ * (`dossier/AlsoMentioned.tsx`), through the `CategoryGroup`/`PreferenceCard`
+ * pair that was kept alive for exactly that. The rail keeps rescuing the most
+ * consequential slice itself — `KeepInMind`'s allergy/avoidance keys — because
+ * a dinner suggestion that ignores an allergy is worse than no suggestion, and
+ * that has to be visible without opening the dossier.
  */
 
 /**
@@ -182,6 +174,12 @@ export function BriefRail({ isMobile = false }: BriefRailProps) {
   const { state: profileState, dispatch: profileDispatch, getFieldValue } =
     useProfileStoreContext();
   const { dispatch: chatDispatch } = useChatContext();
+  /*
+   * Optional, not required: the footer grows its "Full profile →" link when the
+   * app's view context is above the rail, and the rail still renders without it
+   * in the unit tests that mount it on its own.
+   */
+  const view = useOptionalViewContext();
 
   /** Field ids whose nudge the user has waved off this session. */
   const [dismissedGaps, setDismissedGaps] = useState<Set<string>>(new Set());
@@ -344,7 +342,7 @@ export function BriefRail({ isMobile = false }: BriefRailProps) {
           />
         )}
 
-        <TallyFooter filled={filled} total={total} />
+        <TallyFooter filled={filled} total={total} onOpenFullProfile={view?.openDossier} />
       </aside>
     </div>
   );

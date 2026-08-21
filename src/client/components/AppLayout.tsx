@@ -7,76 +7,10 @@ import { DiscoveryProvider } from '../context/discovery-context';
 import { usePreferenceIngestion } from '../hooks/use-preference-ingestion';
 import { useChatContext } from '../context/chat-context';
 import { SessionSidebar } from './SessionSidebar';
-import { DemoToolbar } from './DemoToolbar';
+import { AppWindow, windowCellStyle, windowCellGrowStyle } from './AppWindow';
+import { IconRail } from './IconRail';
 import { useSessionContext } from '../context/session-context';
-import { breakpoints, spacing, colors, typography, shadows, animation, borderRadius } from '../design-system/tokens';
-
-const headerStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: spacing.sm,
-  padding: `${spacing.xs + 4}px ${spacing.md}px`,
-  background: colors.headerGradient,
-  backdropFilter: 'blur(12px)',
-  boxShadow: shadows.header,
-  position: 'relative',
-  zIndex: 10,
-};
-
-const logoStyle: React.CSSProperties = {
-  height: 40,
-  objectFit: 'contain',
-};
-
-const brandStyle: React.CSSProperties = {
-  fontFamily: typography.headingFontFamily,
-  fontSize: typography.sizes.lg,
-  fontWeight: typography.weights.bold,
-  color: colors.softBurgundy,
-  letterSpacing: '-0.01em',
-};
-
-const desktopStyle: React.CSSProperties = {
-  display: 'flex',
-  flex: 1,
-  minHeight: 0,
-  width: '100%',
-};
-
-const leftPanelStyle: React.CSSProperties = {
-  flex: 1,
-  minWidth: 0,
-};
-
-const dividerStyle: React.CSSProperties = {
-  width: 1,
-  backgroundColor: colors.borderSubtle,
-};
-
-const rightPanelStyle: React.CSSProperties = {
-  width: 380,
-  flexShrink: 0,
-};
-
-const mobileContainerStyle: React.CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  height: '100vh',
-  width: '100%',
-};
-
-const mobilePanelStyle: React.CSSProperties = {
-  flex: 1,
-  minHeight: 0,
-};
-
-const outerStyle: React.CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  height: '100vh',
-  width: '100%',
-  backgroundColor: colors.background,
-};
+import { breakpoints } from '../design-system/tokens';
 
 const liveRegionStyle: React.CSSProperties = {
   position: 'absolute',
@@ -88,22 +22,6 @@ const liveRegionStyle: React.CSSProperties = {
   clip: 'rect(0, 0, 0, 0)',
   whiteSpace: 'nowrap',
   border: 0,
-};
-
-const menuButtonStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: 32,
-  height: 32,
-  border: 'none',
-  borderRadius: borderRadius.sm,
-  backgroundColor: 'transparent',
-  cursor: 'pointer',
-  fontSize: typography.sizes.md,
-  color: colors.textSecondary,
-  marginRight: spacing.xs,
-  transition: `background-color ${animation.durations.fast}ms ${animation.easing.easeInOut}`,
 };
 
 /**
@@ -151,24 +69,21 @@ function AppLayoutContent() {
   if (isMobile) {
     return (
       <DiscoveryProvider value={discovery}>
-        <div style={outerStyle} data-testid="app-layout" data-layout="mobile">
-          <header style={headerStyle}>
-            <button
-              style={menuButtonStyle}
-              onClick={() => setSidebarOpen(true)}
-              aria-label="Open session history"
-              data-testid="sidebar-menu-button"
-            >
-              &#9776;
-            </button>
-            <img src="/logo.png" alt="Valentin logo" style={logoStyle} />
-            <span style={brandStyle}>Valentin</span>
-            <DemoToolbar />
-          </header>
-          <MobileNav activePanel={activePanel} onPanelChange={setActivePanel} />
-          <div style={mobilePanelStyle}>
-            {activePanel === 'chat' ? <ChatPanel /> : profilePanel}
-          </div>
+        <div data-testid="app-layout" data-layout="mobile">
+          <AppWindow variant="mobile">
+            <IconRail
+              orientation="row"
+              activeView={activePanel}
+              onViewChange={setActivePanel}
+              onOpenSessions={() => setSidebarOpen(true)}
+            />
+            <div style={windowCellStyle}>
+              <MobileNav activePanel={activePanel} onPanelChange={setActivePanel} />
+              <div style={windowCellGrowStyle}>
+                {activePanel === 'chat' ? <ChatPanel /> : profilePanel}
+              </div>
+            </div>
+          </AppWindow>
           <SessionSidebar isMobile={true} />
           {liveRegion}
         </div>
@@ -178,22 +93,21 @@ function AppLayoutContent() {
 
   return (
     <DiscoveryProvider value={discovery}>
-      <div style={outerStyle} data-testid="app-layout" data-layout="desktop">
-        <header style={headerStyle}>
-          <img src="/logo.png" alt="Valentin logo" style={logoStyle} />
-          <span style={brandStyle}>Valentin</span>
-          <DemoToolbar />
-        </header>
-        <div style={desktopStyle}>
+      <div data-testid="app-layout" data-layout="desktop">
+        <AppWindow variant="desktop">
+          {/* Both surfaces are on screen at once on desktop, so no rail button
+              claims to be the "active view". */}
+          <IconRail
+            orientation="column"
+            activeView={null}
+            onOpenSessions={() => setSidebarOpen(true)}
+          />
           <SessionSidebar isMobile={false} />
-          <div style={leftPanelStyle}>
+          <div style={windowCellStyle}>
             <ChatPanel />
           </div>
-          <div style={dividerStyle} />
-          <div style={rightPanelStyle}>
-            {profilePanel}
-          </div>
-        </div>
+          <div style={windowCellStyle}>{profilePanel}</div>
+        </AppWindow>
         {liveRegion}
       </div>
     </DiscoveryProvider>

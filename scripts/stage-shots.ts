@@ -1,85 +1,115 @@
 /**
- * Capture the per-stage checkpoint screenshots for the UI rebuild.
+ * Takes desktop/tablet/mobile screenshots of a running app, seeding a demo
+ * profile first so the shells are shot with real content rather than empty
+ * states. Fails on any browser console error, so a screenshot run doubles as a
+ * smoke test of the page it captures.
  *
- * Uses "Load demo profile" rather than driving a live conversation, so a
- * checkpoint takes ~10s instead of ~60s and produces the same frame every run.
- * A live-conversation shot is scripts/deck-shot-app.ts.
- *
- * Must live in the project directory — run from /tmp and the @playwright/test
- * import fails with ERR_MODULE_NOT_FOUND.
- *
- * Usage: npx tsx scripts/stage-shots.ts <stage-label> [baseUrl]
- *   npx tsx scripts/stage-shots.ts stage3
- *   npx tsx scripts/stage-shots.ts stage3-deployed https://d26dwovftfq9oe.cloudfront.net
+ * Usage: npx tsx scripts/stage-shots.ts <label> [baseUrl]
  */
-import { chromium, type Page } from '@playwright/test';
-import { mkdirSync } from 'node:fs';
+import { chromium, type Browser, type Page } from '@playwright/test';
+import { mkdir } from 'fs/promises';
+import path from 'path';
 
-const LABEL = process.argv[2] ?? 'stage';
-const BASE = process.argv[3] ?? 'http://localhost:5173';
-const OUT = 'docs/design/checkpoints';
-
-/** The plan's verification widths: desktop comp, desktop threshold, phone. */
 const VIEWPORTS = [
   { name: 'desktop', width: 1440, height: 900 },
-  { name: 'threshold', width: 1024, height: 768 },
+  { name: 'tablet', width: 1024, height: 768 },
   { name: 'mobile', width: 375, height: 667 },
-];
+] as const;
 
-async function seed(page: Page): Promise<boolean> {
-  const button = page.getByTestId('load-demo-profile-button');
-  if ((await button.count()) === 0) {
-    console.log('  no load-demo-profile-button found — capturing empty state');
-    return false;
-  }
-  await button.click();
-  // The seed round-trips to the server, then the client reloads preferences.
-  await page.waitForTimeout(4_000);
+const label = process.argv[2];
+const baseUrl = process.argv[3] ?? 'http://localhost:5173';
+
+if (!label) {
+  console.error('usage: npx tsx scripts/stage-shots.ts <label> [baseUrl]');
+  process.exit(1);
+}
+
+// Lives under docs/design/ so checkpoint shots sit beside the mockups they are
+// compared against, and inside a directory that is already tracked.
+const outDir = path.resolve('docs/design/checkpoints', label);
+
+/** Console errors seen across the whole run, tagged with the viewport. */
+const consoleErrors: string[] = [];
+
+function watchForErrors(page: Page, viewport: string) {
+  page.on('console', (message) => {
+    if (message.type() === 'error') {
+      consoleErrors.push(`[${viewport}] console: ${message.text()}`);
+    }
+  });
+  page.on('pageerror', (error) => {
+    consoleErrors.push(`[${viewport}] pageerror: ${error.message}`);
+  });
+}
+
+/**
+ * Click the demo seed button so the shot has content. The button lives behind
+ * the icon rail's gear popover, so open that first. Best-effort: if the backend
+ * is not up the shot is still taken, just with an empty state.
+ */
+async function seedDemoProfile(page: Page): Promise<boolean> {
+  const gear = page.getByRole('button', { name: 'Demo controls' });
+  if (!(await gear.isVisible().catch(() => false))) return false;
+  await gear.click();
+
+  const seed = page.getByTestId('load-demo-profile-button');
+  if (!(await seed.isVisible().catch(() => false))) return false;
+  await seed.click();
+
+  // The button reads "Loading…" while in flight; wait for it to settle.
+  await page
+    .getByTestId('demo-toolbar-status')
+    .waitFor({ state: 'visible', timeout: 15_000 })
+    .catch(() => {});
+
+  // Dismiss the popover so it does not cover the shell in the screenshot.
+  await page.keyboard.press('Escape');
   return true;
 }
 
-async function main() {
-  mkdirSync(OUT, { recursive: true });
-  const browser = await chromium.launch();
-  const errors: string[] = [];
+async function shoot(browser: Browser, viewport: (typeof VIEWPORTS)[number]) {
+  const page = await browser.newPage({
+    viewport: { width: viewport.width, height: viewport.height },
+  });
+  watchForErrors(page, viewport.name);
 
-  for (const vp of VIEWPORTS) {
-    const page = await browser.newPage({ viewport: { width: vp.width, height: vp.height } });
-    page.on('console', (m) => {
-      if (m.type() === 'error') errors.push(`[${vp.name}] ${m.text()}`);
-    });
-    page.on('pageerror', (e) => errors.push(`[${vp.name}] pageerror: ${e.message}`));
+  await page.goto(baseUrl, { waitUntil: 'networkidle' });
+  await page.getByTestId('app-layout').waitFor({ timeout: 15_000 });
 
-    await page.goto(BASE, { waitUntil: 'networkidle' });
-    // Verify the app actually rendered — CloudFront serves index.html with a 200
-    // for any path, so a status code proves nothing about a deployed page.
-    console.log(`${vp.name}: <title> ${await page.title()}`);
-    await page.getByTestId('app-layout').waitFor({ timeout: 30_000 });
+  const seeded = await seedDemoProfile(page);
+  // Let the seeded transcript settle and any transition finish.
+  await page.waitForTimeout(900);
 
-    await seed(page);
-    await page.screenshot({ path: `${OUT}/${LABEL}-${vp.name}.png` });
-    console.log(`  captured ${LABEL}-${vp.name}.png (${vp.width}x${vp.height})`);
+  const file = path.join(outDir, `${viewport.name}.png`);
+  await page.screenshot({ path: file });
+  console.log(
+    `[stage-shots] ${viewport.name} ${viewport.width}x${viewport.height} -> ${file}` +
+      (seeded ? ' (seeded)' : ' (not seeded)'),
+  );
 
-    // Full-page too, so a rail that clips its last row is visible in the artifact.
-    if (vp.name === 'desktop') {
-      await page.screenshot({ path: `${OUT}/${LABEL}-desktop-full.png`, fullPage: true });
-      console.log(`  captured ${LABEL}-desktop-full.png`);
-    }
-    await page.close();
-  }
-
-  await browser.close();
-
-  if (errors.length > 0) {
-    console.log('\n===== BROWSER ERRORS =====');
-    errors.forEach((e) => console.log(e));
-    process.exitCode = 1;
-  } else {
-    console.log('\nno browser errors');
-  }
+  await page.close();
 }
 
-main().catch((err) => {
-  console.error(err);
+async function main() {
+  await mkdir(outDir, { recursive: true });
+  const browser = await chromium.launch();
+  try {
+    for (const viewport of VIEWPORTS) {
+      await shoot(browser, viewport);
+    }
+  } finally {
+    await browser.close();
+  }
+
+  if (consoleErrors.length > 0) {
+    console.error(`\n[stage-shots] ${consoleErrors.length} browser error(s):`);
+    for (const error of consoleErrors) console.error(`  ${error}`);
+    process.exit(1);
+  }
+  console.log('\n[stage-shots] no browser errors');
+}
+
+main().catch((error) => {
+  console.error('[stage-shots] failed:', error);
   process.exit(1);
 });

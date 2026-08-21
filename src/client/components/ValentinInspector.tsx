@@ -542,10 +542,13 @@ export function ValentinInspector() {
 /**
  * Renders the panel into `document.body`.
  *
- * The host header uses `backdrop-filter`, which makes it a containing block for
- * fixed-position descendants — without a portal the panel would be clipped
- * inside the header instead of spanning the viewport edge. Portalling also
- * keeps the panel's stacking context independent of the toolbar's.
+ * The portal originally escaped the old top header's `backdrop-filter`, which
+ * made it a containing block for fixed-position descendants. That header is
+ * gone, but the portal is still required — and for a stronger reason: the panel
+ * now mounts inside the app window, which sets `overflow: hidden` to keep its
+ * 34px radius crisp, so an un-portalled panel is clipped at the window edge
+ * instead of spanning the viewport. Portalling also keeps the panel's stacking
+ * context independent of its host toolbar's.
  */
 function InspectorPanelPortal({ onClose }: ValentinInspectorPanelProps) {
   if (typeof document === 'undefined') return null;

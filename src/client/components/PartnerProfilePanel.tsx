@@ -1,6 +1,7 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useMemo, useCallback } from 'react';
 import { usePreferencesContext } from '../context/preferences-context';
 import { useProfileStoreContext } from '../context/profile-store-context';
+import { useDiscoveryContext } from '../context/discovery-context';
 import { PROFILE_FIELD_SECTIONS, PROFILE_FIELD_REGISTRY, getFieldsBySection, getDateFields } from '../utils/profile-field-registry';
 import { resolveField } from '../utils/preference-field-mapper';
 import { deriveOccasions } from '../utils/occasion-derivation';
@@ -10,7 +11,7 @@ import { CompletionSummary } from './CompletionSummary';
 import { FieldSection } from './FieldSection';
 import { CategoryGroup } from './CategoryGroup';
 import { OccasionCalendar } from './OccasionCalendar';
-import { colors, spacing, typography, animation } from '../design-system/tokens';
+import { colors, spacing, typography } from '../design-system/tokens';
 import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
 
 const panelStyle: React.CSSProperties = {
@@ -72,64 +73,13 @@ const storageErrorStyle: React.CSSProperties = {
   textAlign: 'center',
 };
 
-const liveRegionStyle: React.CSSProperties = {
-  position: 'absolute',
-  width: 1,
-  height: 1,
-  padding: 0,
-  margin: -1,
-  overflow: 'hidden',
-  clip: 'rect(0, 0, 0, 0)',
-  whiteSpace: 'nowrap',
-  border: 0,
-};
-
 export function PartnerProfilePanel() {
   const { state: preferencesState, dispatch: preferencesDispatch } = usePreferencesContext();
   const { state: profileState, dispatch: profileDispatch, getFieldValue } = useProfileStoreContext();
 
-  const [highlightedFieldIds, setHighlightedFieldIds] = useState<Set<string>>(new Set());
-  const [liveAnnouncement, setLiveAnnouncement] = useState('');
-
-  // Map incoming preferences to profile fields
-  useEffect(() => {
-    for (const category of PREFERENCE_CATEGORIES) {
-      for (const pref of preferencesState.preferences[category]) {
-        const fieldId = resolveField(pref.category, pref.key);
-        if (fieldId) {
-          // Only set discovered value if no manual value exists
-          const currentManual = profileState.manualValues[fieldId];
-          if (!currentManual) {
-            const currentDiscovered = profileState.discoveredValues[fieldId];
-            if (!currentDiscovered || currentDiscovered.value !== pref.value) {
-              profileDispatch({
-                type: 'SET_DISCOVERED_VALUE',
-                fieldId,
-                value: pref.value,
-                confidence: pref.confidence,
-              });
-
-              // Highlight animation
-              setHighlightedFieldIds((prev) => new Set([...prev, fieldId]));
-              setTimeout(() => {
-                setHighlightedFieldIds((prev) => {
-                  const next = new Set(prev);
-                  next.delete(fieldId);
-                  return next;
-                });
-              }, animation.durations.slow);
-
-              // Live region announcement (R8.4)
-              const fieldDef = PROFILE_FIELD_REGISTRY.find((f) => f.id === fieldId);
-              if (fieldDef) {
-                setLiveAnnouncement(`${fieldDef.label}: ${pref.value}`);
-              }
-            }
-          }
-        }
-      }
-    }
-  }, [preferencesState.preferences]);
+  // Highlight state is owned by the ingestion effect in AppLayoutContent; this
+  // panel only reads it. See use-preference-ingestion.ts.
+  const { highlightedFieldIds } = useDiscoveryContext();
 
   // Handle save field
   const handleSaveField = useCallback((fieldId: string, value: string) => {
@@ -238,11 +188,6 @@ export function PartnerProfilePanel() {
 
       <div style={calendarSectionStyle}>
         <OccasionCalendar occasions={occasions} />
-      </div>
-
-      {/* Live region for screen reader announcements (R8.4) */}
-      <div aria-live="polite" aria-atomic="true" style={liveRegionStyle} data-testid="live-region">
-        {liveAnnouncement}
       </div>
     </div>
   );

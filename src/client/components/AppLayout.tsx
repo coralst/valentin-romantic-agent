@@ -3,6 +3,8 @@ import { ChatPanel } from './ChatPanel';
 import { PartnerProfilePanel } from './PartnerProfilePanel';
 import { MobileNav } from './MobileNav';
 import { ProfileStoreProvider } from '../context/profile-store-context';
+import { DiscoveryProvider } from '../context/discovery-context';
+import { usePreferenceIngestion } from '../hooks/use-preference-ingestion';
 import { useChatContext } from '../context/chat-context';
 import { SessionSidebar } from './SessionSidebar';
 import { DemoToolbar } from './DemoToolbar';
@@ -76,6 +78,18 @@ const outerStyle: React.CSSProperties = {
   backgroundColor: colors.background,
 };
 
+const liveRegionStyle: React.CSSProperties = {
+  position: 'absolute',
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: 'hidden',
+  clip: 'rect(0, 0, 0, 0)',
+  whiteSpace: 'nowrap',
+  border: 0,
+};
+
 const menuButtonStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
@@ -110,6 +124,12 @@ function AppLayoutContent() {
   const [activePanel, setActivePanel] = useState<'chat' | 'profile'>('chat');
   const { setSidebarOpen } = useSessionContext();
 
+  // The app's single preference-ingestion effect. It lives here because this is
+  // the one component guaranteed to be inside both ProfileStoreProvider and
+  // PreferencesProvider, and to be mounted exactly once regardless of which
+  // panels are visible. Consumers read the result via useDiscoveryContext().
+  const discovery = usePreferenceIngestion();
+
   useEffect(() => {
     const mql = window.matchMedia(`(max-width: ${breakpoints.mobile - 1}px)`);
     setIsMobile(mql.matches);
@@ -121,48 +141,61 @@ function AppLayoutContent() {
 
   const profilePanel = <PartnerProfilePanel />;
 
+  /* Live region for screen reader announcements (R8.4) */
+  const liveRegion = (
+    <div aria-live="polite" aria-atomic="true" style={liveRegionStyle} data-testid="live-region">
+      {discovery.liveAnnouncement}
+    </div>
+  );
+
   if (isMobile) {
     return (
-      <div style={outerStyle} data-testid="app-layout" data-layout="mobile">
-        <header style={headerStyle}>
-          <button
-            style={menuButtonStyle}
-            onClick={() => setSidebarOpen(true)}
-            aria-label="Open session history"
-            data-testid="sidebar-menu-button"
-          >
-            &#9776;
-          </button>
-          <img src="/logo.png" alt="Valentin logo" style={logoStyle} />
-          <span style={brandStyle}>Valentin</span>
-          <DemoToolbar />
-        </header>
-        <MobileNav activePanel={activePanel} onPanelChange={setActivePanel} />
-        <div style={mobilePanelStyle}>
-          {activePanel === 'chat' ? <ChatPanel /> : profilePanel}
+      <DiscoveryProvider value={discovery}>
+        <div style={outerStyle} data-testid="app-layout" data-layout="mobile">
+          <header style={headerStyle}>
+            <button
+              style={menuButtonStyle}
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Open session history"
+              data-testid="sidebar-menu-button"
+            >
+              &#9776;
+            </button>
+            <img src="/logo.png" alt="Valentin logo" style={logoStyle} />
+            <span style={brandStyle}>Valentin</span>
+            <DemoToolbar />
+          </header>
+          <MobileNav activePanel={activePanel} onPanelChange={setActivePanel} />
+          <div style={mobilePanelStyle}>
+            {activePanel === 'chat' ? <ChatPanel /> : profilePanel}
+          </div>
+          <SessionSidebar isMobile={true} />
+          {liveRegion}
         </div>
-        <SessionSidebar isMobile={true} />
-      </div>
+      </DiscoveryProvider>
     );
   }
 
   return (
-    <div style={outerStyle} data-testid="app-layout" data-layout="desktop">
-      <header style={headerStyle}>
-        <img src="/logo.png" alt="Valentin logo" style={logoStyle} />
-        <span style={brandStyle}>Valentin</span>
-        <DemoToolbar />
-      </header>
-      <div style={desktopStyle}>
-        <SessionSidebar isMobile={false} />
-        <div style={leftPanelStyle}>
-          <ChatPanel />
+    <DiscoveryProvider value={discovery}>
+      <div style={outerStyle} data-testid="app-layout" data-layout="desktop">
+        <header style={headerStyle}>
+          <img src="/logo.png" alt="Valentin logo" style={logoStyle} />
+          <span style={brandStyle}>Valentin</span>
+          <DemoToolbar />
+        </header>
+        <div style={desktopStyle}>
+          <SessionSidebar isMobile={false} />
+          <div style={leftPanelStyle}>
+            <ChatPanel />
+          </div>
+          <div style={dividerStyle} />
+          <div style={rightPanelStyle}>
+            {profilePanel}
+          </div>
         </div>
-        <div style={dividerStyle} />
-        <div style={rightPanelStyle}>
-          {profilePanel}
-        </div>
+        {liveRegion}
       </div>
-    </div>
+    </DiscoveryProvider>
   );
 }

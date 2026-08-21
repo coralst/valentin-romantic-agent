@@ -127,6 +127,38 @@ parallel agent work safe.
 
 ---
 
+## The work, as a graph
+
+Every node below is a real pull request. Every ring is a real review
+conversation. Nothing here is illustrative — it's generated straight from this
+repository's PR history by
+[`scripts/generate-agent-graph.py`](scripts/generate-agent-graph.py), so it
+cannot drift from the truth.
+
+<p align="center">
+  <img src="docs/assets/graph/agent-contribution-graph.svg"
+       alt="Agent contribution graph: 56 pull requests across seven lanes — Master Agent, System Architect, Frontend Dev, Backend Dev, UI Designer, QA Agent, and Infra — grouped into four working sessions, each PR connected up to the main branch where it merged.">
+</p>
+
+The x-axis is **PR sequence grouped by working session**, not wall-clock time.
+All 56 PRs were opened across four sessions, so a linear time axis collapses into
+four vertical stacks and hides the fan-out completely — which is exactly why
+GitHub's own network graph reads as empty here.
+
+Three things worth noticing:
+
+- **The fan-out is real.** Within a single session, five different lanes are open
+  at once, each on its own branch, each merging back independently. That's not
+  one agent renamed six times — it's disjoint ownership running in parallel.
+- **The biggest lane is the workflow itself.** 31 of the 56 PRs and +10,664 lines
+  went into `.kiro/` and `.github/` — the agents, hooks, turn router, and merge
+  gate. The methodology was *built*, iterated, and debugged, not declared.
+- **Some PRs were closed, not merged.** The hollow nodes are proposals that were
+  reviewed and rejected. A workflow where nothing ever gets turned down isn't a
+  review process.
+
+---
+
 ## The engine: orchestrator-led, not event-led
 
 The most important design decision here came from a failure.
@@ -202,15 +234,32 @@ CI is green. A refused merge is expected behaviour, not a bug.
 | | | | |
 |---|---|---|---|
 | Agent personas | **6** | Kiro hooks | **8** |
-| Pull requests | **54** (46 merged) | Workflow skill modules | **6** |
-| Commits | **157** | Steering documents | **5** |
-| Specs | **5** | Test files | **42** |
+| Pull requests | **56** (48 merged) | Workflow skill modules | **6** |
+| Commits | **165** (68 merges) | Steering documents | **5** |
+| Review comments | **92** | Specs | **5** |
+| Lines added | **+32,770** | Test files | **42** |
 
 **See it for yourself:** [all PRs colour-coded by agent](https://github.com/coralst/valentin-romantic-agent/pulls?q=is%3Apr) ·
 [`agent: backend`](https://github.com/coralst/valentin-romantic-agent/pulls?q=is%3Apr+label%3A%22agent%3A+backend%22) ·
 [`agent: frontend`](https://github.com/coralst/valentin-romantic-agent/pulls?q=is%3Apr+label%3A%22agent%3A+frontend%22) ·
-[Insights → Network](https://github.com/coralst/valentin-romantic-agent/network) for the parallel branch fan-out.
-Open any merged PR to read the multi-persona review dialogue.
+[all 55 agent branches](https://github.com/coralst/valentin-romantic-agent/branches/all) ·
+[`git log --all --graph`](#the-work-as-a-graph) for the fan-out.
+Open any merged PR to read the multi-persona review dialogue — start with
+[#40](https://github.com/coralst/valentin-romantic-agent/pull/40) or
+[#58](https://github.com/coralst/valentin-romantic-agent/pull/58), the two longest threads.
+
+> **On the branches.** Every merged branch was auto-deleted on merge, so for a
+> while the repo showed 2 refs where there had been 56. They have been **restored
+> to their true head commits**, recovered from the remote's own
+> `refs/pull/*/head` — that adds pointers to commits which already existed and
+> rewrites nothing. `main` is byte-for-byte the same 165 commits, and every PR
+> still resolves to the SHAs it was reviewed at.
+>
+> Note that GitHub's own [network graph](https://github.com/coralst/valentin-romantic-agent/network)
+> still under-reports this: it is rebuilt on a daily cadence and only draws a
+> recent window of commits, so most of these branches fall outside what it will
+> render. The graph above is generated from the full PR history instead, which is
+> why it's the one worth looking at.
 
 📖 **[Full methodology, including honest scope and what's convention vs. wired-up →](docs/METHODOLOGY.md)**
 

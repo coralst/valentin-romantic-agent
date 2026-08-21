@@ -336,11 +336,47 @@ hook is what makes that token trustworthy rather than decorative.
 
 ## Reading the repo as evidence
 
-The methodology is not just described here; it left traces you can inspect:
+Rather than ask you to take any of this on trust, here is the whole PR history in
+one picture — generated from the GitHub API by
+[`scripts/generate-agent-graph.py`](../scripts/generate-agent-graph.py), so it
+cannot drift from what the repo actually contains:
+
+<p align="center">
+  <img src="assets/graph/agent-contribution-graph.svg"
+       alt="Agent contribution graph: 56 pull requests across seven lanes, grouped into four working sessions, each connected up to the main branch where it merged.">
+</p>
+
+Read it as: **one node per pull request**, sized by files changed, sitting in its
+owning agent's lane, with a line rising to the point on `main` where it merged.
+Concentric rings mark PRs that drew a genuine back-and-forth review thread;
+hollow, dashed nodes are proposals that were reviewed and **closed without
+merging**.
+
+The x-axis is PR sequence grouped by working session, not wall-clock time — all
+56 PRs were opened across four sessions, so a linear time axis degenerates into
+four vertical stacks. This is also why GitHub's built-in network graph is a poor
+witness here: it renders only a recent window of commits, and every merged branch
+was auto-deleted on merge, leaving it drawing 2 lanes out of 56.
+
+> **A note on those branches.** The deleted refs have been restored to their true
+> head commits, recovered from the remote's own `refs/pull/*/head`. That adds
+> pointers to commits which already existed; it rewrites nothing. `main` is
+> byte-for-byte the same 165 commits, and every PR still resolves to the SHAs it
+> was reviewed at. The alternative — rewriting history to manufacture a prettier
+> graph — would have detached all 48 merged PRs from their review conversations,
+> destroying the actual evidence in order to improve a picture of it.
+>
+> Restoring the refs makes the branches browsable, but it did **not** repopulate
+> GitHub's network graph: that view is rebuilt on a daily cadence and windowed to
+> recent commits, so most restored tips fall outside it. Verified after the push —
+> the page still drew 2 lanes. Hence the generated graph above.
+
+Other traces worth inspecting directly:
 
 | What to look at | What it shows |
 |---|---|
-| [Pull requests](https://github.com/coralst/valentin-romantic-agent/pulls?q=is%3Apr) | 54 PRs, colour-coded by owning agent |
+| [Pull requests](https://github.com/coralst/valentin-romantic-agent/pulls?q=is%3Apr) | 56 PRs, colour-coded by owning agent |
+| [All branches](https://github.com/coralst/valentin-romantic-agent/branches/all) | 56 agent-prefixed branches, restored to their real tips |
 | [`agent: backend`](https://github.com/coralst/valentin-romantic-agent/pulls?q=is%3Apr+label%3A%22agent%3A+backend%22) · [`agent: frontend`](https://github.com/coralst/valentin-romantic-agent/pulls?q=is%3Apr+label%3A%22agent%3A+frontend%22) · [`agent: infra`](https://github.com/coralst/valentin-romantic-agent/pulls?q=is%3Apr+label%3A%22agent%3A+infra%22) | Per-agent workload distribution |
 | **Insights → Network** | Parallel agent branches fanning out from `main` and merging back |
 | Any merged PR's conversation | The multi-persona review dialogue, hand-off tags, and closing approval token |
@@ -351,8 +387,12 @@ The methodology is not just described here; it left traces you can inspect:
 | | |
 |---|---|
 | Agent personas | 6 |
-| Pull requests | 54 (46 merged) |
-| Commits | 157 |
+| Pull requests | 56 (48 merged, 6 closed unmerged) |
+| Commits | 165, of which 68 are merge commits |
+| Review comments across all PRs | 92 |
+| Lines added / removed | +32,770 / −1,954 across 431 file changes |
+| Working sessions | 4 (2026-04-04 · 07-04 · 08-01 · 08-21) |
+| Largest lane | Infra / workflow — 31 PRs, +10,664 lines |
 | Specs (`requirements` + `design` + `tasks`) | 5 |
 | Kiro hooks | 8 |
 | Workflow skill modules | 6 |

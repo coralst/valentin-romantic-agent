@@ -1,0 +1,523 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2700" height="762" viewBox="0 0 2700 762" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" role="img" aria-labelledby="gtitle gdesc">
+<title id="gtitle">Agent contribution graph</title>
+<desc id="gdesc">56 pull requests across 7 agent personas and 4 working sessions. Each node is one pull request, sized by files changed, connected to the main branch where it merged.</desc>
+<defs>
+<linearGradient id="lane-master" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#7B68EE" stop-opacity="0.20"/><stop offset="1" stop-color="#7B68EE" stop-opacity="0.03"/></linearGradient>
+<linearGradient id="lane-architect" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#FF8C00" stop-opacity="0.20"/><stop offset="1" stop-color="#FF8C00" stop-opacity="0.03"/></linearGradient>
+<linearGradient id="lane-frontend" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#1E90FF" stop-opacity="0.20"/><stop offset="1" stop-color="#1E90FF" stop-opacity="0.03"/></linearGradient>
+<linearGradient id="lane-backend" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#32CD32" stop-opacity="0.20"/><stop offset="1" stop-color="#32CD32" stop-opacity="0.03"/></linearGradient>
+<linearGradient id="lane-design" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#FF69B4" stop-opacity="0.20"/><stop offset="1" stop-color="#FF69B4" stop-opacity="0.03"/></linearGradient>
+<linearGradient id="lane-qa" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#FF4500" stop-opacity="0.20"/><stop offset="1" stop-color="#FF4500" stop-opacity="0.03"/></linearGradient>
+<linearGradient id="lane-infra" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#8B949E" stop-opacity="0.20"/><stop offset="1" stop-color="#8B949E" stop-opacity="0.03"/></linearGradient>
+<filter id="glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+</defs>
+<rect width="2700" height="762" fill="#0d1117"/>
+<text x="34" y="46" fill="#e6edf3" font-size="25" font-weight="700">Who built Valentin</text>
+<text x="34" y="72" fill="#8b949e" font-size="13.5">56 pull requests · 48 merged · 165 commits · 68 merge commits · six agent personas, disjoint ownership</text>
+<circle cx="41" cy="88" r="7" fill="#8b949e"/>
+<text x="54" y="92" fill="#8b949e" font-size="11">one PR · size = files changed</text>
+<circle cx="237" cy="88" r="6" fill="#8b949e"/>
+<circle cx="237" cy="88" r="10.5" fill="none" stroke="#8b949e" stroke-width="1.4"/>
+<text x="254" y="92" fill="#8b949e" font-size="11">drew a multi-agent review thread (3+ comments)</text>
+<circle cx="543" cy="88" r="6.5" fill="#0d1117" stroke="#8b949e" stroke-width="2.2" stroke-dasharray="3 2.4"/>
+<text x="556" y="92" fill="#8b949e" font-size="11">reviewed, then closed without merging</text>
+<line x1="794" y1="81" x2="794" y2="95" stroke="#8b949e" stroke-width="2"/>
+<text x="807" y="92" fill="#8b949e" font-size="11">merged into main</text>
+<rect x="244" y="108" width="586" height="586" fill="#ffffff" opacity="0.022" rx="9"/>
+<text x="537.0" y="124" fill="#e6edf3" font-size="12" font-weight="650" text-anchor="middle">Session 1 · 2026-04-04</text>
+<text x="537.0" y="138" fill="#8b949e" font-size="10.5" text-anchor="middle">14 PRs opened</text>
+<rect x="856" y="108" width="1037" height="586" fill="#ffffff" opacity="0.022" rx="9"/>
+<text x="1374.5" y="124" fill="#e6edf3" font-size="12" font-weight="650" text-anchor="middle">Session 2 · 2026-07-04</text>
+<text x="1374.5" y="138" fill="#8b949e" font-size="10.5" text-anchor="middle">25 PRs opened</text>
+<rect x="1919" y="108" width="504" height="586" fill="#ffffff" opacity="0.022" rx="9"/>
+<text x="2171.0" y="124" fill="#e6edf3" font-size="12" font-weight="650" text-anchor="middle">Session 3 · 2026-08-01</text>
+<text x="2171.0" y="138" fill="#8b949e" font-size="10.5" text-anchor="middle">12 PRs opened</text>
+<rect x="2449" y="108" width="217" height="586" fill="#ffffff" opacity="0.022" rx="9"/>
+<text x="2557.5" y="124" fill="#e6edf3" font-size="12" font-weight="650" text-anchor="middle">Session 4 · 2026-08-21</text>
+<text x="2557.5" y="138" fill="#8b949e" font-size="10.5" text-anchor="middle">5 PRs opened</text>
+<line x1="220" y1="150" x2="2680" y2="150" stroke="#f0f6fc" stroke-width="3.4" stroke-linecap="round"/>
+<text x="210" y="154.5" fill="#f0f6fc" font-size="13" font-weight="700" text-anchor="end">main</text>
+<rect x="226" y="198" width="2446" height="52" fill="url(#lane-master)" rx="8"/>
+<g transform="translate(24,207) scale(0.33)">
+    <path d="M48 8 C26 8 10 25 10 46 V80 Q10 85 15 82.5 L21 79 Q24 77.5 27 79 L33 82.5 Q36 84 39 82.5 L45 79 Q48 77.5 51 79 L57 82.5 Q60 84 63 82.5 L69 79 Q72 77.5 75 79 L81 82.5 Q86 85 86 80 V46 C86 25 70 8 48 8 Z" fill="#7B68EE" opacity="0.95"/>
+    <ellipse cx="37" cy="44" rx="8.5" ry="10" fill="#fff"/>
+    <ellipse cx="59" cy="44" rx="8.5" ry="10" fill="#fff"/>
+    <circle cx="38.5" cy="46" r="4.4" fill="#1b1b2b"/>
+    <circle cx="60.5" cy="46" r="4.4" fill="#1b1b2b"/>
+    <circle cx="40.5" cy="44" r="1.5" fill="#fff"/>
+    <circle cx="62.5" cy="44" r="1.5" fill="#fff"/>
+    <ellipse cx="24" cy="57" rx="5" ry="3.2" fill="#fff" opacity="0.30"/>
+    <ellipse cx="72" cy="57" rx="5" ry="3.2" fill="#fff" opacity="0.30"/>
+  </g>
+<text x="62" y="215" fill="#e6edf3" font-size="13" font-weight="650">Master Agent</text>
+<text x="62" y="229" fill="#7B68EE" font-size="9.5" opacity="0.9" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">orchestrator</text>
+<text x="62" y="243" fill="#8b949e" font-size="10.5">2 PRs · +252 lines</text>
+<rect x="226" y="268" width="2446" height="52" fill="url(#lane-architect)" rx="8"/>
+<g transform="translate(24,277) scale(0.33)">
+    <path d="M48 8 C26 8 10 25 10 46 V80 Q10 85 15 82.5 L21 79 Q24 77.5 27 79 L33 82.5 Q36 84 39 82.5 L45 79 Q48 77.5 51 79 L57 82.5 Q60 84 63 82.5 L69 79 Q72 77.5 75 79 L81 82.5 Q86 85 86 80 V46 C86 25 70 8 48 8 Z" fill="#FF8C00" opacity="0.95"/>
+    <ellipse cx="37" cy="44" rx="8.5" ry="10" fill="#fff"/>
+    <ellipse cx="59" cy="44" rx="8.5" ry="10" fill="#fff"/>
+    <circle cx="38.5" cy="46" r="4.4" fill="#1b1b2b"/>
+    <circle cx="60.5" cy="46" r="4.4" fill="#1b1b2b"/>
+    <circle cx="40.5" cy="44" r="1.5" fill="#fff"/>
+    <circle cx="62.5" cy="44" r="1.5" fill="#fff"/>
+    <ellipse cx="24" cy="57" rx="5" ry="3.2" fill="#fff" opacity="0.30"/>
+    <ellipse cx="72" cy="57" rx="5" ry="3.2" fill="#fff" opacity="0.30"/>
+  </g>
+<text x="62" y="285" fill="#e6edf3" font-size="13" font-weight="650">System Architect</text>
+<text x="62" y="299" fill="#FF8C00" font-size="9.5" opacity="0.9" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">src/shared/</text>
+<text x="62" y="313" fill="#8b949e" font-size="10.5">5 PRs · +4,850 lines</text>
+<rect x="226" y="338" width="2446" height="52" fill="url(#lane-frontend)" rx="8"/>
+<g transform="translate(24,347) scale(0.33)">
+    <path d="M48 8 C26 8 10 25 10 46 V80 Q10 85 15 82.5 L21 79 Q24 77.5 27 79 L33 82.5 Q36 84 39 82.5 L45 79 Q48 77.5 51 79 L57 82.5 Q60 84 63 82.5 L69 79 Q72 77.5 75 79 L81 82.5 Q86 85 86 80 V46 C86 25 70 8 48 8 Z" fill="#1E90FF" opacity="0.95"/>
+    <ellipse cx="37" cy="44" rx="8.5" ry="10" fill="#fff"/>
+    <ellipse cx="59" cy="44" rx="8.5" ry="10" fill="#fff"/>
+    <circle cx="38.5" cy="46" r="4.4" fill="#1b1b2b"/>
+    <circle cx="60.5" cy="46" r="4.4" fill="#1b1b2b"/>
+    <circle cx="40.5" cy="44" r="1.5" fill="#fff"/>
+    <circle cx="62.5" cy="44" r="1.5" fill="#fff"/>
+    <ellipse cx="24" cy="57" rx="5" ry="3.2" fill="#fff" opacity="0.30"/>
+    <ellipse cx="72" cy="57" rx="5" ry="3.2" fill="#fff" opacity="0.30"/>
+  </g>
+<text x="62" y="355" fill="#e6edf3" font-size="13" font-weight="650">Frontend Dev</text>
+<text x="62" y="369" fill="#1E90FF" font-size="9.5" opacity="0.9" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">src/client/</text>
+<text x="62" y="383" fill="#8b949e" font-size="10.5">7 PRs · +9,914 lines</text>
+<rect x="226" y="408" width="2446" height="52" fill="url(#lane-backend)" rx="8"/>
+<g transform="translate(24,417) scale(0.33)">
+    <path d="M48 8 C26 8 10 25 10 46 V80 Q10 85 15 82.5 L21 79 Q24 77.5 27 79 L33 82.5 Q36 84 39 82.5 L45 79 Q48 77.5 51 79 L57 82.5 Q60 84 63 82.5 L69 79 Q72 77.5 75 79 L81 82.5 Q86 85 86 80 V46 C86 25 70 8 48 8 Z" fill="#32CD32" opacity="0.95"/>
+    <ellipse cx="37" cy="44" rx="8.5" ry="10" fill="#fff"/>
+    <ellipse cx="59" cy="44" rx="8.5" ry="10" fill="#fff"/>
+    <circle cx="38.5" cy="46" r="4.4" fill="#1b1b2b"/>
+    <circle cx="60.5" cy="46" r="4.4" fill="#1b1b2b"/>
+    <circle cx="40.5" cy="44" r="1.5" fill="#fff"/>
+    <circle cx="62.5" cy="44" r="1.5" fill="#fff"/>
+    <ellipse cx="24" cy="57" rx="5" ry="3.2" fill="#fff" opacity="0.30"/>
+    <ellipse cx="72" cy="57" rx="5" ry="3.2" fill="#fff" opacity="0.30"/>
+  </g>
+<text x="62" y="425" fill="#e6edf3" font-size="13" font-weight="650">Backend Dev</text>
+<text x="62" y="439" fill="#32CD32" font-size="9.5" opacity="0.9" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">src/server/</text>
+<text x="62" y="453" fill="#8b949e" font-size="10.5">8 PRs · +6,060 lines</text>
+<rect x="226" y="478" width="2446" height="52" fill="url(#lane-design)" rx="8"/>
+<g transform="translate(24,487) scale(0.33)">
+    <path d="M48 8 C26 8 10 25 10 46 V80 Q10 85 15 82.5 L21 79 Q24 77.5 27 79 L33 82.5 Q36 84 39 82.5 L45 79 Q48 77.5 51 79 L57 82.5 Q60 84 63 82.5 L69 79 Q72 77.5 75 79 L81 82.5 Q86 85 86 80 V46 C86 25 70 8 48 8 Z" fill="#FF69B4" opacity="0.95"/>
+    <ellipse cx="37" cy="44" rx="8.5" ry="10" fill="#fff"/>
+    <ellipse cx="59" cy="44" rx="8.5" ry="10" fill="#fff"/>
+    <circle cx="38.5" cy="46" r="4.4" fill="#1b1b2b"/>
+    <circle cx="60.5" cy="46" r="4.4" fill="#1b1b2b"/>
+    <circle cx="40.5" cy="44" r="1.5" fill="#fff"/>
+    <circle cx="62.5" cy="44" r="1.5" fill="#fff"/>
+    <ellipse cx="24" cy="57" rx="5" ry="3.2" fill="#fff" opacity="0.30"/>
+    <ellipse cx="72" cy="57" rx="5" ry="3.2" fill="#fff" opacity="0.30"/>
+  </g>
+<text x="62" y="495" fill="#e6edf3" font-size="13" font-weight="650">UI Designer</text>
+<text x="62" y="509" fill="#FF69B4" font-size="9.5" opacity="0.9" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">design-system/</text>
+<text x="62" y="523" fill="#8b949e" font-size="10.5">2 PRs · +651 lines</text>
+<rect x="226" y="548" width="2446" height="52" fill="url(#lane-qa)" rx="8"/>
+<g transform="translate(24,557) scale(0.33)">
+    <path d="M48 8 C26 8 10 25 10 46 V80 Q10 85 15 82.5 L21 79 Q24 77.5 27 79 L33 82.5 Q36 84 39 82.5 L45 79 Q48 77.5 51 79 L57 82.5 Q60 84 63 82.5 L69 79 Q72 77.5 75 79 L81 82.5 Q86 85 86 80 V46 C86 25 70 8 48 8 Z" fill="#FF4500" opacity="0.95"/>
+    <ellipse cx="37" cy="44" rx="8.5" ry="10" fill="#fff"/>
+    <ellipse cx="59" cy="44" rx="8.5" ry="10" fill="#fff"/>
+    <circle cx="38.5" cy="46" r="4.4" fill="#1b1b2b"/>
+    <circle cx="60.5" cy="46" r="4.4" fill="#1b1b2b"/>
+    <circle cx="40.5" cy="44" r="1.5" fill="#fff"/>
+    <circle cx="62.5" cy="44" r="1.5" fill="#fff"/>
+    <ellipse cx="24" cy="57" rx="5" ry="3.2" fill="#fff" opacity="0.30"/>
+    <ellipse cx="72" cy="57" rx="5" ry="3.2" fill="#fff" opacity="0.30"/>
+  </g>
+<text x="62" y="565" fill="#e6edf3" font-size="13" font-weight="650">QA Agent</text>
+<text x="62" y="579" fill="#FF4500" font-size="9.5" opacity="0.9" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">e2e/</text>
+<text x="62" y="593" fill="#8b949e" font-size="10.5">1 PRs · +379 lines</text>
+<rect x="226" y="618" width="2446" height="52" fill="url(#lane-infra)" rx="8"/>
+<g transform="translate(24,627) scale(0.33)">
+    <path d="M48 8 C26 8 10 25 10 46 V80 Q10 85 15 82.5 L21 79 Q24 77.5 27 79 L33 82.5 Q36 84 39 82.5 L45 79 Q48 77.5 51 79 L57 82.5 Q60 84 63 82.5 L69 79 Q72 77.5 75 79 L81 82.5 Q86 85 86 80 V46 C86 25 70 8 48 8 Z" fill="#8B949E" opacity="0.95"/>
+    <ellipse cx="37" cy="44" rx="8.5" ry="10" fill="#fff"/>
+    <ellipse cx="59" cy="44" rx="8.5" ry="10" fill="#fff"/>
+    <circle cx="38.5" cy="46" r="4.4" fill="#1b1b2b"/>
+    <circle cx="60.5" cy="46" r="4.4" fill="#1b1b2b"/>
+    <circle cx="40.5" cy="44" r="1.5" fill="#fff"/>
+    <circle cx="62.5" cy="44" r="1.5" fill="#fff"/>
+    <ellipse cx="24" cy="57" rx="5" ry="3.2" fill="#fff" opacity="0.30"/>
+    <ellipse cx="72" cy="57" rx="5" ry="3.2" fill="#fff" opacity="0.30"/>
+  </g>
+<text x="62" y="635" fill="#e6edf3" font-size="13" font-weight="650">Infra / Workflow</text>
+<text x="62" y="649" fill="#8B949E" font-size="9.5" opacity="0.9" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">.kiro/ · .github/</text>
+<text x="62" y="663" fill="#8b949e" font-size="10.5">31 PRs · +10,664 lines</text>
+<path d="M639.5 224 L1579.5 224" stroke="#7B68EE" stroke-width="1.6" opacity="0.28" stroke-dasharray="1 5" stroke-linecap="round"/>
+<path d="M270.5 294 L2191.5 294" stroke="#FF8C00" stroke-width="1.6" opacity="0.28" stroke-dasharray="1 5" stroke-linecap="round"/>
+<path d="M311.5 364 L2598.5 364" stroke="#1E90FF" stroke-width="1.6" opacity="0.28" stroke-dasharray="1 5" stroke-linecap="round"/>
+<path d="M352.5 434 L2516.5 434" stroke="#32CD32" stroke-width="1.6" opacity="0.28" stroke-dasharray="1 5" stroke-linecap="round"/>
+<path d="M721.5 504 L1005.5 504" stroke="#FF69B4" stroke-width="1.6" opacity="0.28" stroke-dasharray="1 5" stroke-linecap="round"/>
+<path d="M393.5 644 L2639.5 644" stroke="#8B949E" stroke-width="1.6" opacity="0.28" stroke-dasharray="1 5" stroke-linecap="round"/>
+<g><title>#2 feat(arch): shared types, validation, persistence, design tokens — architect, 35 files, +4590/-13, 2 review comments</title>
+<path d="M270.5 278.5 C270.5 214.8 270.5 214.8 270.5 150" stroke="#FF8C00" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="270.5" cy="150" r="4.2" fill="#FF8C00" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="270.5" cy="294" r="15.5" fill="#FF8C00" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="270.5" y="297.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">2</text>
+</g>
+<g><title>#3 feat(frontend): chat UI, profile dashboard, state management, responsive layout — frontend, 29 files, +2029/-0, 2 review comments</title>
+<path d="M311.5 348.58 C311.5 246.3 311.5 246.3 311.5 150" stroke="#1E90FF" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="311.5" cy="150" r="4.2" fill="#1E90FF" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="311.5" cy="364" r="15.42" fill="#1E90FF" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="311.5" y="367.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">3</text>
+</g>
+<g><title>#4 feat(backend): API layer, agent orchestrator, preference extractor, server wiring — backend, 14 files, +1535/-0, 2 review comments</title>
+<path d="M352.5 421.45 C352.5 277.79999999999995 352.5 277.79999999999995 352.5 150" stroke="#32CD32" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="352.5" cy="150" r="4.2" fill="#32CD32" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="352.5" cy="434" r="12.55" fill="#32CD32" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="352.5" y="437.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">4</text>
+</g>
+<g><title>#5 chore(infra): add add_issue_comment to MCP autoApprove — infra, 1 files, +2/-1, 1 review comments</title>
+<path d="M393.5 636.25 C393.5 372.29999999999995 393.5 372.29999999999995 393.5 150" stroke="#8B949E" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="393.5" cy="150" r="4.2" fill="#8B949E" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="393.5" cy="644" r="7.75" fill="#8B949E" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="393.5" y="647.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">5</text>
+</g>
+<g><title>#6 feat(backend): dev server + logo integration — backend, 8 files, +1070/-17, 1 review comments</title>
+<path d="M434.5 423.05 C434.5 277.79999999999995 434.5 277.79999999999995 434.5 150" stroke="#32CD32" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="434.5" cy="150" r="4.2" fill="#32CD32" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="434.5" cy="434" r="10.95" fill="#32CD32" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="434.5" y="437.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">6</text>
+</g>
+<g><title>#8 🧪 QA: E2E Playwright tests — onboarding, responsive, connection recovery — qa, 16 files, +379/-17, 2 review comments</title>
+<path d="M475.5 561.0 C475.5 340.79999999999995 475.5 340.79999999999995 475.5 150" stroke="#FF4500" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="475.5" cy="150" r="4.2" fill="#FF4500" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="475.5" cy="574" r="13.0" fill="#FF4500" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="475.5" y="577.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">8</text>
+</g>
+<g><title>#10 docs(shared): sync spec with implemented codebase — architect, 2 files, +91/-89, 1 review comments (closed unmerged)</title>
+<path d="M516.5 285.53 L516.5 245.04" stroke="#FF8C00" stroke-width="1.8" fill="none" opacity="0.40" stroke-dasharray="3 3"/>
+<circle cx="516.5" cy="294" r="8.47" fill="#0d1117" stroke="#FF8C00" stroke-width="2.4" stroke-dasharray="3 2.4"/>
+<text x="516.5" y="297.3" fill="#FF8C00" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">10</text>
+</g>
+<g><title>#11 fix(infra): Kiro stack fixes — hooks, steering, agents, MCP, CI — infra, 13 files, +113/-116, 0 review comments</title>
+<path d="M557.5 631.69 C557.5 372.29999999999995 557.5 372.29999999999995 557.5 150" stroke="#8B949E" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="557.5" cy="150" r="4.2" fill="#8B949E" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="557.5" cy="644" r="12.31" fill="#8B949E" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="557.5" y="647.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">11</text>
+</g>
+<g><title>#12 feat(infra): agentic automation — agentStop, write guard, routing, autoApprove — infra, 10 files, +67/-16, 0 review comments (closed unmerged)</title>
+<path d="M598.5 632.47 L598.5 476.03999999999996" stroke="#8B949E" stroke-width="1.8" fill="none" opacity="0.40" stroke-dasharray="3 3"/>
+<circle cx="598.5" cy="644" r="11.53" fill="#0d1117" stroke="#8B949E" stroke-width="2.4" stroke-dasharray="3 2.4"/>
+<text x="598.5" y="647.3" fill="#8B949E" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">12</text>
+</g>
+<g><title>#13 feat(infra): agentic automation — hooks, merge strategy, branch naming (#13) — master, 10 files, +67/-16, 2 review comments (closed unmerged)</title>
+<path d="M639.5 212.47 L639.5 198.84" stroke="#7B68EE" stroke-width="1.8" fill="none" opacity="0.40" stroke-dasharray="3 3"/>
+<circle cx="639.5" cy="224" r="11.53" fill="#0d1117" stroke="#7B68EE" stroke-width="2.4" stroke-dasharray="3 2.4"/>
+<text x="639.5" y="227.3" fill="#7B68EE" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">13</text>
+</g>
+<g><title>#15 feat(backend): implement real AWS Bedrock SDK integration — backend, 7 files, +1892/-169, 1 review comments</title>
+<path d="M680.5 423.37 C680.5 277.79999999999995 680.5 277.79999999999995 680.5 150" stroke="#32CD32" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="680.5" cy="150" r="4.2" fill="#32CD32" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="680.5" cy="434" r="10.63" fill="#32CD32" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="680.5" y="437.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">15</text>
+</g>
+<g><title>#16 style(design): modernize UI — refined palette, gradient accents, polished components — design, 19 files, +371/-159, 4 review comments</title>
+<path d="M721.5 490.37 C721.5 309.29999999999995 721.5 309.29999999999995 721.5 150" stroke="#FF69B4" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="721.5" cy="150" r="4.2" fill="#FF69B4" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="721.5" cy="504" r="13.63" fill="#FF69B4" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<circle cx="721.5" cy="504" r="18.130000000000003" fill="none" stroke="#FF69B4" stroke-width="1.5" opacity="0.85"/>
+<circle cx="721.5" cy="504" r="21.630000000000003" fill="none" stroke="#FF69B4" stroke-width="1" opacity="0.32"/>
+<text x="721.5" y="507.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">16</text>
+</g>
+<g><title>#17 fix(backend): skip leading assistant messages for Bedrock Converse API — backend, 2 files, +26/-12, 0 review comments</title>
+<path d="M762.5 425.53 C762.5 277.79999999999995 762.5 277.79999999999995 762.5 150" stroke="#32CD32" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="762.5" cy="150" r="4.2" fill="#32CD32" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="762.5" cy="434" r="8.47" fill="#32CD32" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="762.5" y="437.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">17</text>
+</g>
+<g><title>#18 chore(infra): add dev:full script — infra, 1 files, +1/-0, 0 review comments</title>
+<path d="M803.5 636.25 C803.5 372.29999999999995 803.5 372.29999999999995 803.5 150" stroke="#8B949E" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="803.5" cy="150" r="4.2" fill="#8B949E" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="803.5" cy="644" r="7.75" fill="#8B949E" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="803.5" y="647.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">18</text>
+</g>
+<g><title>#19 fix(pr-monitoring): enable iterative PR conversations after Ready for Review — infra, 24 files, +2985/-35, 3 review comments</title>
+<path d="M882.5 629.43 C882.5 372.29999999999995 882.5 372.29999999999995 882.5 150" stroke="#8B949E" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="882.5" cy="150" r="4.2" fill="#8B949E" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="882.5" cy="644" r="14.57" fill="#8B949E" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<circle cx="882.5" cy="644" r="19.07" fill="none" stroke="#8B949E" stroke-width="1.5" opacity="0.85"/>
+<circle cx="882.5" cy="644" r="22.57" fill="none" stroke="#8B949E" stroke-width="1" opacity="0.32"/>
+<text x="882.5" y="647.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">19</text>
+</g>
+<g><title>#20 chore(infra): approval-gate self-test (throwaway) — infra, 1 files, +4/-0, 1 review comments</title>
+<path d="M923.5 636.25 C923.5 372.29999999999995 923.5 372.29999999999995 923.5 150" stroke="#8B949E" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="923.5" cy="150" r="4.2" fill="#8B949E" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="923.5" cy="644" r="7.75" fill="#8B949E" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="923.5" y="647.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">20</text>
+</g>
+<g><title>#21 fix(infra): comment-based approval gate for single-account merges — infra, 5 files, +358/-11, 1 review comments</title>
+<path d="M964.5 634.09 C964.5 372.29999999999995 964.5 372.29999999999995 964.5 150" stroke="#8B949E" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="964.5" cy="150" r="4.2" fill="#8B949E" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="964.5" cy="644" r="9.91" fill="#8B949E" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="964.5" y="647.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">21</text>
+</g>
+<g><title>#22 style(design): modernize UI — refined palette, gradient accents, polished components — design, 14 files, +280/-147, 1 review comments</title>
+<path d="M1005.5 491.45 C1005.5 309.29999999999995 1005.5 309.29999999999995 1005.5 150" stroke="#FF69B4" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="1005.5" cy="150" r="4.2" fill="#FF69B4" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="1005.5" cy="504" r="12.55" fill="#FF69B4" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="1005.5" y="507.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">22</text>
+</g>
+<g><title>#23 chore(infra): add server boot smoke test and CI smoke job — infra, 3 files, +80/-1, 2 review comments (closed unmerged)</title>
+<path d="M1046.5 634.97 L1046.5 476.03999999999996" stroke="#8B949E" stroke-width="1.8" fill="none" opacity="0.40" stroke-dasharray="3 3"/>
+<circle cx="1046.5" cy="644" r="9.03" fill="#0d1117" stroke="#8B949E" stroke-width="2.4" stroke-dasharray="3 2.4"/>
+<text x="1046.5" y="647.3" fill="#8B949E" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">23</text>
+</g>
+<g><title>#24 test(infra): workflow-automation regression suite + path-filtered CI — infra, 6 files, +882/-1, 2 review comments</title>
+<path d="M1087.5 633.71 C1087.5 372.29999999999995 1087.5 372.29999999999995 1087.5 150" stroke="#8B949E" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="1087.5" cy="150" r="4.2" fill="#8B949E" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="1087.5" cy="644" r="10.29" fill="#8B949E" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="1087.5" y="647.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">24</text>
+</g>
+<g><title>#25 chore(infra): add server boot smoke test and CI smoke job — infra, 0 files, +0/-0, 1 review comments</title>
+<path d="M1128.5 636.25 C1128.5 372.29999999999995 1128.5 372.29999999999995 1128.5 150" stroke="#8B949E" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="1128.5" cy="150" r="4.2" fill="#8B949E" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="1128.5" cy="644" r="7.75" fill="#8B949E" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="1128.5" y="647.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">25</text>
+</g>
+<g><title>#26 feat(frontend): typewriter effect for agent messages — frontend, 5 files, +233/-3, 1 review comments</title>
+<path d="M1169.5 354.09 C1169.5 246.3 1169.5 246.3 1169.5 150" stroke="#1E90FF" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="1169.5" cy="150" r="4.2" fill="#1E90FF" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="1169.5" cy="364" r="9.91" fill="#1E90FF" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="1169.5" y="367.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">26</text>
+</g>
+<g><title>#27 fix(backend): vary response length and sampling for natural conversation — backend, 5 files, +116/-4, 1 review comments</title>
+<path d="M1210.5 424.09 C1210.5 277.79999999999995 1210.5 277.79999999999995 1210.5 150" stroke="#32CD32" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="1210.5" cy="150" r="4.2" fill="#32CD32" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="1210.5" cy="434" r="9.91" fill="#32CD32" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="1210.5" y="437.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">27</text>
+</g>
+<g><title>#28 fix(backend): switch default model from retired Haiku 3 to active Sonnet 4.5 — backend, 1 files, +7/-1, 1 review comments</title>
+<path d="M1251.5 426.25 C1251.5 277.79999999999995 1251.5 277.79999999999995 1251.5 150" stroke="#32CD32" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="1251.5" cy="150" r="4.2" fill="#32CD32" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="1251.5" cy="434" r="7.75" fill="#32CD32" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="1251.5" y="437.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">28</text>
+</g>
+<g><title>#30 fix(infra): harden merge-gate approval-token detection against spoofing — infra, 3 files, +96/-13, 1 review comments</title>
+<path d="M1292.5 634.97 C1292.5 372.29999999999995 1292.5 372.29999999999995 1292.5 150" stroke="#8B949E" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="1292.5" cy="150" r="4.2" fill="#8B949E" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="1292.5" cy="644" r="9.03" fill="#8B949E" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="1292.5" y="647.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">30</text>
+</g>
+<g><title>#31 fix(infra): post PR comments safely; drop self-approve footguns — infra, 2 files, +165/-34, 1 review comments</title>
+<path d="M1333.5 635.53 C1333.5 372.29999999999995 1333.5 372.29999999999995 1333.5 150" stroke="#8B949E" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="1333.5" cy="150" r="4.2" fill="#8B949E" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="1333.5" cy="644" r="8.47" fill="#8B949E" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="1333.5" y="647.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">31</text>
+</g>
+<g><title>#32 fix(infra): make PR monitor dispatch, start, and stop correctly — infra, 6 files, +374/-146, 1 review comments</title>
+<path d="M1374.5 633.71 C1374.5 372.29999999999995 1374.5 372.29999999999995 1374.5 150" stroke="#8B949E" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="1374.5" cy="150" r="4.2" fill="#8B949E" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="1374.5" cy="644" r="10.29" fill="#8B949E" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="1374.5" y="647.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">32</text>
+</g>
+<g><title>#33 fix(infra): robust severity parsing and honest response template — infra, 3 files, +79/-11, 1 review comments</title>
+<path d="M1415.5 634.97 C1415.5 372.29999999999995 1415.5 372.29999999999995 1415.5 150" stroke="#8B949E" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="1415.5" cy="150" r="4.2" fill="#8B949E" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="1415.5" cy="644" r="9.03" fill="#8B949E" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="1415.5" y="647.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">33</text>
+</g>
+<g><title>#34 fix(infra): gate on the regression unit tier and de-duplicate CI — infra, 3 files, +34/-3, 1 review comments</title>
+<path d="M1456.5 634.97 C1456.5 372.29999999999995 1456.5 372.29999999999995 1456.5 150" stroke="#8B949E" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="1456.5" cy="150" r="4.2" fill="#8B949E" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="1456.5" cy="644" r="9.03" fill="#8B949E" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="1456.5" y="647.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">34</text>
+</g>
+<g><title>#35 test(qa): throwaway workflow self-test (do not merge) — infra, 1 files, +1/-0, 1 review comments (closed unmerged)</title>
+<path d="M1497.5 636.25 L1497.5 476.03999999999996" stroke="#8B949E" stroke-width="1.8" fill="none" opacity="0.40" stroke-dasharray="3 3"/>
+<circle cx="1497.5" cy="644" r="7.75" fill="#0d1117" stroke="#8B949E" stroke-width="2.4" stroke-dasharray="3 2.4"/>
+<text x="1497.5" y="647.3" fill="#8B949E" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">35</text>
+</g>
+<g><title>#36 ci(infra): path-aware CI — skip smoke/build/e2e on non-app changes — infra, 1 files, +64/-3, 1 review comments</title>
+<path d="M1538.5 636.25 C1538.5 372.29999999999995 1538.5 372.29999999999995 1538.5 150" stroke="#8B949E" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="1538.5" cy="150" r="4.2" fill="#8B949E" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="1538.5" cy="644" r="7.75" fill="#8B949E" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="1538.5" y="647.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">36</text>
+</g>
+<g><title>#37 feat(infra): orchestrator-led PR review loop with multi-agent tagging — master, 7 files, +185/-155, 1 review comments</title>
+<path d="M1579.5 213.37 C1579.5 183.3 1579.5 183.3 1579.5 150" stroke="#7B68EE" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="1579.5" cy="150" r="4.2" fill="#7B68EE" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="1579.5" cy="224" r="10.63" fill="#7B68EE" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="1579.5" y="227.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">37</text>
+</g>
+<g><title>#38 feat(infra): deterministic turn-router skill + hooks for the review loop — infra, 4 files, +416/-0, 1 review comments</title>
+<path d="M1620.5 634.5 C1620.5 372.29999999999995 1620.5 372.29999999999995 1620.5 150" stroke="#8B949E" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="1620.5" cy="150" r="4.2" fill="#8B949E" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="1620.5" cy="644" r="9.5" fill="#8B949E" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="1620.5" y="647.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">38</text>
+</g>
+<g><title>#39 test(qa): throwaway — orchestrator-led multi-agent loop demo (do not merge) — infra, 1 files, +1/-0, 4 review comments (closed unmerged)</title>
+<path d="M1661.5 636.25 L1661.5 476.03999999999996" stroke="#8B949E" stroke-width="1.8" fill="none" opacity="0.40" stroke-dasharray="3 3"/>
+<circle cx="1661.5" cy="644" r="7.75" fill="#0d1117" stroke="#8B949E" stroke-width="2.4" stroke-dasharray="3 2.4"/>
+<circle cx="1661.5" cy="644" r="12.25" fill="none" stroke="#8B949E" stroke-width="1.5" opacity="0.85"/>
+<circle cx="1661.5" cy="644" r="15.75" fill="none" stroke="#8B949E" stroke-width="1" opacity="0.32"/>
+<text x="1661.5" y="647.3" fill="#8B949E" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">39</text>
+</g>
+<g><title>#40 docs(infra): document the orchestrator-led PR review loop — infra, 1 files, +97/-0, 6 review comments</title>
+<path d="M1702.5 636.25 C1702.5 372.29999999999995 1702.5 372.29999999999995 1702.5 150" stroke="#8B949E" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="1702.5" cy="150" r="4.2" fill="#8B949E" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="1702.5" cy="644" r="7.75" fill="#8B949E" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<circle cx="1702.5" cy="644" r="12.25" fill="none" stroke="#8B949E" stroke-width="1.5" opacity="0.85"/>
+<circle cx="1702.5" cy="644" r="15.75" fill="none" stroke="#8B949E" stroke-width="1" opacity="0.32"/>
+<text x="1702.5" y="647.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">40</text>
+</g>
+<g><title>#41 feat(shared): add category lookup helpers — architect, 3 files, +59/-0, 1 review comments</title>
+<path d="M1743.5 284.97 C1743.5 214.8 1743.5 214.8 1743.5 150" stroke="#FF8C00" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="1743.5" cy="150" r="4.2" fill="#FF8C00" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="1743.5" cy="294" r="9.03" fill="#FF8C00" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="1743.5" y="297.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">41</text>
+</g>
+<g><title>#42 fix(infra): block rubber-stamp merges and match Power-routed calls — infra, 4 files, +94/-4, 3 review comments</title>
+<path d="M1784.5 634.5 C1784.5 372.29999999999995 1784.5 372.29999999999995 1784.5 150" stroke="#8B949E" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="1784.5" cy="150" r="4.2" fill="#8B949E" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="1784.5" cy="644" r="9.5" fill="#8B949E" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<circle cx="1784.5" cy="644" r="14.0" fill="none" stroke="#8B949E" stroke-width="1.5" opacity="0.85"/>
+<circle cx="1784.5" cy="644" r="17.5" fill="none" stroke="#8B949E" stroke-width="1" opacity="0.32"/>
+<text x="1784.5" y="647.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">42</text>
+</g>
+<g><title>#43 fix(infra): make Build and E2E required checks always conclude success — infra, 1 files, +47/-22, 3 review comments</title>
+<path d="M1825.5 636.25 C1825.5 372.29999999999995 1825.5 372.29999999999995 1825.5 150" stroke="#8B949E" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="1825.5" cy="150" r="4.2" fill="#8B949E" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="1825.5" cy="644" r="7.75" fill="#8B949E" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<circle cx="1825.5" cy="644" r="12.25" fill="none" stroke="#8B949E" stroke-width="1.5" opacity="0.85"/>
+<circle cx="1825.5" cy="644" r="15.75" fill="none" stroke="#8B949E" stroke-width="1" opacity="0.32"/>
+<text x="1825.5" y="647.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">43</text>
+</g>
+<g><title>#44 feat(shared): add preferenceCategoryCount helper — architect, 3 files, +32/-0, 3 review comments</title>
+<path d="M1866.5 284.97 C1866.5 214.8 1866.5 214.8 1866.5 150" stroke="#FF8C00" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="1866.5" cy="150" r="4.2" fill="#FF8C00" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="1866.5" cy="294" r="9.03" fill="#FF8C00" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<circle cx="1866.5" cy="294" r="13.53" fill="none" stroke="#FF8C00" stroke-width="1.5" opacity="0.85"/>
+<circle cx="1866.5" cy="294" r="17.03" fill="none" stroke="#FF8C00" stroke-width="1" opacity="0.32"/>
+<text x="1866.5" y="297.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">44</text>
+</g>
+<g><title>#45 fix(backend): unbreak chat replies and preference dashboard updates — backend, 5 files, +574/-7, 1 review comments</title>
+<path d="M1945.5 424.09 C1945.5 277.79999999999995 1945.5 277.79999999999995 1945.5 150" stroke="#32CD32" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="1945.5" cy="150" r="4.2" fill="#32CD32" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="1945.5" cy="434" r="9.91" fill="#32CD32" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="1945.5" y="437.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">45</text>
+</g>
+<g><title>#46 docs(infra): correct the required-checks description (four checks, not just E2E) — infra, 2 files, +13/-8, 1 review comments</title>
+<path d="M1986.5 635.53 C1986.5 372.29999999999995 1986.5 372.29999999999995 1986.5 150" stroke="#8B949E" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="1986.5" cy="150" r="4.2" fill="#8B949E" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="1986.5" cy="644" r="8.47" fill="#8B949E" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="1986.5" y="647.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">46</text>
+</g>
+<g><title>#47 fix(infra): parser ordered-list support, log cleanup, hook enabled flag — infra, 5 files, +53/-8, 1 review comments</title>
+<path d="M2027.5 634.09 C2027.5 372.29999999999995 2027.5 372.29999999999995 2027.5 150" stroke="#8B949E" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="2027.5" cy="150" r="4.2" fill="#8B949E" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="2027.5" cy="644" r="9.91" fill="#8B949E" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="2027.5" y="647.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">47</text>
+</g>
+<g><title>#48 fix(infra): point the GitHub MCP server at the live token variable — infra, 1 files, +11/-2, 1 review comments</title>
+<path d="M2068.5 636.25 C2068.5 372.29999999999995 2068.5 372.29999999999995 2068.5 150" stroke="#8B949E" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="2068.5" cy="150" r="4.2" fill="#8B949E" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="2068.5" cy="644" r="7.75" fill="#8B949E" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="2068.5" y="647.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">48</text>
+</g>
+<g><title>#50 test: verify workflow automation capability — infra, 1 files, +1/-0, 3 review comments (closed unmerged)</title>
+<path d="M2109.5 636.25 L2109.5 476.03999999999996" stroke="#8B949E" stroke-width="1.8" fill="none" opacity="0.40" stroke-dasharray="3 3"/>
+<circle cx="2109.5" cy="644" r="7.75" fill="#0d1117" stroke="#8B949E" stroke-width="2.4" stroke-dasharray="3 2.4"/>
+<circle cx="2109.5" cy="644" r="12.25" fill="none" stroke="#8B949E" stroke-width="1.5" opacity="0.85"/>
+<circle cx="2109.5" cy="644" r="15.75" fill="none" stroke="#8B949E" stroke-width="1" opacity="0.32"/>
+<text x="2109.5" y="647.3" fill="#8B949E" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">50</text>
+</g>
+<g><title>#52 test: review conversation flow verification — infra, 1 files, +4/-0, 3 review comments</title>
+<path d="M2150.5 636.25 C2150.5 372.29999999999995 2150.5 372.29999999999995 2150.5 150" stroke="#8B949E" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="2150.5" cy="150" r="4.2" fill="#8B949E" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="2150.5" cy="644" r="7.75" fill="#8B949E" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<circle cx="2150.5" cy="644" r="12.25" fill="none" stroke="#8B949E" stroke-width="1.5" opacity="0.85"/>
+<circle cx="2150.5" cy="644" r="15.75" fill="none" stroke="#8B949E" stroke-width="1" opacity="0.32"/>
+<text x="2150.5" y="647.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">52</text>
+</g>
+<g><title>#56 chore(arch): update tasks.md to reflect implemented state — architect, 1 files, +78/-77, 3 review comments</title>
+<path d="M2191.5 286.25 C2191.5 214.8 2191.5 214.8 2191.5 150" stroke="#FF8C00" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="2191.5" cy="150" r="4.2" fill="#FF8C00" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="2191.5" cy="294" r="7.75" fill="#FF8C00" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<circle cx="2191.5" cy="294" r="12.25" fill="none" stroke="#FF8C00" stroke-width="1.5" opacity="0.85"/>
+<circle cx="2191.5" cy="294" r="15.75" fill="none" stroke="#FF8C00" stroke-width="1" opacity="0.32"/>
+<text x="2191.5" y="297.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">56</text>
+</g>
+<g><title>#57 feat(frontend): add session history sidebar with localStorage persistence — frontend, 11 files, +1376/-11, 3 review comments</title>
+<path d="M2232.5 352.2 C2232.5 246.3 2232.5 246.3 2232.5 150" stroke="#1E90FF" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="2232.5" cy="150" r="4.2" fill="#1E90FF" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="2232.5" cy="364" r="11.8" fill="#1E90FF" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<circle cx="2232.5" cy="364" r="16.3" fill="none" stroke="#1E90FF" stroke-width="1.5" opacity="0.85"/>
+<circle cx="2232.5" cy="364" r="19.8" fill="none" stroke="#1E90FF" stroke-width="1" opacity="0.32"/>
+<text x="2232.5" y="367.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">57</text>
+</g>
+<g><title>#58 feat(frontend): implement Partner Profile Panel — frontend, 27 files, +3329/-23, 5 review comments</title>
+<path d="M2273.5 348.91 C2273.5 246.3 2273.5 246.3 2273.5 150" stroke="#1E90FF" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="2273.5" cy="150" r="4.2" fill="#1E90FF" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="2273.5" cy="364" r="15.09" fill="#1E90FF" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<circle cx="2273.5" cy="364" r="19.59" fill="none" stroke="#1E90FF" stroke-width="1.5" opacity="0.85"/>
+<circle cx="2273.5" cy="364" r="23.09" fill="none" stroke="#1E90FF" stroke-width="1" opacity="0.32"/>
+<text x="2273.5" y="367.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">58</text>
+</g>
+<g><title>#59 chore: remove workflow verification test file — infra, 1 files, +0/-4, 0 review comments</title>
+<path d="M2314.5 636.25 C2314.5 372.29999999999995 2314.5 372.29999999999995 2314.5 150" stroke="#8B949E" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="2314.5" cy="150" r="4.2" fill="#8B949E" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="2314.5" cy="644" r="7.75" fill="#8B949E" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="2314.5" y="647.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">59</text>
+</g>
+<g><title>#61 feat(infra): Sprint 2 - ECS Fargate compute, CDN, auth, and deploy pipeline — infra, 16 files, +1041/-1, 3 review comments</title>
+<path d="M2355.5 631.0 C2355.5 372.29999999999995 2355.5 372.29999999999995 2355.5 150" stroke="#8B949E" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="2355.5" cy="150" r="4.2" fill="#8B949E" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="2355.5" cy="644" r="13.0" fill="#8B949E" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<circle cx="2355.5" cy="644" r="17.5" fill="none" stroke="#8B949E" stroke-width="1.5" opacity="0.85"/>
+<circle cx="2355.5" cy="644" r="21.0" fill="none" stroke="#8B949E" stroke-width="1" opacity="0.32"/>
+<text x="2355.5" y="647.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">61</text>
+</g>
+<g><title>#62 feat(infra): Sprint 1 production infrastructure foundation — infra, 23 files, +1969/-384, 3 review comments</title>
+<path d="M2396.5 629.61 C2396.5 372.29999999999995 2396.5 372.29999999999995 2396.5 150" stroke="#8B949E" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="2396.5" cy="150" r="4.2" fill="#8B949E" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="2396.5" cy="644" r="14.39" fill="#8B949E" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<circle cx="2396.5" cy="644" r="18.89" fill="none" stroke="#8B949E" stroke-width="1.5" opacity="0.85"/>
+<circle cx="2396.5" cy="644" r="22.39" fill="none" stroke="#8B949E" stroke-width="1" opacity="0.32"/>
+<text x="2396.5" y="647.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">62</text>
+</g>
+<g><title>#63 feat(frontend): session rename/delete, session-switch rehydration, message formatting, and deployable infra — frontend, 17 files, +566/-101, 1 review comments</title>
+<path d="M2475.5 350.78 C2475.5 246.3 2475.5 246.3 2475.5 150" stroke="#1E90FF" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="2475.5" cy="150" r="4.2" fill="#1E90FF" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="2475.5" cy="364" r="13.22" fill="#1E90FF" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="2475.5" y="367.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">63</text>
+</g>
+<g><title>#64 feat(backend): server-side demo seeding and reset — backend, 12 files, +840/-0, 1 review comments</title>
+<path d="M2516.5 421.94 C2516.5 277.79999999999995 2516.5 277.79999999999995 2516.5 150" stroke="#32CD32" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="2516.5" cy="150" r="4.2" fill="#32CD32" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="2516.5" cy="434" r="12.06" fill="#32CD32" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="2516.5" y="437.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">64</text>
+</g>
+<g><title>#65 feat(frontend): add Valentin Inspector — live architecture slide-over — frontend, 14 files, +1777/-13, 0 review comments (closed unmerged)</title>
+<path d="M2557.5 351.45 L2557.5 291.24" stroke="#1E90FF" stroke-width="1.8" fill="none" opacity="0.40" stroke-dasharray="3 3"/>
+<circle cx="2557.5" cy="364" r="12.55" fill="#0d1117" stroke="#1E90FF" stroke-width="2.4" stroke-dasharray="3 2.4"/>
+<text x="2557.5" y="367.3" fill="#1E90FF" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">65</text>
+</g>
+<g><title>#66 feat(frontend): demo toolbar for one-click profile load and reset — frontend, 6 files, +604/-6, 1 review comments</title>
+<path d="M2598.5 353.71 C2598.5 246.3 2598.5 246.3 2598.5 150" stroke="#1E90FF" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="2598.5" cy="150" r="4.2" fill="#1E90FF" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="2598.5" cy="364" r="10.29" fill="#1E90FF" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="2598.5" y="367.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">66</text>
+</g>
+<g><title>#67 docs(infra): lead with the agentic methodology and give each agent a face — infra, 14 files, +1612/-90, 1 review comments</title>
+<path d="M2639.5 631.45 C2639.5 372.29999999999995 2639.5 372.29999999999995 2639.5 150" stroke="#8B949E" stroke-width="2" fill="none" opacity="0.62"/>
+<circle cx="2639.5" cy="150" r="4.2" fill="#8B949E" stroke="#0d1117" stroke-width="1.6"/>
+<circle cx="2639.5" cy="644" r="12.55" fill="#8B949E" stroke="#0d1117" stroke-width="2" filter="url(#glow)"/>
+<text x="2639.5" y="647.3" fill="#0d1117" font-size="8.6" font-weight="700" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">67</text>
+</g>
+<line x1="30" y1="696" x2="2670" y2="696" stroke="#30363d" stroke-width="1"/>
+<text x="34" y="722" fill="#e6edf3" font-size="17" font-weight="700">56</text>
+<text x="34" y="737" fill="#8b949e" font-size="10">pull requests</text>
+<text x="151.2" y="722" fill="#e6edf3" font-size="17" font-weight="700">48</text>
+<text x="151.2" y="737" fill="#8b949e" font-size="10">merged</text>
+<text x="223.6" y="722" fill="#e6edf3" font-size="17" font-weight="700">92</text>
+<text x="223.6" y="737" fill="#8b949e" font-size="10">review comments</text>
+<text x="353.6" y="722" fill="#e6edf3" font-size="17" font-weight="700">+32,770</text>
+<text x="353.6" y="737" fill="#8b949e" font-size="10">lines added</text>
+<text x="464.6" y="722" fill="#e6edf3" font-size="17" font-weight="700">−1,954</text>
+<text x="464.6" y="737" fill="#8b949e" font-size="10">lines removed</text>
+<text x="581.8000000000001" y="722" fill="#e6edf3" font-size="17" font-weight="700">431</text>
+<text x="581.8000000000001" y="737" fill="#8b949e" font-size="10">files touched</text>
+<text x="699.0000000000001" y="722" fill="#e6edf3" font-size="17" font-weight="700">4</text>
+<text x="699.0000000000001" y="737" fill="#8b949e" font-size="10">working sessions</text>
+<text x="2668" y="730" fill="#8b949e" font-size="10" text-anchor="end" opacity="0.7">generated by scripts/generate-agent-graph.py from the live PR history</text>
+</svg>

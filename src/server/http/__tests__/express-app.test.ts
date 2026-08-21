@@ -215,6 +215,64 @@ describe('the session list', () => {
   });
 });
 
+describe('renaming and deleting a conversation', () => {
+  function send(path: string, method: string, token: string, body?: unknown) {
+    return fetch(`${baseUrl}${path}`, {
+      method,
+      headers: {
+        authorization: `Bearer ${token}`,
+        ...(body ? { 'content-type': 'application/json' } : {}),
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+  }
+
+  it('renames a conversation for its owner', async () => {
+    const { sessionId } = (await (
+      await post('/api/session/seed', 'grace')
+    ).json()) as { sessionId: string };
+
+    const res = await send(`/api/session/${sessionId}`, 'PATCH', 'grace', {
+      title: 'Anniversary',
+    });
+    expect(res.status).toBe(200);
+
+    const { sessions } = (await (await get('/api/sessions', 'grace')).json()) as {
+      sessions: { id: string; title: string | null }[];
+    };
+    expect(sessions.find((s) => s.id === sessionId)?.title).toBe('Anniversary');
+  });
+
+  it("answers 404 when renaming someone else's conversation", async () => {
+    const { sessionId } = (await (
+      await post('/api/session/seed', 'heidi')
+    ).json()) as { sessionId: string };
+
+    const res = await send(`/api/session/${sessionId}`, 'PATCH', 'ivan', {
+      title: 'Ivan was here',
+    });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('deletes a conversation, and only for its owner', async () => {
+    const { sessionId } = (await (
+      await post('/api/session/seed', 'judy')
+    ).json()) as { sessionId: string };
+
+    expect((await send(`/api/session/${sessionId}`, 'DELETE', 'karl')).status).toBe(
+      404,
+    );
+    // Still there after the refused attempt — a 404 must mean untouched.
+    expect((await get(`/api/session/${sessionId}`, 'judy')).status).toBe(200);
+
+    expect((await send(`/api/session/${sessionId}`, 'DELETE', 'judy')).status).toBe(
+      200,
+    );
+    expect((await get(`/api/session/${sessionId}`, 'judy')).status).toBe(404);
+  });
+});
+
 describe('POST /api/demo/login', () => {
   it('reports 503 when the deployment has no demo account', async () => {
     // The app under test was built without a demoLogin dependency. 503 rather

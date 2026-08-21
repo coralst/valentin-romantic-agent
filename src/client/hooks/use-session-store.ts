@@ -1,8 +1,7 @@
-import { v4 as uuidv4 } from 'uuid';
 import type { ChatMessage } from '../../shared/interfaces/message';
 import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
 
-/** A session persisted to localStorage */
+/** One conversation as the sidebar renders it, fetched from the server */
 export interface StoredSession {
   id: string;
   /** User-given name for the conversation. Takes precedence over the
@@ -15,76 +14,34 @@ export interface StoredSession {
   messageCount: number;
 }
 
-const STORAGE_KEY = 'valentin_sessions';
+/**
+ * Where conversations used to live. Read once, to clear it — see
+ * discardLegacySessions.
+ */
+const LEGACY_STORAGE_KEY = 'valentin_sessions';
 const SIDEBAR_COLLAPSED_KEY = 'valentin_sidebar_collapsed';
-const MAX_SESSIONS = 10;
 
-/** Load all sessions from localStorage with corruption recovery */
-export function loadSessions(): StoredSession[] {
+/**
+ * Clear conversations left behind by the localStorage era, reporting how many.
+ *
+ * They are not worth importing: the old store never wrote a single message into
+ * a session (nothing ever dispatched the update that would have), so every one
+ * of them is a title and an empty transcript. Migrating them would move empty
+ * shells onto the server and make the sidebar look broken in a new way. The
+ * caller shows a one-time notice instead.
+ */
+export function discardLegacySessions(): number {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) {
-      localStorage.removeItem(STORAGE_KEY);
-      return [];
-    }
-    return parsed as StoredSession[];
+    const raw = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (!raw) return 0;
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.length : 0;
   } catch {
-    localStorage.removeItem(STORAGE_KEY);
-    return [];
+    // Unreadable is still discarded — that is the whole point of the call.
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
+    return 0;
   }
-}
-
-/** Persist all sessions to localStorage, enforcing the max limit */
-export function saveSessions(sessions: StoredSession[]): void {
-  const sorted = [...sessions].sort(
-    (a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime(),
-  );
-  const trimmed = sorted.slice(0, MAX_SESSIONS);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
-}
-
-/** Save or update a single session in the store */
-export function saveSession(session: StoredSession): void {
-  const sessions = loadSessions();
-  const idx = sessions.findIndex((s) => s.id === session.id);
-  if (idx >= 0) {
-    sessions[idx] = session;
-  } else {
-    sessions.unshift(session);
-  }
-  saveSessions(sessions);
-}
-
-/** Delete a session by id */
-export function deleteSession(id: string): void {
-  const sessions = loadSessions();
-  const filtered = sessions.filter((s) => s.id !== id);
-  saveSessions(filtered);
-}
-
-/** Rename a session by id, persisting the new title */
-export function renameSession(id: string, title: string): void {
-  const sessions = loadSessions();
-  const idx = sessions.findIndex((s) => s.id === id);
-  if (idx < 0) return;
-  const trimmed = title.trim();
-  sessions[idx] = { ...sessions[idx], title: trimmed.length > 0 ? trimmed : null };
-  saveSessions(sessions);
-}
-
-/** Create a brand new empty session */
-export function createNewSession(): StoredSession {
-  return {
-    id: uuidv4(),
-    title: null,
-    partnerName: null,
-    messages: [],
-    preferences: [],
-    lastActivity: new Date().toISOString(),
-    messageCount: 0,
-  };
 }
 
 /** Load sidebar collapsed state */

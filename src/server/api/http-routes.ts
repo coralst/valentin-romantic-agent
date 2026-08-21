@@ -135,6 +135,48 @@ export function createHttpRoutes(storage: StorageInterface) {
       return { status: 201, body: { sessionId, preferenceCount } };
     },
 
+    /**
+     * PATCH /session/:id — rename a conversation.
+     *
+     * The sidebar has offered rename since before there was a server, backed by
+     * localStorage. Now that the list is server-owned, a rename with nowhere to
+     * go would silently revert on the next reload — worse than not offering it.
+     */
+    async renameSession(
+      sessionId: string,
+      title: unknown,
+    ): Promise<HttpResponse> {
+      if (typeof title !== 'string') {
+        return { status: 400, body: { error: 'A title is required' } };
+      }
+
+      const session = await storage.getSession(sessionId);
+      if (!session) {
+        return { status: 404, body: { error: 'Session not found' } };
+      }
+
+      // An empty title clears the custom name and falls back to the partner's,
+      // which is what the inline editor sends when the field is emptied.
+      const trimmed = title.trim();
+      await storage.updateSessionMeta(sessionId, {
+        title: trimmed.length > 0 ? trimmed.slice(0, 120) : null,
+      });
+
+      return { status: 200, body: { sessionId, title: trimmed || null } };
+    },
+
+    /** DELETE /session/:id — remove a conversation and everything in it */
+    async deleteSession(sessionId: string): Promise<HttpResponse> {
+      const session = await storage.getSession(sessionId);
+      if (!session) {
+        // The key names the caller, so this is also the cross-tenant answer.
+        return { status: 404, body: { error: 'Session not found' } };
+      }
+
+      await storage.deleteSession(sessionId);
+      return { status: 200, body: { sessionId, deleted: true } };
+    },
+
     /** POST /session/:id/reset — drop a session's preferences and messages */
     async resetSession(sessionId: string): Promise<HttpResponse> {
       const session = await storage.getSession(sessionId);
@@ -186,10 +228,15 @@ export function createHttpRoutes(storage: StorageInterface) {
         return this.getSessionPreferences(prefMatch[1]);
       }
 
-      // GET /session/:id — last, so the more specific patterns above win
+      // /session/:id — last, so the more specific patterns above win
       const detailMatch = req.url.match(/^\/session\/([^/]+)$/);
-      if (req.method === 'GET' && detailMatch) {
-        return this.getSessionDetail(detailMatch[1]);
+      if (detailMatch) {
+        if (req.method === 'GET') return this.getSessionDetail(detailMatch[1]);
+        if (req.method === 'PATCH') {
+          const patch = (req.body ?? {}) as { title?: unknown };
+          return this.renameSession(detailMatch[1], patch.title);
+        }
+        if (req.method === 'DELETE') return this.deleteSession(detailMatch[1]);
       }
 
       return { status: 404, body: { error: 'Not found' } };

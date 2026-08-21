@@ -269,7 +269,109 @@ describe('createHttpRoutes', () => {
     });
   });
 
+  describe('renameSession', () => {
+    it('gives the conversation the name the sidebar shows', async () => {
+      const { sessionId } = (await routes.seedSession()).body as SeedBody;
+
+      const result = await routes.renameSession(sessionId, '  Anniversary  ');
+
+      expect(result.status).toBe(200);
+      const session = await store.getSession(sessionId);
+      expect(session?.title).toBe('Anniversary');
+    });
+
+    it('clears the title when renamed to blank, falling back to the partner', async () => {
+      const { sessionId } = (await routes.seedSession()).body as SeedBody;
+      await routes.renameSession(sessionId, 'Temporary');
+
+      await routes.renameSession(sessionId, '   ');
+
+      const session = await store.getSession(sessionId);
+      expect(session?.title).toBeNull();
+      expect(session?.partnerName).toBe('Mirabel');
+    });
+
+    it('rejects a missing title rather than storing undefined', async () => {
+      const { sessionId } = (await routes.seedSession()).body as SeedBody;
+
+      const result = await routes.renameSession(sessionId, undefined);
+
+      expect(result.status).toBe(400);
+    });
+
+    it("cannot rename someone else's conversation", async () => {
+      const factory = new InMemoryStoreFactory();
+      const aliceStore = factory.forUser('alice');
+      const alice = createHttpRoutes(aliceStore);
+      const bob = createHttpRoutes(factory.forUser('bob'));
+      const { sessionId } = (await alice.seedSession()).body as SeedBody;
+
+      const result = await bob.renameSession(sessionId, 'Bob was here');
+
+      expect(result.status).toBe(404);
+      expect((await aliceStore.getSession(sessionId))?.title).toBeFalsy();
+    });
+  });
+
+  describe('deleteSession', () => {
+    it('removes the conversation and its contents', async () => {
+      const { sessionId } = (await routes.seedSession()).body as SeedBody;
+
+      const result = await routes.deleteSession(sessionId);
+
+      expect(result.status).toBe(200);
+      expect(await store.getSession(sessionId)).toBeNull();
+      expect(await store.getPreferencesBySession(sessionId)).toEqual([]);
+    });
+
+    it('responds 404 for an unknown session id', async () => {
+      expect((await routes.deleteSession('no-such-session')).status).toBe(404);
+    });
+
+    it("cannot delete someone else's conversation", async () => {
+      // The one that matters: a 404 here has to mean "untouched", not "gone".
+      const factory = new InMemoryStoreFactory();
+      const aliceStore = factory.forUser('alice');
+      const alice = createHttpRoutes(aliceStore);
+      const bob = createHttpRoutes(factory.forUser('bob'));
+      const { sessionId } = (await alice.seedSession()).body as SeedBody;
+
+      const result = await bob.deleteSession(sessionId);
+
+      expect(result.status).toBe(404);
+      expect(await aliceStore.getSession(sessionId)).not.toBeNull();
+    });
+  });
+
   describe('handleRequest routing', () => {
+    it('routes PATCH /session/:id to renameSession', async () => {
+      const { sessionId } = (await routes.seedSession()).body as SeedBody;
+
+      const result = await routes.handleRequest({
+        method: 'PATCH',
+        url: `/session/${sessionId}`,
+        params: {},
+        body: { title: 'Renamed' },
+      });
+
+      expect(result.status).toBe(200);
+      expect((await store.getSession(sessionId))?.title).toBe('Renamed');
+    });
+
+    it('routes DELETE /session/:id to deleteSession', async () => {
+      const { sessionId } = (await routes.seedSession()).body as SeedBody;
+
+      const result = await routes.handleRequest({
+        method: 'DELETE',
+        url: `/session/${sessionId}`,
+        params: {},
+        body: null,
+      });
+
+      expect(result.status).toBe(200);
+      expect(await store.getSession(sessionId)).toBeNull();
+    });
+
     it('routes GET /sessions to listSessions', async () => {
       await routes.seedSession();
 

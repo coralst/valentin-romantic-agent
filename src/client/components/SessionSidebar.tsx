@@ -135,6 +135,40 @@ const emptyTextStyle: React.CSSProperties = {
   lineHeight: typography.lineHeights.normal,
 };
 
+const noticeStripStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: spacing.xs,
+  margin: `${spacing.xs}px ${spacing.xs / 2}px 0`,
+  padding: `${spacing.xs}px ${spacing.xs + 2}px`,
+  borderRadius: borderRadius.sm,
+  backgroundColor: colors.champagne,
+  color: colors.textSecondary,
+};
+
+const errorStripStyle: React.CSSProperties = {
+  ...noticeStripStyle,
+  backgroundColor: 'rgba(180, 70, 70, 0.10)',
+  color: colors.error,
+};
+
+const noticeTextStyle: React.CSSProperties = {
+  flex: 1,
+  fontSize: typography.sizes.xs,
+  fontFamily: typography.bodyFontFamily,
+  lineHeight: typography.lineHeights.normal,
+};
+
+const noticeDismissStyle: React.CSSProperties = {
+  border: 'none',
+  background: 'transparent',
+  padding: 0,
+  lineHeight: 1,
+  cursor: 'pointer',
+  color: 'inherit',
+  fontSize: typography.sizes.sm,
+};
+
 interface SessionSidebarProps {
   isMobile: boolean;
 }
@@ -149,9 +183,18 @@ export function SessionSidebar({ isMobile }: SessionSidebarProps) {
     renameSession,
     toggleSidebar,
     setSidebarOpen,
+    dismissNotice,
   } = useSessionContext();
 
-  const { sessions, activeSessionId, sidebarCollapsed, sidebarOpen } = state;
+  const {
+    sessions,
+    activeSessionId,
+    sidebarCollapsed,
+    sidebarOpen,
+    loading,
+    error,
+    notice,
+  } = state;
 
   // Close mobile sidebar on Escape
   useEffect(() => {
@@ -163,20 +206,78 @@ export function SessionSidebar({ isMobile }: SessionSidebarProps) {
     return () => document.removeEventListener('keydown', handleKey);
   }, [isMobile, sidebarOpen, setSidebarOpen]);
 
+  // Every handler below talks to the server now. The failure is surfaced by the
+  // context as `state.error`, so these only need to stop an unhandled rejection
+  // from reaching the console.
   const handleNewChat = () => {
-    createSession();
+    void createSession().catch(() => {});
   };
 
   const handleSelect = (id: string) => {
-    switchSession(id);
+    void switchSession(id).catch(() => {});
   };
 
   const handleDelete = (id: string) => {
-    removeSession(id);
+    void removeSession(id).catch(() => {});
   };
 
   const handleRename = (id: string, title: string) => {
-    renameSession(id, title);
+    void renameSession(id, title).catch(() => {});
+  };
+
+  /** The list body: loading, empty, or the conversations themselves */
+  const renderList = () => {
+    if (loading && sessions.length === 0) {
+      return (
+        <div style={emptyStateStyle} data-testid="session-list-loading">
+          <p style={emptyTextStyle}>Loading your conversations…</p>
+        </div>
+      );
+    }
+
+    if (sessions.length === 0) {
+      return (
+        <div style={emptyStateStyle} data-testid="session-empty-state">
+          <p style={emptyTextStyle}>
+            No conversations yet. Start your first chat to begin building a relationship profile.
+          </p>
+        </div>
+      );
+    }
+
+    return sessions.map((session) => (
+      <SessionEntry
+        key={session.id}
+        session={session}
+        isActive={session.id === activeSessionId}
+        onSelect={handleSelect}
+        onDelete={handleDelete}
+        onRename={handleRename}
+      />
+    ));
+  };
+
+  /** The notice strip, shown for a discarded local history or a failed call */
+  const renderMessage = () => {
+    const text = error ?? notice;
+    if (!text) return null;
+
+    return (
+      <div
+        style={error ? errorStripStyle : noticeStripStyle}
+        role="status"
+        data-testid={error ? 'session-error' : 'session-notice'}
+      >
+        <span style={noticeTextStyle}>{text}</span>
+        <button
+          style={noticeDismissStyle}
+          onClick={dismissNotice}
+          aria-label="Dismiss"
+        >
+          &times;
+        </button>
+      </div>
+    );
   };
 
   // Mobile: render as overlay when open
@@ -204,25 +305,9 @@ export function SessionSidebar({ isMobile }: SessionSidebarProps) {
               &times;
             </button>
           </div>
+          {renderMessage()}
           <div style={sessionListStyle} data-testid="session-list">
-            {sessions.length === 0 ? (
-              <div style={emptyStateStyle} data-testid="session-empty-state">
-                <p style={emptyTextStyle}>
-                  No conversations yet. Start your first chat to begin building a relationship profile.
-                </p>
-              </div>
-            ) : (
-              sessions.map((session) => (
-                <SessionEntry
-                  key={session.id}
-                  session={session}
-                  isActive={session.id === activeSessionId}
-                  onSelect={handleSelect}
-                  onDelete={handleDelete}
-                  onRename={handleRename}
-                />
-              ))
-            )}
+            {renderList()}
           </div>
         </aside>
       </div>
@@ -267,25 +352,9 @@ export function SessionSidebar({ isMobile }: SessionSidebarProps) {
           &#9664;
         </button>
       </div>
+      {renderMessage()}
       <div style={sessionListStyle} data-testid="session-list">
-        {sessions.length === 0 ? (
-          <div style={emptyStateStyle} data-testid="session-empty-state">
-            <p style={emptyTextStyle}>
-              No conversations yet. Start your first chat to begin building a relationship profile.
-            </p>
-          </div>
-        ) : (
-          sessions.map((session) => (
-            <SessionEntry
-              key={session.id}
-              session={session}
-              isActive={session.id === activeSessionId}
-              onSelect={handleSelect}
-              onDelete={handleDelete}
-              onRename={handleRename}
-            />
-          ))
-        )}
+        {renderList()}
       </div>
     </aside>
   );

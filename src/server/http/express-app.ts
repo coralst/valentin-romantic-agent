@@ -256,5 +256,25 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
     scoped(deps, (routes, req) => routes.getSessionDetail(pathParam(req, 'id'))),
   );
 
+  app.patch(
+    '/api/session/:id',
+    scoped(deps, (routes, req) =>
+      routes.renameSession(
+        pathParam(req, 'id'),
+        (req.body as { title?: unknown } | undefined)?.title,
+      ),
+    ),
+  );
+
+  app.delete(
+    '/api/session/:id',
+    scoped(deps, async (routes, req) => {
+      const sessionId = pathParam(req, 'id');
+      const result = await routes.deleteSession(sessionId);
+      deps.log('info', 'Session deleted', { sessionId, status: result.status });
+      return result;
+    }),
+  );
+
   return app;
 }

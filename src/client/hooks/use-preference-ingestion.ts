@@ -93,6 +93,13 @@ export function usePreferenceIngestion(): PreferenceIngestionResult {
       for (const pref of preferencesState.preferences[category]) {
         const fieldId = resolvePreferenceField(pref);
         if (fieldId) {
+          // A value the user has explicitly rejected must not come back. The
+          // preference itself stays in the preferences store — rejecting a guess
+          // is a judgement about a value, not a deletion of the message it came
+          // from — so without this check the next run of this effect re-adds
+          // exactly what ✗ removed.
+          if (profileState.rejectedFieldIds.includes(fieldId)) continue;
+
           // Only set discovered value if no manual value exists
           const currentManual = profileState.manualValues[fieldId];
           if (!currentManual) {

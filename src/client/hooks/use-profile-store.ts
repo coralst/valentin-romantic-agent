@@ -13,6 +13,21 @@ export interface ProfileStoreState {
   partnerPhoto: string | null;
   manualValues: Record<string, ProfileFieldValue>;
   discoveredValues: Record<string, ProfileFieldValue>;
+  /**
+   * Fields whose discovered value the user has explicitly rejected.
+   *
+   * Rejecting is not the same as deleting, and this is the difference. The
+   * *preference* that produced the value still sits in the preferences store, so
+   * without a record of the rejection two things immediately undo it: ingestion
+   * re-dispatches `SET_DISCOVERED_VALUE` for the same preference, and the
+   * dossier's "Confirm my guesses" card re-derives the same question. Both were
+   * visible in the Stage 6 screenshots — pressing ✗ ten times cleared exactly one
+   * field, because the other nine came straight back.
+   *
+   * A manual value on the same field supersedes the rejection: answering by hand
+   * is a stronger signal than declining a guess.
+   */
+  rejectedFieldIds: string[];
   storageError: string | null;
 }
 
@@ -23,6 +38,18 @@ export type ProfileStoreAction =
   | { type: 'SET_MANUAL_VALUE'; fieldId: string; value: string }
   | { type: 'CLEAR_MANUAL_VALUE'; fieldId: string }
   | { type: 'SET_DISCOVERED_VALUE'; fieldId: string; value: string; confidence: number }
+  /**
+   * Drops a discovered value the user has explicitly rejected — the ✗ on the
+   * dossier's "Confirm my guesses" card.
+   *
+   * `CLEAR_MANUAL_VALUE` cannot serve this: a rejected guess has no manual value
+   * to clear, and clearing the manual slot would *reveal* the discovered value
+   * underneath (`getFieldValue` falls through to it) rather than removing it.
+   *
+   * Also records the rejection in `rejectedFieldIds`, without which the value is
+   * re-ingested from the still-present preference on the next render.
+   */
+  | { type: 'CLEAR_DISCOVERED_VALUE'; fieldId: string }
   | { type: 'RESTORE'; state: Partial<ProfileStoreState> }
   | { type: 'CLEAR_ALL_VALUES' }
   | { type: 'STORAGE_ERROR'; message: string }
@@ -41,6 +68,7 @@ const initialState: ProfileStoreState = {
   partnerPhoto: null,
   manualValues: {},
   discoveredValues: {},
+  rejectedFieldIds: [],
   storageError: null,
 };
 
@@ -65,6 +93,9 @@ export function profileStoreReducer(
       return {
         ...state,
         manualValues: { ...state.manualValues, [action.fieldId]: fieldValue },
+        // Answering by hand overrides an earlier rejection of the same field, so
+        // a later extraction of a *different* value can surface as a guess again.
+        rejectedFieldIds: state.rejectedFieldIds.filter((id) => id !== action.fieldId),
         storageError: null,
       };
     }
@@ -87,6 +118,17 @@ export function profileStoreReducer(
       };
     }
 
+    case 'CLEAR_DISCOVERED_VALUE': {
+      const { [action.fieldId]: _, ...rest } = state.discoveredValues;
+      return {
+        ...state,
+        discoveredValues: rest,
+        rejectedFieldIds: state.rejectedFieldIds.includes(action.fieldId)
+          ? state.rejectedFieldIds
+          : [...state.rejectedFieldIds, action.fieldId],
+      };
+    }
+
     case 'RESTORE':
       return {
         ...state,
@@ -100,6 +142,7 @@ export function profileStoreReducer(
         partnerPhoto: null,
         manualValues: {},
         discoveredValues: {},
+        rejectedFieldIds: [],
         storageError: null,
       };
 

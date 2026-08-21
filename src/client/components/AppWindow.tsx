@@ -4,6 +4,16 @@ export type AppWindowVariant = 'desktop' | 'mobile';
 
 interface AppWindowProps {
   variant: AppWindowVariant;
+  /**
+   * Overrides the desktop column track list.
+   *
+   * The dossier replaces columns 2–4 with a single wide board while keeping the
+   * icon rail, so the *window* has to change shape — the alternative is a
+   * four-column grid with three empty tracks, or a portal, and the dossier is
+   * not an overlay (see `context/view-context.tsx`). Ignored on mobile, which is
+   * always a single 100% column.
+   */
+  columns?: string;
   children?: React.ReactNode;
 }
 
@@ -23,11 +33,22 @@ export const MOBILE_STRIP_HEIGHT = 56;
  * lets it shrink below its content's intrinsic width instead of forcing the
  * grid wider than the window.
  */
-const DESKTOP_COLUMNS = [
+export const DESKTOP_COLUMNS = [
   `${layout.iconRailWidth}px`,
   `${layout.conversationListWidth}px`,
   'minmax(0, 1fr)',
   `${layout.briefRailWidth}px`,
+].join(' ');
+
+/**
+ * The two columns of the dossier shell: icon rail | board (`full-profile.html:19`).
+ *
+ * The rail keeps its exact 76px so switching surfaces does not shift it by a
+ * pixel — the ♥ you clicked has to still be under the cursor.
+ */
+export const DOSSIER_COLUMNS = [
+  `${layout.iconRailWidth}px`,
+  'minmax(0, 1fr)',
 ].join(' ');
 
 function getPageStyle(variant: AppWindowVariant): React.CSSProperties {
@@ -43,7 +64,7 @@ function getPageStyle(variant: AppWindowVariant): React.CSSProperties {
   };
 }
 
-function getFrameStyle(variant: AppWindowVariant): React.CSSProperties {
+function getFrameStyle(variant: AppWindowVariant, columns?: string): React.CSSProperties {
   const isMobile = variant === 'mobile';
   return {
     height: '100%',
@@ -54,7 +75,7 @@ function getFrameStyle(variant: AppWindowVariant): React.CSSProperties {
     boxShadow: isMobile ? 'none' : WINDOW_SHADOW,
     display: 'grid',
     // Mobile stacks: claret top strip, then whatever the caller puts below it.
-    gridTemplateColumns: isMobile ? '100%' : DESKTOP_COLUMNS,
+    gridTemplateColumns: isMobile ? '100%' : (columns ?? DESKTOP_COLUMNS),
     gridTemplateRows: isMobile ? `${MOBILE_STRIP_HEIGHT}px minmax(0, 1fr)` : '100%',
   };
 }
@@ -65,10 +86,10 @@ function getFrameStyle(variant: AppWindowVariant): React.CSSProperties {
  * Children are laid out directly as grid items, so each child is responsible
  * for its own `minWidth: 0` / `minHeight: 0` (see `windowCellStyle`).
  */
-export function AppWindow({ variant, children }: AppWindowProps) {
+export function AppWindow({ variant, columns, children }: AppWindowProps) {
   return (
     <div style={getPageStyle(variant)} data-testid="app-window-page">
-      <div style={getFrameStyle(variant)} data-testid="app-window">
+      <div style={getFrameStyle(variant, columns)} data-testid="app-window">
         {children}
       </div>
     </div>

@@ -2,9 +2,11 @@ import { useEffect } from 'react';
 import { colors, spacing, typography, shadows, borderRadius, animation, breakpoints } from '../design-system/tokens';
 import { useSessionContext } from '../context/session-context';
 import { SessionEntry } from './SessionEntry';
+import { ArchitectureToggle } from './ArchitectureToggle';
 
-const SIDEBAR_WIDTH = 280;
-const RAIL_WIDTH = 56;
+/** Exported so the architecture drawer can start where the sidebar ends. */
+export const SIDEBAR_WIDTH = 280;
+export const RAIL_WIDTH = 56;
 
 const sidebarExpandedStyle: React.CSSProperties = {
   width: SIDEBAR_WIDTH,
@@ -196,6 +198,7 @@ export function SessionSidebar({ isMobile }: SessionSidebarProps) {
               <span>+</span>
               <span>New chat</span>
             </button>
+            <ArchitectureToggle compact />
             <button
               style={toggleButtonStyle}
               onClick={() => setSidebarOpen(false)}
@@ -237,6 +240,7 @@ export function SessionSidebar({ isMobile }: SessionSidebarProps) {
           <button style={newChatIconOnlyStyle} onClick={handleNewChat} aria-label="New chat" title="New chat">
             <span>+</span>
           </button>
+          <ArchitectureToggle compact />
           <button
             style={toggleButtonStyle}
             onClick={toggleSidebar}
@@ -258,6 +262,7 @@ export function SessionSidebar({ isMobile }: SessionSidebarProps) {
           <span>+</span>
           <span>New chat</span>
         </button>
+        <ArchitectureToggle compact />
         <button
           style={toggleButtonStyle}
           onClick={toggleSidebar}

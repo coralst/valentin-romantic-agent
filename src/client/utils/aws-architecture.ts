@@ -4,10 +4,9 @@ import type { ServerEvent } from '../../shared/interfaces/ws-events';
  * The real AWS topology behind Valentin, as a model the view can render and
  * the tests can assert against.
  *
- * Sibling to `inspector-architecture.ts`, which stays: that file names code
- * modules (`WsGateway`, `EventRouter`), this one names AWS resources. An AWS
- * audience learns nothing from a module name; a room full of builders reads
- * `ValentinTable-dev` instantly.
+ * This replaced an earlier model that named code modules (`WsGateway`,
+ * `EventRouter`). An AWS audience learns nothing from a module name; a room full
+ * of builders reads `ValentinTable-dev` instantly.
  *
  * Every value here is verified against live AWS reads and the CDK source, not
  * inferred from the console:
@@ -298,9 +297,9 @@ export function awsNodeIdForResource(resourceId: string): AwsNodeId | undefined 
 /**
  * A short detail line for an event, safe to project.
  *
- * Unlike `describeEvent` in `inspector-architecture.ts`, this NEVER includes a
- * preference's value — only its category and key. The Inspector is on a screen
- * in front of a room, and the values are a real person's private preferences.
+ * NEVER includes a preference's value — only its category and key. The drawer is
+ * on a screen in front of a room, and the values are a real person's private
+ * preferences.
  */
 export function describeAwsEvent(event: ServerEvent | { type: string; payload: unknown }): string {
   const payload = event.payload as Record<string, unknown> | undefined;

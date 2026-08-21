@@ -1,0 +1,407 @@
+import { useCallback, useEffect, useMemo } from 'react';
+import { AwsTopologyDiagram, type NodeDuration } from './AwsTopologyDiagram';
+import { AwsFlowFeed, type FeedRow } from './AwsFlowFeed';
+import { useArchitectureDrawer } from '../context/architecture-drawer-context';
+import { useArchitectureMode, type ArchitectureMode } from '../hooks/use-architecture-mode';
+import { useLiveArchitecture } from '../hooks/use-live-architecture';
+import { useFlowPlayback } from '../hooks/use-flow-playback';
+import { PANEL_SLIDE_MS } from '../hooks/use-inspector-focus';
+import {
+  DEFAULT_DEMO_FLOW_ID,
+  demoFlow,
+  demoStepDwellMs,
+  frameForStep,
+} from '../utils/aws-demo-flows';
+import type { AwsNodeId } from '../utils/aws-architecture';
+import { colors, typography } from '../design-system/tokens';
+
+/**
+ * The Live Architecture drawer.
+ *
+ * Rises from the bottom over the chat and the profile without covering either,
+ * which is the whole argument for this shape: when `preference_update` lands you
+ * can point at the DynamoDB node lighting up *and* at the new row appearing in
+ * her profile in the same breath.
+ *
+ * Deliberately NOT a dialog. It is `role="complementary"`, has no backdrop, no
+ * `aria-modal`, no focus trap, and does not steal focus when it opens — the
+ * composer must stay typable while the diagram is up, because on stage the whole
+ * point is to send a message and watch it travel.
+ */
+
+/** Drawer height. Leaves roughly three messages of chat visible above it. */
+export const DRAWER_HEIGHT = 424;
+/** The collapsed bar's height, which stays on screen as the way back in. */
+export const REOPEN_BAR_HEIGHT = 34;
+
+/**
+ * The drawer positions itself absolutely against its nearest positioned
+ * ancestor, and `AppLayout` gives it a wrapper covering exactly the area to the
+ * right of the sidebar. That is why there is no left inset constant: the sidebar
+ * is 280px expanded and 56px collapsed, so any hardcoded number would be wrong
+ * in one of the two states.
+ *
+ * It must NOT be `position: fixed`, and it must not portal to `document.body`.
+ * The header sets `backdrop-filter`, which makes it a containing block for fixed
+ * descendants — the old inspector had to portal out for exactly that reason. An
+ * absolutely-positioned drawer inside the layout sidesteps the whole problem.
+ */
+
+export const DRAWER_COPY = {
+  title: 'Live Architecture',
+  subtitle: 'Real AWS resources · us-east-1 · measured per request',
+  hide: 'Hide the architecture drawer',
+  reopen: 'Show the architecture drawer',
+  liveMode: 'Live',
+  demoMode: 'Demo',
+  next: 'Next step',
+  previous: 'Previous step',
+  restart: 'Restart flow',
+  liveHeading: 'Live flow',
+  demoHeading: 'Demo flow',
+  liveEmpty: 'Waiting for traffic. Send a message and it will appear here.',
+  /** Says out loud that demo durations are authored, so nobody reads them as measured. */
+  demoNote: 'Scripted walkthrough · representative durations',
+} as const;
+
+const drawerStyle: React.CSSProperties = {
+  position: 'absolute',
+  left: 0,
+  right: 0,
+  bottom: 0,
+  height: DRAWER_HEIGHT,
+  background: '#FAF4F0',
+  borderTop: '1px solid #E5D9D2',
+  boxShadow: '0 -14px 34px rgba(42, 34, 38, 0.11)',
+  display: 'flex',
+  flexDirection: 'column',
+  zIndex: 5,
+  transition: `transform ${PANEL_SLIDE_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`,
+  fontFamily: typography.bodyFontFamily,
+};
+
+const buttonStyle: React.CSSProperties = {
+  background: colors.surface,
+  border: '1px solid #E5D9D2',
+  borderRadius: 8,
+  padding: '6px 11px',
+  fontSize: 11,
+  fontWeight: 700,
+  color: '#2A2226',
+  cursor: 'pointer',
+  fontFamily: typography.bodyFontFamily,
+};
+
+const primaryButtonStyle: React.CSSProperties = {
+  ...buttonStyle,
+  background: '#8C2F45',
+  borderColor: '#8C2F45',
+  color: colors.textOnAccent,
+};
+
+const ghostButtonStyle: React.CSSProperties = {
+  ...buttonStyle,
+  background: 'none',
+  borderColor: 'transparent',
+  color: '#756A70',
+};
+
+function ModeSwitch({
+  mode,
+  onChange,
+}: {
+  mode: ArchitectureMode;
+  onChange: (mode: ArchitectureMode) => void;
+}) {
+  const tab = (value: ArchitectureMode, label: string) => {
+    const on = mode === value;
+    return (
+      <button
+        key={value}
+        type="button"
+        onClick={() => onChange(value)}
+        aria-pressed={on}
+        style={{
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: '0.06em',
+          textTransform: 'uppercase',
+          padding: '5px 11px',
+          borderRadius: 7,
+          border: `1px solid ${on ? '#E5D9D2' : 'transparent'}`,
+          background: on ? colors.surface : 'none',
+          color: on ? '#8C2F45' : '#A3959C',
+          cursor: 'pointer',
+          fontFamily: typography.bodyFontFamily,
+        }}
+      >
+        {label}
+      </button>
+    );
+  };
+
+  return (
+    <div style={{ display: 'flex', gap: 4, marginLeft: 14 }} role="group" aria-label="Data source">
+      {tab('live', DRAWER_COPY.liveMode)}
+      {tab('demo', DRAWER_COPY.demoMode)}
+    </div>
+  );
+}
+
+export function LiveArchitectureDrawer() {
+  const { isOpen, isMounted, open, close } = useArchitectureDrawer();
+  const { mode, setMode } = useArchitectureMode();
+  const live = useLiveArchitecture();
+
+  const flow = demoFlow(DEFAULT_DEMO_FLOW_ID);
+  const dwellMsForStep = useCallback(
+    (index: number) => demoStepDwellMs(flow.steps[index]),
+    [flow.steps],
+  );
+  const playback = useFlowPlayback({ stepCount: flow.steps.length, dwellMsForStep });
+
+  const isDemo = mode === 'demo';
+
+  // Escape closes it. Bound on the document rather than the drawer because focus
+  // is deliberately left in the composer — a handler on the panel would never
+  // fire, which is the failure this replaces.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, close]);
+
+  const demoFrame = useMemo(
+    () => frameForStep(flow.steps, playback.index),
+    [flow.steps, playback.index],
+  );
+
+  /** Diagram props, from whichever source is selected. */
+  const diagram = isDemo
+    ? {
+        litNode: demoFrame.litNode,
+        litIsResponse: demoFrame.litIsResponse,
+        passNodes: demoFrame.passNodes,
+        doneNodes: demoFrame.doneNodes,
+        activeHops: demoFrame.activeHops,
+        durations: demoFrame.durations as Readonly<Partial<Record<AwsNodeId, NodeDuration>>>,
+      }
+    : {
+        litNode: live.litNode,
+        litIsResponse: live.litIsResponse,
+        passNodes: live.passNodes,
+        doneNodes: live.doneNodes,
+        activeHops: live.activeHops,
+        durations: liveDurations(live.beats, live.currentBeat?.key),
+      };
+
+  const rows: readonly FeedRow[] = isDemo
+    ? flow.steps.slice(0, playback.index + 1).map((step, index) => ({
+        key: `${flow.id}-${index}`,
+        service: step.service,
+        operation: step.operation,
+        detail: step.detail,
+        durationLabel: step.durationMs === undefined ? '—' : `${step.durationMs} ms`,
+        category: step.category,
+        actor: step.actor,
+        action: step.action,
+        isCurrent: index === playback.index,
+      }))
+    : live.beats.map((beat) => ({
+        key: beat.key,
+        service: beat.service,
+        operation: beat.operation,
+        detail: beat.detail,
+        durationLabel: beat.durationMs === undefined ? '—' : `${beat.durationMs} ms`,
+        category: beat.category,
+        actor: beat.actor,
+        action: beat.action,
+        isCurrent: beat.key === live.currentBeat?.key,
+      }));
+
+  const summary = isDemo
+    ? DRAWER_COPY.demoNote
+    : `${live.spanCount} span${live.spanCount === 1 ? '' : 's'} · ${live.modelCallCount} model call${live.modelCallCount === 1 ? '' : 's'}`;
+
+  // The step readout the reopen bar shows. Computed here rather than interpolated
+  // once, so it stays truthful while the drawer is down — the mockup baked it in
+  // at render and it never updated again.
+  const stepReadout = isDemo
+    ? `Step ${Math.max(playback.index, 0) + 1} of ${flow.steps.length}`
+    : `${live.beats.length} event${live.beats.length === 1 ? '' : 's'}`;
+
+  return (
+    <>
+      {isMounted && (
+        <section
+          // Not a dialog: no modality, no backdrop, no focus trap. The composer
+          // has to stay usable while this is on screen.
+          role="complementary"
+          aria-label={DRAWER_COPY.title}
+          data-testid="architecture-drawer"
+          data-open={isOpen ? 'true' : 'false'}
+          style={{
+            ...drawerStyle,
+            transform: isOpen ? 'translateY(0)' : 'translateY(100%)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '14px 20px 10px' }}>
+            <div>
+              <div
+                style={{
+                  fontFamily: typography.headingFontFamily,
+                  fontSize: 17,
+                  color: '#2A2226',
+                }}
+              >
+                {DRAWER_COPY.title}
+              </div>
+              <div style={{ fontSize: 10, color: '#A3959C', marginTop: 1 }}>
+                {DRAWER_COPY.subtitle}
+              </div>
+            </div>
+
+            <ModeSwitch mode={mode} onChange={setMode} />
+
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+              {/* Step controls belong to demo mode only: live traffic cannot be
+                  rewound, and a disabled ◀ beside real events invites the
+                  question of why it does nothing. */}
+              {isDemo && (
+                <>
+                  <button
+                    type="button"
+                    style={buttonStyle}
+                    onClick={playback.previous}
+                    disabled={playback.index <= 0}
+                    aria-label={DRAWER_COPY.previous}
+                  >
+                    ◀
+                  </button>
+                  <button
+                    type="button"
+                    style={primaryButtonStyle}
+                    onClick={playback.next}
+                    disabled={playback.isComplete}
+                    aria-label={DRAWER_COPY.next}
+                  >
+                    {DRAWER_COPY.next} ▶
+                  </button>
+                  <button
+                    type="button"
+                    style={ghostButtonStyle}
+                    onClick={playback.restart}
+                    aria-label={DRAWER_COPY.restart}
+                  >
+                    ↺
+                  </button>
+                  <span
+                    data-testid="architecture-step-count"
+                    style={{
+                      fontSize: 10.5,
+                      color: '#756A70',
+                      fontVariantNumeric: 'tabular-nums',
+                      minWidth: 74,
+                      textAlign: 'right',
+                    }}
+                  >
+                    {stepReadout}
+                  </span>
+                </>
+              )}
+              <button
+                type="button"
+                style={ghostButtonStyle}
+                onClick={close}
+                aria-label={DRAWER_COPY.hide}
+              >
+                Hide ▾
+              </button>
+            </div>
+          </div>
+
+          <div
+            style={{
+              flex: 1,
+              display: 'flex',
+              gap: 20,
+              padding: '0 20px 18px',
+              minHeight: 0,
+              overflowX: 'auto',
+            }}
+          >
+            <AwsTopologyDiagram {...diagram} />
+            <AwsFlowFeed
+              rows={rows}
+              summary={summary}
+              heading={isDemo ? DRAWER_COPY.demoHeading : DRAWER_COPY.liveHeading}
+              emptyMessage={isDemo ? undefined : DRAWER_COPY.liveEmpty}
+            />
+          </div>
+        </section>
+      )}
+
+      {/* The bar left behind when the drawer is down: the affordance that says it
+          can come back, and a reminder of which step it is holding. */}
+      <button
+        type="button"
+        onClick={open}
+        aria-label={DRAWER_COPY.reopen}
+        data-testid="architecture-reopen-bar"
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: REOPEN_BAR_HEIGHT,
+          background: '#2A2226',
+          color: colors.textOnAccent,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 9,
+          padding: '0 20px',
+          fontSize: 11,
+          cursor: 'pointer',
+          zIndex: 6,
+          border: 'none',
+          textAlign: 'left',
+          fontFamily: typography.bodyFontFamily,
+          transform: isOpen ? 'translateY(100%)' : 'translateY(0)',
+          transition: `transform ${PANEL_SLIDE_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`,
+        }}
+      >
+        <span
+          aria-hidden="true"
+          style={{ width: 7, height: 7, borderRadius: '50%', background: '#0E9B84', flexShrink: 0 }}
+        />
+        {DRAWER_COPY.title}
+        <b style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{stepReadout}</b>
+        <span aria-hidden="true" style={{ marginLeft: 'auto', fontSize: 13 }}>
+          ▴
+        </span>
+      </button>
+    </>
+  );
+}
+
+/** Latest measured duration per node, from the live beats that carried one. */
+function liveDurations(
+  beats: readonly { key: string; to: AwsNodeId; durationMs?: number; ok?: boolean }[],
+  currentKey: string | undefined,
+): Readonly<Partial<Record<AwsNodeId, NodeDuration>>> {
+  const durations: Partial<Record<AwsNodeId, NodeDuration>> = {};
+
+  for (const beat of beats) {
+    if (beat.durationMs === undefined) continue;
+    durations[beat.to] = {
+      label: `${beat.durationMs} ms`,
+      ok: beat.ok === true,
+      current: beat.key === currentKey,
+    };
+  }
+
+  return durations;
+}

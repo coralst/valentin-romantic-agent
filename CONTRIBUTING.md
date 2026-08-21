@@ -76,6 +76,22 @@ CI enforces four gates: **Lint · Unit · Build · E2E**. There's also a
 covering the agent workflow itself — if you touch anything under
 `.kiro/skills/` or `.kiro/hooks/`, expect it to run.
 
+### The scope check
+
+A **Scope Check** job compares your PR's changed paths against its `agent: *`
+labels using the same `attributeOwner()` map as the table above, and fails when
+they disagree. It runs on every PR (never path-skipped — a skipped required check
+counts as unsatisfied here). Three ways to fail it:
+
+- **A path belongs to a lane you're not labelled for.** Add that label, or split
+  the PR.
+- **No `agent: *` label at all.** Apply one.
+- **A path it can't attribute to anyone.** This means a genuinely new top-level
+  surface appeared: add a row to `OWNERSHIP` *and* to the table above.
+
+Spanning two lanes is legitimate — apply **both** labels and it passes on union
+coverage. A label matching no file in the diff is a note, not a failure.
+
 ## Commit and branch conventions
 
 Conventional Commits, with the scope naming the agent's domain:

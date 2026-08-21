@@ -13,7 +13,9 @@
 
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { resolve } from 'node:path';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 // @ts-expect-error - JS skill module without type declarations
 import parser from '../../../skills/pr-monitoring/review-parser-skill.js';
 
@@ -187,6 +189,109 @@ describe('the CLI CI actually invokes', () => {
 
   it('exits 0 with no paths (a PR whose whole diff was path-filtered away)', () => {
     const r = runScope([], ['agent: infra']);
+    expect(r.code).toBe(0);
+  });
+});
+
+/**
+ * The CI entrypoint. Reads its inputs from FILES rather than argv, because PR
+ * labels and branch-derived paths are attacker-influenced text that must not be
+ * interpolated into a shell command line — and because keeping the logic in a
+ * committed file is what stops the workflow needing an inline `node -e`, which is
+ * how invalid YAML shipped here once before.
+ */
+describe('the CI entrypoint (scope-check-ci.js)', () => {
+  const CI_SKILL = '.kiro/skills/shared/scope-check-ci.js';
+
+  function runCi(paths: string | null, labels: string | null) {
+    const dir = mkdtempSync(join(tmpdir(), 'scope-ci-'));
+    const pathsFile = join(dir, 'changed-paths.txt');
+    const labelsFile = join(dir, 'labels.json');
+    if (paths !== null) writeFileSync(pathsFile, paths);
+    if (labels !== null) writeFileSync(labelsFile, labels);
+    try {
+      const stdout = execFileSync('node', [CI_SKILL, pathsFile, labelsFile], {
+        cwd: REPO_ROOT,
+        encoding: 'utf8',
+      });
+      return { code: 0, out: stdout };
+    } catch (err: any) {
+      return { code: err.status as number, out: `${err.stdout ?? ''}${err.stderr ?? ''}` };
+    }
+  }
+
+  it('passes a single-lane diff', () => {
+    const r = runCi('src/client/App.tsx\n', '["agent: frontend"]');
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('Every changed path is covered');
+  });
+
+  it('passes the multi-label union case', () => {
+    const r = runCi(
+      'src/shared/interfaces/profile-item.ts\nsrc/server/api/http-routes.ts\n',
+      '["agent: architect","agent: backend"]'
+    );
+    expect(r.code).toBe(0);
+  });
+
+  it('fails an out-of-lane path and names the owner', () => {
+    const r = runCi('src/shared/index.ts\n', '["agent: frontend"]');
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('Out of scope');
+    expect(r.out).toContain('system-architect');
+  });
+
+  it('fails loudly on an unattributable path', () => {
+    const r = runCi('terraform/main.tf\n', '["agent: infra"]');
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('cannot be attributed');
+  });
+
+  it('tolerates blank lines and CRLF in the paths file', () => {
+    const r = runCi('src/client/App.tsx\r\n\n\n', '["agent: frontend"]');
+    expect(r.code).toBe(0);
+  });
+
+  it('treats an empty diff as success, not a violation', () => {
+    // e.g. a merge commit whose changes are all already on the base.
+    const r = runCi('', '["agent: infra"]');
+    expect(r.code).toBe(0);
+  });
+
+  it('exits 2 (not 1) on malformed labels JSON — a harness fault, not a scope violation', () => {
+    const r = runCi('src/client/App.tsx\n', '{not json');
+    expect(r.code).toBe(2);
+  });
+
+  it('exits 2 on missing arguments', () => {
+    let code = 0;
+    try {
+      execFileSync('node', [CI_SKILL], { cwd: REPO_ROOT, encoding: 'utf8', stdio: 'pipe' });
+    } catch (err: any) {
+      code = err.status;
+    }
+    expect(code).toBe(2);
+  });
+
+  it('treats a missing labels file as no labels (and therefore a failure)', () => {
+    const r = runCi('src/client/App.tsx\n', null);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('no recognized `agent: *` label');
+  });
+
+  it('reports the same verdict the pure function does, for this PR’s own diff', () => {
+    // The gate must pass on the PR that introduces it.
+    const own = [
+      '.kiro/skills/shared/persona-format.js',
+      '.kiro/skills/shared/scope-check-ci.js',
+      '.kiro/skills/pr-monitoring/review-parser-skill.js',
+      '.github/workflows/ci.yml',
+      'scripts/persona_format.py',
+      'docs/refactor-plan.json',
+      'CONTRIBUTING.md',
+    ];
+    expect(checkScope(own, ['agent: infra']).ok).toBe(true);
+    const r = runCi(own.join('\n') + '\n', '["agent: infra"]');
     expect(r.code).toBe(0);
   });
 });

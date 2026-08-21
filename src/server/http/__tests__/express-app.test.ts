@@ -89,6 +89,28 @@ describe('GET /api/health', () => {
   });
 });
 
+describe('GET /api/config', () => {
+  it('hands the browser what it needs to sign in, with no token', async () => {
+    // The SPA has no build-time AWS configuration; this is where it learns the
+    // pool it should talk to. Both values are public — they appear in the
+    // address bar during a normal login.
+    const res = await get('/api/config');
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      authDisabled: false,
+      demoAvailable: false,
+    });
+  });
+
+  it('does not carry a secret arn or the demo client id', async () => {
+    const body = JSON.stringify(await (await get('/api/config')).json());
+
+    expect(body).not.toContain('secret');
+    expect(body).not.toContain('demoClientId');
+  });
+});
+
 describe('the /api auth gate', () => {
   it('rejects a request with no Authorization header', async () => {
     expect((await post('/api/session')).status).toBe(401);

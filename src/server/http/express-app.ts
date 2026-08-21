@@ -4,6 +4,7 @@ import type { HttpResponse } from '../api/http-routes';
 import type { UserServices } from '../index';
 import type { AuthContext, TokenVerifier } from '../auth/token-verifier';
 import { isAuthDisabled } from '../auth/token-verifier';
+import { config } from '../config';
 import type { DemoLoginService } from '../auth/demo-login';
 
 /** Structured log sink, so the two entry points keep their own formats */
@@ -148,6 +149,27 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
       connections: deps.connectionCount(),
       environment: process.env.NODE_ENV ?? 'development',
       authenticated: !isAuthDisabled(),
+    });
+  });
+
+  /**
+   * Everything the browser needs to sign someone in, discovered at runtime.
+   *
+   * The alternative — `VITE_*` variables baked in at build time — would mean
+   * copying pool ids out of the AWS console into a `.env` before the frontend
+   * could be built, and a different bundle per environment. Here one bundle
+   * works everywhere, and locally (where no Cognito env is set) the client is
+   * simply told authentication is off.
+   *
+   * Only public values: a Cognito domain and a public PKCE client id, both of
+   * which appear in the browser's address bar during a normal login.
+   */
+  app.get('/api/config', (_req, res) => {
+    res.status(200).json({
+      authDisabled: isAuthDisabled(),
+      cognitoDomain: config.cognito.domain ?? null,
+      clientId: config.cognito.spaClientId ?? null,
+      demoAvailable: Boolean(deps.demoLogin),
     });
   });
 

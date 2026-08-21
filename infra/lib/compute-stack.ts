@@ -23,6 +23,14 @@ export interface ComputeStackProps extends cdk.StackProps {
   demoClientId: string;
   /** Secret holding the demo account's credentials */
   demoSecret: secretsmanager.ISecret;
+  /**
+   * Hosted UI domain prefix.
+   *
+   * Passed through to the browser via `GET /api/config` so the SPA needs no
+   * build-time AWS configuration at all — one bundle works locally and in every
+   * environment, and nobody has to copy ids out of the console.
+   */
+  cognitoDomainPrefix: string;
 }
 
 /**
@@ -207,6 +215,7 @@ export class ComputeStack extends cdk.Stack {
         COGNITO_SPA_CLIENT_ID: props.spaClientId,
         COGNITO_DEMO_CLIENT_ID: props.demoClientId,
         DEMO_SECRET_ARN: props.demoSecret.secretArn,
+        COGNITO_DOMAIN: `https://${props.cognitoDomainPrefix}.auth.${cdk.Stack.of(this).region}.amazoncognito.com`,
       },
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: `valentin-${env}`,

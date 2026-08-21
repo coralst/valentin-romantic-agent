@@ -59,6 +59,7 @@ const computeStack = new ComputeStack(app, `Valentin-Compute-${env}`, {
   spaClientId: authStack.userPoolClient.userPoolClientId,
   demoClientId: authStack.demoClient.userPoolClientId,
   demoSecret: authStack.demoSecret,
+  cognitoDomainPrefix: authStack.userPoolDomainPrefix,
   env: stackEnv,
   description: `Valentin ECS Fargate compute (${env})`,
 });

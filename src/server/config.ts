@@ -23,5 +23,12 @@ export const config = {
     /** The server-only client behind POST /api/demo/login. */
     demoClientId: process.env.COGNITO_DEMO_CLIENT_ID,
     demoSecretArn: process.env.DEMO_SECRET_ARN,
+    /**
+     * Hosted UI origin, e.g. `https://valentin-dev.auth.us-east-1.amazoncognito.com`.
+     *
+     * Handed to the browser by `GET /api/config` rather than baked into the
+     * bundle at build time, so the SPA needs no AWS configuration of its own.
+     */
+    domain: process.env.COGNITO_DOMAIN,
   },
 };

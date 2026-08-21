@@ -182,7 +182,7 @@ describe('DemoToolbar', () => {
       await user.click(screen.getByRole('button', { name: 'Load demo profile' }));
 
       expect(screen.getByTestId('demo-toolbar-status')).toHaveTextContent(
-        "Couldn't load the demo profile — the demo endpoint is not available yet.",
+        "Couldn't load the demo profile — it isn't there any more.",
       );
     });
 
@@ -281,7 +281,7 @@ describe('DemoToolbar', () => {
       await user.click(screen.getByRole('button', { name: 'Reset' }));
 
       expect(screen.getByTestId('demo-toolbar-status')).toHaveTextContent(
-        "Couldn't reset the session — the demo endpoint is not available yet.",
+        "Couldn't reset the session — it isn't there any more.",
       );
     });
 

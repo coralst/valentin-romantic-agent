@@ -3,6 +3,7 @@ import { ChatProvider, useChatContext } from './context/chat-context';
 import { PreferencesProvider, usePreferencesContext } from './context/preferences-context';
 import { WebSocketProvider } from './context/websocket-context';
 import { SessionProvider, useSessionContext } from './context/session-context';
+import { AuthProvider } from './context/auth-context';
 import { AppLayout } from './components/AppLayout';
 import { colors, typography, spacing } from './design-system/tokens';
 
@@ -114,17 +115,25 @@ function SessionSyncer({ children }: { children: React.ReactNode }) {
 export function App() {
   return (
     <ErrorBoundary>
-      <SessionProvider>
-        <ChatProvider>
-          <PreferencesProvider>
-            <SessionSyncer>
-              <WebSocketProvider>
-                <AppLayout />
-              </WebSocketProvider>
-            </SessionSyncer>
-          </PreferencesProvider>
-        </ChatProvider>
-      </SessionProvider>
+      {/*
+        AuthProvider sits inside the boundary (so a failed sign-in still renders
+        the error card) and above SessionProvider, which it renders only once
+        there is a token. Nothing below here ever has to ask whether it is
+        authenticated.
+      */}
+      <AuthProvider>
+        <SessionProvider>
+          <ChatProvider>
+            <PreferencesProvider>
+              <SessionSyncer>
+                <WebSocketProvider>
+                  <AppLayout />
+                </WebSocketProvider>
+              </SessionSyncer>
+            </PreferencesProvider>
+          </ChatProvider>
+        </SessionProvider>
+      </AuthProvider>
     </ErrorBoundary>
   );
 }

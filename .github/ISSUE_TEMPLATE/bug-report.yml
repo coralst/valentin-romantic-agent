@@ -1,0 +1,67 @@
+name: "🐛 Bug report"
+description: "Something is broken in the app or in the agent workflow"
+title: "fix: "
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where is it broken?
+      description: "This routes the issue to the owning agent."
+      options:
+        - "App — chat / conversation"
+        - "App — partner profile dashboard"
+        - "App — session history"
+        - "App — connection / WebSocket"
+        - "App — styling, layout, or accessibility"
+        - "Backend — Bedrock, extraction, or persistence"
+        - "Agent workflow — review loop, hooks, or merge gate"
+        - "CI / infrastructure"
+        - "Not sure"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened?
+      description: "Include error messages, console output, or screenshots."
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start `npm run dev:server` and `npm run dev`
+        2. …
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - "🔴 Red — blocking, must fix before merge"
+        - "🟡 Yellow — should fix, can be deferred with a TODO"
+        - "🟢 Green — cosmetic or nice-to-have"
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      placeholder: |
+        Node:
+        Browser:
+        AWS region / model ID:

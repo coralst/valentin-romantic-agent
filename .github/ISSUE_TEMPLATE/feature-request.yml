@@ -1,0 +1,58 @@
+name: "✨ Feature request"
+description: "Kick off the agent workflow — Phase 1 (SPEC)"
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This repository is built by a six-agent workflow. Opening an issue starts
+        **Phase 1 — SPEC**: the 👔 Master Agent tags the 🏗️ System Architect to
+        produce a spec, then approves it before any implementation begins.
+
+        See [`docs/METHODOLOGY.md`](https://github.com/coralst/valentin-romantic-agent/blob/main/docs/METHODOLOGY.md)
+        for the full lifecycle.
+
+  - type: textarea
+    id: intent
+    attributes:
+      label: What should it do?
+      description: "Product intent, in prose. The 'what' and 'why' — leave the 'how' to the Architect."
+      placeholder: "As a user, I want to…"
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: "How do we know it's done? Observable behaviour, not implementation."
+      placeholder: |
+        - Given …, when …, then …
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: agents
+    attributes:
+      label: Likely agents involved
+      description: "Best guess — the Master Agent decides the real assignment during decomposition."
+      options:
+        - label: "🏗️ System Architect — needs new contracts or shared types (`src/shared/`)"
+        - label: "⚛️ Frontend Dev — UI, components, hooks (`src/client/`)"
+        - label: "🔧 Backend Dev — API, agent, extraction, persistence (`src/server/`)"
+        - label: "🎨 UI Designer — tokens, styling, a11y (`design-system/`)"
+        - label: "🧪 QA Agent — E2E coverage (`e2e/`)"
+        - label: "⚙️ Infra — CI, hooks, CDK, workflow automation"
+
+  - type: input
+    id: spec
+    attributes:
+      label: Existing spec (if any)
+      description: "Path under `.kiro/specs/`, if this extends work already specced."
+      placeholder: ".kiro/specs/partner-profile-panel/"
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Constraints, prior art, open questions

@@ -8,9 +8,9 @@ function preference(overrides: Partial<PreferenceWithHistory> = {}): PreferenceW
   return {
     id: 'pref-1',
     sessionId: 'session-1',
-    category: 'hobbies',
-    key: 'collections',
-    value: 'vinyl records',
+    category: 'food',
+    key: 'texture',
+    value: 'anything crunchy',
     confidence: 0.8,
     sourceMessageId: 'msg-1',
     createdAt: '2026-08-11T00:00:00.000Z',
@@ -26,6 +26,15 @@ function preference(overrides: Partial<PreferenceWithHistory> = {}): PreferenceW
  * Between Stage 4 and Stage 6 an extraction that resolved to no registry field
  * had nowhere on screen to go, so it was silently dropped from the UI. This card
  * is the rescue point; if these assertions fail, output is being lost again.
+ *
+ * The fixtures deliberately use keys in `food`, `gifts`, `important_dates` and
+ * `personality_traits`. Those are the four categories that span several registry
+ * fields, so `preference-field-mapper` will not guess a default field for an
+ * unrecognized key in them. The single-field categories (`hobbies`, `music`,
+ * `travel`, `love_language`) resolve *any* key to their one field, which makes
+ * them useless for exercising the unmapped path — an earlier version of this file
+ * used `hobbies:collections` and started passing vacuously once that fallback
+ * landed. Each test still guards its own premise with `resolveField`.
  */
 describe('AlsoMentioned — rescuing unmapped extraction output', () => {
   it('renders a preference that resolves to no registry field', () => {
@@ -35,7 +44,7 @@ describe('AlsoMentioned — rescuing unmapped extraction output', () => {
 
     render(<AlsoMentioned preferences={[unmapped]} />);
     expect(screen.getByTestId('dossier-also-mentioned')).toBeInTheDocument();
-    expect(screen.getByText('vinyl records')).toBeInTheDocument();
+    expect(screen.getByText('anything crunchy')).toBeInTheDocument();
   });
 
   it('leaves mapped preferences out — they belong to Everything I know', () => {
@@ -59,8 +68,8 @@ describe('AlsoMentioned — rescuing unmapped extraction output', () => {
     render(
       <AlsoMentioned
         preferences={[
-          preference({ id: 'a', category: 'hobbies', key: 'collections' }),
-          preference({ id: 'b', category: 'travel', key: 'travel style', value: 'slow trains' }),
+          preference({ id: 'a', category: 'food', key: 'texture' }),
+          preference({ id: 'b', category: 'gifts', key: 'wrapping style', value: 'brown paper' }),
         ]}
       />,
     );
@@ -73,8 +82,8 @@ describe('AlsoMentioned — rescuing unmapped extraction output', () => {
     render(
       <AlsoMentioned
         preferences={[
-          preference({ id: 'a', key: 'collections' }),
-          preference({ id: 'b', key: 'weekend habits', value: 'sea swimming' }),
+          preference({ id: 'a', key: 'texture' }),
+          preference({ id: 'b', key: 'plating style', value: 'family platters' }),
         ]}
       />,
     );
@@ -88,12 +97,12 @@ describe('AlsoMentioned — rescuing unmapped extraction output', () => {
 describe('groupUnmappedPreferences', () => {
   it('orders buckets canonically rather than by arrival', () => {
     const groups = groupUnmappedPreferences([
-      preference({ id: 'a', category: 'travel', key: 'travel style' }),
+      preference({ id: 'a', category: 'gifts', key: 'wrapping style' }),
       preference({ id: 'b', category: 'food', key: 'texture' }),
     ]);
-    // `food` precedes `travel` in PREFERENCE_CATEGORIES, so the card's sections
+    // `food` precedes `gifts` in PREFERENCE_CATEGORIES, so the card's sections
     // do not reshuffle as new extractions arrive.
-    expect(groups.map((group) => group.category)).toEqual(['food', 'travel']);
+    expect(groups.map((group) => group.category)).toEqual(['food', 'gifts']);
   });
 
   it('drops empty buckets rather than rendering headings with nothing under them', () => {

@@ -39,7 +39,10 @@ describe('deriveGuesses', () => {
   });
 
   it('leaves out preferences that resolve to no field — ✓ would have nowhere to promote to', () => {
-    const guesses = deriveGuesses([preference({ category: 'hobbies', key: 'collections' })]);
+    // `food` spans several registry fields, so the mapper will not guess a
+    // default for an unrecognized key in it. A single-field category like
+    // `hobbies` would resolve anything and make this assertion vacuous.
+    const guesses = deriveGuesses([preference({ category: 'food', key: 'texture' })]);
     expect(guesses).toEqual([]);
   });
 

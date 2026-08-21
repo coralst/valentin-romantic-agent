@@ -58,8 +58,25 @@ app.get('/api/health', (_req, res) => {
 });
 
 // --- HTTP Routes ---
+// Registered before any '/api/session/:id' route so the literal 'seed' segment
+// can never be captured as a session id.
+app.post('/api/session/seed', async (_req, res) => {
+  const result = await httpRoutes.seedSession();
+  log('info', 'Demo session seeded', { ...(result.body as Record<string, unknown>) });
+  res.status(result.status).json(result.body);
+});
+
 app.post('/api/session', async (_req, res) => {
   const result = await httpRoutes.createSession();
+  res.status(result.status).json(result.body);
+});
+
+app.post('/api/session/:id/reset', async (req, res) => {
+  const result = await httpRoutes.resetSession(req.params.id);
+  log('info', 'Session reset requested', {
+    sessionId: req.params.id,
+    status: result.status,
+  });
   res.status(result.status).json(result.body);
 });
 

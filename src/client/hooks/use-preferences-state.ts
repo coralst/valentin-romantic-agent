@@ -12,7 +12,8 @@ export interface PreferencesState {
 export type PreferencesAction =
   | { type: 'ADD_PREFERENCE'; preference: PreferenceWithHistory }
   | { type: 'UPDATE_PREFERENCE'; preference: PreferenceWithHistory }
-  | { type: 'CLEAR_HIGHLIGHT'; preferenceId: string };
+  | { type: 'CLEAR_HIGHLIGHT'; preferenceId: string }
+  | { type: 'LOAD_PREFERENCES'; preferences: PreferenceWithHistory[] };
 
 /** Build an empty preferences record with all 8 categories */
 function createEmptyPreferences(): Record<PreferenceCategory, PreferenceWithHistory[]> {
@@ -68,6 +69,17 @@ export function preferencesReducer(
       return {
         ...state,
         recentlyUpdated: newRecentlyUpdated,
+      };
+    }
+
+    case 'LOAD_PREFERENCES': {
+      const grouped = createEmptyPreferences();
+      for (const pref of action.preferences) {
+        grouped[pref.category].push(pref);
+      }
+      return {
+        preferences: grouped,
+        recentlyUpdated: new Set<string>(),
       };
     }
 

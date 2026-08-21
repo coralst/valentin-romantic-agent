@@ -5,10 +5,21 @@ import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { Construct } from 'constructs';
+import { EnvironmentConfig } from '../config/environments';
 
 export interface ComputeStackProps extends cdk.StackProps {
   /** Environment name (dev, staging, prod) */
   environment: string;
+  /**
+   * Environment configuration, mirroring DataStack.
+   *
+   * Needed so the table name the task reads is the same value DataStack creates
+   * the table from. Three places used to disagree — this stack hardcoded
+   * `valentin-sessions-${env}`, DataStack created `ValentinTable-${env}`, and
+   * the server defaulted to a third — so the deployed task pointed at a table
+   * that did not exist.
+   */
+  config: EnvironmentConfig;
   /** VPC to deploy into — if not provided, a new one is created */
   vpc?: ec2.IVpc;
 }
@@ -102,12 +113,16 @@ export class ComputeStack extends cdk.Stack {
           'dynamodb:BatchGetItem',
           'dynamodb:BatchWriteItem',
         ],
-        resources: ['*'],
-        conditions: {
-          StringLike: {
-            'dynamodb:TableName': `valentin-*-${env}`,
-          },
-        },
+        // Scoped to the one table and its indexes. This replaces a
+        // `resources: ['*']` plus a `dynamodb:TableName StringLike
+        // valentin-*-${env}` condition that matched nothing the stack creates —
+        // wrong prefix, and StringLike is case-sensitive — so the task was
+        // unauthorized against its own table. An ARN is both stricter and
+        // actually correct.
+        resources: [
+          `arn:aws:dynamodb:${this.region}:${this.account}:table/${props.config.tableName}`,
+          `arn:aws:dynamodb:${this.region}:${this.account}:table/${props.config.tableName}/index/*`,
+        ],
       }),
     );
 
@@ -163,7 +178,11 @@ export class ComputeStack extends cdk.Stack {
       containerName: 'valentin-backend',
       portMappings: [{ containerPort: 3001, protocol: ecs.Protocol.TCP }],
       environment: {
-        DYNAMO_TABLE_NAME: `valentin-sessions-${env}`,
+        DYNAMO_TABLE_NAME: props.config.tableName,
+        // Opt in to durable storage. Without this the server falls back to
+        // InMemoryStore and the deployed app silently forgets everything on
+        // every task replacement.
+        STORAGE_BACKEND: 'dynamodb',
         S3_PHOTO_BUCKET: `valentin-photos-${env}`,
         BEDROCK_GUARDRAIL_ID: '',
         AWS_REGION: cdk.Stack.of(this).region,

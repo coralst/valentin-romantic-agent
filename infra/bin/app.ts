@@ -44,6 +44,7 @@ const authStack = new AuthStack(app, `Valentin-Auth-${env}`, {
 
 const computeStack = new ComputeStack(app, `Valentin-Compute-${env}`, {
   environment: env,
+  config,
   vpc: networkStack.vpc,
   env: stackEnv,
   description: `Valentin ECS Fargate compute (${env})`,

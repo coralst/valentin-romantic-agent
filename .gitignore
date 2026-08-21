@@ -13,6 +13,7 @@ cdk.out/
 
 # CDK
 infra/cdk.out/
+infra/cdk.out.*/
 infra/cdk-outputs-*.json
 infra/node_modules/
 

@@ -3,6 +3,7 @@ import { ChatProvider, useChatContext } from './context/chat-context';
 import { PreferencesProvider, usePreferencesContext } from './context/preferences-context';
 import { WebSocketProvider } from './context/websocket-context';
 import { SessionProvider, useSessionContext } from './context/session-context';
+import { useSessionPersistence } from './hooks/use-session-persistence';
 import { AppLayout } from './components/AppLayout';
 import { colors, typography, spacing } from './design-system/tokens';
 
@@ -86,16 +87,44 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 }
 
-function SessionSyncer({ children }: { children: React.ReactNode }) {
-  const { activeSession } = useSessionContext();
-  const { dispatch: chatDispatch } = useChatContext();
-  const { dispatch: preferencesDispatch } = usePreferencesContext();
+/**
+ * Keeps the live chat/preferences state and the stored session record in sync,
+ * in both directions.
+ *
+ * Read: when the active session changes, load its transcript into chat state.
+ * Write: `useSessionPersistence` debounces the live transcript back into the
+ * session record, so switching away and back restores it.
+ *
+ * The ordering inside the switch effect is load-bearing. `SWITCH_SESSION`
+ * replaces the transcript outright, so the outgoing conversation must be flushed
+ * *before* that dispatch — at this point chat state still holds the outgoing
+ * messages, and the persistence hook still has the outgoing session tagged as
+ * their owner. Flushing afterwards would either lose them or stamp them onto the
+ * incoming session.
+ */
+export function SessionSyncer({ children }: { children: React.ReactNode }) {
+  const { activeSession, persistSession } = useSessionContext();
+  const { state: chatState, dispatch: chatDispatch } = useChatContext();
+  const { state: preferencesState, dispatch: preferencesDispatch } = usePreferencesContext();
   const prevSessionIdRef = useRef<string | null>(null);
+
+  const { flush, setOwner } = useSessionPersistence({
+    messages: chatState.messages,
+    preferences: preferencesState.preferences,
+    persistSession,
+  });
 
   useEffect(() => {
     const currentId = activeSession?.id ?? null;
     if (currentId === prevSessionIdRef.current) return;
+
+    // Save the outgoing transcript before it is replaced below.
+    flush();
+
     prevSessionIdRef.current = currentId;
+    // Retag the hook before the incoming messages land, so any subsequent write
+    // is addressed to the session those messages actually belong to.
+    setOwner(currentId);
 
     chatDispatch({
       type: 'SWITCH_SESSION',
@@ -106,7 +135,7 @@ function SessionSyncer({ children }: { children: React.ReactNode }) {
       type: 'LOAD_PREFERENCES',
       preferences: activeSession?.preferences ?? [],
     });
-  }, [activeSession, chatDispatch, preferencesDispatch]);
+  }, [activeSession, chatDispatch, preferencesDispatch, flush, setOwner]);
 
   return <>{children}</>;
 }

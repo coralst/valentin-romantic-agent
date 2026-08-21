@@ -26,6 +26,7 @@ export type SessionAction =
   | { type: 'LOAD_SESSIONS'; sessions: StoredSession[]; activeId: string | null; collapsed: boolean }
   | { type: 'SET_ACTIVE'; id: string }
   | { type: 'ADD_SESSION'; session: StoredSession }
+  | { type: 'INSERT_SESSION'; session: StoredSession }
   | { type: 'DELETE_SESSION'; id: string }
   | { type: 'RENAME_SESSION'; id: string; title: string }
   | { type: 'UPDATE_SESSION'; id: string; messages: ChatMessage[]; preferences: PreferenceWithHistory[]; partnerName?: string | null }
@@ -62,6 +63,14 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
         sessions: [action.session, ...state.sessions],
         activeSessionId: action.session.id,
         sidebarOpen: false,
+      };
+
+    // Adds a session to the list without focusing it — the caller decides
+    // when (and whether) it comes to the foreground.
+    case 'INSERT_SESSION':
+      return {
+        ...state,
+        sessions: [action.session, ...state.sessions.filter((s) => s.id !== action.session.id)],
       };
 
     case 'DELETE_SESSION': {
@@ -131,6 +140,11 @@ interface SessionContextValue {
   state: SessionState;
   activeSession: StoredSession | null;
   createSession: () => StoredSession;
+  /**
+   * Insert an already-built session (e.g. one created server-side) into the
+   * store without focusing it. Pair with switchSession to bring it forward.
+   */
+  adoptSession: (session: StoredSession) => void;
   switchSession: (id: string) => void;
   removeSession: (id: string) => void;
   renameSession: (id: string, title: string) => void;
@@ -167,6 +181,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     saveSession(session);
     dispatch({ type: 'ADD_SESSION', session });
     return session;
+  }, []);
+
+  const adoptSession = useCallback((session: StoredSession) => {
+    saveSession(session);
+    dispatch({ type: 'INSERT_SESSION', session });
   }, []);
 
   const switchSession = useCallback((id: string) => {
@@ -211,6 +230,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         state,
         activeSession,
         createSession,
+        adoptSession,
         switchSession,
         removeSession,
         renameSession,

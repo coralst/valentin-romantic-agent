@@ -5,6 +5,7 @@ import { MobileNav } from './MobileNav';
 import { ProfileStoreProvider } from '../context/profile-store-context';
 import { useChatContext } from '../context/chat-context';
 import { SessionSidebar } from './SessionSidebar';
+import { DemoToolbar } from './DemoToolbar';
 import { useSessionContext } from '../context/session-context';
 import { breakpoints, spacing, colors, typography, shadows, animation, borderRadius } from '../design-system/tokens';
 
@@ -91,10 +92,22 @@ const menuButtonStyle: React.CSSProperties = {
   transition: `background-color ${animation.durations.fast}ms ${animation.easing.easeInOut}`,
 };
 
+/**
+ * Owns the profile store for the whole layout, so surfaces outside the
+ * profile panel (e.g. the demo toolbar) can read and clear profile state.
+ */
 export function AppLayout() {
+  const { state: chatState } = useChatContext();
+  return (
+    <ProfileStoreProvider sessionId={chatState.sessionId}>
+      <AppLayoutContent />
+    </ProfileStoreProvider>
+  );
+}
+
+function AppLayoutContent() {
   const [isMobile, setIsMobile] = useState(false);
   const [activePanel, setActivePanel] = useState<'chat' | 'profile'>('chat');
-  const { state: chatState } = useChatContext();
   const { setSidebarOpen } = useSessionContext();
 
   useEffect(() => {
@@ -106,11 +119,7 @@ export function AppLayout() {
     return () => mql.removeEventListener('change', handler);
   }, []);
 
-  const profilePanel = (
-    <ProfileStoreProvider sessionId={chatState.sessionId}>
-      <PartnerProfilePanel />
-    </ProfileStoreProvider>
-  );
+  const profilePanel = <PartnerProfilePanel />;
 
   if (isMobile) {
     return (
@@ -126,6 +135,7 @@ export function AppLayout() {
           </button>
           <img src="/logo.png" alt="Valentin logo" style={logoStyle} />
           <span style={brandStyle}>Valentin</span>
+          <DemoToolbar />
         </header>
         <MobileNav activePanel={activePanel} onPanelChange={setActivePanel} />
         <div style={mobilePanelStyle}>
@@ -141,6 +151,7 @@ export function AppLayout() {
       <header style={headerStyle}>
         <img src="/logo.png" alt="Valentin logo" style={logoStyle} />
         <span style={brandStyle}>Valentin</span>
+        <DemoToolbar />
       </header>
       <div style={desktopStyle}>
         <SessionSidebar isMobile={false} />

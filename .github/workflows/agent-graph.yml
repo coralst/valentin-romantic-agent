@@ -43,18 +43,15 @@ jobs:
             echo "Graph is already current — nothing to commit."
             exit 0
           fi
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # jq rather than an inline python string: nested quoting inside a YAML
+          # block scalar is how this step broke the first time round.
+          summary=$(jq -r '"\(.prs|length) PRs, \([.prs[]|select(.st=="MERGED")]|length) merged, \(.commits) commits"' \
+            docs/assets/graph/pr-history.json)
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add docs/assets/graph/
-          summary=$(python3 -c "
-import json
-d = json.load(open('docs/assets/graph/pr-history.json'))
-merged = sum(1 for p in d['prs'] if p['st'] == 'MERGED')
-print(f\"{len(d['prs'])} PRs, {merged} merged, {d['commits']} commits\")
-")
-          git commit -m "chore(infra): refresh agent contribution graph
-
-Regenerated from the live PR history: ${summary}.
-
-Automated by .github/workflows/agent-graph.yml."
+          git commit \
+            -m 'chore(infra): refresh agent contribution graph' \
+            -m "Regenerated from the live PR history: ${summary}." \
+            -m 'Automated by .github/workflows/agent-graph.yml.'
           git push origin HEAD:main

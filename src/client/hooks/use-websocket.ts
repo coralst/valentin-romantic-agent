@@ -2,6 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ClientEvent, ServerEvent } from '../../shared/interfaces/ws-events';
 import type { ChatAction } from './use-chat-state';
 import type { PreferencesAction } from './use-preferences-state';
+import {
+  publishInboundWsEvent,
+  publishOutboundWsEvent,
+} from '../utils/ws-event-observer';
 
 /** Return type of the useWebSocket hook */
 export interface UseWebSocketReturn {
@@ -120,6 +124,7 @@ export function useWebSocket({
           timestamp: new Date().toISOString(),
         };
         wsRef.current.send(JSON.stringify(ping));
+        publishOutboundWsEvent(ping);
       }
     }, HEARTBEAT_INTERVAL);
   }, []);
@@ -145,6 +150,7 @@ export function useWebSocket({
     ws.onmessage = (event) => {
       try {
         const serverEvent = JSON.parse(event.data as string) as ServerEvent;
+        publishInboundWsEvent(serverEvent);
         if (serverEvent.type === 'error') {
           setLastError(serverEvent.payload.message);
         }
@@ -198,6 +204,7 @@ export function useWebSocket({
         timestamp: new Date().toISOString(),
       };
       wsRef.current.send(JSON.stringify(event));
+      publishOutboundWsEvent(event);
     },
     [sessionId],
   );

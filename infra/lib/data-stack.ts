@@ -27,9 +27,15 @@ export class DataStack extends cdk.Stack {
       pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       encryption: dynamodb.TableEncryption.AWS_MANAGED,
       timeToLiveAttribute: 'ttl',
-      removalPolicy: config.env === 'prod'
-        ? cdk.RemovalPolicy.RETAIN
-        : cdk.RemovalPolicy.DESTROY,
+      // RETAIN in every environment, not just prod.
+      //
+      // This table previously used DESTROY outside prod, and the dev table did
+      // in fact vanish — the stack still reported CREATE_COMPLETE while
+      // describe-table returned ResourceNotFoundException. That was harmless
+      // only because no code path had ever read or written it. From here on it
+      // holds real users' conversation history, and a dev table full of demo
+      // history is still something an audience notices losing.
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
     // GSI1 for access patterns like SESSION#<id> lookups

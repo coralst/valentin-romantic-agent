@@ -11,7 +11,10 @@ import { getConfig } from '../config/environments';
 
 const app = new cdk.App();
 const env = app.node.tryGetContext('env') || 'dev';
-const config = getConfig(env);
+// Optional override for environments whose CloudFront domain isn't in config yet:
+//   npx cdk deploy --context env=staging --context siteUrl=https://xyz.cloudfront.net/
+const siteUrl = app.node.tryGetContext('siteUrl') as string | undefined;
+const config = getConfig(env, siteUrl);
 
 const stackEnv: cdk.Environment = {
   region: config.region,
@@ -36,8 +39,13 @@ const safetyStack = new SafetyStack(app, `Valentin-Safety-${env}`, {
   description: `Valentin Bedrock Guardrails (${env})`,
 });
 
+// Callback URLs come from static config rather than the CloudFront distribution.
+// Reading cdnStack here would close the cycle Auth -> CDN -> Compute -> Auth,
+// which CDK rejects at synth (CdnStack already depends on ComputeStack below).
 const authStack = new AuthStack(app, `Valentin-Auth-${env}`, {
   environment: env,
+  callbackUrls: config.appUrls.callback,
+  logoutUrls: config.appUrls.logout,
   env: stackEnv,
   description: `Valentin Cognito authentication (${env})`,
 });
@@ -45,11 +53,18 @@ const authStack = new AuthStack(app, `Valentin-Auth-${env}`, {
 const computeStack = new ComputeStack(app, `Valentin-Compute-${env}`, {
   environment: env,
   vpc: networkStack.vpc,
+  tableName: config.tableName,
+  userPoolId: authStack.userPool.userPoolId,
+  userPoolArn: authStack.userPool.userPoolArn,
+  spaClientId: authStack.userPoolClient.userPoolClientId,
+  demoClientId: authStack.demoClient.userPoolClientId,
+  demoSecret: authStack.demoSecret,
   env: stackEnv,
   description: `Valentin ECS Fargate compute (${env})`,
 });
 computeStack.addStackDependency(networkStack);
 computeStack.addStackDependency(dataStack);
+computeStack.addStackDependency(authStack);
 
 const cdnStack = new CdnStack(app, `Valentin-CDN-${env}`, {
   environment: env,

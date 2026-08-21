@@ -4,6 +4,7 @@ import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 
 export interface ComputeStackProps extends cdk.StackProps {
@@ -11,6 +12,17 @@ export interface ComputeStackProps extends cdk.StackProps {
   environment: string;
   /** VPC to deploy into — if not provided, a new one is created */
   vpc?: ec2.IVpc;
+  /** DynamoDB table the backend reads and writes (from config/environments.ts) */
+  tableName: string;
+  /** Cognito User Pool the backend verifies access tokens against */
+  userPoolId: string;
+  userPoolArn: string;
+  /** Public SPA app client id — one of the two accepted token audiences */
+  spaClientId: string;
+  /** Server-only app client id used for the demo sign-in */
+  demoClientId: string;
+  /** Secret holding the demo account's credentials */
+  demoSecret: secretsmanager.ISecret;
 }
 
 /**
@@ -90,6 +102,17 @@ export class ComputeStack extends cdk.Stack {
       roleName: `valentin-task-role-${env}`,
     });
 
+    // DynamoDB: scoped by ARN, not by condition key.
+    //
+    // This previously used `resources: ['*']` with a
+    // `StringLike { 'dynamodb:TableName': ... }` condition. `dynamodb:TableName`
+    // is not a supported DynamoDB IAM condition key, so the condition never
+    // matched and the statement granted nothing at all. Nothing noticed because
+    // no code path had ever touched the table.
+    //
+    // `/index/*` matters: a Query against GSI1 is authorized against the index
+    // ARN, not the table ARN, so the session list would 403 without it.
+    const tableArn = `arn:aws:dynamodb:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:table/${props.tableName}`;
     taskRole.addToPolicy(
       new iam.PolicyStatement({
         actions: [
@@ -98,16 +121,10 @@ export class ComputeStack extends cdk.Stack {
           'dynamodb:UpdateItem',
           'dynamodb:DeleteItem',
           'dynamodb:Query',
-          'dynamodb:Scan',
           'dynamodb:BatchGetItem',
           'dynamodb:BatchWriteItem',
         ],
-        resources: ['*'],
-        conditions: {
-          StringLike: {
-            'dynamodb:TableName': `valentin-*-${env}`,
-          },
-        },
+        resources: [tableArn, `${tableArn}/index/*`],
       }),
     );
 
@@ -150,6 +167,19 @@ export class ComputeStack extends cdk.Stack {
       }),
     );
 
+    // Cognito: only what the demo sign-in needs, scoped to this one pool.
+    // AdminInitiateAuth is how POST /api/demo/login exchanges the stored demo
+    // password for real Cognito tokens. Notably absent: AdminCreateUser and
+    // AdminSetUserPassword — the task must not be able to mint pool users. That
+    // is scripts/seed-demo-user.sh's job, run once at deploy time by an
+    // operator identity, so no long-lived role holds pool-admin rights.
+    taskRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ['cognito-idp:AdminInitiateAuth'],
+        resources: [props.userPoolArn],
+      }),
+    );
+
     // --- Task Definition ---
     const taskDefinition = new ecs.FargateTaskDefinition(this, 'TaskDef', {
       memoryLimitMiB: 512,
@@ -163,11 +193,20 @@ export class ComputeStack extends cdk.Stack {
       containerName: 'valentin-backend',
       portMappings: [{ containerPort: 3001, protocol: ecs.Protocol.TCP }],
       environment: {
-        DYNAMO_TABLE_NAME: `valentin-sessions-${env}`,
+        // Was hardcoded to `valentin-sessions-${env}`, a table that has never
+        // existed. The real name comes from config/environments.ts, which is
+        // also what DataStack names the table.
+        DYNAMO_TABLE_NAME: props.tableName,
         S3_PHOTO_BUCKET: `valentin-photos-${env}`,
         BEDROCK_GUARDRAIL_ID: '',
         AWS_REGION: cdk.Stack.of(this).region,
         NODE_ENV: 'production',
+        // Auth. The server treats missing Cognito config as a hard boot failure
+        // in production — see src/server/auth/jwt-verifier.ts.
+        COGNITO_USER_POOL_ID: props.userPoolId,
+        COGNITO_SPA_CLIENT_ID: props.spaClientId,
+        COGNITO_DEMO_CLIENT_ID: props.demoClientId,
+        DEMO_SECRET_ARN: props.demoSecret.secretArn,
       },
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: `valentin-${env}`,

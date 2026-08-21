@@ -6,7 +6,8 @@ import { ProfileStoreProvider } from '../context/profile-store-context';
 import { useChatContext } from '../context/chat-context';
 import { SessionSidebar } from './SessionSidebar';
 import { DemoToolbar } from './DemoToolbar';
-import { LiveArchitectureDrawer } from './LiveArchitectureDrawer';
+import { LiveArchitectureDrawer, reservedDrawerSpace } from './LiveArchitectureDrawer';
+import { useArchitectureDrawer } from '../context/architecture-drawer-context';
 import { ArchitectureDrawerProvider } from '../context/architecture-drawer-context';
 import { useSessionContext } from '../context/session-context';
 import { breakpoints, spacing, colors, typography, shadows, animation, borderRadius } from '../design-system/tokens';
@@ -61,6 +62,29 @@ const contentAreaStyle: React.CSSProperties = {
   minWidth: 0,
   minHeight: 0,
 };
+
+/**
+ * Space the drawer occupies, reserved from the content area rather than covered.
+ *
+ * Without this the drawer is a 424px overlay sitting on top of the bottom of the
+ * chat — which is exactly where the composer is, so the composer becomes
+ * unclickable the moment the drawer opens. "Not a dialog, no focus trap, composer
+ * stays typable" is the drawer's whole contract, and occlusion breaks it just as
+ * effectively as a modal would.
+ *
+ * jsdom performs no layout, so a unit test asserting the composer is focusable
+ * passes whether or not something is painted over it. Only running the real app
+ * catches this; a Playwright click did.
+ *
+ * `paddingBottom` on the flex container shrinks the panels' available height, so
+ * the chat scrolls within what is left and the composer lands just above the
+ * drawer's top edge. Collapsed, only the reopen bar is reserved.
+ */
+function contentAreaStyleWithDrawer(
+  reserved: number,
+): React.CSSProperties {
+  return { ...contentAreaStyle, paddingBottom: reserved };
+}
 
 const leftPanelStyle: React.CSSProperties = {
   flex: 1,
@@ -134,6 +158,10 @@ function AppLayoutContent() {
   const [isMobile, setIsMobile] = useState(false);
   const [activePanel, setActivePanel] = useState<'chat' | 'profile'>('chat');
   const { setSidebarOpen } = useSessionContext();
+  // Read here rather than inside the drawer: the *layout* is what has to give up
+  // the space, and only the layout owns the panels whose height it takes from.
+  const { isOpen: isDrawerOpen } = useArchitectureDrawer();
+  const reserved = reservedDrawerSpace(isDrawerOpen);
 
   useEffect(() => {
     const mql = window.matchMedia(`(max-width: ${breakpoints.mobile - 1}px)`);
@@ -163,7 +191,10 @@ function AppLayoutContent() {
           <DemoToolbar />
         </header>
         <MobileNav activePanel={activePanel} onPanelChange={setActivePanel} />
-        <div style={{ ...mobilePanelStyle, position: 'relative' }}>
+        <div
+          style={{ ...mobilePanelStyle, position: 'relative', paddingBottom: reserved }}
+          data-drawer-reserved={reserved}
+        >
           {activePanel === 'chat' ? <ChatPanel /> : profilePanel}
           {/* The diagram is 916px wide, so on a phone it scrolls horizontally
               rather than being withheld — a presenter may well be on a laptop
@@ -184,7 +215,10 @@ function AppLayoutContent() {
       </header>
       <div style={desktopStyle}>
         <SessionSidebar isMobile={false} />
-        <div style={contentAreaStyle}>
+        <div
+          style={contentAreaStyleWithDrawer(reserved)}
+          data-drawer-reserved={reserved}
+        >
           <div style={leftPanelStyle}>
             <ChatPanel />
           </div>

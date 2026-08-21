@@ -35,6 +35,18 @@ export const DRAWER_HEIGHT = 424;
 export const REOPEN_BAR_HEIGHT = 34;
 
 /**
+ * Vertical space the layout must reserve so the drawer does not cover the
+ * composer.
+ *
+ * Lives here, next to the heights themselves, so the layout cannot drift out of
+ * agreement with the drawer it is making room for. Open reserves the full
+ * drawer; closed reserves just the reopen bar, which is always on screen.
+ */
+export function reservedDrawerSpace(isOpen: boolean): number {
+  return isOpen ? DRAWER_HEIGHT : REOPEN_BAR_HEIGHT;
+}
+
+/**
  * The drawer positions itself absolutely against its nearest positioned
  * ancestor, and `AppLayout` gives it a wrapper covering exactly the area to the
  * right of the sidebar. That is why there is no left inset constant: the sidebar

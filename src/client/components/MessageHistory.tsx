@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+
 import type { ChatMessage } from '../../shared/interfaces/message';
 import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
 import { MessageBubble } from './MessageBubble';
@@ -39,28 +40,51 @@ export function MessageHistory({ messages }: MessageHistoryProps) {
   const [dismissedIds, setDismissedIds] = useState<ReadonlySet<string>>(new Set());
 
   /**
-   * Discoveries grouped by the message that produced them, so each chip lands
-   * directly under the exchange it came from instead of all of them piling up
-   * at the end of the transcript.
+   * Which message each discovery is pinned beneath, by preference id.
+   *
+   * `Preference.sourceMessageId` cannot be used for this. It is the *server's*
+   * id for the user's message, whereas the transcript renders the optimistic
+   * copy `ChatPanel` created with a locally generated uuid, so the two ids never
+   * match and every lookup misses. Instead each preference is pinned, once, to
+   * whatever message was last in the transcript when it arrived — which is the
+   * exchange that produced it. Reconciling the ids properly is a server-side
+   * concern.
    */
+  const anchorsRef = useRef(new Map<string, string>());
+
+  const visiblePreferences = useMemo(() => {
+    const all: PreferenceWithHistory[] = [];
+    for (const list of Object.values(preferencesState.preferences)) all.push(...list);
+    return all;
+  }, [preferencesState.preferences]);
+
+  const lastMessage = messages[messages.length - 1];
+
+  // Pin any newly-arrived preference to the current end of the transcript. This
+  // must happen before paint, or a chip flashes at the wrong anchor first.
+  const anchors = anchorsRef.current;
+  if (lastMessage) {
+    for (const pref of visiblePreferences) {
+      if (!anchors.has(pref.id)) anchors.set(pref.id, lastMessage.id);
+    }
+  }
+
   const chipsByMessageId = useMemo(() => {
     const grouped = new Map<string, PreferenceWithHistory[]>();
-    for (const list of Object.values(preferencesState.preferences)) {
-      for (const pref of list) {
-        if (!pref.sourceMessageId || dismissedIds.has(pref.id)) continue;
-        const existing = grouped.get(pref.sourceMessageId);
-        if (existing) existing.push(pref);
-        else grouped.set(pref.sourceMessageId, [pref]);
-      }
+    for (const pref of visiblePreferences) {
+      if (dismissedIds.has(pref.id)) continue;
+      const anchorId = anchors.get(pref.id);
+      if (!anchorId) continue;
+      const existing = grouped.get(anchorId);
+      if (existing) existing.push(pref);
+      else grouped.set(anchorId, [pref]);
     }
     return grouped;
-  }, [preferencesState.preferences, dismissedIds]);
+  }, [visiblePreferences, dismissedIds, anchors, lastMessage?.id]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
-
-  const lastMessage = messages[messages.length - 1];
 
   const handleDismiss = (preferenceId: string) => {
     setDismissedIds((prev) => new Set(prev).add(preferenceId));

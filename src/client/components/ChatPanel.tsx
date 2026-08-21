@@ -95,7 +95,9 @@ export function ChatPanel() {
       <ConnectionBanner status={state.connectionStatus} />
       <div style={headStyle} data-testid="chat-header">
         <div>
-          <b style={headNameStyle}>{partnerName ?? 'Valentin'}</b>
+          {/* The head names the person being profiled. Until she has a name,
+              it says so rather than borrowing the agent's. */}
+          <b style={headNameStyle}>{partnerName ?? 'Someone special'}</b>
           <em style={headStatusStyle}>{status}</em>
         </div>
       </div>

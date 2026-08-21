@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ChatPanel } from './ChatPanel';
-import { PartnerProfilePanel } from './PartnerProfilePanel';
+import { BriefRail } from './BriefRail';
 import { MobileNav } from './MobileNav';
 import { ProfileStoreProvider } from '../context/profile-store-context';
 import { DiscoveryProvider } from '../context/discovery-context';
@@ -57,7 +57,10 @@ function AppLayoutContent() {
     return () => mql.removeEventListener('change', handler);
   }, []);
 
-  const profilePanel = <PartnerProfilePanel />;
+  // The brief needs to know the breakpoint itself: on mobile it goes full-width
+  // and drops the scroll fade, which at the foot of a full-height panel reads as
+  // a rendering fault rather than as depth.
+  const profilePanel = <BriefRail isMobile={isMobile} />;
 
   /* Live region for screen reader announcements (R8.4) */
   const liveRegion = (

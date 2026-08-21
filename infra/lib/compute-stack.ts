@@ -39,17 +39,16 @@ export class ComputeStack extends cdk.Stack {
         natGateways: 1,
       });
 
-    // --- ECR Repository ---
-    this.ecrRepository = new ecr.Repository(this, 'BackendRepo', {
-      repositoryName: `valentin-backend-${env}`,
-      removalPolicy: cdk.RemovalPolicy.RETAIN,
-      lifecycleRules: [
+    // --- ECR Repository (import existing or create) ---
+    this.ecrRepository = ecr.Repository.fromRepositoryName(
+      this, 'BackendRepo', `valentin-backend-${env}`
+    ) as unknown as ecr.Repository;
+    const _lifecycleRules = [
         {
           maxImageCount: 10,
           description: 'Keep last 10 images',
         },
-      ],
-    });
+    ];
 
     // --- ECS Cluster ---
     this.cluster = new ecs.Cluster(this, 'Cluster', {
@@ -175,7 +174,7 @@ export class ComputeStack extends cdk.Stack {
         streamPrefix: `valentin-${env}`,
       }),
       healthCheck: {
-        command: ['CMD-SHELL', 'curl -f http://localhost:3001/api/health || exit 1'],
+        command: ['CMD-SHELL', 'wget -qO- http://localhost:3001/api/health || exit 1'],
         interval: cdk.Duration.seconds(30),
         timeout: cdk.Duration.seconds(5),
         retries: 3,

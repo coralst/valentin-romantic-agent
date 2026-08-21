@@ -111,19 +111,7 @@ export class CdnStack extends cdk.Stack {
     });
 
     // --- Cache Policies ---
-    const noCachePolicy = new cloudfront.CachePolicy(this, 'NoCachePolicy', {
-      cachePolicyName: `valentin-no-cache-${env}`,
-      defaultTtl: cdk.Duration.seconds(0),
-      minTtl: cdk.Duration.seconds(0),
-      maxTtl: cdk.Duration.seconds(0),
-      headerBehavior: cloudfront.CacheHeaderBehavior.allowList(
-        'Authorization',
-        'Origin',
-        'Accept',
-      ),
-      queryStringBehavior: cloudfront.CacheQueryStringBehavior.all(),
-      cookieBehavior: cloudfront.CacheCookieBehavior.all(),
-    });
+    const noCachePolicy = cloudfront.CachePolicy.CACHING_DISABLED;
 
     // --- Origin Request Policy for WebSocket ---
     const wsOriginRequestPolicy = new cloudfront.OriginRequestPolicy(
@@ -136,8 +124,6 @@ export class CdnStack extends cdk.Stack {
           'Sec-WebSocket-Version',
           'Sec-WebSocket-Protocol',
           'Sec-WebSocket-Accept',
-          'Connection',
-          'Upgrade',
         ),
       },
     );

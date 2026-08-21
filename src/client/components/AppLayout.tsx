@@ -5,6 +5,7 @@ import { MobileNav } from './MobileNav';
 import { ProfileStoreProvider } from '../context/profile-store-context';
 import { useChatContext } from '../context/chat-context';
 import { SessionSidebar } from './SessionSidebar';
+import { DemoToolbar } from './DemoToolbar';
 import { useSessionContext } from '../context/session-context';
 import { breakpoints, spacing, colors, typography, shadows, animation, borderRadius } from '../design-system/tokens';
 
@@ -134,6 +135,7 @@ function AppLayoutContent() {
           </button>
           <img src="/logo.png" alt="Valentin logo" style={logoStyle} />
           <span style={brandStyle}>Valentin</span>
+          <DemoToolbar />
         </header>
         <MobileNav activePanel={activePanel} onPanelChange={setActivePanel} />
         <div style={mobilePanelStyle}>
@@ -149,6 +151,7 @@ function AppLayoutContent() {
       <header style={headerStyle}>
         <img src="/logo.png" alt="Valentin logo" style={logoStyle} />
         <span style={brandStyle}>Valentin</span>
+        <DemoToolbar />
       </header>
       <div style={desktopStyle}>
         <SessionSidebar isMobile={false} />

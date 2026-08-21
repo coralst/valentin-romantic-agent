@@ -1,10 +1,10 @@
 import * as cdk from 'aws-cdk-lib';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import { Construct } from 'constructs';
+import { EnvironmentConfig } from '../config/environments';
 
 export interface AuthStackProps extends cdk.StackProps {
-  /** Environment name (dev, staging, prod) */
-  environment: string;
+  config: EnvironmentConfig;
 }
 
 /**
@@ -22,7 +22,7 @@ export class AuthStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: AuthStackProps) {
     super(scope, id, props);
 
-    const env = props.environment;
+    const env = props.config.env;
 
     // --- User Pool ---
     this.userPool = new cognito.UserPool(this, 'UserPool', {

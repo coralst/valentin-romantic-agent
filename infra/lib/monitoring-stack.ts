@@ -1,12 +1,25 @@
 import * as cdk from 'aws-cdk-lib';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as ecs from 'aws-cdk-lib/aws-ecs';
+import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as sns from 'aws-cdk-lib/aws-sns';
-import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
 import { EnvironmentConfig } from '../config/environments';
 
 export interface MonitoringStackProps extends cdk.StackProps {
   config: EnvironmentConfig;
+  /**
+   * Real constructs rather than resource names. CloudWatch identifies ALB
+   * resources by their full name (`app/valentin-alb-dev/<id>`,
+   * `targetgroup/valentin-tg-dev/<id>`), not the bare name. Hand-writing
+   * dimensionsMap produced alarms that silently watched nothing; the metric
+   * helpers on these constructs generate the correct dimensions.
+   */
+  loadBalancer: elbv2.ApplicationLoadBalancer;
+  targetGroup: elbv2.ApplicationTargetGroup;
+  service: ecs.FargateService;
+  table: dynamodb.ITable;
 }
 
 export class MonitoringStack extends cdk.Stack {
@@ -23,140 +36,159 @@ export class MonitoringStack extends cdk.Stack {
       displayName: `Valentin Alarms (${config.env})`,
     });
 
-    // Log groups with 30-day retention
-    new logs.LogGroup(this, 'AppLogGroup', {
-      logGroupName: `/valentin/${config.env}/app`,
-      retention: logs.RetentionDays.ONE_MONTH,
-      removalPolicy: config.env === 'prod'
-        ? cdk.RemovalPolicy.RETAIN
-        : cdk.RemovalPolicy.DESTROY,
-    });
+    const alarmAction = new cdk.aws_cloudwatch_actions.SnsAction(this.alarmTopic);
 
-    new logs.LogGroup(this, 'AccessLogGroup', {
-      logGroupName: `/valentin/${config.env}/access`,
-      retention: logs.RetentionDays.ONE_MONTH,
-      removalPolicy: config.env === 'prod'
-        ? cdk.RemovalPolicy.RETAIN
-        : cdk.RemovalPolicy.DESTROY,
-    });
-
-    // CloudWatch Dashboard
-    const dashboard = new cloudwatch.Dashboard(this, 'ValentinDashboard', {
-      dashboardName: `Valentin-${config.env}`,
-    });
-
-    // ECS CPU/Memory placeholder widgets
-    dashboard.addWidgets(
-      new cloudwatch.TextWidget({
-        markdown: `# Valentin Dashboard (${config.env})\nService health metrics`,
-        width: 24,
-        height: 2,
-      }),
+    // --- Metrics ---
+    const alb5xx = props.loadBalancer.metrics.httpCodeTarget(
+      elbv2.HttpCodeTarget.TARGET_5XX_COUNT,
+      { statistic: 'Sum', period: cdk.Duration.minutes(5) },
     );
 
-    dashboard.addWidgets(
-      new cloudwatch.TextWidget({
-        markdown: '## ECS Metrics\n*Populated after ECS service deployment*',
-        width: 12,
-        height: 4,
-      }),
-      new cloudwatch.TextWidget({
-        markdown: '## ALB Metrics\n*Populated after ALB deployment*',
-        width: 12,
-        height: 4,
-      }),
-    );
+    const requestCount = props.loadBalancer.metrics.requestCount({
+      statistic: 'Sum',
+      period: cdk.Duration.minutes(5),
+    });
 
-    dashboard.addWidgets(
-      new cloudwatch.TextWidget({
-        markdown: '## DynamoDB\n*Populated after table usage begins*',
-        width: 12,
-        height: 4,
-      }),
-      new cloudwatch.TextWidget({
-        markdown: '## Custom Metrics\n*Populated after application emits metrics*',
-        width: 12,
-        height: 4,
-      }),
-    );
+    const targetResponseTime = props.loadBalancer.metrics.targetResponseTime({
+      statistic: 'p95',
+      period: cdk.Duration.minutes(5),
+    });
 
-    // Alarm: 5xx > 1% (5min) — placeholder metric until ALB is deployed
+    const healthyHosts = props.targetGroup.metrics.healthyHostCount({
+      statistic: 'Minimum',
+      period: cdk.Duration.minutes(1),
+    });
+
+    const cpuUtilization = props.service.metricCpuUtilization({
+      statistic: 'Average',
+      period: cdk.Duration.minutes(5),
+    });
+
+    const memoryUtilization = props.service.metricMemoryUtilization({
+      statistic: 'Average',
+      period: cdk.Duration.minutes(5),
+    });
+
+    const dynamoThrottles = props.table.metricThrottledRequestsForOperations({
+      operations: [
+        dynamodb.Operation.GET_ITEM,
+        dynamodb.Operation.PUT_ITEM,
+        dynamodb.Operation.UPDATE_ITEM,
+        dynamodb.Operation.DELETE_ITEM,
+        dynamodb.Operation.QUERY,
+        dynamodb.Operation.BATCH_GET_ITEM,
+        dynamodb.Operation.BATCH_WRITE_ITEM,
+      ],
+      period: cdk.Duration.minutes(5),
+    });
+
+    // --- Alarms ---
     const alb5xxAlarm = new cloudwatch.Alarm(this, 'ALB5xxAlarm', {
       alarmName: `valentin-${config.env}-alb-5xx`,
-      alarmDescription: 'ALB 5xx error rate exceeds 1% over 5 minutes',
-      metric: new cloudwatch.Metric({
-        namespace: 'AWS/ApplicationELB',
-        metricName: 'HTTPCode_Target_5XX_Count',
-        dimensionsMap: { LoadBalancer: `valentin-alb-${config.env}` },
-        statistic: 'Sum',
-        period: cdk.Duration.minutes(5),
-      }),
+      alarmDescription: 'ALB 5xx responses from targets over 5 minutes',
+      metric: alb5xx,
       threshold: 1,
       evaluationPeriods: 1,
       comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
-    alb5xxAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(this.alarmTopic));
+    alb5xxAlarm.addAlarmAction(alarmAction);
 
-    // Alarm: DynamoDB throttles
     const dynamoThrottleAlarm = new cloudwatch.Alarm(this, 'DynamoThrottleAlarm', {
       alarmName: `valentin-${config.env}-dynamo-throttle`,
       alarmDescription: 'DynamoDB read/write throttle events detected',
-      metric: new cloudwatch.Metric({
-        namespace: 'AWS/DynamoDB',
-        metricName: 'ThrottledRequests',
-        dimensionsMap: { TableName: config.tableName },
-        statistic: 'Sum',
-        period: cdk.Duration.minutes(5),
-      }),
+      metric: dynamoThrottles,
       threshold: 0,
       evaluationPeriods: 1,
       comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
-    dynamoThrottleAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(this.alarmTopic));
+    dynamoThrottleAlarm.addAlarmAction(alarmAction);
 
-    // Alarm: ECS CPU > 80% — placeholder until ECS deployed
     const ecsCpuAlarm = new cloudwatch.Alarm(this, 'EcsCpuAlarm', {
       alarmName: `valentin-${config.env}-ecs-cpu`,
       alarmDescription: 'ECS service CPU utilization exceeds 80%',
-      metric: new cloudwatch.Metric({
-        namespace: 'AWS/ECS',
-        metricName: 'CPUUtilization',
-        dimensionsMap: {
-          ServiceName: `valentin-service-${config.env}`,
-          ClusterName: `valentin-cluster-${config.env}`,
-        },
-        statistic: 'Average',
-        period: cdk.Duration.minutes(5),
-      }),
+      metric: cpuUtilization,
       threshold: 80,
       evaluationPeriods: 2,
       comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
-    ecsCpuAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(this.alarmTopic));
+    ecsCpuAlarm.addAlarmAction(alarmAction);
 
-    // Alarm: No healthy hosts — placeholder
+    // BREACHING is correct here — an absent HealthyHostCount datapoint means
+    // the target group is gone, which is the condition we want to catch. This
+    // alarm sat in a permanent false ALARM state only because the hand-written
+    // dimensions never matched a real metric, so no datapoints ever arrived.
     const noHealthyHostsAlarm = new cloudwatch.Alarm(this, 'NoHealthyHostsAlarm', {
       alarmName: `valentin-${config.env}-no-healthy-hosts`,
       alarmDescription: 'No healthy hosts registered with target group',
-      metric: new cloudwatch.Metric({
-        namespace: 'AWS/ApplicationELB',
-        metricName: 'HealthyHostCount',
-        dimensionsMap: {
-          TargetGroup: `valentin-tg-${config.env}`,
-          LoadBalancer: `valentin-alb-${config.env}`,
-        },
-        statistic: 'Minimum',
-        period: cdk.Duration.minutes(1),
-      }),
+      metric: healthyHosts,
       threshold: 1,
       evaluationPeriods: 2,
       comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
       treatMissingData: cloudwatch.TreatMissingData.BREACHING,
     });
-    noHealthyHostsAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(this.alarmTopic));
+    noHealthyHostsAlarm.addAlarmAction(alarmAction);
+
+    // --- Dashboard ---
+    const dashboard = new cloudwatch.Dashboard(this, 'ValentinDashboard', {
+      dashboardName: `Valentin-${config.env}`,
+    });
+
+    dashboard.addWidgets(
+      new cloudwatch.TextWidget({
+        markdown: `# Valentin Dashboard (${config.env})`,
+        width: 24,
+        height: 1,
+      }),
+    );
+
+    dashboard.addWidgets(
+      new cloudwatch.GraphWidget({
+        title: 'ECS Utilization',
+        left: [cpuUtilization, memoryUtilization],
+        width: 12,
+        height: 6,
+      }),
+      new cloudwatch.GraphWidget({
+        title: 'ALB Requests and 5xx',
+        left: [requestCount],
+        right: [alb5xx],
+        width: 12,
+        height: 6,
+      }),
+    );
+
+    dashboard.addWidgets(
+      new cloudwatch.GraphWidget({
+        title: 'Target Response Time (p95)',
+        left: [targetResponseTime],
+        width: 8,
+        height: 6,
+      }),
+      new cloudwatch.GraphWidget({
+        title: 'Healthy Hosts',
+        left: [healthyHosts],
+        width: 8,
+        height: 6,
+      }),
+      new cloudwatch.GraphWidget({
+        title: 'DynamoDB Throttles',
+        left: [dynamoThrottles],
+        width: 8,
+        height: 6,
+      }),
+    );
+
+    dashboard.addWidgets(
+      new cloudwatch.AlarmStatusWidget({
+        title: 'Alarm Status',
+        alarms: [alb5xxAlarm, dynamoThrottleAlarm, ecsCpuAlarm, noHealthyHostsAlarm],
+        width: 24,
+        height: 3,
+      }),
+    );
 
     // Outputs
     new cdk.CfnOutput(this, 'AlarmTopicArn', {

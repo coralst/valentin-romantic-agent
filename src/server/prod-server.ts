@@ -1,10 +1,8 @@
-import express from 'express';
 import { createServer as createHttpServer } from 'http';
-import { WebSocketServer, WebSocket } from 'ws';
-import { randomUUID } from 'crypto';
+import { WebSocket } from 'ws';
 import { createServer } from './index';
-import type { WsConnection } from './api/ws-gateway';
-import type { IncomingMessage } from 'http';
+import { createExpressApp, type LogFn } from './http/express-app';
+import { attachWebSocket } from './http/attach-websocket';
 
 // --- Configuration ---
 const PORT = Number(process.env.PORT) || 3001;
@@ -19,7 +17,7 @@ interface LogEntry {
   [key: string]: unknown;
 }
 
-function log(level: LogEntry['level'], message: string, meta?: Record<string, unknown>): void {
+const log: LogFn = (level, message, meta) => {
   const entry: LogEntry = {
     timestamp: new Date().toISOString(),
     level,
@@ -32,123 +30,23 @@ function log(level: LogEntry['level'], message: string, meta?: Record<string, un
   } else {
     process.stdout.write(output + '\n');
   }
-}
+};
 
 // --- Server Setup ---
-const { gateway, httpRoutes, orchestrator } = createServer();
+// createServer throws here rather than booting unauthenticated if Cognito is
+// unconfigured, which is what we want: a failed health check is recoverable, a
+// silently open API is not.
+const { gateway, verifier, forUser } = createServer();
 
-const app = express();
-app.use(express.json());
-
-// --- Request ID Middleware ---
-app.use((req, _res, next) => {
-  const requestId = (req.headers['x-request-id'] as string) || randomUUID();
-  req.headers['x-request-id'] = requestId;
-  next();
+const app = createExpressApp({
+  verifier,
+  forUser,
+  connectionCount: () => gateway.connectionCount,
+  log,
 });
 
-// --- Health Check ---
-app.get('/api/health', (_req, res) => {
-  res.status(200).json({
-    status: 'healthy',
-    uptime: process.uptime(),
-    connections: gateway.connectionCount,
-    environment: NODE_ENV,
-  });
-});
-
-// --- HTTP Routes ---
-// Registered before any '/api/session/:id' route so the literal 'seed' segment
-// can never be captured as a session id.
-app.post('/api/session/seed', async (_req, res) => {
-  const result = await httpRoutes.seedSession();
-  log('info', 'Demo session seeded', { ...(result.body as Record<string, unknown>) });
-  res.status(result.status).json(result.body);
-});
-
-app.post('/api/session', async (_req, res) => {
-  const result = await httpRoutes.createSession();
-  res.status(result.status).json(result.body);
-});
-
-app.post('/api/session/:id/reset', async (req, res) => {
-  const result = await httpRoutes.resetSession(req.params.id);
-  log('info', 'Session reset requested', {
-    sessionId: req.params.id,
-    status: result.status,
-  });
-  res.status(result.status).json(result.body);
-});
-
-app.get('/api/session/:id/preferences', async (req, res) => {
-  const result = await httpRoutes.getSessionPreferences(req.params.id);
-  res.status(result.status).json(result.body);
-});
-
-// --- HTTP Server + WebSocket Upgrade ---
 const server = createHttpServer(app);
-const wss = new WebSocketServer({ noServer: true });
-
-let connectionCounter = 0;
-const activeWebSockets = new Set<WebSocket>();
-
-server.on('upgrade', (request: IncomingMessage, socket, head) => {
-  if (request.url === '/ws') {
-    wss.handleUpgrade(request, socket, head, (ws) => {
-      wss.emit('connection', ws, request);
-    });
-  } else {
-    socket.destroy();
-  }
-});
-
-wss.on('connection', async (ws: WebSocket) => {
-  const connId = `conn-${++connectionCounter}`;
-  activeWebSockets.add(ws);
-
-  log('info', 'WebSocket connection established', { connId });
-
-  const conn: WsConnection = {
-    id: connId,
-    sessionId: null,
-    send: (data: string) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(data);
-      }
-    },
-    onMessage: (handler: (data: string) => void) => {
-      ws.on('message', (raw) => handler(raw.toString()));
-    },
-    onClose: (handler: () => void) => {
-      ws.on('close', () => {
-        activeWebSockets.delete(ws);
-        handler();
-        log('info', 'WebSocket connection closed', { connId });
-      });
-    },
-  };
-
-  gateway.handleConnection(conn);
-
-  // Auto-init session on first connection
-  try {
-    const { sessionId, welcomeMessage } = await orchestrator.initSession();
-    conn.sessionId = sessionId;
-    conn.send(
-      JSON.stringify({
-        type: 'session_init',
-        payload: { sessionId, welcomeMessage },
-        timestamp: new Date().toISOString(),
-      }),
-    );
-    log('info', 'Session initialized', { connId, sessionId });
-  } catch (err) {
-    log('error', 'Failed to init session', {
-      connId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-});
+const { sockets } = attachWebSocket(server, { gateway, log });
 
 // --- Start Server ---
 server.listen(PORT, () => {
@@ -158,6 +56,7 @@ server.listen(PORT, () => {
     pid: process.pid,
     dynamoTable: process.env.DYNAMO_TABLE_NAME || '(not set)',
     s3Bucket: process.env.S3_PHOTO_BUCKET || '(not set)',
+    userPool: process.env.COGNITO_USER_POOL_ID || '(not set)',
   });
 });
 
@@ -176,7 +75,7 @@ function gracefulShutdown(signal: string): void {
   });
 
   // Close all WebSocket connections with a close frame
-  for (const ws of activeWebSockets) {
+  for (const ws of sockets) {
     if (ws.readyState === WebSocket.OPEN) {
       ws.close(1001, 'Server shutting down');
     }
@@ -185,14 +84,14 @@ function gracefulShutdown(signal: string): void {
   // Give connections time to drain, then force exit
   const forceExit = setTimeout(() => {
     log('warn', 'Forcing shutdown after timeout', {
-      remainingConnections: activeWebSockets.size,
+      remainingConnections: sockets.size,
     });
     process.exit(0);
   }, SHUTDOWN_TIMEOUT_MS);
 
   // If all connections close before the timeout, exit cleanly
   const checkDrained = setInterval(() => {
-    if (activeWebSockets.size === 0) {
+    if (sockets.size === 0) {
       clearInterval(checkDrained);
       clearTimeout(forceExit);
       log('info', 'All connections drained, exiting');

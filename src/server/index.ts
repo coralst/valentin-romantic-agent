@@ -8,6 +8,11 @@ import { PreferenceExtractor } from './extraction/preference-extractor';
 import { EventRouter } from './api/event-router';
 import { WsGateway } from './api/ws-gateway';
 import { createHttpRoutes } from './api/http-routes';
+import {
+  ANONYMOUS_USER_ID,
+  createTokenVerifier,
+  type TokenVerifier,
+} from './auth/token-verifier';
 import type {
   ScopedStorageFactory,
   ScopedStorageOptions,
@@ -54,17 +59,16 @@ export interface ServerDeps {
    * against `ValentinTable-dev`.
    */
   store?: ScopedStorageFactory;
+
+  /**
+   * How bearer tokens become user ids. Defaults to Cognito when the pool is
+   * configured and to the dev bypass otherwise — see createTokenVerifier, which
+   * refuses the bypass in production.
+   */
+  verifier?: TokenVerifier;
 }
 
-/**
- * The user whose data an unauthenticated request touches.
- *
- * A placeholder, and the *only* remaining hardcoded user id in the codebase —
- * the store it replaces built `USER#anonymous` inline at four separate sites.
- * PR 3 wires JWT verification and passes the Cognito `sub` here instead; until
- * then everything still lands in one partition, but it does so in one place.
- */
-export const ANONYMOUS_USER_ID = 'anonymous';
+export { ANONYMOUS_USER_ID };
 
 /**
  * The per-user half of the object graph.
@@ -93,6 +97,7 @@ function defaultStoreFactory(): ScopedStorageFactory {
 /** Initialize all dependencies and start the server */
 export function createServer(deps: ServerDeps = {}) {
   const storeFactory = deps.store ?? defaultStoreFactory();
+  const verifier = deps.verifier ?? createTokenVerifier();
 
   // AWS Bedrock — always use real LLM, no stubs
   const bedrockClient = new AwsBedrockClient();
@@ -100,9 +105,11 @@ export function createServer(deps: ServerDeps = {}) {
 
   console.log(`[server] AWS Bedrock (region: ${process.env.AWS_REGION ?? 'us-east-1'}, model: ${process.env.BEDROCK_MODEL_ID ?? 'claude-3-haiku'})`);
 
-  // Emit function — will be wired to WsGateway after creation
+  // Wired to WsGateway after creation. Built per user, because a session id
+  // alone no longer identifies a broadcast target — two users may legitimately
+  // hold the same session id, since the user is part of the storage key.
   let gateway: WsGateway | null = null;
-  const emit = (event: ServerEvent): void => {
+  const emitFor = (userId: string) => (event: ServerEvent): void => {
     if (!gateway) return;
 
     const sessionId = resolveBroadcastSessionId(
@@ -110,13 +117,14 @@ export function createServer(deps: ServerDeps = {}) {
     );
 
     if (sessionId) {
-      gateway.broadcastToSession(sessionId, event);
+      gateway.broadcastToSession(userId, sessionId, event);
     }
   };
 
   /** Build the user-scoped graph for one caller */
   function forUser(userId: string, opts?: ScopedStorageOptions): UserServices {
     const store = storeFactory.forUser(userId, opts);
+    const emit = emitFor(userId);
     const memory = new InMemoryConversationMemory(store);
 
     // The extractor's callback needs the router that is built from the
@@ -147,10 +155,12 @@ export function createServer(deps: ServerDeps = {}) {
     };
   }
 
-  // Until PR 3 lands JWT verification there is one caller, so the returned
-  // graph is that caller's. `forUser` is what the auth handler will use.
+  gateway = new WsGateway({ verifier, forUser });
+
+  // The graph for callers that present no token at all. Only reachable when the
+  // dev bypass is active — in production `requireAuth` rejects them before any
+  // route runs — but it is also what the existing createServer tests exercise.
   const anonymous = forUser(ANONYMOUS_USER_ID);
-  gateway = new WsGateway(anonymous.eventRouter);
 
   // Register agent with AgentCore on startup
   agentCore.registerAgent().then((agentId) => {
@@ -162,6 +172,7 @@ export function createServer(deps: ServerDeps = {}) {
   return {
     gateway,
     storeFactory,
+    verifier,
     forUser,
     httpRoutes: anonymous.httpRoutes,
     orchestrator: anonymous.orchestrator,

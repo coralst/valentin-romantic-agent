@@ -19,13 +19,14 @@ const log: LogFn = (level, message, meta) => {
   else console.log(line);
 };
 
-const { gateway, verifier, forUser } = createServer();
+const { gateway, verifier, forUser, demoLogin } = createServer();
 
 const app = createExpressApp({
   verifier,
   forUser,
   connectionCount: () => gateway.connectionCount,
   log,
+  demoLogin,
 });
 
 const server = createHttpServer(app);

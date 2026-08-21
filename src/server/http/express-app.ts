@@ -4,6 +4,7 @@ import type { HttpResponse } from '../api/http-routes';
 import type { UserServices } from '../index';
 import type { AuthContext, TokenVerifier } from '../auth/token-verifier';
 import { isAuthDisabled } from '../auth/token-verifier';
+import type { DemoLoginService } from '../auth/demo-login';
 
 /** Structured log sink, so the two entry points keep their own formats */
 export type LogFn = (
@@ -19,6 +20,12 @@ export interface ExpressAppDeps {
   /** Live connection count, for the health payload */
   connectionCount: () => number;
   log: LogFn;
+  /**
+   * Backs the one-click demo button. Omitted in tests that only care about the
+   * authenticated surface; the route then reports 503 rather than 404, since
+   * "not configured on this deployment" is the truth the client should show.
+   */
+  demoLogin?: Pick<DemoLoginService, 'login'>;
 }
 
 /** What a verified request carries, hung off `res.locals` */
@@ -144,9 +151,43 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
     });
   });
 
+  /**
+   * The one unauthenticated write endpoint: it *hands out* a token, so it
+   * cannot require one. See auth/demo-login.ts for the rate limit.
+   */
+  app.post('/api/demo/login', async (req, res) => {
+    if (!deps.demoLogin) {
+      res
+        .status(503)
+        .json({ error: 'The demo account is not configured on this deployment' });
+      return;
+    }
+
+    try {
+      const result = await deps.demoLogin.login();
+      deps.log('info', 'Demo login', {
+        status: result.status,
+        requestId: req.headers['x-request-id'],
+      });
+      res.status(result.status).json(result.body);
+    } catch (err) {
+      // Deliberately not forwarded to the client: the failure modes here name
+      // Cognito clients and secret ARNs.
+      deps.log('error', 'Demo login failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      res.status(500).json({ error: 'Demo login failed' });
+    }
+  });
+
   // --- Everything below requires a token ---
 
   app.use('/api', requireAuth(deps));
+
+  app.get(
+    '/api/sessions',
+    scoped(deps, (routes) => routes.listSessions()),
+  );
 
   // Registered before any '/api/session/:id' route so the literal 'seed'
   // segment can never be captured as a session id.
@@ -184,6 +225,13 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
     scoped(deps, (routes, req) =>
       routes.getSessionPreferences(pathParam(req, 'id')),
     ),
+  );
+
+  // Registered last of the /api/session routes, so the more specific patterns
+  // above are matched first.
+  app.get(
+    '/api/session/:id',
+    scoped(deps, (routes, req) => routes.getSessionDetail(pathParam(req, 'id'))),
   );
 
   return app;

@@ -13,6 +13,7 @@ import {
   createTokenVerifier,
   type TokenVerifier,
 } from './auth/token-verifier';
+import { DemoLoginService } from './auth/demo-login';
 import type {
   ScopedStorageFactory,
   ScopedStorageOptions,
@@ -69,6 +70,16 @@ export interface ServerDeps {
 }
 
 export { ANONYMOUS_USER_ID };
+
+/**
+ * How long the shared demo account's data lives before DynamoDB expires it.
+ *
+ * A backstop, not the mechanism: TTL deletion is best-effort and can lag by
+ * up to 48 hours, so DemoLoginService reaps stale sessions explicitly. This
+ * catches whatever a reap misses — for instance if nobody clicks the demo
+ * button again for a month.
+ */
+const DEMO_TTL_SECONDS = 24 * 60 * 60;
 
 /**
  * The per-user half of the object graph.
@@ -157,6 +168,24 @@ export function createServer(deps: ServerDeps = {}) {
 
   gateway = new WsGateway({ verifier, forUser });
 
+  // Only built when the deployment actually has a demo account. Left undefined
+  // the route answers 503, which is the truth — and it keeps the AWS SDK
+  // clients from being constructed during `npm test`.
+  const demoLogin = config.cognito.demoSecretArn
+    ? new DemoLoginService({
+        verifier,
+        // Demo data expires on its own, as a backstop to the explicit reap.
+        // Real users' history must never evaporate, so only this store gets a
+        // ttl.
+        storeFor: (userId) =>
+          storeFactory.forUser(userId, { ttlSeconds: DEMO_TTL_SECONDS }),
+        seedSession: async (storage) => {
+          const result = await createHttpRoutes(storage).seedSession();
+          return (result.body as { sessionId: string }).sessionId;
+        },
+      })
+    : undefined;
+
   // The graph for callers that present no token at all. Only reachable when the
   // dev bypass is active — in production `requireAuth` rejects them before any
   // route runs — but it is also what the existing createServer tests exercise.
@@ -173,6 +202,7 @@ export function createServer(deps: ServerDeps = {}) {
     gateway,
     storeFactory,
     verifier,
+    demoLogin,
     forUser,
     httpRoutes: anonymous.httpRoutes,
     orchestrator: anonymous.orchestrator,

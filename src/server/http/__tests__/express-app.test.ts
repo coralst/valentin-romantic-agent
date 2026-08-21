@@ -161,6 +161,76 @@ describe('per-caller scoping', () => {
   });
 });
 
+describe('the session list', () => {
+  it('shows a caller only their own sessions', async () => {
+    await post('/api/session/seed', 'carol');
+
+    const mine = (await (await get('/api/sessions', 'carol')).json()) as {
+      sessions: { id: string }[];
+    };
+    const theirs = (await (await get('/api/sessions', 'dave')).json()) as {
+      sessions: { id: string }[];
+    };
+
+    expect(mine.sessions.length).toBeGreaterThan(0);
+    expect(theirs.sessions).toEqual([]);
+  });
+
+  it('serves a session detail to its owner and 404 to anyone else', async () => {
+    const { sessionId } = (await (
+      await post('/api/session/seed', 'erin')
+    ).json()) as { sessionId: string };
+
+    const owner = await get(`/api/session/${sessionId}`, 'erin');
+    expect(owner.status).toBe(200);
+    expect(await owner.json()).toMatchObject({ session: { id: sessionId } });
+
+    expect((await get(`/api/session/${sessionId}`, 'frank')).status).toBe(404);
+  });
+
+  it('requires a token like every other /api route', async () => {
+    expect((await get('/api/sessions')).status).toBe(401);
+  });
+});
+
+describe('POST /api/demo/login', () => {
+  it('reports 503 when the deployment has no demo account', async () => {
+    // The app under test was built without a demoLogin dependency. 503 rather
+    // than 404 is the truth the client should show.
+    expect((await post('/api/demo/login')).status).toBe(503);
+  });
+
+  it('needs no token, since it is what hands one out', async () => {
+    const { forUser, gateway } = createServer({
+      store: new InMemoryStoreFactory(),
+      verifier,
+    });
+    const app = createExpressApp({
+      verifier,
+      forUser,
+      connectionCount: () => gateway.connectionCount,
+      log: () => {},
+      demoLogin: {
+        login: async () => ({
+          status: 200,
+          body: { accessToken: 'demo-token', sessionId: 's1' },
+        }),
+      },
+    });
+    const demoServer = createHttpServer(app);
+    await new Promise<void>((resolve) => demoServer.listen(0, resolve));
+    const url = `http://127.0.0.1:${(demoServer.address() as AddressInfo).port}`;
+
+    try {
+      const res = await fetch(`${url}/api/demo/login`, { method: 'POST' });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ accessToken: 'demo-token' });
+    } finally {
+      await new Promise<void>((resolve) => demoServer.close(() => resolve()));
+    }
+  });
+});
+
 describe('with the dev bypass active', () => {
   let bypassServer: Server;
   let bypassUrl: string;

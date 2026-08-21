@@ -3,6 +3,7 @@ import {
   DEMO_PROFILE_PREFERENCES,
   DEMO_SEED_SOURCE_MESSAGE_ID,
 } from '../fixtures/demo-profile';
+import { isPartnerNamePreference } from '../extraction/partner-name';
 
 /** Simple framework-agnostic request representation */
 export interface HttpRequest {
@@ -21,25 +22,35 @@ export interface HttpResponse {
 /**
  * Persist every demo fixture preference into a session.
  *
+ * One batch, not a loop. Written one at a time each fixture is a put *plus* a
+ * counter update — 36 sequential round trips, one to two seconds on the single
+ * most visible click in the product.
+ *
  * Returns the number of preferences written.
  */
 async function seedDemoProfile(
   storage: StorageInterface,
   sessionId: string,
 ): Promise<number> {
-  for (const pref of DEMO_PROFILE_PREFERENCES) {
-    await storage.savePreference({
-      sessionId,
-      category: pref.category,
-      key: pref.key,
-      value: pref.value,
-      confidence: pref.confidence,
+  const written = await storage.savePreferencesBatch(
+    sessionId,
+    DEMO_PROFILE_PREFERENCES.map((pref) => ({
+      ...pref,
       // Seeded rows have no originating conversation turn — see the fixture.
       sourceMessageId: DEMO_SEED_SOURCE_MESSAGE_ID,
-    });
+    })),
+  );
+
+  // Label the conversation in the sidebar. The extractor does this as a real
+  // conversation reveals the name; a seeded profile knows it up front.
+  const name = DEMO_PROFILE_PREFERENCES.find((pref) =>
+    isPartnerNamePreference(pref.category, pref.key),
+  );
+  if (name) {
+    await storage.updateSessionMeta(sessionId, { partnerName: name.value });
   }
 
-  return DEMO_PROFILE_PREFERENCES.length;
+  return written.length;
 }
 
 /** Creates HTTP route handlers bound to the given storage */
@@ -54,6 +65,44 @@ export function createHttpRoutes(storage: StorageInterface) {
     async createSession(): Promise<HttpResponse> {
       const sessionId = await storage.createSession();
       return { status: 201, body: { sessionId } };
+    },
+
+    /**
+     * GET /sessions — every session belonging to the caller, newest first.
+     *
+     * One GSI query. Only session metadata rows carry the index keys, so this
+     * reads one item per session rather than filtering a partition scan.
+     */
+    async listSessions(): Promise<HttpResponse> {
+      const sessions = await storage.listSessions();
+      return { status: 200, body: { sessions } };
+    },
+
+    /**
+     * GET /session/:id — one session with its full contents.
+     *
+     * This is the route that makes the sidebar real. Until now the client kept
+     * sessions in localStorage and never stored a single message in them, so
+     * switching conversations always landed on an empty transcript.
+     *
+     * Messages and preferences come back together because they share the
+     * session's partition — fetching them separately would cost a second round
+     * trip for no benefit on the one interaction that must feel instant.
+     */
+    async getSessionDetail(sessionId: string): Promise<HttpResponse> {
+      const session = await storage.getSession(sessionId);
+      if (!session) {
+        // Covers "no such session" and "belongs to someone else" alike: the key
+        // includes the caller, so it simply misses either way.
+        return { status: 404, body: { error: 'Session not found' } };
+      }
+
+      const [messages, preferences] = await Promise.all([
+        storage.getMessagesBySession(sessionId),
+        storage.getPreferencesBySession(sessionId),
+      ]);
+
+      return { status: 200, body: { session, messages, preferences } };
     },
 
     /** GET /session/:id/preferences — get preferences for a session */
@@ -107,6 +156,11 @@ export function createHttpRoutes(storage: StorageInterface) {
         return this.health();
       }
 
+      // GET /sessions
+      if (req.method === 'GET' && req.url === '/sessions') {
+        return this.listSessions();
+      }
+
       // POST /session/seed — must precede any /session/:id pattern so the
       // literal "seed" segment is never captured as a session id.
       if (req.method === 'POST' && req.url === '/session/seed') {
@@ -130,6 +184,12 @@ export function createHttpRoutes(storage: StorageInterface) {
       );
       if (req.method === 'GET' && prefMatch) {
         return this.getSessionPreferences(prefMatch[1]);
+      }
+
+      // GET /session/:id — last, so the more specific patterns above win
+      const detailMatch = req.url.match(/^\/session\/([^/]+)$/);
+      if (req.method === 'GET' && detailMatch) {
+        return this.getSessionDetail(detailMatch[1]);
       }
 
       return { status: 404, body: { error: 'Not found' } };

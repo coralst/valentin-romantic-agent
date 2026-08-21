@@ -181,7 +181,137 @@ describe('createHttpRoutes', () => {
     });
   });
 
+  describe('listSessions', () => {
+    it('reports an empty list before anything exists', async () => {
+      const result = await routes.listSessions();
+
+      expect(result.status).toBe(200);
+      expect(result.body).toEqual({ sessions: [] });
+    });
+
+    it("returns the caller's own sessions", async () => {
+      const { body } = await routes.seedSession();
+      const { sessionId } = body as SeedBody;
+
+      const result = await routes.listSessions();
+
+      const { sessions } = result.body as { sessions: { id: string }[] };
+      expect(sessions.map((s) => s.id)).toEqual([sessionId]);
+    });
+
+    it("does not leak another user's sessions", async () => {
+      // Both stores come from one factory, so they share the underlying data —
+      // otherwise this would pass trivially and prove nothing.
+      const factory = new InMemoryStoreFactory();
+      const alice = createHttpRoutes(factory.forUser('alice'));
+      const bob = createHttpRoutes(factory.forUser('bob'));
+      await alice.seedSession();
+
+      const result = await bob.listSessions();
+
+      expect(result.body).toEqual({ sessions: [] });
+    });
+
+    it('carries the partner name, so the sidebar can label an entry', async () => {
+      await routes.seedSession();
+
+      const { sessions } = (await routes.listSessions()).body as {
+        sessions: { partnerName: string | null }[];
+      };
+      expect(sessions[0].partnerName).toBe('Mirabel');
+    });
+  });
+
+  describe('getSessionDetail', () => {
+    it('returns the session with its messages and preferences', async () => {
+      const { body } = await routes.seedSession();
+      const { sessionId } = body as SeedBody;
+      await store.saveMessage({
+        id: 'm1',
+        sessionId,
+        sender: 'user',
+        content: 'she loves peonies',
+        timestamp: new Date().toISOString(),
+      });
+
+      const result = await routes.getSessionDetail(sessionId);
+
+      expect(result.status).toBe(200);
+      const detail = result.body as {
+        session: { id: string };
+        messages: { content: string }[];
+        preferences: unknown[];
+      };
+      expect(detail.session.id).toBe(sessionId);
+      expect(detail.messages.map((m) => m.content)).toEqual(['she loves peonies']);
+      expect(detail.preferences).toHaveLength(DEMO_PROFILE_PREFERENCES.length);
+    });
+
+    it('responds 404 for an unknown session id', async () => {
+      const result = await routes.getSessionDetail('no-such-session');
+
+      expect(result.status).toBe(404);
+      expect(result.body).toEqual({ error: 'Session not found' });
+    });
+
+    it('responds 404 for a session belonging to someone else', async () => {
+      // The 404 is structural: the caller's user id is part of the storage key,
+      // so the read misses rather than being rejected by a check.
+      const factory = new InMemoryStoreFactory();
+      const alice = createHttpRoutes(factory.forUser('alice'));
+      const bob = createHttpRoutes(factory.forUser('bob'));
+      const { sessionId } = (await alice.seedSession()).body as SeedBody;
+
+      const result = await bob.getSessionDetail(sessionId);
+
+      expect(result.status).toBe(404);
+      expect(JSON.stringify(result.body)).not.toContain('Mirabel');
+    });
+  });
+
   describe('handleRequest routing', () => {
+    it('routes GET /sessions to listSessions', async () => {
+      await routes.seedSession();
+
+      const result = await routes.handleRequest({
+        method: 'GET',
+        url: '/sessions',
+        params: {},
+        body: null,
+      });
+
+      expect(result.status).toBe(200);
+      expect((result.body as { sessions: unknown[] }).sessions).toHaveLength(1);
+    });
+
+    it('routes GET /session/:id to getSessionDetail', async () => {
+      const { sessionId } = (await routes.seedSession()).body as SeedBody;
+
+      const result = await routes.handleRequest({
+        method: 'GET',
+        url: `/session/${sessionId}`,
+        params: {},
+        body: null,
+      });
+
+      expect(result.status).toBe(200);
+      expect((result.body as { session: { id: string } }).session.id).toBe(sessionId);
+    });
+
+    it('does not let GET /session/:id shadow the preferences route', async () => {
+      const { sessionId } = (await routes.seedSession()).body as SeedBody;
+
+      const result = await routes.handleRequest({
+        method: 'GET',
+        url: `/session/${sessionId}/preferences`,
+        params: {},
+        body: null,
+      });
+
+      expect(result.body).toHaveProperty('preferences');
+      expect(result.body).not.toHaveProperty('session');
+    });
+
     it('routes POST /session/seed to seedSession', async () => {
       const result = await routes.handleRequest({
         method: 'POST',

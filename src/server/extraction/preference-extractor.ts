@@ -5,6 +5,7 @@ import type { BedrockClient } from '../agent/bedrock-client';
 import { EXTRACT_PREFERENCES_TOOL } from '../agent/prompts';
 import { ExtractionError } from '../../shared/errors/extraction-error';
 import { mapCategory } from './category-mapper';
+import { isPartnerNamePreference } from './partner-name';
 
 /** Callback invoked when a preference is persisted */
 export type OnPreferenceUpdate = (
@@ -159,18 +160,4 @@ export class PreferenceExtractor implements PreferenceExtractorInterface {
       this.onPreferenceUpdate(result, isNew);
     }
   }
-}
-
-/**
- * Does this preference carry the partner's name?
- *
- * Mirrors the `partner_name` entry in the client's PROFILE_FIELD_REGISTRY. The
- * registry itself is client-only and pulls in display concerns (labels, sections,
- * ordering), so this restates the one mapping the server needs rather than
- * dragging that module across the boundary. Keep the two in step.
- */
-function isPartnerNamePreference(category: string, key: string): boolean {
-  if (category !== 'personality_traits') return false;
-  const normalised = key.trim().toLowerCase();
-  return normalised === 'name' || normalised === 'partner name';
 }

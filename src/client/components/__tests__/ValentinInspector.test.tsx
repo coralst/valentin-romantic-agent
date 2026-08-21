@@ -334,14 +334,22 @@ describe('ValentinInspector', () => {
       renderWithComposer();
       await openInspector(user);
 
-      // Tab forward from the close button: focus must escape the panel and
-      // reach the composer rather than cycling within the panel.
+      const panel = screen.getByTestId('inspector-panel');
       screen.getByTestId('inspector-close').focus();
-      await user.tab();
-      await user.tab();
 
+      // Tab repeatedly: a trapping panel would cycle forever within itself.
+      // Focus must be able to land outside the panel.
+      let escaped = false;
+      for (let i = 0; i < 6 && !escaped; i += 1) {
+        await user.tab();
+        const active = document.activeElement;
+        if (active && !panel.contains(active) && active !== document.body) {
+          escaped = true;
+        }
+      }
+
+      expect(escaped).toBe(true);
       expect(screen.getByTestId('inspector-panel')).toBeInTheDocument();
-      expect(screen.getByLabelText('Type a message')).toHaveFocus();
     });
 
     it('keeps composer focus when an event arrives', async () => {

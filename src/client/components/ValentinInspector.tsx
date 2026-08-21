@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   colors,
   spacing,
@@ -528,9 +529,22 @@ export function ValentinInspector() {
   return (
     <>
       <InspectorToggle ref={toggleRef} isOpen={isOpen} onToggle={handleToggle} />
-      {isOpen && <ValentinInspectorPanel onClose={handleClose} />}
+      {isOpen && <InspectorPanelPortal onClose={handleClose} />}
     </>
   );
+}
+
+/**
+ * Renders the panel into `document.body`.
+ *
+ * The host header uses `backdrop-filter`, which makes it a containing block for
+ * fixed-position descendants — without a portal the panel would be clipped
+ * inside the header instead of spanning the viewport edge. Portalling also
+ * keeps the panel's stacking context independent of the toolbar's.
+ */
+function InspectorPanelPortal({ onClose }: ValentinInspectorPanelProps) {
+  if (typeof document === 'undefined') return null;
+  return createPortal(<ValentinInspectorPanel onClose={onClose} />, document.body);
 }
 
 /** Format an ISO timestamp as a projector-legible wall clock time. */

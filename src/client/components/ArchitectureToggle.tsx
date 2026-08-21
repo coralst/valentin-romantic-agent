@@ -13,10 +13,17 @@ import { colors, borderRadius, typography, animation } from '../design-system/to
  * The accessible name is deliberately distinct from `Collapse sidebar` /
  * `Expand sidebar`: those are matched by name in the sidebar's tests, and a
  * third button whose name overlapped would make those queries ambiguous.
+ *
+ * The name is also *stable* across open and closed, with `aria-pressed` carrying
+ * the state. Swapping the name to "Hide…" when open collided with the drawer's own
+ * Hide control — two buttons, one name — and renaming a toggle under a screen
+ * reader as it is activated is confusing in its own right.
  */
 
-export const ARCHITECTURE_TOGGLE_LABEL = 'Show the architecture drawer';
-export const ARCHITECTURE_TOGGLE_HIDE_LABEL = 'Hide the architecture drawer';
+export const ARCHITECTURE_TOGGLE_LABEL = 'Architecture drawer';
+/** Hover hint only; the accessible name stays put. */
+export const ARCHITECTURE_TOGGLE_HIDE_HINT = 'Hide the architecture drawer';
+export const ARCHITECTURE_TOGGLE_SHOW_HINT = 'Show the architecture drawer';
 
 /** Magnifying glass, drawn rather than a glyph so it matches at every size. */
 function MagnifierIcon({ size = 16 }: { size?: number }) {
@@ -46,7 +53,7 @@ export function ArchitectureToggle({ compact = false }: ArchitectureToggleProps)
   const { isOpen, toggle } = useArchitectureDrawer();
   const [isHovered, setIsHovered] = useState(false);
 
-  const label = isOpen ? ARCHITECTURE_TOGGLE_HIDE_LABEL : ARCHITECTURE_TOGGLE_LABEL;
+  const hint = isOpen ? ARCHITECTURE_TOGGLE_HIDE_HINT : ARCHITECTURE_TOGGLE_SHOW_HINT;
 
   return (
     <button
@@ -54,9 +61,9 @@ export function ArchitectureToggle({ compact = false }: ArchitectureToggleProps)
       onClick={toggle}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      aria-label={label}
+      aria-label={ARCHITECTURE_TOGGLE_LABEL}
       aria-pressed={isOpen}
-      title={label}
+      title={hint}
       data-testid="architecture-toggle"
       style={{
         display: 'flex',

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { SessionProvider } from '../../context/session-context';
+import { SessionProvider, useSessionContext } from '../../context/session-context';
 import { SessionSidebar } from '../SessionSidebar';
 import type { StoredSession } from '../../hooks/use-session-store';
 
@@ -11,6 +11,30 @@ function renderSidebar(isMobile = false) {
       <SessionSidebar isMobile={isMobile} />
     </SessionProvider>,
   );
+}
+
+/**
+ * Stand-in for the header's hamburger, which lives in `AppLayout` rather than in
+ * the sidebar — so a test rendering the sidebar alone has no way to open the
+ * mobile overlay without it. Nothing covered that surface before this.
+ */
+function MobileOpener() {
+  const { setSidebarOpen } = useSessionContext();
+  return (
+    <button type="button" onClick={() => setSidebarOpen(true)}>
+      Open session history
+    </button>
+  );
+}
+
+async function renderMobileSidebarOpen(user: ReturnType<typeof userEvent.setup>) {
+  render(
+    <SessionProvider>
+      <MobileOpener />
+      <SessionSidebar isMobile={true} />
+    </SessionProvider>,
+  );
+  await user.click(screen.getByRole('button', { name: 'Open session history' }));
 }
 
 function makeMockSession(overrides: Partial<StoredSession> = {}): StoredSession {
@@ -73,6 +97,11 @@ describe('SessionSidebar', () => {
       renderSidebar(false);
       expect(screen.getByRole('button', { name: 'Collapse sidebar' })).toBeInTheDocument();
     });
+
+    it('carries the architecture toggle', () => {
+      renderSidebar(false);
+      expect(screen.getByTestId('architecture-toggle')).toBeInTheDocument();
+    });
   });
 
   describe('Desktop — collapsed rail', () => {
@@ -100,6 +129,26 @@ describe('SessionSidebar', () => {
       // Expand
       await user.click(screen.getByRole('button', { name: 'Expand sidebar' }));
       expect(screen.getByTestId('session-sidebar').getAttribute('data-collapsed')).toBe('false');
+    });
+
+    it('keeps the architecture toggle on the rail', () => {
+      localStorage.setItem('valentin_sidebar_collapsed', 'true');
+      renderSidebar(false);
+      expect(screen.getByTestId('architecture-toggle')).toBeInTheDocument();
+    });
+
+    /**
+     * The point of putting it in the sidebar rather than the demo toolbar: the
+     * drawer is reachable from every screen. Surviving the collapse is the case
+     * that would be easiest to lose.
+     */
+    it('keeps the architecture toggle across a collapse', async () => {
+      const user = userEvent.setup();
+      renderSidebar(false);
+
+      expect(screen.getByTestId('architecture-toggle')).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
+      expect(screen.getByTestId('architecture-toggle')).toBeInTheDocument();
     });
   });
 
@@ -156,6 +205,29 @@ describe('SessionSidebar', () => {
     it('does not render when sidebarOpen is false', () => {
       renderSidebar(true);
       expect(screen.queryByTestId('session-sidebar')).not.toBeInTheDocument();
+    });
+
+    it('renders as an overlay once opened', async () => {
+      const user = userEvent.setup();
+      await renderMobileSidebarOpen(user);
+      expect(screen.getByTestId('session-sidebar-overlay')).toBeInTheDocument();
+      expect(screen.getByTestId('session-sidebar')).toBeInTheDocument();
+    });
+
+    it('carries the architecture toggle in the overlay too', async () => {
+      const user = userEvent.setup();
+      await renderMobileSidebarOpen(user);
+      expect(screen.getByTestId('architecture-toggle')).toBeInTheDocument();
+    });
+
+    it('still offers New chat and Close beside it, unambiguously', async () => {
+      const user = userEvent.setup();
+      await renderMobileSidebarOpen(user);
+
+      // The architecture toggle's name must not collide with these: the sidebar's
+      // own tests query by name, and a third overlapping name breaks them.
+      expect(screen.getByRole('button', { name: 'New chat' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Close sidebar' })).toBeInTheDocument();
     });
   });
 });

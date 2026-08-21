@@ -21,17 +21,47 @@ the six-agent workflow, the ownership boundaries, and the merge gate.
 
 ## Ownership boundaries
 
-| Agent | Owns | Must not touch |
-|---|---|---|
-| 🏗️ System Architect | `src/shared/` | `src/client/`, `src/server/` |
-| ⚛️ Frontend Dev | `src/client/{components,hooks,context}`, `App.tsx`, `main.tsx` | `src/shared/`, `src/client/design-system/`, `src/server/` |
-| 🔧 Backend Dev | `src/server/{api,agent,extraction,persistence}`, entry points | `src/client/`, `src/shared/` |
-| 🎨 UI Designer | `src/client/design-system/`, `docs/design/` | component logic, `src/server/`, shared types |
-| 🧪 QA Agent | `e2e/`, `playwright.config.ts` | all of `src/` |
+This table is the prose half of a contract. The machine-readable half is the
+`OWNERSHIP` list in
+[`.kiro/skills/pr-monitoring/review-parser-skill.js`](.kiro/skills/pr-monitoring/review-parser-skill.js),
+and a [drift test](.kiro/specs/pr-conversation-monitoring/__tests__/ownership.test.ts)
+asserts the two agree. **Change both, in the same PR** — the test fails otherwise.
+
+<!-- OWNERSHIP-TABLE:START — parsed by the ownership drift test. Keep the `Paths`
+     column as a comma-separated list of backticked prefixes. -->
+
+| Agent | Label | Paths | Must not touch |
+|---|---|---|---|
+| 🏗️ System Architect | `agent: architect` | `src/shared/` | `src/client/`, `src/server/` |
+| ⚛️ Frontend Dev | `agent: frontend` | `src/client/components/`, `src/client/hooks/`, `src/client/context/`, `src/client/utils/`, `src/client/App.tsx`, `src/client/main.tsx`, `src/client/vite-env.d.ts` | `src/shared/`, `src/client/design-system/`, `src/server/` |
+| 🔧 Backend Dev | `agent: backend` | `src/server/` | `src/client/`, `src/shared/` |
+| 🎨 UI Designer | `agent: design` | `src/client/design-system/`, `docs/design/` | component logic, `src/server/`, shared types |
+| 🧪 QA Agent | `agent: qa` | `e2e/`, `playwright.config.ts`, `src/test-setup.ts` | all of `src/` |
+| ⚙️ Infra / Workflow | `agent: infra` | `.github/`, `.kiro/`, `scripts/`, `infra/`, `public/`, `index.html`, `package.json`, `package-lock.json`, `tsconfig.json`, `tsconfig.server.json`, `vite.config.ts`, `Dockerfile`, `.dockerignore`, `.gitignore`, `README.md`, `CONTRIBUTING.md`, `docs/` | all of `src/` |
+
+<!-- OWNERSHIP-TABLE:END -->
+
+Two notes on the boundaries that are easy to get wrong:
+
+- **`docs/` splits.** `docs/design/` is the UI Designer's. Everything else under
+  `docs/` documents the workflow and belongs to Infra. The ownership list is
+  scanned most-specific-first, so the `docs/design/` rule wins over `docs/`.
+- **`index.html` and `public/` are Infra, not Frontend.** They change when the
+  build or the deploy target changes, not when a feature does.
+
+The **Infra / Workflow** lane was added late: it had been carrying 51% of PRs
+(29 of 57) with no row in this table at all, because everything outside `src/`
+attributed to nobody and fell through to `agent: infra` by default. If a path
+still attributes to nobody, that is now a **CI failure**, not a shrug — see the
+scope check below.
 
 If your change needs something outside your boundary, **say so in the PR and name
 the agent who should own it.** Do not reach across — disjoint ownership is what
 makes parallel agent work safe.
+
+Some changes genuinely span two lanes — a shared-type change plus the server
+fixture that exercises it, for instance. Apply **both** `agent: *` labels; the
+scope check passes when the union of your labels covers every changed path.
 
 ## Local checks before you push
 

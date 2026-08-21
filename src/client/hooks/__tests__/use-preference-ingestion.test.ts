@@ -4,7 +4,13 @@ import React from 'react';
 import { PreferencesProvider, usePreferencesContext } from '../../context/preferences-context';
 import { ProfileStoreProvider, useProfileStoreContext } from '../../context/profile-store-context';
 import { DiscoveryProvider, resetDiscoveryMountCount } from '../../context/discovery-context';
-import { usePreferenceIngestion } from '../use-preference-ingestion';
+import { usePreferenceIngestion, resolvePreferenceField } from '../use-preference-ingestion';
+import { PROFILE_FIELD_REGISTRY } from '../../utils/profile-field-registry';
+import {
+  LIVE_EXTRACTION_RUN_1,
+  LIVE_EXTRACTION_RUN_2,
+  LIVE_EXTRACTION_RUN_3,
+} from '../../utils/__tests__/live-extraction-fixture';
 import { animation } from '../../design-system/tokens';
 import type { PreferenceWithHistory } from '../../../shared/interfaces/preference';
 
@@ -367,5 +373,180 @@ describe('usePreferenceIngestion', () => {
 
       expect(spy).not.toHaveBeenCalled();
     });
+  });
+});
+
+/**
+ * The end-to-end regression guard for the "0 OF 18 KNOWN" bug.
+ *
+ * Driven by `live-extraction-fixture.ts` — keys captured verbatim from real
+ * Bedrock runs — and NOT by `DEMO_PROFILE_PREFERENCES`, whose keys were authored
+ * to match the registry and therefore cannot detect this class of failure.
+ */
+describe('ingestion of real extraction output', () => {
+  it('populates the profile from run 1 of the live capture', () => {
+    const view = renderIngestion();
+
+    LIVE_EXTRACTION_RUN_1.forEach((row, index) => {
+      view.addPreference(
+        makePreference({
+          id: `live-1-${index}`,
+          category: row.category,
+          key: row.key,
+          value: row.value,
+        }),
+      );
+    });
+
+    expect(view.result.current.profile.getFieldValue('birthday')?.value).toBe('June (turning 32)');
+    expect(view.result.current.profile.getFieldValue('hobbies')?.value).toBe('loves salsa dancing');
+  });
+
+  it('populates the profile from the split-fact run', () => {
+    const view = renderIngestion();
+
+    LIVE_EXTRACTION_RUN_2.forEach((row, index) => {
+      view.addPreference(
+        makePreference({
+          id: `live-2-${index}`,
+          category: row.category,
+          key: row.key,
+          value: row.value,
+        }),
+      );
+    });
+
+    // Both halves route to `birthday`; the field is populated either way.
+    expect(view.result.current.profile.getFieldValue('birthday')).not.toBeNull();
+    expect(view.result.current.profile.getFieldValue('hobbies')?.value).toBe('loves salsa dancing');
+  });
+
+  it('names her and fills a non-zero tally after two realistic turns', () => {
+    // This is the success criterion from the bug report, asserted directly: the
+    // rail header showed "Someone special" and the tally read 0 OF 18.
+    const view = renderIngestion();
+
+    LIVE_EXTRACTION_RUN_3.forEach((row, index) => {
+      view.addPreference(
+        makePreference({
+          id: `live-3-${index}`,
+          category: row.category,
+          key: row.key,
+          value: row.value,
+        }),
+      );
+    });
+
+    expect(view.result.current.profile.getFieldValue('partner_name')?.value).toBe('Mirabel');
+
+    const filled = PROFILE_FIELD_REGISTRY.filter(
+      (f) => view.result.current.profile.getFieldValue(f.id) !== null,
+    );
+    expect(filled.length).toBeGreaterThan(0);
+  });
+
+  it('prefers an explicit fieldId over key resolution', () => {
+    const view = renderIngestion();
+
+    view.addPreference(
+      makePreference({
+        id: 'explicit',
+        category: 'important_dates',
+        // A key that resolves nowhere on its own.
+        key: 'when_she_was_born_ish',
+        fieldId: 'birthday',
+        value: '12 June',
+      }),
+    );
+
+    expect(view.result.current.profile.getFieldValue('birthday')?.value).toBe('12 June');
+  });
+
+  it('ignores a non-canonical fieldId and falls back to the key', () => {
+    const view = renderIngestion();
+
+    view.addPreference(
+      makePreference({
+        id: 'bogus-field',
+        category: 'important_dates',
+        key: 'birthday_month',
+        fieldId: 'not_a_real_field',
+        value: 'June',
+      }),
+    );
+
+    expect(view.result.current.profile.getFieldValue('birthday')?.value).toBe('June');
+    expect(view.result.current.profile.getFieldValue('not_a_real_field')).toBeNull();
+  });
+
+  it('still lets a manual value win over a live-resolved discovery', () => {
+    // The manual-wins guarantee must survive the new resolution path.
+    const view = renderIngestion();
+
+    view.setManualValue('birthday', '1994-06-12');
+    view.addPreference(
+      makePreference({ id: 'live-manual', category: 'important_dates', key: 'birthday_month', value: 'June' }),
+    );
+
+    expect(view.result.current.profile.getFieldValue('birthday')?.value).toBe('1994-06-12');
+  });
+});
+
+describe('resolvePreferenceField observability', () => {
+  const originalDev = import.meta.env.DEV;
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    (import.meta.env as { DEV: boolean }).DEV = originalDev;
+  });
+
+  it('warns loudly when a valued preference resolves to nothing', () => {
+    (import.meta.env as { DEV: boolean }).DEV = true;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const result = resolvePreferenceField({
+      category: 'gifts',
+      key: 'her_favourite_sandwich_filling',
+      value: 'coronation chicken',
+    });
+
+    expect(result).toBeNull();
+    expect(warn).toHaveBeenCalledTimes(1);
+    const message = warn.mock.calls[0][0] as string;
+    // The warning must name both halves, or it is not actionable.
+    expect(message).toContain('gifts');
+    expect(message).toContain('her_favourite_sandwich_filling');
+    expect(message).toContain('coronation chicken');
+  });
+
+  it('stays quiet for a key that is knowingly not a profile field', () => {
+    (import.meta.env as { DEV: boolean }).DEV = true;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    resolvePreferenceField({
+      category: 'food',
+      key: 'allergies',
+      value: 'shellfish',
+    });
+
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('stays quiet for a preference with no value', () => {
+    (import.meta.env as { DEV: boolean }).DEV = true;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    resolvePreferenceField({ category: 'gifts', key: 'unknowable', value: '   ' });
+
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('does not warn outside development', () => {
+    (import.meta.env as { DEV: boolean }).DEV = false;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    resolvePreferenceField({ category: 'gifts', key: 'unknowable', value: 'a value' });
+
+    expect(warn).not.toHaveBeenCalled();
   });
 });

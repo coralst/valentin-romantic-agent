@@ -2,9 +2,50 @@ import { useState, useEffect } from 'react';
 import { usePreferencesContext } from '../context/preferences-context';
 import { useProfileStoreContext } from '../context/profile-store-context';
 import { PROFILE_FIELD_REGISTRY } from '../utils/profile-field-registry';
-import { resolveField } from '../utils/preference-field-mapper';
+import {
+  isIntentionalNonField,
+  resolveByFieldId,
+  resolveField,
+} from '../utils/preference-field-mapper';
 import { PREFERENCE_CATEGORIES } from '../../shared/constants/categories';
 import { animation } from '../design-system/tokens';
+
+/**
+ * Route a preference onto a profile field, and complain in development when it
+ * cannot be routed.
+ *
+ * A preference that resolves to nothing used to vanish without a sound — that is
+ * the reason this bug survived 574 green tests and every committed screenshot.
+ * The registry lookup only ever saw the seeded demo fixture, whose keys were
+ * written to match it, so the failing path was never exercised and never
+ * reported. Any future drop is now loud.
+ *
+ * `fieldId` from extraction wins; the category+key table is the fallback for rows
+ * that predate it. Keys that are knowingly not profile fields (allergies,
+ * pronouns) are silent — they are consumed elsewhere and are not losses.
+ */
+export function resolvePreferenceField(pref: {
+  category: (typeof PREFERENCE_CATEGORIES)[number];
+  key: string;
+  value: string;
+  fieldId?: string | null;
+}): string | null {
+  const direct = resolveByFieldId(pref.fieldId);
+  if (direct) return direct;
+
+  const resolved = resolveField(pref.category, pref.key);
+  if (resolved) return resolved;
+
+  if (import.meta.env?.DEV && pref.value?.trim() && !isIntentionalNonField(pref.key)) {
+    console.warn(
+      `[preference-ingestion] DROPPED discovery — no profile field for ` +
+        `"${pref.category}:${pref.key}" (value: "${pref.value}"). ` +
+        `Add a mapping in profile-field-registry.ts, a synonym in ` +
+        `preference-field-mapper.ts, or have extraction emit a field id.`,
+    );
+  }
+  return null;
+}
 
 /** What the ingestion effect exposes to the surfaces that render discoveries. */
 export interface PreferenceIngestionResult {
@@ -50,7 +91,7 @@ export function usePreferenceIngestion(): PreferenceIngestionResult {
   useEffect(() => {
     for (const category of PREFERENCE_CATEGORIES) {
       for (const pref of preferencesState.preferences[category]) {
-        const fieldId = resolveField(pref.category, pref.key);
+        const fieldId = resolvePreferenceField(pref);
         if (fieldId) {
           // Only set discovered value if no manual value exists
           const currentManual = profileState.manualValues[fieldId];

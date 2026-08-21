@@ -11,6 +11,7 @@ function createMockStorage(): StorageInterface {
     createSession: vi.fn().mockResolvedValue('sess-123'),
     getSession: vi.fn().mockResolvedValue(null),
     endSession: vi.fn().mockResolvedValue(undefined),
+    clearSession: vi.fn().mockResolvedValue(undefined),
     saveMessage: vi.fn().mockResolvedValue(undefined),
     getMessagesBySession: vi.fn().mockResolvedValue([]),
     savePreference: vi.fn(),

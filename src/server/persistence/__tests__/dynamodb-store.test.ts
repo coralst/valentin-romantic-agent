@@ -280,6 +280,130 @@ describe('DynamoDBStore', () => {
     });
   });
 
+  describe('clearSession', () => {
+    /** Build N projected PREF#/MSG# key items for a session partition */
+    function keyItems(sessionId: string, prefix: string, count: number) {
+      return Array.from({ length: count }, (_, i) => ({
+        pk: `SESSION#${sessionId}`,
+        sk: `${prefix}${i}`,
+      }));
+    }
+
+    it('batch-deletes every PREF# and MSG# item for the session', async () => {
+      mockSend.mockResolvedValueOnce({ Items: keyItems('s1', 'PREF#food#', 2) });
+      mockSend.mockResolvedValueOnce({ Items: keyItems('s1', 'MSG#t#', 1) });
+      mockSend.mockResolvedValueOnce({}); // BatchWrite
+      mockSend.mockResolvedValueOnce({}); // counter reset
+
+      await store.clearSession('s1');
+
+      const batchCall = mockSend.mock.calls[2][0];
+      const requests = batchCall.input.RequestItems.TestTable;
+      expect(requests).toHaveLength(3);
+      expect(requests[0].DeleteRequest.Key).toEqual({
+        pk: 'SESSION#s1',
+        sk: 'PREF#food#0',
+      });
+      expect(requests[2].DeleteRequest.Key).toEqual({
+        pk: 'SESSION#s1',
+        sk: 'MSG#t#0',
+      });
+    });
+
+    it('queries the session partition with PREF# and MSG# sk prefixes', async () => {
+      mockSend.mockResolvedValueOnce({ Items: [] });
+      mockSend.mockResolvedValueOnce({ Items: [] });
+      mockSend.mockResolvedValueOnce({});
+
+      await store.clearSession('s1');
+
+      const prefQuery = mockSend.mock.calls[0][0];
+      const msgQuery = mockSend.mock.calls[1][0];
+      expect(prefQuery.input.ExpressionAttributeValues[':pk']).toBe('SESSION#s1');
+      expect(prefQuery.input.ExpressionAttributeValues[':prefix']).toBe('PREF#');
+      expect(msgQuery.input.ExpressionAttributeValues[':prefix']).toBe('MSG#');
+    });
+
+    it('resets the session counters to zero', async () => {
+      mockSend.mockResolvedValueOnce({ Items: [] });
+      mockSend.mockResolvedValueOnce({ Items: [] });
+      mockSend.mockResolvedValueOnce({});
+
+      await store.clearSession('s1');
+
+      const updateCall = mockSend.mock.calls[2][0];
+      expect(updateCall.input.Key).toEqual({
+        pk: 'USER#anonymous',
+        sk: 'SESSION#s1',
+      });
+      expect(updateCall.input.UpdateExpression).toContain('messageCount = :zero');
+      expect(updateCall.input.UpdateExpression).toContain('preferenceCount = :zero');
+      expect(updateCall.input.ExpressionAttributeValues[':zero']).toBe(0);
+    });
+
+    it('skips the batch write when the session has no items', async () => {
+      mockSend.mockResolvedValueOnce({ Items: [] });
+      mockSend.mockResolvedValueOnce({ Items: [] });
+      mockSend.mockResolvedValueOnce({});
+
+      await store.clearSession('s1');
+
+      // 2 queries + 1 counter reset, no BatchWrite
+      expect(mockSend).toHaveBeenCalledTimes(3);
+    });
+
+    it('chunks deletes into batches of 25', async () => {
+      mockSend.mockResolvedValueOnce({ Items: keyItems('s1', 'PREF#food#', 30) });
+      mockSend.mockResolvedValueOnce({ Items: [] });
+      mockSend.mockResolvedValueOnce({}); // first BatchWrite
+      mockSend.mockResolvedValueOnce({}); // second BatchWrite
+      mockSend.mockResolvedValueOnce({}); // counter reset
+
+      await store.clearSession('s1');
+
+      expect(
+        mockSend.mock.calls[2][0].input.RequestItems.TestTable,
+      ).toHaveLength(25);
+      expect(
+        mockSend.mock.calls[3][0].input.RequestItems.TestTable,
+      ).toHaveLength(5);
+    });
+
+    it('retries keys DynamoDB reports as unprocessed', async () => {
+      const unprocessedKey = { pk: 'SESSION#s1', sk: 'PREF#food#1' };
+      mockSend.mockResolvedValueOnce({ Items: keyItems('s1', 'PREF#food#', 2) });
+      mockSend.mockResolvedValueOnce({ Items: [] });
+      mockSend.mockResolvedValueOnce({
+        UnprocessedItems: {
+          TestTable: [{ DeleteRequest: { Key: unprocessedKey } }],
+        },
+      });
+      mockSend.mockResolvedValueOnce({}); // retry succeeds
+      mockSend.mockResolvedValueOnce({}); // counter reset
+
+      await store.clearSession('s1');
+
+      const retryCall = mockSend.mock.calls[3][0];
+      const retryRequests = retryCall.input.RequestItems.TestTable;
+      expect(retryRequests).toHaveLength(1);
+      expect(retryRequests[0].DeleteRequest.Key).toEqual(unprocessedKey);
+    });
+
+    it('throws when unprocessed keys persist past the retry limit', async () => {
+      mockSend.mockResolvedValueOnce({ Items: keyItems('s1', 'PREF#food#', 1) });
+      mockSend.mockResolvedValueOnce({ Items: [] });
+      mockSend.mockResolvedValue({
+        UnprocessedItems: {
+          TestTable: [
+            { DeleteRequest: { Key: { pk: 'SESSION#s1', sk: 'PREF#food#0' } } },
+          ],
+        },
+      });
+
+      await expect(store.clearSession('s1')).rejects.toThrow(/after 5 attempts/);
+    });
+  });
+
   describe('key generation patterns', () => {
     it('generates correct session PK/SK', async () => {
       mockSend.mockResolvedValue({});

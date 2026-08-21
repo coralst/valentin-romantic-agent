@@ -1,6 +1,7 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient,
+  BatchWriteCommand,
   PutCommand,
   GetCommand,
   QueryCommand,
@@ -17,6 +18,27 @@ import type { SessionData } from '../../shared/interfaces/session';
 import type { StorageInterface } from './storage-interface';
 import { config } from '../config';
 import { logger } from '../logging';
+
+/** A single-table primary key pair */
+interface ItemKey {
+  pk: string;
+  sk: string;
+}
+
+/** Maximum number of write requests DynamoDB accepts in one BatchWriteItem call */
+const BATCH_WRITE_LIMIT = 25;
+
+/** Bound on retries of unprocessed batch-delete keys, so a throttled table cannot loop forever */
+const BATCH_DELETE_MAX_ATTEMPTS = 5;
+
+/** Split a list into fixed-size chunks */
+function chunk<T>(items: readonly T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
 
 /** DynamoDB single-table implementation of StorageInterface */
 export class DynamoDBStore implements StorageInterface {
@@ -108,6 +130,24 @@ export class DynamoDBStore implements StorageInterface {
     );
 
     logger.info('session.ended', { sessionId });
+  }
+
+  async clearSession(sessionId: string): Promise<void> {
+    const prefKeys = await this.collectItemKeys(sessionId, 'PREF#');
+    const msgKeys = await this.collectItemKeys(sessionId, 'MSG#');
+    const keys = [...prefKeys, ...msgKeys];
+
+    for (const batch of chunk(keys, BATCH_WRITE_LIMIT)) {
+      await this.batchDelete(batch);
+    }
+
+    await this.resetSessionCounters(sessionId);
+
+    logger.info('session.cleared', {
+      sessionId,
+      preferencesDeleted: prefKeys.length,
+      messagesDeleted: msgKeys.length,
+    });
   }
 
   // --- Messages ---
@@ -317,6 +357,73 @@ export class DynamoDBStore implements StorageInterface {
   }
 
   // --- Helpers ---
+
+  /** Query every key under a session partition matching an sk prefix */
+  private async collectItemKeys(
+    sessionId: string,
+    skPrefix: string,
+  ): Promise<ItemKey[]> {
+    const result = await this.docClient.send(
+      new QueryCommand({
+        TableName: this.tableName,
+        KeyConditionExpression: 'pk = :pk AND begins_with(sk, :prefix)',
+        ProjectionExpression: 'pk, sk',
+        ExpressionAttributeValues: {
+          ':pk': `SESSION#${sessionId}`,
+          ':prefix': skPrefix,
+        },
+      }),
+    );
+
+    return (result.Items ?? []).map((item) => ({
+      pk: item.pk as string,
+      sk: item.sk as string,
+    }));
+  }
+
+  /** Delete one batch of items, retrying any unprocessed keys */
+  private async batchDelete(
+    keys: readonly ItemKey[],
+    attemptsLeft = BATCH_DELETE_MAX_ATTEMPTS,
+  ): Promise<void> {
+    if (keys.length === 0) return;
+    if (attemptsLeft <= 0) {
+      throw new Error(
+        `Failed to delete ${keys.length} item(s) after ${BATCH_DELETE_MAX_ATTEMPTS} attempts`,
+      );
+    }
+
+    const result = await this.docClient.send(
+      new BatchWriteCommand({
+        RequestItems: {
+          [this.tableName]: keys.map((Key) => ({ DeleteRequest: { Key } })),
+        },
+      }),
+    );
+
+    const unprocessed = result.UnprocessedItems?.[this.tableName] ?? [];
+    if (unprocessed.length === 0) return;
+
+    const retryKeys = unprocessed
+      .map((req) => req.DeleteRequest?.Key)
+      .filter((key): key is Record<string, unknown> => Boolean(key))
+      .map((key) => ({ pk: key.pk as string, sk: key.sk as string }));
+
+    await this.batchDelete(retryKeys, attemptsLeft - 1);
+  }
+
+  /** Zero the session's message and preference counters */
+  private async resetSessionCounters(sessionId: string): Promise<void> {
+    await this.docClient.send(
+      new UpdateCommand({
+        TableName: this.tableName,
+        Key: { pk: 'USER#anonymous', sk: `SESSION#${sessionId}` },
+        UpdateExpression:
+          'SET messageCount = :zero, preferenceCount = :zero',
+        ExpressionAttributeValues: { ':zero': 0 },
+      }),
+    );
+  }
 
   private toSessionData(item: Record<string, unknown>): SessionData {
     return {

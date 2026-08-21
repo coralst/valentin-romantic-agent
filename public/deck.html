@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Valentin — built by a team of six AI agents</title>
+<link href="https://fonts.googleapis.com/css2?family=Gloock&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --ink: #2A2226; --ink-2: #756A70; --ink-3: #A3959C;
+    --claret: #8C2F45; --claret-2: #B14A62; --blush: #F6DEE2;
+    --olive: #7C8464; --cream: #FFFDFB; --bg: #EFE7E1; --bg-2: #E5D9D2;
+    --r: 26px; --r-sm: 16px;
+    /* agent lane colours — identical to the contribution graph and org chart */
+    --master: #7B68EE; --arch: #FF8C00; --front: #1E90FF;
+    --back: #32CD32; --design: #FF69B4; --qa: #FF4500; --infra: #6E7781;
+  }
+  html { scroll-behavior: smooth; }
+  body { font-family: Outfit, sans-serif; color: var(--ink); background: var(--bg);
+         scroll-snap-type: y mandatory; overflow-y: scroll; height: 100vh; }
+
+  section { min-height: 100vh; scroll-snap-align: start; display: grid; place-items: center;
+            padding: 64px 40px; position: relative; }
+  .wrap { width: 100%; max-width: 1120px; }
+  .wide { max-width: 1420px; }
+  h1 { font-family: Gloock, serif; font-weight: 400; font-size: clamp(44px, 7vw, 92px); line-height: 1.02; }
+  h2 { font-family: Gloock, serif; font-weight: 400; font-size: clamp(28px, 3.6vw, 46px); line-height: 1.1; }
+  .kicker { font: 500 10.5px Outfit; letter-spacing: .26em; text-transform: uppercase;
+            color: var(--claret); margin-bottom: 16px; }
+  .lede { font-size: clamp(15px, 1.4vw, 19px); line-height: 1.6; color: var(--ink-2);
+          max-width: 680px; margin-top: 18px; }
+  p.note { font-size: 13px; color: var(--ink-3); margin-top: 14px; max-width: 900px; }
+  code { font-family: ui-monospace, SFMono-Regular, monospace; font-size: .88em; color: var(--claret); }
+
+  /* ---- cover ---- */
+  .cover { background: var(--claret); color: var(--cream); }
+  .cover h1 { color: #fff; }
+  .cover .lede { color: rgba(255,253,251,.8); }
+  .cover .kicker { color: rgba(255,253,251,.6); }
+  .crest { width: 76px; height: 76px; border-radius: 999px; overflow: hidden; background: var(--cream);
+           display: grid; place-items: center; margin-bottom: 30px;
+           box-shadow: 0 10px 30px rgba(0,0,0,.24); }
+  .crest img { width: 118%; height: 118%; object-fit: cover; }
+  .byline { margin-top: 40px; font-size: 12.5px; color: rgba(255,253,251,.62);
+            display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .byline i { width: 4px; height: 4px; border-radius: 999px; background: rgba(255,253,251,.45); }
+  .thesis { margin-top: 26px; font-family: Gloock, serif; font-size: clamp(19px, 2.1vw, 28px);
+            color: #fff; line-height: 1.3; }
+  .thesis em { font-style: normal; color: var(--blush); }
+
+  /* ---- dark section variant ---- */
+  .dark { background: var(--ink); color: var(--cream); }
+  .dark h2 { color: #fff; }
+  .dark .lede { color: rgba(255,253,251,.74); }
+  .dark .kicker { color: var(--blush); }
+  .dark p.note { color: rgba(255,253,251,.45); }
+  .dark code { color: var(--blush); }
+
+  /* ---- agenda ---- */
+  .agenda { list-style: none; margin-top: 34px; }
+  .agenda li { display: flex; gap: 22px; align-items: baseline; padding: 16px 0;
+               border-top: 1px solid rgba(42,34,38,.1); }
+  .agenda li:first-child { border-top: none; }
+  .agenda .n { font-family: Gloock, serif; font-size: 22px; color: var(--claret-2);
+               min-width: 42px; }
+  .agenda b { font: 500 clamp(16px,1.7vw,21px) Outfit; }
+  .agenda s { text-decoration: none; color: var(--ink-3); font-size: 13.5px; display: block;
+              margin-top: 3px; }
+
+  /* ---- generic cards ---- */
+  .grid { display: grid; gap: 14px; margin-top: 30px; }
+  .g2 { grid-template-columns: repeat(2, 1fr); }
+  .g3 { grid-template-columns: repeat(3, 1fr); }
+  .g4 { grid-template-columns: repeat(4, 1fr); }
+  .card { background: var(--cream); border-radius: var(--r-sm); padding: 20px 22px;
+          box-shadow: 0 1px 3px rgba(42,34,38,.05), 0 12px 30px rgba(42,34,38,.06); }
+  .card .n { font-family: Gloock, serif; font-size: 30px; color: var(--claret); line-height: 1; }
+  .card b { display: block; font: 500 14.5px Outfit; margin: 11px 0 6px; }
+  .card p { font-size: 12.8px; line-height: 1.55; color: var(--ink-2); }
+
+  /* ---- roster ---- */
+  .roster { display: grid; gap: 10px; margin-top: 28px; }
+  .who { background: var(--cream); border-radius: var(--r-sm); padding: 15px 20px;
+         display: grid; grid-template-columns: 12px 200px 1fr 210px; gap: 18px; align-items: center;
+         box-shadow: 0 1px 3px rgba(42,34,38,.05), 0 8px 22px rgba(42,34,38,.05); }
+  .who .swatch { width: 12px; height: 12px; border-radius: 999px; }
+  .who b { font: 500 15px Outfit; }
+  .who p { font-size: 13px; color: var(--ink-2); }
+  .who .owns { font-family: ui-monospace, monospace; font-size: 12px; color: var(--claret);
+               background: var(--blush); border-radius: 999px; padding: 5px 12px;
+               justify-self: start; }
+
+  /* ---- diagram stage ---- */
+  .stage { margin-top: 22px; background: var(--cream); border-radius: var(--r);
+           padding: 20px; display: grid; place-items: center; overflow: hidden;
+           box-shadow: 0 2px 6px rgba(42,34,38,.06), 0 18px 44px rgba(42,34,38,.08); }
+  .stage svg, .stage img { max-width: 100%; max-height: 62vh; height: auto; display: block; }
+  .stage.tall svg, .stage.tall img { max-height: 64vh; }
+  .stage.flat img, .stage.flat svg { max-height: 40vh; }
+  /* the sequence diagram is portrait — cap its width so it isn't letterboxed */
+  .stage.narrow { max-width: 860px; margin-left: auto; margin-right: auto; }
+  .mermaid-host { width: 100%; display: grid; place-items: center; }
+
+  /* ---- code / function list ---- */
+  .fns { display: grid; gap: 9px; margin-top: 28px; }
+  .fn { background: var(--cream); border-radius: var(--r-sm); padding: 15px 20px;
+        display: grid; grid-template-columns: 270px 1fr; gap: 20px; align-items: center;
+        box-shadow: 0 1px 3px rgba(42,34,38,.05), 0 8px 22px rgba(42,34,38,.05); }
+  .fn code { font-size: 13.5px; font-weight: 500; }
+  .fn p { font-size: 13px; color: var(--ink-2); }
+  .dark .fn { background: rgba(255,253,251,.06); box-shadow: none; }
+  .dark .fn p { color: rgba(255,253,251,.66); }
+
+  /* ---- big stats ---- */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 32px; }
+  .stat { background: var(--cream); border-radius: var(--r-sm); padding: 24px 22px;
+          box-shadow: 0 1px 3px rgba(42,34,38,.05), 0 12px 30px rgba(42,34,38,.06); }
+  .stat .v { font-family: Gloock, serif; font-size: clamp(34px, 4vw, 52px); color: var(--claret);
+             line-height: 1; }
+  .stat b { display: block; font: 500 13.5px Outfit; margin: 12px 0 7px; }
+  .stat p { font-size: 12.5px; line-height: 1.5; color: var(--ink-2); }
+
+  /* ---- verdict rows (honest scope) ---- */
+  .verdicts { display: grid; gap: 9px; margin-top: 28px; }
+  .v-row { border-radius: var(--r-sm); padding: 15px 20px; display: grid;
+           grid-template-columns: 96px 1fr; gap: 18px; align-items: center;
+           background: var(--cream); box-shadow: 0 1px 3px rgba(42,34,38,.05); }
+  .tag { font: 500 9.5px Outfit; letter-spacing: .16em; text-transform: uppercase;
+         border-radius: 999px; padding: 5px 10px; text-align: center; }
+  .tag.real { background: #EEF3E9; color: var(--olive); }
+  .tag.conv { background: #FBEFD9; color: #9A6B15; }
+  .v-row p { font-size: 13.5px; line-height: 1.5; }
+  .v-row p s { text-decoration: none; color: var(--ink-3); display: block; font-size: 12.5px; margin-top: 3px; }
+  /* these rows live on a dark slide, so the cream card would hide cream text */
+  .dark .v-row { background: rgba(255,253,251,.06); box-shadow: none; }
+  .dark .v-row p s { color: rgba(255,253,251,.5); }
+
+  /* ---- split (image + text) ---- */
+  .split { display: grid; grid-template-columns: 1fr 1.15fr; gap: 34px; align-items: center;
+           margin-top: 26px; }
+  .split .shotbox { border-radius: var(--r-sm); overflow: hidden; background: var(--cream);
+                    box-shadow: 0 2px 6px rgba(42,34,38,.07), 0 18px 44px rgba(42,34,38,.1); }
+  .split .shotbox img { width: 100%; display: block; }
+  .bullets { list-style: none; }
+  .bullets li { font-size: 14.5px; line-height: 1.5; padding: 11px 0 11px 24px; position: relative;
+                border-top: 1px solid rgba(42,34,38,.1); }
+  .bullets li:first-child { border-top: none; }
+  .bullets li::before { content: '·'; position: absolute; left: 6px; top: 9px;
+                        color: var(--claret-2); font-size: 20px; }
+  .dark .bullets li { border-color: rgba(255,253,251,.14); }
+
+  /* ---- flow ---- */
+  .flow { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 34px;
+          background: var(--cream); border-radius: var(--r); overflow: hidden;
+          box-shadow: 0 2px 6px rgba(42,34,38,.06), 0 18px 44px rgba(42,34,38,.08); }
+  .step { padding: 24px 22px; border-right: 1px solid #F2E9E4; }
+  .step:last-child { border-right: none; }
+  .step .num { width: 28px; height: 28px; border-radius: 999px; background: var(--blush);
+               color: var(--claret); display: grid; place-items: center;
+               font: 500 12px Outfit; margin-bottom: 13px; }
+  .step b { display: block; font: 500 14px Outfit; margin-bottom: 7px; }
+  .step p { font-size: 12.5px; line-height: 1.55; color: var(--ink-2); }
+
+  /* ---- mockup gallery ---- */
+  .shots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 28px; }
+  .shot { border-radius: var(--r-sm); overflow: hidden; background: var(--cream); position: relative;
+          box-shadow: 0 2px 6px rgba(42,34,38,.07), 0 16px 40px rgba(42,34,38,.09); }
+  .shot .frame { height: 190px; overflow: hidden; position: relative; }
+  .shot .frame img { width: 100%; display: block; }
+  .shot .cap { padding: 11px 14px; border-top: 1px solid #F2E9E4; }
+  .shot .cap b { font: 500 13px Outfit; display: block; }
+  .shot .cap s { text-decoration: none; font-size: 11.5px; color: var(--ink-3); }
+  .shot .pick { position: absolute; top: 10px; right: 10px; z-index: 3; font: 500 9px Outfit;
+                letter-spacing: .12em; text-transform: uppercase; color: #fff;
+                background: var(--olive); border-radius: 999px; padding: 4px 9px; }
+
+  /* ---- live demo ---- */
+  .term { margin-top: 26px; background: #241A1E; border-radius: var(--r-sm); padding: 20px 24px;
+          font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.85;
+          color: #E9DDE1; box-shadow: 0 18px 44px rgba(0,0,0,.28); }
+  .term .c { color: #E8A0B0; }
+  .term .d { color: rgba(233,221,225,.5); }
+  .cta { display: inline-flex; align-items: center; gap: 9px; margin-top: 22px; text-decoration: none;
+         background: var(--blush); color: var(--claret); border-radius: 999px;
+         padding: 13px 24px; font: 500 14px Outfit; box-shadow: 0 10px 26px rgba(0,0,0,.25); }
+
+  /* ---- lanes ---- */
+  .lanes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 30px; }
+  .lane { background: var(--cream); border-radius: var(--r-sm); padding: 22px 24px;
+          box-shadow: 0 1px 3px rgba(42,34,38,.05), 0 12px 30px rgba(42,34,38,.06); }
+  .lane h3 { font: 500 10px Outfit; letter-spacing: .22em; text-transform: uppercase;
+             color: var(--ink-3); margin-bottom: 12px; }
+  .lane ul { list-style: none; }
+  .lane li { font-size: 13.5px; line-height: 1.5; padding: 9px 0 9px 26px; position: relative;
+             border-top: 1px solid #F2E9E4; }
+  .lane li:first-child { border-top: none; }
+  .lane li::before { position: absolute; left: 0; top: 9px; font-size: 11px; }
+  .lane.done li::before { content: '✓'; color: var(--olive); }
+  .lane.next li::before { content: '◇'; color: var(--claret-2); }
+
+  /* ---- links / chrome ---- */
+  .dots { position: fixed; right: 20px; top: 50%; transform: translateY(-50%); z-index: 50;
+          display: flex; flex-direction: column; gap: 9px; }
+  .dots a { width: 8px; height: 8px; border-radius: 999px; background: rgba(42,34,38,.22);
+            transition: all .18s; }
+  .dots a:hover { background: var(--claret); transform: scale(1.5); }
+  .dots a.on { background: var(--claret); }
+  .counter { position: fixed; bottom: 20px; right: 22px; z-index: 50; font: 500 10px Outfit;
+             letter-spacing: .18em; color: rgba(42,34,38,.35); transition: color .25s; }
+  /* the chrome sits over both light and dark slides, so it inverts as you page */
+  body.on-dark .counter { color: rgba(255,253,251,.45); }
+  body.on-dark .dots a { background: rgba(255,253,251,.3); }
+  body.on-dark .dots a.on { background: var(--blush); }
+  .hint { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 50;
+          font: 500 10px Outfit; letter-spacing: .2em; text-transform: uppercase;
+          color: rgba(255,253,251,.55); animation: bob 2.4s ease-in-out infinite;
+          transition: opacity .3s; }
+  body.past-cover .hint { opacity: 0; pointer-events: none; }
+  @keyframes bob { 0%,100% { transform: translate(-50%,0); } 50% { transform: translate(-50%,6px); } }
+  a.src { color: var(--claret); text-decoration: none; border-bottom: 1px solid rgba(140,47,69,.35); }
+  .dark a.src { color: var(--blush); border-color: rgba(246,222,226,.4); }
+
+  @media (max-width: 1000px) {
+    section { padding: 52px 20px; }
+    .g2, .g3, .g4, .flow, .shots, .lanes, .stats, .split { grid-template-columns: 1fr; }
+    .who { grid-template-columns: 12px 1fr; }
+    .who .owns, .who p { grid-column: 2; }
+    .fn { grid-template-columns: 1fr; gap: 6px; }
+    .step { border-right: none; border-bottom: 1px solid #F2E9E4; }
+    .dots, .hint, .counter { display: none; }
+    .stage svg, .stage img { max-height: none; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="dots" id="dots"></nav>
+<div class="counter" id="counter">01 / 19</div>
+
+<!-- 1 ────────────────────────────────────────────── cover -->
+<section class="cover" id="cover" data-title="Cover">
+  <div class="wrap">
+    <div class="crest"><img src="logo.png" alt="Valentin"></div>
+    <div class="kicker">An experiment in agentic development</div>
+    <h1>Valentin</h1>
+    <p class="thesis">Built by a team of six AI agents.<br>
+      The product is the artifact. <em>The workflow is the point.</em></p>
+    <p class="lede">Every line was specced, built, reviewed and merged by specialised
+      agents running a real GitHub workflow — behind deterministic hooks and a merge gate.</p>
+    <div class="byline">
+      <span>Coral Steinberg</span><i></i>
+      <span>57 pull requests · 176 commits · 93 review comments</span>
+    </div>
+  </div>
+  <div class="hint">scroll</div>
+</section>
+
+<!-- 2 ────────────────────────────────────────────── agenda -->
+<section id="agenda" data-title="Agenda">
+  <div class="wrap">
+    <div class="kicker">Agenda</div>
+    <h2>Five movements.</h2>
+    <ol class="agenda">
+      <li><span class="n">01</span><div><b>The experiment, and the team</b>
+        <s>Six personas, disjoint file ownership, a human with veto</s></div></li>
+      <li><span class="n">02</span><div><b>The engine — and the failure behind it</b>
+        <s>Event-led didn't work. Orchestrator-led did.</s></div></li>
+      <li><span class="n">03</span><div><b>Guardrails where judgement fails</b>
+        <s>Routing and merges are code, not model output</s></div></li>
+      <li><span class="n">04</span><div><b>The evidence, and the honest scope</b>
+        <s>Every PR as a graph — plus what's only convention</s></div></li>
+      <li><span class="n">05</span><div><b>The product, and a live demo</b>
+        <s>What six agents actually shipped</s></div></li>
+    </ol>
+  </div>
+</section>
+
+<!-- 3 ────────────────────────────────────────────── premise -->
+<section id="premise" data-title="The premise">
+  <div class="wrap">
+    <div class="kicker">The premise</div>
+    <h2>Six agents, one real GitHub workflow,<br>a human with a veto.</h2>
+    <p class="lede">Give six agents distinct personas, distinct file ownership, and a real
+      workflow — issues, branches, draft PRs, review threads, CI, merge — and see whether
+      what comes out is coherent.</p>
+    <div class="grid g3">
+      <div class="card">
+        <div class="n">01</div>
+        <b>Agents do the work</b>
+        <p>Every pull request here was opened, reviewed and merged by an agent.
+          Ownership is enforced by prompt, not politely suggested.</p>
+      </div>
+      <div class="card">
+        <div class="n">02</div>
+        <b>The human role is narrow</b>
+        <p>Product intent, final say, veto. I don't write the code and I don't drive
+          the review loop.</p>
+      </div>
+      <div class="card">
+        <div class="n">03</div>
+        <b>The methodology was built</b>
+        <p>32 of the 57 PRs went into the workflow itself. It was iterated and
+          debugged like any other system — not declared in a document.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 4 ────────────────────────────────────────────── the team -->
+<section id="team" data-title="The team">
+  <div class="wrap wide">
+    <div class="kicker">The team</div>
+    <h2>Six agents, disjoint ownership.</h2>
+    <div class="roster">
+      <div class="who"><span class="swatch" style="background:var(--master)"></span>
+        <b>Master Agent</b><p>Orchestrates, decomposes, reviews, merges — and posts the last word.</p>
+        <span class="owns">feat/master-*</span></div>
+      <div class="who"><span class="swatch" style="background:var(--arch)"></span>
+        <b>System Architect</b><p>Contracts and shared types; writes the spec before anyone branches.</p>
+        <span class="owns">src/shared/</span></div>
+      <div class="who"><span class="swatch" style="background:var(--front)"></span>
+        <b>Frontend Dev</b><p>Components, hooks, state. Cannot touch shared types.</p>
+        <span class="owns">src/client/</span></div>
+      <div class="who"><span class="swatch" style="background:var(--back)"></span>
+        <b>Backend Dev</b><p>API, Bedrock extraction, persistence. Cannot touch the client.</p>
+        <span class="owns">src/server/</span></div>
+      <div class="who"><span class="swatch" style="background:var(--design)"></span>
+        <b>UI Designer</b><p>Tokens, mockups, accessibility. Explored eight directions.</p>
+        <span class="owns">design-system/</span></div>
+      <div class="who"><span class="swatch" style="background:var(--qa)"></span>
+        <b>QA Agent</b><p>Playwright E2E and regression coverage. Cannot touch <code>src</code> at all.</p>
+        <span class="owns">e2e/</span></div>
+    </div>
+    <p class="note">Each persona is a real prompt file in <code>.kiro/agents/</code> with a written
+      voice exemplar and an explicit do-not-modify list. Disjoint ownership is what makes parallel
+      agent work safe — without it, five agents editing at once is just a merge-conflict generator.</p>
+  </div>
+</section>
+
+<!-- 5 ────────────────────────────────────────────── org chart -->
+<section id="orgchart" data-title="Hub and spoke">
+  <div class="wrap wide">
+    <div class="kicker">The call graph</div>
+    <h2>Hub and spoke, not a recursive tangle.</h2>
+    <div class="stage tall">
+      <div class="mermaid-host" data-fallback="deck-assets/diagram-org-chart.png">
+        <script type="text/plain" class="mmd">flowchart TD
+    H["HUMAN — product intent · final say · veto"]
+    M["MASTER AGENT — Orchestrator<br/>decomposes · delegates · reviews · merges"]
+    H -->|"a feature request, in prose"| M
+    M -.->|"invokeSubAgent()"| A
+    M -.-> F
+    M -.-> B
+    M -.-> D
+    M -.-> Q
+    A["SYSTEM ARCHITECT<br/>contracts · shared types<br/><code>src/shared/</code>"]
+    F["FRONTEND DEV<br/>components · hooks<br/><code>src/client/</code>"]
+    B["BACKEND DEV<br/>API · extraction<br/><code>src/server/</code>"]
+    D["UI DESIGNER<br/>tokens · a11y<br/><code>design-system/</code>"]
+    Q["QA AGENT<br/>Playwright E2E<br/><code>e2e/</code>"]
+    A ==> M
+    F ==> M
+    B ==> M
+    D ==> M
+    Q ==>|returns| M
+    classDef human fill:#1f2328,stroke:#6E7781,stroke-width:2px,color:#fff
+    classDef master fill:#7B68EE,stroke:#5a4bc4,stroke-width:3px,color:#fff
+    classDef arch fill:#FF8C00,stroke:#cc7000,stroke-width:2px,color:#fff
+    classDef front fill:#1E90FF,stroke:#1873cc,stroke-width:2px,color:#fff
+    classDef back fill:#32CD32,stroke:#28a428,stroke-width:2px,color:#fff
+    classDef design fill:#FF69B4,stroke:#cc5490,stroke-width:2px,color:#fff
+    classDef qa fill:#FF4500,stroke:#cc3700,stroke-width:2px,color:#fff
+    class H human
+    class M master
+    class A arch
+    class F front
+    class B back
+    class D design
+    class Q qa</script>
+      </div>
+    </div>
+    <p class="note">Dashed arrows down are <code>invokeSubAgent()</code> calls; bold arrows up are
+      plain returns. A sub-agent returns to the master rather than re-invoking it — the return
+      <em>is</em> the hand-back. That's what keeps this shallow instead of a tangle where nobody
+      knows who's waiting on whom.</p>
+  </div>
+</section>
+
+<!-- 6 ────────────────────────────────────────────── lifecycle -->
+<section id="lifecycle" data-title="Five phases">
+  <div class="wrap wide">
+    <div class="kicker">The lifecycle</div>
+    <h2>Five phases, spec before build.</h2>
+    <div class="stage flat">
+      <div class="mermaid-host" data-fallback="deck-assets/diagram-lifecycle.png">
+        <script type="text/plain" class="mmd">flowchart LR
+    P1["<b>1 · SPEC</b><br/>Master opens an Issue<br/>tags Architect for a spec<br/>approves or requests changes"]
+    P2["<b>2 · BRANCH</b><br/>Feature branch + Draft PR<br/>per assigned agent<br/>each carrying <code>Resolves #N</code>"]
+    P3["<b>3 · BUILD + REVIEW</b><br/>Agents push incrementally<br/>Master drives the review loop<br/><i>repeats until resolved</i>"]
+    P4["<b>4 · CI</b><br/>Master verifies Actions green<br/>Lint · Unit · Build · E2E"]
+    P5["<b>5 · MERGE</b><br/>APPROVED-BY-MASTER-AGENT<br/>merge, then delete branch"]
+    P1 --> P2 --> P3 --> P4 --> P5
+    P3 -.->|"another round"| P3
+    P4 -.->|"red"| P3
+    classDef phase fill:#7B68EE,stroke:#5a4bc4,stroke-width:2px,color:#fff
+    classDef gate fill:#32CD32,stroke:#28a428,stroke-width:2px,color:#fff
+    class P1,P2,P3 phase
+    class P4,P5 gate</script>
+      </div>
+    </div>
+    <p class="note">Defined in a steering file every agent reads. Spec comes first — nobody branches
+      until the architect's spec is approved. The dotted self-arrow on phase 3 is <em>another round</em>,
+      and it fires often. Red CI doesn't fail the PR; it reopens the review loop.</p>
+  </div>
+</section>
+
+<!-- 7 ────────────────────────────────────────────── the failure -->
+<section class="dark" id="failure" data-title="The first design failed">
+  <div class="wrap">
+    <div class="kicker">The failure behind the fix</div>
+    <h2>The first design didn't work.</h2>
+    <p class="lede">The original loop was <strong>event-led</strong>: a sub-agent finishes, posts
+      “Ready for Review”, and the flow depends on a hook or poller waking the next agent.
+      It never worked once.</p>
+    <ul class="bullets" style="margin-top:22px;max-width:820px">
+      <li>Kiro hooks are not GitHub webhooks — different trigger surface entirely</li>
+      <li>There is no webhook back <em>into</em> Kiro, so GitHub can't wake an agent</li>
+      <li>The poller's dispatch step was effectively a no-op</li>
+      <li>Agents finished their turn and the conversation simply stopped</li>
+      <li><strong>The loop had no engine.</strong></li>
+    </ul>
+    <p class="note">Full post-mortem in <code>.kiro/analysis/</code>. I'm showing the failure
+      because the fix only makes sense against it.</p>
+  </div>
+</section>
+
+<!-- 8 ────────────────────────────────────────────── sequence -->
+<section id="sequence" data-title="Orchestrator-led">
+  <div class="wrap wide">
+    <div class="kicker">The engine</div>
+    <h2>Orchestrator-led: control advances by a call.</h2>
+    <div class="stage tall narrow">
+      <div class="mermaid-host" data-fallback="deck-assets/diagram-sequence.png">
+        <script type="text/plain" class="mmd">sequenceDiagram
+    autonumber
+    participant M as Master
+    participant B as Backend Dev
+    participant Q as QA Agent
+    participant G as Merge Gate
+    Note over M: reviews the diff + CI
+    M->>M: posts review comment<br/>tagging @backend-dev @qa-agent
+    par genuine multi-agent fan-out
+        M->>+B: invokeSubAgent(prNumber, reviewBody)
+        B->>B: pushes fix commits
+        B->>B: replies, tagging @master-agent
+        B-->>-M: returns
+    and
+        M->>+Q: invokeSubAgent(prNumber, reviewBody)
+        Q->>Q: runs E2E suite, adds coverage
+        Q->>Q: replies, tagging @master-agent
+        Q-->>-M: returns
+    end
+    Note over M: reads every return, then decides
+    alt blocking issues remain
+        M->>B: another round — tag + invoke again
+    else resolved
+        M->>M: posts APPROVED-BY-MASTER-AGENT
+        M->>+G: merge_pull_request
+        G->>G: lastWordIsMaster? / allTaggedResponded? / ciGreen?
+        G-->>-M: merge permitted
+    end</script>
+      </div>
+    </div>
+    <p class="note">The <code>par</code> block is genuine fan-out: the master tags two agents in one
+      comment, invokes both, and collects both replies before deciding. At-mentions are still there —
+      but now they're a readable transcript and a parseable routing signal, not the trigger.</p>
+  </div>
+</section>
+
+<!-- 9 ────────────────────────────────────────────── determinism -->
+<section class="dark" id="guardrails" data-title="Guardrails">
+  <div class="wrap">
+    <div class="kicker">The determinism layer</div>
+    <h2>Guardrails where judgement is weakest.</h2>
+    <p class="lede">Routing and merge decisions are not left to the model. Four pure, offline,
+      fully unit-tested functions guard the two fragile boundaries: each hand-off, and the merge.</p>
+    <div class="fns">
+      <div class="fn"><code>parseTurn(comment)</code>
+        <p>Who spoke, who's tagged, is this terminal. Returns <code>nextActors</code> as a
+          <em>list</em> — that's what makes fan-out expressible rather than round-robin.</p></div>
+      <div class="fn"><code>lastWordIsMaster(thread)</code>
+        <p>The master must close the thread. No merging out from under an open reply.</p></div>
+      <div class="fn"><code>allTaggedResponded(thread)</code>
+        <p>Nobody left hanging. A tagged agent that never answered blocks the gate.</p></div>
+      <div class="fn"><code>evaluateConversationGate(…)</code>
+        <p>The backstop: valid approval token + last word + green CI, or no merge.</p></div>
+    </div>
+    <p class="note">A refused merge is expected behaviour, not a bug. Source:
+      <a class="src" href="https://github.com/coralst/valentin-romantic-agent/tree/main/.kiro/skills/pr-monitoring" target="_blank">.kiro/skills/pr-monitoring/</a></p>
+  </div>
+</section>
+
+<!-- 10 ───────────────────────────────────────────── the 422 -->
+<section id="wrinkle" data-title="A real wrinkle">
+  <div class="wrap">
+    <div class="kicker">A real-world wrinkle</div>
+    <h2>You can't approve your own pull request.</h2>
+    <p class="lede">Every agent here, master included, acts under the same GitHub account.
+      GitHub refuses a self-approval — so a formal approval stalls the merge <em>forever</em>,
+      waiting on something that can never happen.</p>
+    <div class="term" style="max-width:820px">
+      <div><span class="d">$</span> gh api --method POST …/reviews -f event=APPROVE</div>
+      <div class="c">HTTP 422 · "Can not approve your own pull request"</div>
+    </div>
+    <div class="grid g2">
+      <div class="card">
+        <b>The fix</b>
+        <p>Gate the merge on an approval <em>comment</em> containing the exact token
+          <code>APPROVED-BY-MASTER-AGENT</code>, checked by a pre-merge hook.</p>
+      </div>
+      <div class="card">
+        <b>Quality still enforced</b>
+        <p>The branch ruleset requires passing CI rather than a formal review state. The hook is
+          what makes the token trustworthy rather than decorative.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 11 ───────────────────────────────────────────── the graph -->
+<section id="graph" data-title="The work, as a graph">
+  <div class="wrap wide">
+    <div class="kicker">The evidence</div>
+    <h2>The work, as a graph — every node is a real PR.</h2>
+    <div class="stage">
+      <a href="deck-assets/agent-contribution-graph.svg" target="_blank" title="Open full size">
+        <img src="deck-assets/agent-contribution-graph.svg" alt="Agent contribution graph: 57 pull requests across seven lanes, grouped into four working sessions, each PR connected up to the point on main where it merged.">
+      </a>
+    </div>
+    <p class="note">Generated straight from the repository's PR history by a script, so it cannot
+      drift from the truth. One node per PR, sized by files changed, in its owning agent's lane.
+      Concentric rings drew a genuine multi-agent review thread; hollow dashed nodes were reviewed
+      and <em>closed without merging</em> — a workflow where nothing is ever turned down isn't a
+      review process. The x-axis is PR sequence grouped by session, not wall-clock time.</p>
+  </div>
+</section>
+
+<!-- 12 ───────────────────────────────────────────── numbers -->
+<section id="numbers" data-title="By the numbers">
+  <div class="wrap wide">
+    <div class="kicker">By the numbers</div>
+    <h2>All of it generated, none of it typed.</h2>
+    <div class="stats">
+      <div class="stat"><div class="v">57</div><b>pull requests</b>
+        <p>49 merged, 6 closed without merging, across four working sessions and seven lanes.</p></div>
+      <div class="stat"><div class="v">176</div><b>commits</b>
+        <p>69 of them merge commits. +34,549 lines added across 436 file changes.</p></div>
+      <div class="stat"><div class="v">93</div><b>review comments</b>
+        <p>Real multi-persona dialogue, not rubber-stamping — the two longest threads run dozens deep.</p></div>
+      <div class="stat"><div class="v">32</div><b>workflow PRs</b>
+        <p>The largest lane is the methodology itself: +12,443 lines into <code>.kiro/</code> and <code>.github/</code>.</p></div>
+    </div>
+    <p class="note">Supporting cast: 6 personas · 8 hooks · 6 skill modules · 5 steering documents ·
+      5 specs · 42 test files.</p>
+  </div>
+</section>
+
+<!-- 13 ───────────────────────────────────────────── honest scope -->
+<section class="dark" id="scope" data-title="Honest scope">
+  <div class="wrap">
+    <div class="kicker">Honest scope</div>
+    <h2>What's wired up, and what's only convention.</h2>
+    <div class="verdicts">
+      <div class="v-row"><span class="tag real">Real</span>
+        <p>The orchestrator-led loop, turn router, hooks, and merge gate
+          <s>Implemented, unit-tested, and exercised across the whole PR history</s></p></div>
+      <div class="v-row"><span class="tag conv">Convention</span>
+        <p>The seven agent labels exist on every agent-owned PR — but were applied as a batch
+          <s>The auto-label script is a proposal, not a wired-up hook</s></p></div>
+      <div class="v-row"><span class="tag conv">Drift</span>
+        <p>Branch prefixes drifted from the documented scheme
+          <s><code>feat/arch-</code>, not <code>feat/architect-</code></s></p></div>
+      <div class="v-row"><span class="tag conv">Unplanned</span>
+        <p>Platform work needed a seventh lane the six-agent design never anticipated
+          <s><code>feat/infra-</code> — which is why the graph has seven lanes, not six</s></p></div>
+      <div class="v-row"><span class="tag conv">Limited</span>
+        <p><code>invokeSubAgent</code> is unavailable in supervised mode
+          <s>The master drives turns manually; hooks still apply, so guardrails hold — automation doesn't</s></p></div>
+    </div>
+    <p class="note">A methodology writeup that overclaims is worth less than one that doesn't.</p>
+  </div>
+</section>
+
+<!-- 14 ───────────────────────────────────────────── the product -->
+<section id="product" data-title="The product">
+  <div class="wrap wide">
+    <div class="kicker">So what did they build?</div>
+    <h2>Conversation in. Structured profile out.</h2>
+    <div class="split">
+      <div class="shotbox"><img src="deck-assets/app-profile.png" alt="Valentin's profile panel, fully populated"></div>
+      <ul class="bullets">
+        <li>You know her birthday. You half-remember the restaurant. Then you're buying a candle again.</li>
+        <li>Forms don't fix it — nobody fills in 18 fields about their partner, and the interesting details aren't fields.</li>
+        <li>So Valentin runs a warm, unhurried interview instead.</li>
+        <li>Eight categories: food, hobbies, music, travel, gifts, love language, important dates, personality.</li>
+        <li>Every entry carries a confidence score, and the panel fills in live as you talk.</li>
+      </ul>
+    </div>
+    <p class="note">Shown here is the seeded demo profile — all 18 fields, grouped into Basics and
+      Relationship, with a calendar surfacing the next important date.</p>
+  </div>
+</section>
+
+<!-- 15 ───────────────────────────────────────────── four moves -->
+<section id="moves" data-title="One message, four moves">
+  <div class="wrap wide">
+    <div class="kicker">How it works</div>
+    <h2>One message, four moves.</h2>
+    <div class="flow">
+      <div class="step"><div class="num">1</div><b>You type</b>
+        <p>The message travels over a session-scoped WebSocket to the Express gateway,
+          which routes it to the orchestrator.</p></div>
+      <div class="step"><div class="num">2</div><b>Valentin replies</b>
+        <p>Bedrock's Converse API returns a reply in character, with the context window
+          kept trimmed and coherent.</p></div>
+      <div class="step"><div class="num">3</div><b>Extraction runs</b>
+        <p>A second Bedrock call uses tool-use to pull structured preferences out of the
+          same message — off the reply's critical path.</p></div>
+      <div class="step"><div class="num">4</div><b>Profile updates</b>
+        <p>Preferences are persisted, pushed back over the same socket, and highlighted
+          as they land.</p></div>
+    </div>
+    <p class="note">Step three is the load-bearing decision: extraction is asynchronous, so the chat
+      never waits on it. The stack underneath — React 19 + TypeScript strict on Vite · Express 5 with a
+      <code>ws</code> gateway · <code>claude-sonnet-4-5</code> on Bedrock · DynamoDB behind a storage
+      interface · CDK for ECS Fargate, CloudFront and Cognito · Vitest and Playwright for tests.</p>
+  </div>
+</section>
+
+<!-- 16 ───────────────────────────────────────────── design -->
+<section id="design" data-title="Design exploration">
+  <div class="wrap wide">
+    <div class="kicker">The designer agent</div>
+    <h2>Eight directions, one chosen.</h2>
+    <p class="lede">Each candidate was built as a real working HTML mockup rather than a static
+      comp. These are captures of four of them.</p>
+    <div class="shots">
+      <div class="shot">
+        <div class="frame"><img src="deck-assets/mockup-love-letter.png" alt="Love letter mockup"></div>
+        <div class="cap"><b>Love letter</b><s>too precious</s></div>
+      </div>
+      <div class="shot">
+        <div class="frame"><img src="deck-assets/mockup-atelier.png" alt="Atelier mockup"></div>
+        <div class="cap"><b>Atelier</b><s>too cold</s></div>
+      </div>
+      <div class="shot">
+        <div class="frame"><img src="deck-assets/mockup-dossier.png" alt="Dossier mockup"></div>
+        <div class="cap"><b>Dossier</b><s>felt like surveillance</s></div>
+      </div>
+      <div class="shot">
+        <span class="pick">chosen</span>
+        <div class="frame"><img src="deck-assets/mockup-her-card.png" alt="Her card mockup"></div>
+        <div class="cap"><b>Her card</b><s>portrait-led, least chrome</s></div>
+      </div>
+    </div>
+    <p class="note">The product is emotional, so the interface had to be — and “dossier” is exactly
+      the wrong feeling for something about a person you love. The two chosen directions are kept as
+      working HTML in <code>docs/design/mockups/</code>.</p>
+  </div>
+</section>
+
+<!-- 17 ───────────────────────────────────────────── demo -->
+<section class="cover" id="demo" data-title="Live demo">
+  <div class="wrap wide">
+    <div class="kicker">Live demo</div>
+    <h2>Better seen than described.</h2>
+    <div class="split">
+      <div class="shotbox"><img src="deck-assets/app-live.png" alt="Valentin four messages into a real conversation"></div>
+      <div>
+        <div class="term">
+          <div><span class="d">$</span> npm run dev:server <span class="d"># terminal 1</span></div>
+          <div class="c">[server] Valentin backend listening on http://localhost:3001</div>
+          <div>&nbsp;</div>
+          <div><span class="d">$</span> npm run dev <span class="d"># terminal 2</span></div>
+          <div class="c">➜  Local:   http://localhost:5180/</div>
+        </div>
+        <a class="cta" href="http://localhost:5180" target="_blank">Open the app ↗</a>
+        <p class="note" style="color:rgba(255,253,251,.62)">
+          A real capture, four messages in — not a mockup. Name and birthday land at 100%
+          confidence. Being honest: the richer preference categories were still landing when I
+          took this, so it reads 2 of 18. That gap is top of the next list.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 18 ───────────────────────────────────────────── next -->
+<section id="next" data-title="Built, and what's next">
+  <div class="wrap wide">
+    <div class="kicker">Where it stands</div>
+    <h2>Built, and what's next.</h2>
+    <div class="lanes">
+      <div class="lane done">
+        <h3>Shipped</h3>
+        <ul>
+          <li><strong>The agent workflow</strong> — loop, turn router, 8 hooks, merge gate</li>
+          <li>A regression suite that tests the workflow itself</li>
+          <li>Full-stack app on Bedrock with retry logic</li>
+          <li>Async preference extraction via tool-use</li>
+          <li>DynamoDB behind a storage interface</li>
+          <li>CDK stacks deployed; CI runs lint, unit, build, E2E</li>
+        </ul>
+      </div>
+      <div class="lane next">
+        <h3>Next</h3>
+        <ul>
+          <li>Tighten extraction for the richer preference categories</li>
+          <li>Auto-label PRs by agent at creation time, closing the scope gap</li>
+          <li>Real AgentCore SDK in place of the stub adapter</li>
+          <li>Session persistence across reloads</li>
+          <li>Export or share the partner profile</li>
+          <li>Proactive nudges ahead of important dates</li>
+        </ul>
+      </div>
+    </div>
+    <p class="note">The first line is the real deliverable. The product is how I know the
+      workflow works.</p>
+  </div>
+</section>
+
+<!-- 19 ───────────────────────────────────────────── thanks -->
+<section class="cover" id="thanks" data-title="Thank you">
+  <div class="wrap">
+    <div class="kicker">Read the methodology · open any PR · questions welcome</div>
+    <h1>Thank you</h1>
+    <p class="lede">Every claim here is verifiable. The methodology writeup is in
+      <code style="color:var(--blush)">docs/METHODOLOGY.md</code>, and every PR conversation is
+      readable on GitHub — start with PR 40 or 58, the two longest review threads.</p>
+    <div class="byline"><span>Coral Steinberg</span><i></i><span>Happy to dig into the turn router, or run the demo on someone you love</span></div>
+  </div>
+</section>
+
+<script type="module">
+  // Mermaid renders client-side so the diagrams stay vector-sharp at any projector
+  // resolution. If the CDN is unreachable, fall back to the pre-rendered PNGs.
+  const hosts = [...document.querySelectorAll('.mermaid-host')];
+  try {
+    const mermaid = (await import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs')).default;
+    mermaid.initialize({ startOnLoad: false, theme: 'default' });
+    for (const [i, host] of hosts.entries()) {
+      // The definition lives in a text/plain script so the browser doesn't parse
+      // its <br/> and <code/> markup away before mermaid ever sees it.
+      const def = host.querySelector('script.mmd').textContent.trim();
+      const { svg } = await mermaid.render(`d${i}`, def);
+      host.innerHTML = svg;
+      // Mermaid sizes to its own intrinsic width, which is far too small to project.
+      // Let it fill the stage; the stage's max-height keeps it inside the slide.
+      const el = host.querySelector('svg');
+      el.removeAttribute('width');
+      el.removeAttribute('height');
+      el.style.maxWidth = 'none';
+      el.style.width = '100%';
+      el.style.height = 'auto';
+    }
+  } catch (err) {
+    console.warn('mermaid unavailable, using pre-rendered PNGs', err);
+    for (const host of hosts) {
+      host.innerHTML = `<img src="${host.dataset.fallback}" alt="diagram">`;
+    }
+  }
+</script>
+
+<script>
+  // Nav dots, slide counter, and keyboard paging.
+  const slides = [...document.querySelectorAll('section')];
+  const dots = document.getElementById('dots');
+  const counter = document.getElementById('counter');
+  const pad = (n) => String(n).padStart(2, '0');
+
+  slides.forEach((s) => {
+    const a = document.createElement('a');
+    a.href = `#${s.id}`;
+    a.title = s.dataset.title ?? s.id;
+    dots.append(a);
+  });
+
+  const links = [...dots.children];
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      const i = slides.indexOf(e.target);
+      links.forEach((l, j) => l.classList.toggle('on', j === i));
+      counter.textContent = `${pad(i + 1)} / ${pad(slides.length)}`;
+      const onDark = e.target.classList.contains('dark') || e.target.classList.contains('cover');
+      document.body.classList.toggle('on-dark', onDark);
+      document.body.classList.toggle('past-cover', i > 0);
+    }
+  }, { threshold: 0.55 });
+  slides.forEach((s) => io.observe(s));
+
+  const current = () => slides.findIndex((s) => s.getBoundingClientRect().top > -window.innerHeight / 2);
+  const go = (delta) => {
+    const next = Math.min(slides.length - 1, Math.max(0, current() + delta));
+    slides[next].scrollIntoView({ behavior: 'smooth' });
+  };
+  addEventListener('keydown', (e) => {
+    if (['ArrowRight', 'ArrowDown', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); go(1); }
+    if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(e.key)) { e.preventDefault(); go(-1); }
+    if (e.key === 'Home') slides[0].scrollIntoView({ behavior: 'smooth' });
+    if (e.key === 'End') slides.at(-1).scrollIntoView({ behavior: 'smooth' });
+  });
+</script>
+
+</body>
+</html>

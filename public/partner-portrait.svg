@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 480" width="400" height="480" role="img" aria-label="Partner portrait placeholder">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FDF0F1"/>
+      <stop offset="1" stop-color="#F2D3DA"/>
+    </linearGradient>
+    <linearGradient id="hair" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5A3627"/>
+      <stop offset="1" stop-color="#331D14"/>
+    </linearGradient>
+    <linearGradient id="dress" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFDFB"/>
+      <stop offset="1" stop-color="#EDDDD3"/>
+    </linearGradient>
+    <clipPath id="frame"><rect width="400" height="480"/></clipPath>
+  </defs>
+
+  <!-- ink-line illustration to match the Valentin crest: flat fills + dark contour -->
+  <g clip-path="url(#frame)" stroke="#3B2119" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round">
+    <rect width="400" height="480" fill="url(#bg)" stroke="none"/>
+    <circle cx="200" cy="200" r="152" fill="#FFF6F7" opacity=".5" stroke="none"/>
+
+    <!-- blouse -->
+    <path d="M200 306c-70 0-124 42-138 104-4 18-6 40-6 70h288c0-30-2-52-6-70-14-62-68-104-138-104z" fill="url(#dress)"/>
+    <!-- v-neck -->
+    <path d="M158 314l42 58 42-58" fill="none"/>
+
+    <!-- neck -->
+    <path d="M182 254c0 30-2 44-4 52 6 8 14 12 22 12s16-4 22-12c-2-8-4-22-4-52z" fill="#EFC0A2"/>
+
+    <!-- hair, back mass -->
+    <path d="M200 60c-60 0-100 42-100 104 0 46 6 82 15 114 5 18 15 28 26 28-13-42-17-82-15-118 32 15 70 21 97 12 21-7 36-19 46-35 5 41 1 86-13 141 11 0 21-10 26-28 9-32 15-68 15-114 0-62-40-104-97-104z" fill="url(#hair)"/>
+
+    <!-- face -->
+    <ellipse cx="200" cy="178" rx="65" ry="79" fill="#F8D4B9"/>
+
+    <!-- fringe sweeping across the brow -->
+    <path d="M200 86c-45 0-70 30-70 68 0 7 1 14 2 20 9-31 27-51 53-57 30-7 57 4 73 26 3 5 5 10 7 16 2-8 3-16 3-24 0-33-23-49-68-49z" fill="url(#hair)"/>
+
+    <g stroke-width="4.6">
+      <!-- brows -->
+      <path d="M167 164c8-6 20-7 28-3" fill="none" stroke="#4A2B1F"/>
+      <path d="M205 161c8-4 20-3 28 3" fill="none" stroke="#4A2B1F"/>
+      <!-- nose -->
+      <path d="M200 190v15c0 3-3 5-7 6" fill="none" stroke="#D79E80"/>
+      <!-- smile -->
+      <path d="M183 223c10 10 24 10 34 0" fill="none" stroke="#A94F55"/>
+    </g>
+
+    <!-- eyes -->
+    <g stroke="none">
+      <ellipse cx="178" cy="183" rx="8" ry="9.5" fill="#3B2119"/>
+      <ellipse cx="222" cy="183" rx="8" ry="9.5" fill="#3B2119"/>
+      <circle cx="181" cy="180" r="2.7" fill="#fff" opacity=".9"/>
+      <circle cx="225" cy="180" r="2.7" fill="#fff" opacity=".9"/>
+      <ellipse cx="159" cy="203" rx="15" ry="9" fill="#E39598" opacity=".4"/>
+      <ellipse cx="241" cy="203" rx="15" ry="9" fill="#E39598" opacity=".4"/>
+    </g>
+
+    <!-- a rose tucked in her hair — answers the rose he holds in the crest -->
+    <g transform="translate(266 122)">
+      <path d="M-14 26c-10 2-20-4-22-14 10-6 22-2 26 8z" fill="#7F9160"/>
+      <path d="M-8 18c-8 6-14 16-16 24" fill="none" stroke="#5E7047"/>
+      <circle r="15" fill="#B8384C"/>
+      <circle r="8.5" fill="#8E2437" stroke-width="2.6"/>
+    </g>
+  </g>
+</svg>

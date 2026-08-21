@@ -1,4 +1,4 @@
-import { InMemoryStore } from './persistence/in-memory-store';
+import { createStore } from './persistence/create-store';
 import { InMemoryConversationMemory } from './persistence/conversation-memory';
 import { AwsBedrockClient } from './agent/bedrock-client';
 import { StubAgentCoreAdapter } from './agent/agentcore-adapter';
@@ -37,8 +37,8 @@ export function resolveBroadcastSessionId(
 
 /** Initialize all dependencies and start the server */
 export function createServer() {
-  // Persistence
-  const store = new InMemoryStore();
+  // Persistence — in-memory unless STORAGE_BACKEND says otherwise
+  const store = createStore();
   const memory = new InMemoryConversationMemory(store);
 
   // AWS Bedrock — always use real LLM, no stubs

@@ -20,7 +20,16 @@ export class DataStack extends cdk.Stack {
 
     const { config } = props;
 
-    // DynamoDB single-table design
+    // DynamoDB single-table design.
+    //
+    // Do not rename this construct id. The logical id CloudFormation holds for
+    // the live `ValentinTable-dev` is `ValentinTable64F53A3F`, derived from the
+    // string below. Renaming it makes CloudFormation retire the old logical id
+    // and create a new one under the *same* `tableName`, which fails early
+    // validation with "Resource of type 'AWS::DynamoDB::Table' with identifier
+    // 'ValentinTable-dev' already exists" — and the retirement is evaluated
+    // against the deployed template's DeletionPolicy, so a rename attempted
+    // before the policy below was live would have deleted the real table.
     this.table = new dynamodb.Table(this, 'ValentinTable', {
       tableName: config.tableName,
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
@@ -30,9 +39,14 @@ export class DataStack extends cdk.Stack {
       encryption: dynamodb.TableEncryption.AWS_MANAGED,
       timeToLiveAttribute: 'ttl',
       deletionProtection: config.deletionProtection,
-      removalPolicy: config.env === 'prod'
-        ? cdk.RemovalPolicy.RETAIN
-        : cdk.RemovalPolicy.DESTROY,
+      // RETAIN in every environment, dev included. This used to be
+      // `env === 'prod' ? RETAIN : DESTROY`, and that is precisely how
+      // `ValentinTable-dev` came to be missing: a stack teardown took the table
+      // with it, and point-in-time recovery dies with the table it belongs to,
+      // so nothing written up to that moment was recoverable. Dev holds real
+      // conversations now. `teardown.sh` therefore leaves the table behind by
+      // design — deleting it is a deliberate, manual act.
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
     // GSI1 for access patterns like SESSION#<id> lookups

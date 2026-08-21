@@ -21,6 +21,7 @@ function createMockStorage(): StorageInterface {
     createSession: vi.fn(),
     getSession: vi.fn(),
     endSession: vi.fn(),
+    clearSession: vi.fn(),
     saveMessage: vi.fn(),
     getMessagesBySession: vi.fn(),
     savePreference: vi.fn().mockImplementation(async (pref) => ({

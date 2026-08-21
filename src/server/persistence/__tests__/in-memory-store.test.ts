@@ -174,3 +174,81 @@ describe('Property 7: Preference update retains history', () => {
     );
   });
 });
+
+
+// --- clearSession ---
+
+describe('InMemoryStore.clearSession', () => {
+  let store: InMemoryStore;
+  let sessionId: string;
+
+  beforeEach(async () => {
+    store = new InMemoryStore();
+    sessionId = await store.createSession();
+    await store.savePreference({
+      sessionId,
+      category: 'food',
+      key: 'cuisine',
+      value: 'Italian',
+      confidence: 0.9,
+      sourceMessageId: 'msg-1',
+    });
+    await store.saveMessage({
+      id: 'msg-1',
+      sessionId,
+      sender: 'user',
+      content: 'She loves Italian food',
+      timestamp: '2026-01-01T00:00:00.000Z',
+    });
+  });
+
+  it('removes all preferences for the session', async () => {
+    await store.clearSession(sessionId);
+
+    expect(await store.getPreferencesBySession(sessionId)).toEqual([]);
+  });
+
+  it('removes all messages for the session', async () => {
+    await store.clearSession(sessionId);
+
+    expect(await store.getMessagesBySession(sessionId)).toEqual([]);
+  });
+
+  it('keeps the session itself alive', async () => {
+    await store.clearSession(sessionId);
+
+    const session = await store.getSession(sessionId);
+    expect(session).not.toBeNull();
+    expect(session!.id).toBe(sessionId);
+    expect(session!.endedAt).toBeNull();
+  });
+
+  it('resets the session counters to zero', async () => {
+    await store.clearSession(sessionId);
+
+    const session = await store.getSession(sessionId);
+    expect(session!.preferenceCount).toBe(0);
+    expect(session!.messageCount).toBe(0);
+  });
+
+  it('leaves other sessions untouched', async () => {
+    const otherSessionId = await store.createSession();
+    await store.savePreference({
+      sessionId: otherSessionId,
+      category: 'music',
+      key: 'genre',
+      value: 'Indie folk',
+      confidence: 0.8,
+      sourceMessageId: 'msg-2',
+    });
+
+    await store.clearSession(sessionId);
+
+    expect(await store.getPreferencesBySession(otherSessionId)).toHaveLength(1);
+  });
+
+  it('is a no-op for an unknown session id', async () => {
+    await expect(store.clearSession('does-not-exist')).resolves.toBeUndefined();
+    expect(await store.getPreferencesBySession(sessionId)).toHaveLength(1);
+  });
+});

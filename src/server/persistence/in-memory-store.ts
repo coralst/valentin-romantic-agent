@@ -132,6 +132,22 @@ export class InMemoryStore implements StorageInterface {
     }
   }
 
+  async clearSession(sessionId: string): Promise<void> {
+    for (const [id, pref] of this.preferences) {
+      if (pref.sessionId === sessionId) {
+        this.preferences.delete(id);
+      }
+    }
+
+    this.messages.delete(sessionId);
+
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      session.messageCount = 0;
+      session.preferenceCount = 0;
+    }
+  }
+
   // --- Internal helpers ---
 
   private incrementSessionCount(

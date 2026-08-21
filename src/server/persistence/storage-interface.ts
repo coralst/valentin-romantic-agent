@@ -44,4 +44,11 @@ export interface StorageInterface {
   createSession(): Promise<string>;
   getSession(sessionId: string): Promise<SessionData | null>;
   endSession(sessionId: string): Promise<void>;
+
+  /**
+   * Remove every preference and message belonging to a session, resetting its
+   * counters. The session itself stays alive and usable — this is a reset, not
+   * a delete. A no-op for unknown session ids.
+   */
+  clearSession(sessionId: string): Promise<void>;
 }

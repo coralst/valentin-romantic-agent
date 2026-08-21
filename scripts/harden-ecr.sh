@@ -12,7 +12,12 @@ set -euo pipefail
 # Usage: ./scripts/harden-ecr.sh [env] [--immutable]
 
 ENV="${1:-dev}"
-REGION="${AWS_REGION:-us-east-1}"
+# Every Valentin environment lives in us-east-1 (see infra/config/environments.ts).
+# Deliberately not defaulted from AWS_REGION: that variable is often already set
+# to an unrelated region in a developer's shell, which would silently point this
+# at a registry where the repository does not exist. Override with VALENTIN_REGION
+# if an environment is ever moved.
+REGION="${VALENTIN_REGION:-us-east-1}"
 PROFILE="${AWS_PROFILE:-dev-devops-agent}"
 REPO="valentin-backend-${ENV}"
 IMMUTABLE=false

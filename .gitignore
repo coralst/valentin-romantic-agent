@@ -43,6 +43,10 @@ test-results/
 playwright-report/
 blob-report/
 
+# Python (scripts/ has helper modules; importing them creates bytecode caches)
+__pycache__/
+*.py[cod]
+
 # Misc
 *.log
 npm-debug.log*

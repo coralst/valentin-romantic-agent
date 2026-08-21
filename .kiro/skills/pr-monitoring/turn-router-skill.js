@@ -19,16 +19,30 @@
  */
 
 const gate = require('./approval-gate-skill.js');
+const persona = require('../shared/persona-format.js');
 
-/** Canonical sub-agents and the master, with their GitHub @-handles and personas. */
-const AGENTS = {
-  'master-agent': { handle: 'master-agent', persona: /👔\s*master\s*agent/i, isMaster: true },
-  'system-architect': { handle: 'system-architect', persona: /🏗️?\s*system\s*architect/i },
-  'frontend-dev': { handle: 'frontend-dev', persona: /⚛️?\s*frontend\s*dev/i },
-  'backend-dev': { handle: 'backend-dev', persona: /🔧\s*backend\s*dev/i },
-  'ui-designer': { handle: 'ui-designer', persona: /🎨\s*ui\s*designer/i },
-  'qa-agent': { handle: 'qa-agent', persona: /🧪\s*qa\s*agent/i },
-};
+/**
+ * Canonical sub-agents and the master, with their GitHub @-handles, personas and
+ * display names.
+ *
+ * The per-agent `persona` regexes that used to live here (`/👔\s*master\s*agent/i`
+ * and friends) matched their emoji ANYWHERE in a comment body and each carried
+ * slightly different leniency than the approval gate's copy and the graph
+ * script's copy. All three are now one matcher.
+ *
+ * @see ../shared/persona-format.js — the canonical form and the drift-era policy
+ */
+const AGENTS = Object.fromEntries(
+  persona.AGENT_KEYS.map((key) => [
+    key,
+    {
+      handle: key,
+      name: persona.AGENTS[key].name,
+      emoji: persona.AGENTS[key].emoji,
+      ...(key === 'master-agent' ? { isMaster: true } : {}),
+    },
+  ])
+);
 
 const KNOWN_HANDLES = Object.keys(AGENTS);
 
@@ -58,15 +72,17 @@ function extractMentions(body) {
 
 /**
  * Identify the persona that authored a comment from its header signature.
+ *
+ * STRICT mode: routing is a live gate decision, so only the canonical header
+ * `**<emoji> <Persona>** — <subject>` counts. A historical drift format has no
+ * author here and will be reported as a protocol problem by `parseTurn`, which
+ * is the intended behaviour going forward.
+ *
  * @param {string} body
  * @returns {string|null} agent key, or null if no recognized persona
  */
 function identifyAuthorPersona(body) {
-  if (typeof body !== 'string') return null;
-  for (const [key, def] of Object.entries(AGENTS)) {
-    if (def.persona.test(body)) return key;
-  }
-  return null;
+  return persona.identifyPersona(body, { mode: 'strict' });
 }
 
 /**
@@ -99,7 +115,10 @@ function parseTurn(comment) {
 
   const problems = [];
   if (!author) {
-    problems.push('Comment has no recognized persona header (e.g. "**👔 Master Agent**").');
+    problems.push(
+      `Comment has no recognized persona header. Expected the canonical form ` +
+        `"${persona.CANONICAL_FORM}" (e.g. "**👔 Master Agent** — Review Complete").`
+    );
   }
   if (unknown.length) {
     problems.push(`Tags unknown handle(s): ${unknown.map((u) => '@' + u).join(', ')}.`);

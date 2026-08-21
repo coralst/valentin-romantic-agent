@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { colors, radii, layout, typography, insets, spacing, animation } from '../design-system/tokens';
 import { DemoToolbar } from './DemoToolbar';
 
@@ -91,18 +92,28 @@ const popoverWrapperStyle: React.CSSProperties = {
 /**
  * The demo popover. It is anchored to the ⚙ button rather than laid out inline
  * because the rail is only 76px wide and the toolbar's controls are ~360px.
+ *
+ * It is `position: fixed` and portalled to the body because the app window
+ * clips its children (`overflow: hidden`, to keep the 34px radius crisp) — an
+ * absolutely positioned popover inside the rail is sliced off at the window
+ * edge. Coordinates come from the gear's own bounding box.
  */
-function getPopoverStyle(orientation: 'column' | 'row'): React.CSSProperties {
+function getPopoverStyle(
+  orientation: 'column' | 'row',
+  anchor: DOMRect,
+): React.CSSProperties {
   return {
-    position: 'absolute',
+    position: 'fixed',
     zIndex: 200,
     backgroundColor: colors.porcelain,
     borderRadius: radii.panel,
     padding: insets.tight,
     boxShadow: '0 4px 12px rgba(42, 34, 38, 0.08), 0 24px 56px rgba(42, 34, 38, 0.18)',
     ...(orientation === 'column'
-      ? { bottom: 0, left: `calc(100% + 10px)` }
-      : { top: `calc(100% + 10px)`, right: 0 }),
+      ? // Beside the gear, bottom-aligned to it.
+        { left: anchor.right + 10, bottom: window.innerHeight - anchor.bottom }
+      : // Below the strip, right-aligned to the gear.
+        { top: anchor.bottom + 10, right: window.innerWidth - anchor.right }),
   };
 }
 
@@ -121,14 +132,39 @@ export function IconRail({
   onOpenSessions,
 }: IconRailProps) {
   const [isDemoOpen, setDemoOpen] = useState(false);
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const gearRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  const measureAnchor = useCallback(() => {
+    const rect = gearRef.current?.getBoundingClientRect();
+    if (rect) setAnchor(rect);
+  }, []);
+
+  // Measure before paint so the popover never renders at a stale position.
+  useLayoutEffect(() => {
+    if (isDemoOpen) measureAnchor();
+  }, [isDemoOpen, measureAnchor]);
+
+  // Keep the popover glued to the gear if the viewport changes under it.
+  useEffect(() => {
+    if (!isDemoOpen) return;
+    window.addEventListener('resize', measureAnchor);
+    return () => window.removeEventListener('resize', measureAnchor);
+  }, [isDemoOpen, measureAnchor]);
 
   // Dismiss the popover on outside click or Escape, the way a menu should.
   useEffect(() => {
     if (!isDemoOpen) return;
 
     const handlePointer = (event: MouseEvent) => {
-      if (!wrapperRef.current?.contains(event.target as Node)) setDemoOpen(false);
+      const target = event.target as Node;
+      // The popover is portalled out of the rail, so it is not a DOM descendant
+      // of the wrapper — check it separately or clicking it would dismiss it.
+      const insideGear = wrapperRef.current?.contains(target) ?? false;
+      const insidePopover = popoverRef.current?.contains(target) ?? false;
+      if (!insideGear && !insidePopover) setDemoOpen(false);
     };
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setDemoOpen(false);
@@ -189,6 +225,7 @@ export function IconRail({
 
       <div style={popoverWrapperStyle} ref={wrapperRef}>
         <button
+          ref={gearRef}
           type="button"
           style={getIconButtonStyle(isDemoOpen)}
           aria-label="Demo controls"
@@ -198,11 +235,19 @@ export function IconRail({
         >
           &#9881;
         </button>
-        {isDemoOpen && (
-          <div style={getPopoverStyle(orientation)} data-testid="rail-demo-popover">
-            <DemoToolbar />
-          </div>
-        )}
+        {isDemoOpen &&
+          anchor &&
+          typeof document !== 'undefined' &&
+          createPortal(
+            <div
+              ref={popoverRef}
+              style={getPopoverStyle(orientation, anchor)}
+              data-testid="rail-demo-popover"
+            >
+              <DemoToolbar />
+            </div>,
+            document.body,
+          )}
       </div>
     </nav>
   );

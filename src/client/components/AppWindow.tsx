@@ -91,3 +91,14 @@ export const windowCellStyle: React.CSSProperties = {
   minHeight: 0,
   overflow: 'hidden',
 };
+
+/**
+ * A window cell that is itself a flex child and must fill its parent — e.g. the
+ * chat/profile area sitting under the mobile tab bar. Without `flex: 1` the
+ * inner cell sizes to its content and the composer floats mid-screen instead of
+ * sitting at the bottom of the window.
+ */
+export const windowCellGrowStyle: React.CSSProperties = {
+  ...windowCellStyle,
+  flex: 1,
+};

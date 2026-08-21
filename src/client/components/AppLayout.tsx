@@ -7,7 +7,7 @@ import { DiscoveryProvider } from '../context/discovery-context';
 import { usePreferenceIngestion } from '../hooks/use-preference-ingestion';
 import { useChatContext } from '../context/chat-context';
 import { SessionSidebar } from './SessionSidebar';
-import { AppWindow, windowCellStyle } from './AppWindow';
+import { AppWindow, windowCellStyle, windowCellGrowStyle } from './AppWindow';
 import { IconRail } from './IconRail';
 import { useSessionContext } from '../context/session-context';
 import { breakpoints } from '../design-system/tokens';
@@ -79,7 +79,7 @@ function AppLayoutContent() {
             />
             <div style={windowCellStyle}>
               <MobileNav activePanel={activePanel} onPanelChange={setActivePanel} />
-              <div style={windowCellStyle}>
+              <div style={windowCellGrowStyle}>
                 {activePanel === 'chat' ? <ChatPanel /> : profilePanel}
               </div>
             </div>

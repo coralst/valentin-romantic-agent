@@ -52,9 +52,22 @@ export function DiscoveryProvider({ children, value }: DiscoveryProviderProps) {
 
 /** Consumer hook — throws if used outside DiscoveryProvider */
 export function useDiscoveryContext(): DiscoveryContextValue {
-  const ctx = useContext(DiscoveryContext);
+  const ctx = useOptionalDiscoveryContext();
   if (!ctx) {
     throw new Error('useDiscoveryContext must be used within a DiscoveryProvider');
   }
   return ctx;
+}
+
+/**
+ * Non-throwing variant, for surfaces that are *enriched* by discovery state but
+ * must still render without it.
+ *
+ * The chat column is the motivating case: `LearnedChip` decorates the transcript
+ * with discoveries, but `MessageHistory` is also rendered in tests and in the
+ * mobile chat-only view that sit outside `DiscoveryProvider`. Those callers want
+ * "no chips", not a crash, so they read this and skip the chips on `null`.
+ */
+export function useOptionalDiscoveryContext(): DiscoveryContextValue | null {
+  return useContext(DiscoveryContext);
 }

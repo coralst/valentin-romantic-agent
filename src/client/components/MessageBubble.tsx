@@ -1,5 +1,5 @@
 import type { ChatMessage } from '../../shared/interfaces/message';
-import { colors, spacing, borderRadius, typography, shadows } from '../design-system/tokens';
+import { colors, radii, typography, layout } from '../design-system/tokens';
 import { useTypewriter } from '../hooks/use-typewriter';
 
 function renderFormattedText(text: string): React.ReactNode[] {
@@ -60,58 +60,71 @@ const visuallyHidden: React.CSSProperties = {
   border: 0,
 };
 
+/**
+ * Agent row: crest, then bubble, aligned to the top so the crest sits beside the
+ * message's *first* line however tall the bubble grows (option-5d-brief.html:49).
+ */
 const agentWrapperStyle: React.CSSProperties = {
   display: 'flex',
-  alignItems: 'flex-end',
-  gap: spacing.xs,
+  alignItems: 'flex-start',
+  gap: 12,
   justifyContent: 'flex-start',
-  marginBottom: spacing.sm,
-  paddingRight: spacing.xxl,
+  marginBottom: 18,
+  maxWidth: '90%',
 };
 
 const userWrapperStyle: React.CSSProperties = {
   display: 'flex',
   justifyContent: 'flex-end',
-  marginBottom: spacing.sm,
-  paddingLeft: spacing.xxl,
+  marginBottom: 18,
 };
 
+/**
+ * The crest. `overflow: hidden` on a pill-radius box plus an oversized
+ * `objectFit: cover` image is what keeps the logo from reading as squashed —
+ * the image is scaled to 122% and cropped, never distorted to fit.
+ */
 const avatarStyle: React.CSSProperties = {
-  width: 32,
-  height: 32,
-  borderRadius: borderRadius.full,
-  background: colors.accentGradient,
-  color: colors.textOnAccent,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  fontFamily: typography.headingFontFamily,
-  fontWeight: typography.weights.bold,
-  fontSize: typography.sizes.sm,
+  width: layout.messageAvatarSize,
+  height: layout.messageAvatarSize,
+  borderRadius: radii.pill,
+  overflow: 'hidden',
+  backgroundColor: colors.porcelain,
+  boxShadow: '0 1px 5px rgba(42, 34, 38, 0.14)',
   flexShrink: 0,
 };
 
-const agentBubbleStyle: React.CSSProperties = {
-  maxWidth: '80%',
-  padding: `${spacing.xs + 4}px ${spacing.sm}px`,
-  borderRadius: `${borderRadius.lg} ${borderRadius.lg} ${borderRadius.lg} 4px`,
-  fontSize: typography.sizes.base,
-  lineHeight: typography.lineHeights.normal,
-  wordBreak: 'break-word',
-  backgroundColor: colors.agentBubble,
-  color: colors.text,
-  boxShadow: shadows.bubble,
+const avatarImageStyle: React.CSSProperties = {
+  width: '122%',
+  height: '122%',
+  objectFit: 'cover',
 };
 
+/** Tail on the top-left: the corner nearest the crest is the tight one. */
+const agentBubbleStyle: React.CSSProperties = {
+  backgroundColor: '#FAF2EF',
+  borderRadius: `${radii.tail}px ${radii.card}px ${radii.card}px ${radii.card}px`,
+  padding: '14px 19px',
+  fontFamily: typography.bodyFontFamily,
+  fontSize: typography.px.chat,
+  lineHeight: 1.6,
+  color: colors.ink,
+  overflowWrap: 'break-word',
+  minWidth: 0,
+};
+
+/** Tail on the top-right, mirroring the agent bubble across the column. */
 const userBubbleStyle: React.CSSProperties = {
-  maxWidth: '80%',
-  padding: `${spacing.xs + 4}px ${spacing.sm}px`,
-  borderRadius: `${borderRadius.lg} ${borderRadius.lg} 4px ${borderRadius.lg}`,
-  fontSize: typography.sizes.base,
-  lineHeight: typography.lineHeights.normal,
-  wordBreak: 'break-word',
-  background: colors.accentGradient,
-  color: colors.userBubbleText,
+  maxWidth: '70%',
+  backgroundColor: colors.claret,
+  borderRadius: `${radii.card}px ${radii.tail}px ${radii.card}px ${radii.card}px`,
+  padding: '13px 19px',
+  fontFamily: typography.bodyFontFamily,
+  fontSize: typography.px.chat,
+  lineHeight: 1.55,
+  color: colors.textOnAccent,
+  overflowWrap: 'break-word',
+  boxShadow: '0 8px 22px rgba(140, 47, 69, 0.20)',
 };
 
 export function MessageBubble({ message, animate = false }: MessageBubbleProps) {
@@ -123,7 +136,9 @@ export function MessageBubble({ message, animate = false }: MessageBubbleProps) 
   if (isAgent) {
     return (
       <div style={agentWrapperStyle} data-testid="message-bubble" data-sender="agent">
-        <div style={avatarStyle} aria-hidden="true">V</div>
+        <div style={avatarStyle}>
+          <img src="/logo.png" alt="Valentin" style={avatarImageStyle} />
+        </div>
         <div style={agentBubbleStyle}>
           {/* Full text for assistive tech — announced once, not letter-by-letter */}
           <span style={visuallyHidden}>{message.content}</span>

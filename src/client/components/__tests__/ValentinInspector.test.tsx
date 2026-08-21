@@ -84,12 +84,21 @@ describe('ValentinInspector', () => {
       expect(screen.getByTestId('inspector-panel')).toBeInTheDocument();
     });
 
-    it('exposes the panel as a labelled modal dialog', async () => {
+    it('exposes the panel as a labelled complementary region, not a dialog', async () => {
       const user = userEvent.setup();
       render(<ValentinInspector />);
       await openInspector(user);
-      const panel = screen.getByRole('dialog', { name: 'Live Architecture' });
-      expect(panel).toHaveAttribute('aria-modal', 'true');
+      expect(
+        screen.getByRole('complementary', { name: 'Live Architecture' }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    it('is not modal', async () => {
+      const user = userEvent.setup();
+      render(<ValentinInspector />);
+      await openInspector(user);
+      expect(screen.getByTestId('inspector-panel')).not.toHaveAttribute('aria-modal');
     });
 
     it('marks the toggle as expanded once open', async () => {
@@ -97,15 +106,17 @@ describe('ValentinInspector', () => {
       render(<ValentinInspector />);
       await openInspector(user);
       expect(
-        screen.getByRole('button', { name: 'Open architecture inspector' }),
+        screen.getByRole('button', { name: 'Close architecture inspector' }),
       ).toHaveAttribute('aria-expanded', 'true');
     });
 
-    it('moves focus to the close button when opened', async () => {
+    it('does not steal focus when opened', async () => {
       const user = userEvent.setup();
       render(<ValentinInspector />);
       await openInspector(user);
-      expect(screen.getByTestId('inspector-close')).toHaveFocus();
+      // Focus stays on the toggle the user activated — nothing inside the
+      // panel grabs it, so a composer elsewhere on the page keeps its focus.
+      expect(screen.getByTestId('inspector-close')).not.toHaveFocus();
     });
 
     it('renders every architecture node', async () => {
@@ -233,6 +244,15 @@ describe('ValentinInspector', () => {
       ).toHaveFocus();
     });
 
+    it('closes when the toggle is pressed again', async () => {
+      const user = userEvent.setup();
+      render(<ValentinInspector />);
+      await openInspector(user);
+
+      await user.click(screen.getByRole('button', { name: 'Close architecture inspector' }));
+      expect(screen.queryByTestId('inspector-panel')).not.toBeInTheDocument();
+    });
+
     it('closes when the close button is clicked', async () => {
       const user = userEvent.setup();
       render(<ValentinInspector />);
@@ -260,6 +280,97 @@ describe('ValentinInspector', () => {
       await user.keyboard('{Escape}');
       await openInspector(user);
       expect(screen.getByTestId('inspector-panel')).toBeInTheDocument();
+    });
+  });
+
+  /**
+   * The heart of the demo: Coral types into the composer while the Inspector is
+   * open. These guard the non-modal contract — nothing may block or trap.
+   */
+  describe('non-modal coexistence with the page', () => {
+    /** Render the Inspector beside a stand-in composer. */
+    function renderWithComposer() {
+      return render(
+        <div>
+          <ValentinInspector />
+          <input aria-label="Type a message" />
+        </div>,
+      );
+    }
+
+    it('renders no backdrop that could block the page', async () => {
+      const user = userEvent.setup();
+      renderWithComposer();
+      await openInspector(user);
+      expect(screen.queryByTestId('inspector-overlay')).not.toBeInTheDocument();
+    });
+
+    it('leaves the composer reachable while the panel is open', async () => {
+      const user = userEvent.setup();
+      renderWithComposer();
+      await openInspector(user);
+
+      const composer = screen.getByLabelText('Type a message');
+      await user.click(composer);
+      expect(composer).toHaveFocus();
+    });
+
+    it('leaves the composer typable while the panel is open', async () => {
+      const user = userEvent.setup();
+      renderWithComposer();
+      await openInspector(user);
+
+      const composer = screen.getByLabelText('Type a message');
+      await user.click(composer);
+      await user.type(composer, 'She loves peonies');
+
+      expect(composer).toHaveValue('She loves peonies');
+      // The panel is still open — no toggling required to type.
+      expect(screen.getByTestId('inspector-panel')).toBeInTheDocument();
+    });
+
+    it('does not trap focus inside the panel', async () => {
+      const user = userEvent.setup();
+      renderWithComposer();
+      await openInspector(user);
+
+      // Tab forward from the close button: focus must escape the panel and
+      // reach the composer rather than cycling within the panel.
+      screen.getByTestId('inspector-close').focus();
+      await user.tab();
+      await user.tab();
+
+      expect(screen.getByTestId('inspector-panel')).toBeInTheDocument();
+      expect(screen.getByLabelText('Type a message')).toHaveFocus();
+    });
+
+    it('keeps composer focus when an event arrives', async () => {
+      const user = userEvent.setup();
+      renderWithComposer();
+      await openInspector(user);
+
+      const composer = screen.getByLabelText('Type a message');
+      await user.click(composer);
+
+      act(() => {
+        publishInboundWsEvent(makePreferenceUpdate());
+      });
+
+      // A live event must never yank focus away mid-sentence.
+      expect(composer).toHaveFocus();
+      expect(screen.getAllByTestId('inspector-feed-item')).toHaveLength(1);
+    });
+
+    it('closes on Escape even while the composer has focus', async () => {
+      const user = userEvent.setup();
+      renderWithComposer();
+      await openInspector(user);
+
+      const composer = screen.getByLabelText('Type a message');
+      await user.click(composer);
+      await user.keyboard('{Escape}');
+
+      expect(screen.queryByTestId('inspector-panel')).not.toBeInTheDocument();
     });
   });
 });

@@ -18,6 +18,10 @@ import {
   useInspectorEvents,
   type InspectorEvent,
 } from '../hooks/use-inspector-events';
+import {
+  useIsWideEnoughToDock,
+  useReservedEdgeSpace,
+} from '../hooks/use-docked-panel';
 
 /**
  * Copy for the Inspector chrome. Kept together so the panel can be retuned
@@ -25,8 +29,12 @@ import {
  * `inspector-architecture.ts` for the node labels).
  */
 const COPY = {
+  toggleText: 'Inspector',
   toggleLabel: 'Open architecture inspector',
-  closeLabel: 'Close architecture inspector',
+  toggleCloseLabel: 'Close architecture inspector',
+  // Distinct from the toggle's label so the two controls are unambiguous to
+  // assistive tech and to tests querying by accessible name.
+  closeLabel: 'Dismiss architecture inspector',
   title: 'Live Architecture',
   subtitle: 'Real events, as they happen',
   feedHeading: 'Event feed',
@@ -44,53 +52,46 @@ const TIER_ORDER: readonly { tier: ArchitectureTier; heading: string }[] = [
   { tier: 'state', heading: 'State' },
 ];
 
+/**
+ * Mirrors `DemoToolbar`'s `secondaryButtonStyle` so the toggle reads as a peer
+ * of the Load / Reset controls it sits beside.
+ */
 const toggleButtonStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
-  justifyContent: 'center',
   gap: 6,
-  width: 36,
-  height: 36,
-  border: `1px solid ${colors.border}`,
-  borderRadius: borderRadius.sm,
+  padding: `6px ${spacing.sm}px`,
+  borderRadius: borderRadius.full,
   backgroundColor: colors.surface,
-  cursor: 'pointer',
-  fontSize: typography.sizes.md,
   color: colors.softBurgundy,
-  transition: `background-color ${animation.durations.fast}ms ${animation.easing.easeInOut}`,
+  border: `1px solid ${colors.border}`,
+  fontFamily: typography.bodyFontFamily,
+  fontSize: typography.sizes.xs,
+  fontWeight: typography.weights.semibold,
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+  transition: `opacity ${animation.durations.fast}ms ${animation.easing.easeInOut}`,
 };
 
-const overlayStyle: React.CSSProperties = {
-  position: 'fixed',
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-  zIndex: 200,
-  display: 'flex',
-  justifyContent: 'flex-end',
-};
-
-const backdropStyle: React.CSSProperties = {
-  position: 'absolute',
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-  backgroundColor: 'rgba(45, 32, 36, 0.45)',
+const toggleActiveStyle: React.CSSProperties = {
+  ...toggleButtonStyle,
+  backgroundColor: colors.blush,
+  border: `1px solid ${colors.softBurgundy}`,
 };
 
 const panelStyle: React.CSSProperties = {
-  position: 'relative',
+  position: 'fixed',
+  top: 0,
+  right: 0,
+  bottom: 0,
   width: PANEL_WIDTH,
   maxWidth: '100vw',
-  height: '100%',
   display: 'flex',
   flexDirection: 'column',
   backgroundColor: colors.cream,
   borderLeft: `1px solid ${colors.border}`,
   boxShadow: shadows.cardHover,
-  zIndex: 201,
+  zIndex: 200,
 };
 
 const headerStyle: React.CSSProperties = {
@@ -295,29 +296,31 @@ const emptyFeedStyle: React.CSSProperties = {
 
 /** Props for the Inspector toggle button. */
 export interface InspectorToggleProps {
-  onOpen: () => void;
+  onToggle: () => void;
   /** Whether the panel is currently open — reflected to assistive tech. */
   isOpen?: boolean;
   ref?: React.Ref<HTMLButtonElement>;
 }
 
 /**
- * The icon that opens the Inspector. Exported separately so a host toolbar
- * (e.g. `DemoToolbar`) can mount it with a one-line insertion.
+ * The button that opens and closes the Inspector. Exported separately so a
+ * host toolbar can drive the open state itself if it prefers.
  */
-export function InspectorToggle({ onOpen, isOpen = false, ref }: InspectorToggleProps) {
+export function InspectorToggle({ onToggle, isOpen = false, ref }: InspectorToggleProps) {
+  const label = isOpen ? COPY.toggleCloseLabel : COPY.toggleLabel;
   return (
     <button
       ref={ref}
       type="button"
-      style={toggleButtonStyle}
-      onClick={onOpen}
-      aria-label={COPY.toggleLabel}
+      style={isOpen ? toggleActiveStyle : toggleButtonStyle}
+      onClick={onToggle}
+      aria-label={label}
       aria-expanded={isOpen}
-      title={COPY.toggleLabel}
+      title={label}
       data-testid="inspector-toggle"
     >
       <span aria-hidden="true">&#9673;</span>
+      <span>{COPY.toggleText}</span>
     </button>
   );
 }
@@ -433,14 +436,22 @@ export interface ValentinInspectorPanelProps {
 }
 
 /**
- * The slide-over panel body. Rendered only while open, mirroring the
- * `SessionSidebar` mobile-overlay idiom (fixed overlay + backdrop + panel).
+ * The panel body — a **non-modal** complementary region.
+ *
+ * Deliberately not a modal dialog: Coral types into the chat composer while
+ * watching nodes light up, so the panel must never trap focus, steal focus on
+ * open, or block the rest of the app behind a backdrop. On viewports wide
+ * enough it docks beside the app (reserving edge space); on narrower ones it
+ * overlays, mirroring `SessionSidebar`'s responsive split.
  */
 export function ValentinInspectorPanel({ onClose }: ValentinInspectorPanelProps) {
   const { events, activeNodes, clear } = useInspectorEvents();
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const isDocked = useIsWideEnoughToDock();
 
-  // Escape closes the panel.
+  // Dock by reserving edge space, so the chat stays visible and usable.
+  useReservedEdgeSpace(PANEL_WIDTH, isDocked);
+
+  // Escape closes the panel, from anywhere — including the composer.
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -448,11 +459,6 @@ export function ValentinInspectorPanel({ onClose }: ValentinInspectorPanelProps)
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
   }, [onClose]);
-
-  // Move focus into the panel so keyboard users land somewhere sensible.
-  useEffect(() => {
-    closeButtonRef.current?.focus();
-  }, []);
 
   const transition = useMemo(
     () =>
@@ -463,43 +469,44 @@ export function ValentinInspectorPanel({ onClose }: ValentinInspectorPanelProps)
   );
 
   return (
-    <div style={overlayStyle} data-testid="inspector-overlay">
-      <div style={backdropStyle} onClick={onClose} aria-hidden="true" />
-      <aside
-        style={{ ...panelStyle, transition }}
-        role="dialog"
-        aria-modal="true"
-        aria-label={COPY.title}
-        data-testid="inspector-panel"
-      >
-        <div style={headerStyle}>
-          <div>
-            <h2 style={titleStyle}>{COPY.title}</h2>
-            <p style={subtitleStyle}>{COPY.subtitle}</p>
-          </div>
-          <button
-            ref={closeButtonRef}
-            type="button"
-            style={closeButtonStyle}
-            onClick={onClose}
-            aria-label={COPY.closeLabel}
-            data-testid="inspector-close"
-          >
-            &times;
-          </button>
+    <aside
+      style={{ ...panelStyle, transition }}
+      role="complementary"
+      aria-label={COPY.title}
+      data-testid="inspector-panel"
+      data-docked={isDocked ? 'true' : 'false'}
+    >
+      <div style={headerStyle}>
+        <div>
+          <h2 style={titleStyle}>{COPY.title}</h2>
+          <p style={subtitleStyle}>{COPY.subtitle}</p>
         </div>
-        <ArchitectureDiagram activeNodes={activeNodes} />
-        <EventFeed events={events} onClear={clear} />
-      </aside>
-    </div>
+        <button
+          type="button"
+          style={closeButtonStyle}
+          onClick={onClose}
+          aria-label={COPY.closeLabel}
+          data-testid="inspector-close"
+        >
+          &times;
+        </button>
+      </div>
+      <ArchitectureDiagram activeNodes={activeNodes} />
+      <EventFeed events={events} onClear={clear} />
+    </aside>
   );
 }
 
 /**
- * The Valentin Inspector — a toggle plus the slide-over panel it opens.
+ * The Valentin Inspector — a toggle plus the non-modal panel it opens.
  *
  * Self-contained: mount this anywhere (it is designed to sit inside a host
- * toolbar) and it owns its own open/closed state and focus restoration.
+ * toolbar) and it owns its own open/closed state.
+ *
+ * Focus is deliberately never moved when the panel *opens* — Coral will be
+ * typing in the composer with the panel open, so stealing focus would break
+ * the demo. Focus returns to the toggle only when the panel is explicitly
+ * closed, so keyboard users are not stranded on a removed element.
  */
 export function ValentinInspector() {
   const [isOpen, setIsOpen] = useState(false);
@@ -507,13 +514,20 @@ export function ValentinInspector() {
 
   const handleClose = useCallback(() => {
     setIsOpen(false);
-    // Return focus to the toggle that opened the panel.
     toggleRef.current?.focus();
   }, []);
 
+  const handleToggle = useCallback(() => {
+    if (isOpen) {
+      handleClose();
+      return;
+    }
+    setIsOpen(true);
+  }, [isOpen, handleClose]);
+
   return (
     <>
-      <InspectorToggle ref={toggleRef} isOpen={isOpen} onOpen={() => setIsOpen(true)} />
+      <InspectorToggle ref={toggleRef} isOpen={isOpen} onToggle={handleToggle} />
       {isOpen && <ValentinInspectorPanel onClose={handleClose} />}
     </>
   );

@@ -9,7 +9,8 @@
  * `src/client/utils/profile-field-registry.ts` verbatim. The client resolves a
  * preference to a profile field through `resolveField(category, key)`; an
  * unmatched pair silently falls out of the profile panel. The registry-coverage
- * test in `__tests__/demo-profile.test.ts` fails if a mapping ever drifts.
+ * tests in `src/server/api/__tests__/http-routes.test.ts` fail if a mapping
+ * ever drifts.
  *
  * The persona is fictional. No real person, and no identifying detail.
  */

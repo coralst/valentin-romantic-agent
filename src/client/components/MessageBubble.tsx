@@ -2,6 +2,45 @@ import type { ChatMessage } from '../../shared/interfaces/message';
 import { colors, spacing, borderRadius, typography, shadows } from '../design-system/tokens';
 import { useTypewriter } from '../hooks/use-typewriter';
 
+function renderFormattedText(text: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = [];
+  const regex = /(\*\*(.+?)\*\*)|(\*(.+?)\*)|(_(.+?)_)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+    if (match[1]) {
+      parts.push(<strong key={key++}>{match[2]}</strong>);
+    } else if (match[3]) {
+      parts.push(<em key={key++}>{match[4]}</em>);
+    } else if (match[5]) {
+      parts.push(<em key={key++}>{match[6]}</em>);
+    }
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+  return parts;
+}
+
+function renderContent(text: string): React.ReactNode {
+  const lines = text.split('\n');
+  if (lines.length === 1) {
+    return <>{renderFormattedText(text)}</>;
+  }
+  return lines.map((line, i) => (
+    <span key={i}>
+      {renderFormattedText(line)}
+      {i < lines.length - 1 && <br />}
+    </span>
+  ));
+}
+
 interface MessageBubbleProps {
   message: ChatMessage;
   /** When true (agent messages only), reveal the text letter-by-letter. */
@@ -90,7 +129,7 @@ export function MessageBubble({ message, animate = false }: MessageBubbleProps) 
           <span style={visuallyHidden}>{message.content}</span>
           {/* Presentational animated text */}
           <span aria-hidden="true">
-            {animate ? displayedText : message.content}
+            {animate ? renderContent(displayedText) : renderContent(message.content)}
           </span>
         </div>
       </div>
@@ -99,7 +138,7 @@ export function MessageBubble({ message, animate = false }: MessageBubbleProps) 
 
   return (
     <div style={userWrapperStyle} data-testid="message-bubble" data-sender="user">
-      <div style={userBubbleStyle}>{message.content}</div>
+      <div style={userBubbleStyle}>{renderContent(message.content)}</div>
     </div>
   );
 }

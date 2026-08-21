@@ -1,8 +1,8 @@
-import React from 'react';
-import { ChatProvider } from './context/chat-context';
-import { PreferencesProvider } from './context/preferences-context';
+import React, { useEffect, useRef } from 'react';
+import { ChatProvider, useChatContext } from './context/chat-context';
+import { PreferencesProvider, usePreferencesContext } from './context/preferences-context';
 import { WebSocketProvider } from './context/websocket-context';
-import { SessionProvider } from './context/session-context';
+import { SessionProvider, useSessionContext } from './context/session-context';
 import { AppLayout } from './components/AppLayout';
 import { colors, typography, spacing } from './design-system/tokens';
 
@@ -86,15 +86,42 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 }
 
+function SessionSyncer({ children }: { children: React.ReactNode }) {
+  const { activeSession } = useSessionContext();
+  const { dispatch: chatDispatch } = useChatContext();
+  const { dispatch: preferencesDispatch } = usePreferencesContext();
+  const prevSessionIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const currentId = activeSession?.id ?? null;
+    if (currentId === prevSessionIdRef.current) return;
+    prevSessionIdRef.current = currentId;
+
+    chatDispatch({
+      type: 'SWITCH_SESSION',
+      sessionId: currentId,
+      messages: activeSession?.messages ?? [],
+    });
+    preferencesDispatch({
+      type: 'LOAD_PREFERENCES',
+      preferences: activeSession?.preferences ?? [],
+    });
+  }, [activeSession, chatDispatch, preferencesDispatch]);
+
+  return <>{children}</>;
+}
+
 export function App() {
   return (
     <ErrorBoundary>
       <SessionProvider>
         <ChatProvider>
           <PreferencesProvider>
-            <WebSocketProvider>
-              <AppLayout />
-            </WebSocketProvider>
+            <SessionSyncer>
+              <WebSocketProvider>
+                <AppLayout />
+              </WebSocketProvider>
+            </SessionSyncer>
           </PreferencesProvider>
         </ChatProvider>
       </SessionProvider>

@@ -7,6 +7,7 @@ import {
   saveSessions,
   saveSession,
   deleteSession as deleteSessionFromStore,
+  renameSession as renameSessionInStore,
   createNewSession,
   loadSidebarCollapsed,
   saveSidebarCollapsed,
@@ -26,6 +27,7 @@ export type SessionAction =
   | { type: 'SET_ACTIVE'; id: string }
   | { type: 'ADD_SESSION'; session: StoredSession }
   | { type: 'DELETE_SESSION'; id: string }
+  | { type: 'RENAME_SESSION'; id: string; title: string }
   | { type: 'UPDATE_SESSION'; id: string; messages: ChatMessage[]; preferences: PreferenceWithHistory[]; partnerName?: string | null }
   | { type: 'TOGGLE_SIDEBAR' }
   | { type: 'SET_SIDEBAR_OPEN'; open: boolean };
@@ -73,6 +75,14 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
         sessions: filtered,
         activeSessionId: nextActiveId,
       };
+    }
+
+    case 'RENAME_SESSION': {
+      const trimmed = action.title.trim();
+      const sessions = state.sessions.map((s) =>
+        s.id === action.id ? { ...s, title: trimmed.length > 0 ? trimmed : null } : s,
+      );
+      return { ...state, sessions };
     }
 
     case 'UPDATE_SESSION': {
@@ -123,6 +133,7 @@ interface SessionContextValue {
   createSession: () => StoredSession;
   switchSession: (id: string) => void;
   removeSession: (id: string) => void;
+  renameSession: (id: string, title: string) => void;
   updateActiveSession: (messages: ChatMessage[], preferences: PreferenceWithHistory[], partnerName?: string | null) => void;
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
@@ -167,6 +178,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'DELETE_SESSION', id });
   }, []);
 
+  const renameSession = useCallback((id: string, title: string) => {
+    renameSessionInStore(id, title);
+    dispatch({ type: 'RENAME_SESSION', id, title });
+  }, []);
+
   const updateActiveSession = useCallback(
     (messages: ChatMessage[], preferences: PreferenceWithHistory[], partnerName?: string | null) => {
       if (!state.activeSessionId) return;
@@ -197,6 +213,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         createSession,
         switchSession,
         removeSession,
+        renameSession,
         updateActiveSession,
         toggleSidebar,
         setSidebarOpen,

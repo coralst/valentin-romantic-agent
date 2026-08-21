@@ -5,6 +5,9 @@ import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
 /** A session persisted to localStorage */
 export interface StoredSession {
   id: string;
+  /** User-given name for the conversation. Takes precedence over the
+   *  auto-derived partnerName when displaying the session title. */
+  title: string | null;
   partnerName: string | null;
   messages: ChatMessage[];
   preferences: PreferenceWithHistory[];
@@ -61,10 +64,21 @@ export function deleteSession(id: string): void {
   saveSessions(filtered);
 }
 
+/** Rename a session by id, persisting the new title */
+export function renameSession(id: string, title: string): void {
+  const sessions = loadSessions();
+  const idx = sessions.findIndex((s) => s.id === id);
+  if (idx < 0) return;
+  const trimmed = title.trim();
+  sessions[idx] = { ...sessions[idx], title: trimmed.length > 0 ? trimmed : null };
+  saveSessions(sessions);
+}
+
 /** Create a brand new empty session */
 export function createNewSession(): StoredSession {
   return {
     id: uuidv4(),
+    title: null,
     partnerName: null,
     messages: [],
     preferences: [],

@@ -16,6 +16,7 @@ export interface ChatState {
 /** All actions the chat reducer can handle */
 export type ChatAction =
   | { type: 'SESSION_INIT'; sessionId: string; welcomeMessage: ChatMessage }
+  | { type: 'SWITCH_SESSION'; sessionId: string | null; messages: ChatMessage[] }
   | { type: 'SEND_MESSAGE'; message: ChatMessage }
   | { type: 'RECEIVE_MESSAGE'; message: ChatMessage }
   | { type: 'SET_TYPING'; isTyping: boolean }
@@ -46,6 +47,15 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         ...state,
         sessionId: action.sessionId,
         messages: sortByTimestamp([...state.messages, action.welcomeMessage]),
+      };
+
+    case 'SWITCH_SESSION':
+      return {
+        ...state,
+        sessionId: action.sessionId,
+        messages: action.messages,
+        isTyping: false,
+        inputValue: '',
       };
 
     case 'SEND_MESSAGE':

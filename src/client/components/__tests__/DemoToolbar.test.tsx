@@ -82,8 +82,28 @@ describe('DemoToolbar', () => {
 
   it('renders extra controls passed as children', () => {
     vi.stubGlobal('fetch', vi.fn());
-    renderToolbar(<button type="button">Inspector</button>);
-    expect(screen.getByRole('button', { name: 'Inspector' })).toBeInTheDocument();
+    renderToolbar(<button type="button">Extra control</button>);
+    expect(screen.getByRole('button', { name: 'Extra control' })).toBeInTheDocument();
+  });
+
+  it('includes the architecture inspector toggle', () => {
+    vi.stubGlobal('fetch', vi.fn());
+    renderToolbar();
+    expect(
+      screen.getByRole('button', { name: 'Open architecture inspector' }),
+    ).toBeInTheDocument();
+  });
+
+  it('opens the inspector without disturbing the demo controls', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('fetch', vi.fn());
+    renderToolbar();
+
+    await user.click(screen.getByRole('button', { name: 'Open architecture inspector' }));
+
+    expect(screen.getByTestId('inspector-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('load-demo-profile-button')).toBeEnabled();
+    expect(screen.getByTestId('reset-session-button')).toBeEnabled();
   });
 
   describe('Load demo profile', () => {

@@ -16,6 +16,7 @@ function renderSidebar(isMobile = false) {
 function makeMockSession(overrides: Partial<StoredSession> = {}): StoredSession {
   return {
     id: 'session-1',
+    title: null,
     partnerName: 'Alice',
     messages: [
       { id: 'm1', sessionId: 'session-1', sender: 'user', content: 'Hello there!', timestamp: new Date().toISOString() },
@@ -117,6 +118,37 @@ describe('SessionSidebar', () => {
       await user.click(deleteBtn);
       expect(screen.queryByText('DeleteMe')).not.toBeInTheDocument();
       expect(screen.getByText('KeepMe')).toBeInTheDocument();
+    });
+
+    it('renames a session via the rename button and input', async () => {
+      const user = userEvent.setup();
+      const sessions: StoredSession[] = [makeMockSession({ id: 'to-rename', partnerName: 'Alice' })];
+      localStorage.setItem('valentin_sessions', JSON.stringify(sessions));
+      renderSidebar(false);
+
+      await user.click(screen.getByTestId('rename-session-button'));
+      const input = screen.getByTestId('rename-session-input');
+      await user.clear(input);
+      await user.type(input, 'Birthday ideas{Enter}');
+
+      expect(screen.getByText('Birthday ideas')).toBeInTheDocument();
+      const stored = JSON.parse(localStorage.getItem('valentin_sessions')!);
+      expect(stored[0].title).toBe('Birthday ideas');
+    });
+
+    it('cancels a rename on Escape, leaving the title unchanged', async () => {
+      const user = userEvent.setup();
+      const sessions: StoredSession[] = [makeMockSession({ id: 'to-rename', partnerName: 'Alice' })];
+      localStorage.setItem('valentin_sessions', JSON.stringify(sessions));
+      renderSidebar(false);
+
+      await user.click(screen.getByTestId('rename-session-button'));
+      const input = screen.getByTestId('rename-session-input');
+      await user.clear(input);
+      await user.type(input, 'Discarded{Escape}');
+
+      expect(screen.getByText('Alice')).toBeInTheDocument();
+      expect(screen.queryByText('Discarded')).not.toBeInTheDocument();
     });
   });
 

@@ -146,6 +146,7 @@ export function SessionSidebar({ isMobile }: SessionSidebarProps) {
     createSession,
     switchSession,
     removeSession,
+    renameSession,
     toggleSidebar,
     setSidebarOpen,
   } = useSessionContext();
@@ -172,6 +173,10 @@ export function SessionSidebar({ isMobile }: SessionSidebarProps) {
 
   const handleDelete = (id: string) => {
     removeSession(id);
+  };
+
+  const handleRename = (id: string, title: string) => {
+    renameSession(id, title);
   };
 
   // Mobile: render as overlay when open
@@ -214,6 +219,7 @@ export function SessionSidebar({ isMobile }: SessionSidebarProps) {
                   isActive={session.id === activeSessionId}
                   onSelect={handleSelect}
                   onDelete={handleDelete}
+                  onRename={handleRename}
                 />
               ))
             )}
@@ -276,6 +282,7 @@ export function SessionSidebar({ isMobile }: SessionSidebarProps) {
               isActive={session.id === activeSessionId}
               onSelect={handleSelect}
               onDelete={handleDelete}
+              onRename={handleRename}
             />
           ))
         )}

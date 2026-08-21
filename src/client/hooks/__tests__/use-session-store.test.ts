@@ -4,6 +4,7 @@ import {
   saveSessions,
   saveSession,
   deleteSession,
+  renameSession,
   createNewSession,
   loadSidebarCollapsed,
   saveSidebarCollapsed,
@@ -25,6 +26,7 @@ describe('use-session-store', () => {
       const sessions: StoredSession[] = [
         {
           id: 'test-1',
+          title: null,
           partnerName: 'Alice',
           messages: [],
           preferences: [],
@@ -57,6 +59,7 @@ describe('use-session-store', () => {
       const sessions: StoredSession[] = [
         {
           id: 's1',
+          title: null,
           partnerName: null,
           messages: [],
           preferences: [],
@@ -73,6 +76,7 @@ describe('use-session-store', () => {
     it('enforces maximum of 10 sessions, keeping most recent', () => {
       const sessions: StoredSession[] = Array.from({ length: 12 }, (_, i) => ({
         id: `s${i}`,
+        title: null,
         partnerName: null,
         messages: [],
         preferences: [],
@@ -89,8 +93,8 @@ describe('use-session-store', () => {
 
     it('sorts sessions by lastActivity descending', () => {
       const sessions: StoredSession[] = [
-        { id: 'old', partnerName: null, messages: [], preferences: [], lastActivity: '2026-07-01T00:00:00.000Z', messageCount: 0 },
-        { id: 'new', partnerName: null, messages: [], preferences: [], lastActivity: '2026-07-31T00:00:00.000Z', messageCount: 0 },
+        { id: 'old', title: null, partnerName: null, messages: [], preferences: [], lastActivity: '2026-07-01T00:00:00.000Z', messageCount: 0 },
+        { id: 'new', title: null, partnerName: null, messages: [], preferences: [], lastActivity: '2026-07-31T00:00:00.000Z', messageCount: 0 },
       ];
       saveSessions(sessions);
       const stored = JSON.parse(localStorage.getItem('valentin_sessions')!);
@@ -103,6 +107,7 @@ describe('use-session-store', () => {
     it('adds a new session to the store', () => {
       const session: StoredSession = {
         id: 'new-session',
+        title: null,
         partnerName: 'Bob',
         messages: [],
         preferences: [],
@@ -118,6 +123,7 @@ describe('use-session-store', () => {
     it('updates an existing session with the same id', () => {
       const session: StoredSession = {
         id: 'existing',
+        title: null,
         partnerName: null,
         messages: [],
         preferences: [],
@@ -136,8 +142,8 @@ describe('use-session-store', () => {
   describe('deleteSession', () => {
     it('removes a session by id', () => {
       const sessions: StoredSession[] = [
-        { id: 'keep', partnerName: null, messages: [], preferences: [], lastActivity: '2026-07-30T12:00:00.000Z', messageCount: 0 },
-        { id: 'remove', partnerName: null, messages: [], preferences: [], lastActivity: '2026-07-30T10:00:00.000Z', messageCount: 0 },
+        { id: 'keep', title: null, partnerName: null, messages: [], preferences: [], lastActivity: '2026-07-30T12:00:00.000Z', messageCount: 0 },
+        { id: 'remove', title: null, partnerName: null, messages: [], preferences: [], lastActivity: '2026-07-30T10:00:00.000Z', messageCount: 0 },
       ];
       saveSessions(sessions);
       deleteSession('remove');
@@ -148,11 +154,40 @@ describe('use-session-store', () => {
 
     it('does nothing if id does not exist', () => {
       const sessions: StoredSession[] = [
-        { id: 'only', partnerName: null, messages: [], preferences: [], lastActivity: '2026-07-30T12:00:00.000Z', messageCount: 0 },
+        { id: 'only', title: null, partnerName: null, messages: [], preferences: [], lastActivity: '2026-07-30T12:00:00.000Z', messageCount: 0 },
       ];
       saveSessions(sessions);
       deleteSession('nonexistent');
       expect(loadSessions()).toHaveLength(1);
+    });
+  });
+
+  describe('renameSession', () => {
+    it('sets a trimmed title on the matching session', () => {
+      const sessions: StoredSession[] = [
+        { id: 'a', title: null, partnerName: null, messages: [], preferences: [], lastActivity: '2026-07-30T12:00:00.000Z', messageCount: 0 },
+      ];
+      saveSessions(sessions);
+      renameSession('a', '  Anniversary planning  ');
+      expect(loadSessions()[0].title).toBe('Anniversary planning');
+    });
+
+    it('clears the title to null when renamed to blank', () => {
+      const sessions: StoredSession[] = [
+        { id: 'a', title: 'Old name', partnerName: null, messages: [], preferences: [], lastActivity: '2026-07-30T12:00:00.000Z', messageCount: 0 },
+      ];
+      saveSessions(sessions);
+      renameSession('a', '   ');
+      expect(loadSessions()[0].title).toBeNull();
+    });
+
+    it('does nothing if id does not exist', () => {
+      const sessions: StoredSession[] = [
+        { id: 'a', title: null, partnerName: null, messages: [], preferences: [], lastActivity: '2026-07-30T12:00:00.000Z', messageCount: 0 },
+      ];
+      saveSessions(sessions);
+      renameSession('nonexistent', 'Whatever');
+      expect(loadSessions()[0].title).toBeNull();
     });
   });
 
@@ -168,6 +203,7 @@ describe('use-session-store', () => {
       expect(session.preferences).toEqual([]);
       expect(session.messageCount).toBe(0);
       expect(session.partnerName).toBeNull();
+      expect(session.title).toBeNull();
     });
 
     it('returns a session with a recent lastActivity timestamp', () => {

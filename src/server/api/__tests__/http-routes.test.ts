@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createHttpRoutes } from '../http-routes';
-import { InMemoryStore } from '../../persistence/in-memory-store';
+import { InMemoryStoreFactory } from '../../persistence/in-memory-store';
+import type { StorageInterface } from '../../persistence/storage-interface';
 import {
   DEMO_PROFILE_PREFERENCES,
   DEMO_SEED_SOURCE_MESSAGE_ID,
@@ -14,11 +15,11 @@ interface SeedBody {
 }
 
 describe('createHttpRoutes', () => {
-  let store: InMemoryStore;
+  let store: StorageInterface;
   let routes: ReturnType<typeof createHttpRoutes>;
 
   beforeEach(() => {
-    store = new InMemoryStore();
+    store = new InMemoryStoreFactory().forUser('user-under-test');
     routes = createHttpRoutes(store);
   });
 

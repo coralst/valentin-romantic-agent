@@ -6,6 +6,7 @@ import {
   GetCommand,
   QueryCommand,
   UpdateCommand,
+  DeleteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import type { ChatMessage } from '../../shared/interfaces/message';
 import type {
@@ -15,7 +16,24 @@ import type {
   PreferenceWithHistory,
 } from '../../shared/interfaces/preference';
 import type { SessionData } from '../../shared/interfaces/session';
-import type { StorageInterface } from './storage-interface';
+import type {
+  PreferenceInput,
+  PreferenceRef,
+  ScopedStorageFactory,
+  ScopedStorageOptions,
+  SessionMetaPatch,
+  StorageInterface,
+} from './storage-interface';
+import {
+  META_SK,
+  MSG_PREFIX,
+  PREF_PREFIX,
+  msgSk,
+  prefSk,
+  sessionGsi1sk,
+  sessionPk,
+  userGsi1pk,
+} from './keys';
 import { config } from '../config';
 import { logger } from '../logging';
 
@@ -28,8 +46,8 @@ interface ItemKey {
 /** Maximum number of write requests DynamoDB accepts in one BatchWriteItem call */
 const BATCH_WRITE_LIMIT = 25;
 
-/** Bound on retries of unprocessed batch-delete keys, so a throttled table cannot loop forever */
-const BATCH_DELETE_MAX_ATTEMPTS = 5;
+/** Bound on retries of unprocessed batch keys, so a throttled table cannot loop forever */
+const BATCH_MAX_ATTEMPTS = 5;
 
 /** Split a list into fixed-size chunks */
 function chunk<T>(items: readonly T[], size: number): T[][] {
@@ -40,22 +58,33 @@ function chunk<T>(items: readonly T[], size: number): T[][] {
   return chunks;
 }
 
-/** DynamoDB single-table implementation of StorageInterface */
-export class DynamoDBStore implements StorageInterface {
-  private readonly docClient: DynamoDBDocumentClient;
-  private readonly tableName: string;
+/**
+ * Build the shared document client.
+ *
+ * One client per process, shared by every scoped store: it holds the HTTP
+ * connection pool, and the stores are created per connection.
+ */
+function defaultDocClient(): DynamoDBDocumentClient {
+  return DynamoDBDocumentClient.from(
+    new DynamoDBClient({ region: config.awsRegion }),
+    { marshallOptions: { removeUndefinedValues: true } },
+  );
+}
 
-  constructor(docClient?: DynamoDBDocumentClient, tableName?: string) {
-    if (docClient) {
-      this.docClient = docClient;
-    } else {
-      const ddbClient = new DynamoDBClient({ region: config.awsRegion });
-      this.docClient = DynamoDBDocumentClient.from(ddbClient, {
-        marshallOptions: { removeUndefinedValues: true },
-      });
-    }
-    this.tableName = tableName ?? config.dynamoTableName;
-  }
+/**
+ * DynamoDB-backed storage, scoped to one user.
+ *
+ * Obtain instances via {@link DynamoDBStoreFactory}, never with `new` from
+ * application code — the constructor takes a user id precisely so that no
+ * method needs one, and so that no caller can accidentally omit it.
+ */
+export class DynamoDBStore implements StorageInterface {
+  constructor(
+    private readonly userId: string,
+    private readonly docClient: DynamoDBDocumentClient,
+    private readonly tableName: string,
+    private readonly ttlSeconds?: number,
+  ) {}
 
   // --- Session ---
 
@@ -63,21 +92,27 @@ export class DynamoDBStore implements StorageInterface {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
 
-    const item = {
-      pk: 'USER#anonymous',
-      sk: `SESSION#${id}`,
-      gsi1pk: `SESSION#${id}`,
-      gsi1sk: 'META',
-      id,
-      createdAt: now,
-      endedAt: null,
-      messageCount: 0,
-      preferenceCount: 0,
-      entityType: 'Session',
-    };
-
     await this.docClient.send(
-      new PutCommand({ TableName: this.tableName, Item: item }),
+      new PutCommand({
+        TableName: this.tableName,
+        Item: this.withTtl({
+          pk: sessionPk(this.userId, id),
+          sk: META_SK,
+          // Only meta items carry gsi1*, which is what makes GSI1 sparse: one
+          // row per session, so listSessions needs no filter.
+          gsi1pk: userGsi1pk(this.userId),
+          gsi1sk: sessionGsi1sk(now, id),
+          id,
+          createdAt: now,
+          lastActivity: now,
+          endedAt: null,
+          messageCount: 0,
+          preferenceCount: 0,
+          title: null,
+          partnerName: null,
+          entityType: 'Session',
+        }),
+      }),
     );
 
     logger.info('session.created', { sessionId: id });
@@ -85,63 +120,70 @@ export class DynamoDBStore implements StorageInterface {
   }
 
   async getSession(sessionId: string): Promise<SessionData | null> {
+    // A plain GetItem, because the user id is part of the partition key. Another
+    // user's session id produces a key that simply does not exist, so isolation
+    // needs no ownership check here or at any caller.
     const result = await this.docClient.send(
       new GetCommand({
         TableName: this.tableName,
-        Key: { pk: `SESSION#${sessionId}`, sk: 'META' },
+        Key: { pk: sessionPk(this.userId, sessionId), sk: META_SK },
       }),
     );
 
-    // Try GSI1 lookup pattern: gsi1pk=SESSION#<id>, gsi1sk=META
-    // Since we stored with pk=USER#anonymous, sk=SESSION#<id>,
-    // and gsi1pk=SESSION#<id>, gsi1sk=META — query the GSI
-    if (!result.Item) {
-      const queryResult = await this.docClient.send(
-        new QueryCommand({
-          TableName: this.tableName,
-          IndexName: 'GSI1',
-          KeyConditionExpression: 'gsi1pk = :pk AND gsi1sk = :sk',
-          ExpressionAttributeValues: {
-            ':pk': `SESSION#${sessionId}`,
-            ':sk': 'META',
-          },
-        }),
-      );
-      const item = queryResult.Items?.[0];
-      if (!item) return null;
-      return this.toSessionData(item);
-    }
+    return result.Item ? toSessionData(result.Item) : null;
+  }
 
-    return this.toSessionData(result.Item);
+  async listSessions(): Promise<SessionData[]> {
+    const items = await this.queryAll({
+      TableName: this.tableName,
+      IndexName: 'GSI1',
+      KeyConditionExpression: 'gsi1pk = :pk',
+      ExpressionAttributeValues: { ':pk': userGsi1pk(this.userId) },
+      // Newest first: gsi1sk is TS#<createdAt>#<id>, so descending is reverse
+      // chronological with no client-side sort.
+      ScanIndexForward: false,
+    });
+
+    return items.map(toSessionData);
+  }
+
+  async updateSessionMeta(sessionId: string, patch: SessionMetaPatch): Promise<void> {
+    const sets: string[] = [];
+    const values: Record<string, unknown> = {};
+
+    if (patch.title !== undefined) {
+      sets.push('title = :title');
+      values[':title'] = patch.title;
+    }
+    if (patch.partnerName !== undefined) {
+      sets.push('partnerName = :partnerName');
+      values[':partnerName'] = patch.partnerName;
+    }
+    if (sets.length === 0) return;
+
+    await this.updateSessionIfExists(sessionId, `SET ${sets.join(', ')}`, values);
   }
 
   async endSession(sessionId: string): Promise<void> {
-    const now = new Date().toISOString();
-
-    // We need to update the item using its primary key pattern
-    // The session is stored with pk=USER#anonymous, sk=SESSION#<id>
-    await this.docClient.send(
-      new UpdateCommand({
-        TableName: this.tableName,
-        Key: { pk: 'USER#anonymous', sk: `SESSION#${sessionId}` },
-        UpdateExpression: 'SET endedAt = :endedAt',
-        ExpressionAttributeValues: { ':endedAt': now },
-      }),
-    );
-
+    await this.updateSessionIfExists(sessionId, 'SET endedAt = :endedAt', {
+      ':endedAt': new Date().toISOString(),
+    });
     logger.info('session.ended', { sessionId });
   }
 
   async clearSession(sessionId: string): Promise<void> {
-    const prefKeys = await this.collectItemKeys(sessionId, 'PREF#');
-    const msgKeys = await this.collectItemKeys(sessionId, 'MSG#');
-    const keys = [...prefKeys, ...msgKeys];
+    const prefKeys = await this.collectItemKeys(sessionId, PREF_PREFIX);
+    const msgKeys = await this.collectItemKeys(sessionId, MSG_PREFIX);
 
-    for (const batch of chunk(keys, BATCH_WRITE_LIMIT)) {
-      await this.batchDelete(batch);
-    }
+    await this.batchDeleteAll([...prefKeys, ...msgKeys]);
 
-    await this.resetSessionCounters(sessionId);
+    // Zero the counters rather than decrementing, and tolerate a missing session
+    // so the documented "no-op for unknown session ids" actually holds.
+    await this.updateSessionIfExists(
+      sessionId,
+      'SET messageCount = :zero, preferenceCount = :zero, partnerName = :null',
+      { ':zero': 0, ':null': null },
+    );
 
     logger.info('session.cleared', {
       sessionId,
@@ -150,48 +192,60 @@ export class DynamoDBStore implements StorageInterface {
     });
   }
 
+  async deleteSession(sessionId: string): Promise<void> {
+    // Everything for a session shares one partition, so one query per prefix
+    // plus the meta row covers it.
+    const keys = [
+      ...(await this.collectItemKeys(sessionId, PREF_PREFIX)),
+      ...(await this.collectItemKeys(sessionId, MSG_PREFIX)),
+      { pk: sessionPk(this.userId, sessionId), sk: META_SK },
+    ];
+
+    await this.batchDeleteAll(keys);
+    logger.info('session.deleted', { sessionId, itemsDeleted: keys.length });
+  }
+
   // --- Messages ---
 
   async saveMessage(msg: ChatMessage): Promise<void> {
-    const item = {
-      pk: `SESSION#${msg.sessionId}`,
-      sk: `MSG#${msg.timestamp}#${msg.id}`,
-      id: msg.id,
-      sessionId: msg.sessionId,
-      sender: msg.sender,
-      content: msg.content,
-      timestamp: msg.timestamp,
-      entityType: 'Message',
-    };
-
     await this.docClient.send(
-      new PutCommand({ TableName: this.tableName, Item: item }),
+      new PutCommand({
+        TableName: this.tableName,
+        Item: this.withTtl({
+          pk: sessionPk(this.userId, msg.sessionId),
+          sk: msgSk(msg.timestamp, msg.id),
+          id: msg.id,
+          sessionId: msg.sessionId,
+          sender: msg.sender,
+          content: msg.content,
+          timestamp: msg.timestamp,
+          entityType: 'Message',
+        }),
+      }),
     );
 
-    // Increment session message count
-    await this.docClient.send(
-      new UpdateCommand({
-        TableName: this.tableName,
-        Key: { pk: 'USER#anonymous', sk: `SESSION#${msg.sessionId}` },
-        UpdateExpression: 'SET messageCount = messageCount + :inc',
-        ExpressionAttributeValues: { ':inc': 1 },
-      }),
+    // ADD, not `SET messageCount = messageCount + :inc`. The latter throws
+    // ValidationException whenever the attribute is absent, which is every
+    // session the previous store created — it wrote counters at creation but
+    // then also upserted meta rows that had none.
+    await this.updateSessionIfExists(
+      msg.sessionId,
+      'SET lastActivity = :now ADD messageCount :inc',
+      { ':inc': 1, ':now': msg.timestamp },
     );
   }
 
   async getMessagesBySession(sessionId: string): Promise<ChatMessage[]> {
-    const result = await this.docClient.send(
-      new QueryCommand({
-        TableName: this.tableName,
-        KeyConditionExpression: 'pk = :pk AND begins_with(sk, :prefix)',
-        ExpressionAttributeValues: {
-          ':pk': `SESSION#${sessionId}`,
-          ':prefix': 'MSG#',
-        },
-      }),
-    );
+    const items = await this.queryAll({
+      TableName: this.tableName,
+      KeyConditionExpression: 'pk = :pk AND begins_with(sk, :prefix)',
+      ExpressionAttributeValues: {
+        ':pk': sessionPk(this.userId, sessionId),
+        ':prefix': MSG_PREFIX,
+      },
+    });
 
-    return (result.Items ?? []).map((item) => ({
+    return items.map((item) => ({
       id: item.id as string,
       sessionId: item.sessionId as string,
       sender: item.sender as ChatMessage['sender'],
@@ -207,12 +261,30 @@ export class DynamoDBStore implements StorageInterface {
       sourceMessageId: string;
     },
   ): Promise<PreferenceWithHistory> {
-    const id = crypto.randomUUID();
-    const now = new Date().toISOString();
+    const [record] = await this.savePreferencesBatch(pref.sessionId, [
+      {
+        category: pref.category,
+        key: pref.key,
+        value: pref.value,
+        confidence: pref.confidence,
+        sourceMessageId: pref.sourceMessageId,
+      },
+    ]);
+    return record;
+  }
 
-    const record: PreferenceWithHistory = {
-      id,
-      sessionId: pref.sessionId,
+  async savePreferencesBatch(
+    sessionId: string,
+    prefs: readonly PreferenceInput[],
+  ): Promise<PreferenceWithHistory[]> {
+    if (prefs.length === 0) return [];
+
+    const now = new Date().toISOString();
+    const pk = sessionPk(this.userId, sessionId);
+
+    const records = prefs.map<PreferenceWithHistory>((pref) => ({
+      id: crypto.randomUUID(),
+      sessionId,
       category: pref.category,
       key: pref.key,
       value: pref.value,
@@ -221,120 +293,98 @@ export class DynamoDBStore implements StorageInterface {
       createdAt: now,
       updatedAt: now,
       history: [],
-    };
+    }));
 
-    const item = {
-      pk: `SESSION#${pref.sessionId}`,
-      sk: `PREF#${pref.category}#${pref.key}`,
-      gsi1pk: `SESSION#${pref.sessionId}`,
-      gsi1sk: `PREF#${pref.category}#${pref.key}`,
-      ...record,
-      entityType: 'Preference',
-    };
+    for (const batch of chunk(records, BATCH_WRITE_LIMIT)) {
+      await this.batchWrite(
+        batch.map((record) => ({
+          PutRequest: {
+            Item: this.withTtl({
+              pk,
+              sk: prefSk(record.category, record.key),
+              ...record,
+              entityType: 'Preference',
+            }),
+          },
+        })),
+      );
+    }
 
-    await this.docClient.send(
-      new PutCommand({ TableName: this.tableName, Item: item }),
+    // One counter update for the whole batch rather than one per preference.
+    await this.updateSessionIfExists(
+      sessionId,
+      'SET lastActivity = :now ADD preferenceCount :inc',
+      { ':inc': records.length, ':now': now },
     );
 
-    // Increment session preference count
-    await this.docClient.send(
-      new UpdateCommand({
-        TableName: this.tableName,
-        Key: { pk: 'USER#anonymous', sk: `SESSION#${pref.sessionId}` },
-        UpdateExpression: 'SET preferenceCount = preferenceCount + :inc',
-        ExpressionAttributeValues: { ':inc': 1 },
-      }),
-    );
-
-    logger.info('preference.saved', { sessionId: pref.sessionId, category: pref.category, key: pref.key });
-    return record;
+    logger.info('preference.saved', { sessionId, count: records.length });
+    return records;
   }
 
   async updatePreference(
-    id: string,
+    ref: PreferenceRef,
     update: Partial<Pick<Preference, 'value' | 'confidence' | 'sourceMessageId'>>,
   ): Promise<PreferenceWithHistory> {
-    // First, find the existing preference by querying for it
-    // We need to look it up — since the PK/SK don't include the ID, we must
-    // find which item has this ID. In production, you'd maintain an ID-to-key index.
-    // For now, scan preferences with the GSI
-    // This is acceptable since preferences per session are bounded.
-    const scanResult = await this.docClient.send(
-      new QueryCommand({
-        TableName: this.tableName,
-        IndexName: 'GSI1',
-        KeyConditionExpression: 'begins_with(gsi1pk, :prefix)',
-        FilterExpression: 'id = :id',
-        ExpressionAttributeValues: {
-          ':prefix': 'SESSION#',
-          ':id': id,
-        },
-      }),
-    );
-
-    // Fallback: broader search if the above yields nothing (GSI requires exact key)
-    // We'll use a different approach: maintain the previous item in the update call
-    // Actually, the proper approach for DynamoDB is that callers know the session context.
-    // For the interface contract, we locate via attributes.
-    const item = scanResult.Items?.[0];
-    if (!item) {
-      throw new Error(`Preference not found: ${id}`);
+    const existing = await this.findPreference(ref.sessionId, ref.category, ref.key);
+    if (!existing) {
+      throw new Error(
+        `Preference not found: ${ref.sessionId}/${ref.category}/${ref.key}`,
+      );
     }
 
-    const existing = this.toPreferenceWithHistory(item);
     const now = new Date().toISOString();
-
     const historyEntry: PreferenceHistoryEntry = {
       previousValue: existing.value,
       changedAt: now,
       sourceMessageId: update.sourceMessageId ?? existing.sourceMessageId,
     };
 
-    const newHistory = [...existing.history, historyEntry];
-    const newValue = update.value ?? existing.value;
-    const newConfidence = update.confidence ?? existing.confidence;
-    const newSourceMessageId = update.sourceMessageId ?? existing.sourceMessageId;
+    const next: PreferenceWithHistory = {
+      ...existing,
+      value: update.value ?? existing.value,
+      confidence: update.confidence ?? existing.confidence,
+      sourceMessageId: update.sourceMessageId ?? existing.sourceMessageId,
+      updatedAt: now,
+      history: [...existing.history, historyEntry],
+    };
 
     await this.docClient.send(
       new UpdateCommand({
         TableName: this.tableName,
-        Key: { pk: item.pk as string, sk: item.sk as string },
+        Key: { pk: sessionPk(this.userId, ref.sessionId), sk: prefSk(ref.category, ref.key) },
         UpdateExpression:
           'SET #val = :val, confidence = :conf, sourceMessageId = :src, updatedAt = :now, history = :hist',
+        // A revision must not resurrect a preference that was deleted between
+        // the read above and this write.
+        ConditionExpression: 'attribute_exists(pk)',
         ExpressionAttributeNames: { '#val': 'value' },
         ExpressionAttributeValues: {
-          ':val': newValue,
-          ':conf': newConfidence,
-          ':src': newSourceMessageId,
+          ':val': next.value,
+          ':conf': next.confidence,
+          ':src': next.sourceMessageId,
           ':now': now,
-          ':hist': newHistory,
+          ':hist': next.history,
         },
       }),
     );
 
-    return {
-      ...existing,
-      value: newValue,
-      confidence: newConfidence,
-      sourceMessageId: newSourceMessageId,
-      updatedAt: now,
-      history: newHistory,
-    };
+    // Deliberately no counter change: revising a preference does not add one.
+    // The store this replaced used a plain Put here, which wiped `history` while
+    // still incrementing preferenceCount on every revision.
+    return next;
   }
 
   async getPreferencesBySession(sessionId: string): Promise<PreferenceWithHistory[]> {
-    const result = await this.docClient.send(
-      new QueryCommand({
-        TableName: this.tableName,
-        KeyConditionExpression: 'pk = :pk AND begins_with(sk, :prefix)',
-        ExpressionAttributeValues: {
-          ':pk': `SESSION#${sessionId}`,
-          ':prefix': 'PREF#',
-        },
-      }),
-    );
+    const items = await this.queryAll({
+      TableName: this.tableName,
+      KeyConditionExpression: 'pk = :pk AND begins_with(sk, :prefix)',
+      ExpressionAttributeValues: {
+        ':pk': sessionPk(this.userId, sessionId),
+        ':prefix': PREF_PREFIX,
+      },
+    });
 
-    return (result.Items ?? []).map((item) => this.toPreferenceWithHistory(item));
+    return items.map(toPreferenceWithHistory);
   }
 
   async findPreference(
@@ -342,111 +392,188 @@ export class DynamoDBStore implements StorageInterface {
     category: PreferenceCategory,
     key: string,
   ): Promise<PreferenceWithHistory | null> {
+    // A GetItem, because the natural key *is* the primary key. This is the query
+    // the old schema could not express, which is why it reached for an illegal
+    // begins_with on a GSI partition key.
     const result = await this.docClient.send(
       new GetCommand({
         TableName: this.tableName,
         Key: {
-          pk: `SESSION#${sessionId}`,
-          sk: `PREF#${category}#${key}`,
+          pk: sessionPk(this.userId, sessionId),
+          sk: prefSk(category, key),
         },
       }),
     );
 
-    if (!result.Item) return null;
-    return this.toPreferenceWithHistory(result.Item);
+    return result.Item ? toPreferenceWithHistory(result.Item) : null;
   }
 
   // --- Helpers ---
+
+  /** Attach the table's `ttl` attribute when this store was given a lifetime */
+  private withTtl<T extends Record<string, unknown>>(item: T): T {
+    if (this.ttlSeconds === undefined) return item;
+    return {
+      ...item,
+      // Epoch *seconds*, which is what DynamoDB's TTL reads. Milliseconds here
+      // would put every expiry ~50,000 years out and quietly disable the whole
+      // feature.
+      ttl: Math.floor(Date.now() / 1000) + this.ttlSeconds,
+    };
+  }
+
+  /**
+   * Run a Query to exhaustion.
+   *
+   * DynamoDB caps a single Query response at 1 MB regardless of Limit, so a
+   * one-shot Query silently truncates. The store this replaced did exactly that
+   * in clearSession, which could therefore report success while leaving data
+   * behind past the first page.
+   */
+  private async queryAll(
+    input: ConstructorParameters<typeof QueryCommand>[0],
+  ): Promise<Record<string, unknown>[]> {
+    const items: Record<string, unknown>[] = [];
+    let startKey: Record<string, unknown> | undefined;
+
+    do {
+      const result = await this.docClient.send(
+        new QueryCommand({ ...input, ExclusiveStartKey: startKey }),
+      );
+      items.push(...((result.Items ?? []) as Record<string, unknown>[]));
+      startKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+    } while (startKey);
+
+    return items;
+  }
 
   /** Query every key under a session partition matching an sk prefix */
   private async collectItemKeys(
     sessionId: string,
     skPrefix: string,
   ): Promise<ItemKey[]> {
-    const result = await this.docClient.send(
-      new QueryCommand({
-        TableName: this.tableName,
-        KeyConditionExpression: 'pk = :pk AND begins_with(sk, :prefix)',
-        ProjectionExpression: 'pk, sk',
-        ExpressionAttributeValues: {
-          ':pk': `SESSION#${sessionId}`,
-          ':prefix': skPrefix,
-        },
-      }),
-    );
+    const items = await this.queryAll({
+      TableName: this.tableName,
+      KeyConditionExpression: 'pk = :pk AND begins_with(sk, :prefix)',
+      ProjectionExpression: 'pk, sk',
+      ExpressionAttributeValues: {
+        ':pk': sessionPk(this.userId, sessionId),
+        ':prefix': skPrefix,
+      },
+    });
 
-    return (result.Items ?? []).map((item) => ({
-      pk: item.pk as string,
-      sk: item.sk as string,
-    }));
+    return items.map((item) => ({ pk: item.pk as string, sk: item.sk as string }));
   }
 
-  /** Delete one batch of items, retrying any unprocessed keys */
-  private async batchDelete(
-    keys: readonly ItemKey[],
-    attemptsLeft = BATCH_DELETE_MAX_ATTEMPTS,
+  /** Delete an unbounded set of keys, chunked to the BatchWriteItem limit */
+  private async batchDeleteAll(keys: readonly ItemKey[]): Promise<void> {
+    for (const batch of chunk(keys, BATCH_WRITE_LIMIT)) {
+      await this.batchWrite(batch.map((Key) => ({ DeleteRequest: { Key } })));
+    }
+  }
+
+  /** Send one batch, retrying whatever DynamoDB declines to process */
+  private async batchWrite(
+    requests: readonly Record<string, unknown>[],
+    attemptsLeft = BATCH_MAX_ATTEMPTS,
   ): Promise<void> {
-    if (keys.length === 0) return;
+    if (requests.length === 0) return;
     if (attemptsLeft <= 0) {
       throw new Error(
-        `Failed to delete ${keys.length} item(s) after ${BATCH_DELETE_MAX_ATTEMPTS} attempts`,
+        `Failed to write ${requests.length} item(s) after ${BATCH_MAX_ATTEMPTS} attempts`,
       );
     }
 
     const result = await this.docClient.send(
       new BatchWriteCommand({
-        RequestItems: {
-          [this.tableName]: keys.map((Key) => ({ DeleteRequest: { Key } })),
-        },
+        RequestItems: { [this.tableName]: requests as never },
       }),
     );
 
     const unprocessed = result.UnprocessedItems?.[this.tableName] ?? [];
     if (unprocessed.length === 0) return;
 
-    const retryKeys = unprocessed
-      .map((req) => req.DeleteRequest?.Key)
-      .filter((key): key is Record<string, unknown> => Boolean(key))
-      .map((key) => ({ pk: key.pk as string, sk: key.sk as string }));
-
-    await this.batchDelete(retryKeys, attemptsLeft - 1);
-  }
-
-  /** Zero the session's message and preference counters */
-  private async resetSessionCounters(sessionId: string): Promise<void> {
-    await this.docClient.send(
-      new UpdateCommand({
-        TableName: this.tableName,
-        Key: { pk: 'USER#anonymous', sk: `SESSION#${sessionId}` },
-        UpdateExpression:
-          'SET messageCount = :zero, preferenceCount = :zero',
-        ExpressionAttributeValues: { ':zero': 0 },
-      }),
+    await this.batchWrite(
+      unprocessed as unknown as Record<string, unknown>[],
+      attemptsLeft - 1,
     );
   }
 
-  private toSessionData(item: Record<string, unknown>): SessionData {
-    return {
-      id: item.id as string,
-      createdAt: item.createdAt as string,
-      endedAt: (item.endedAt as string) ?? null,
-      messageCount: (item.messageCount as number) ?? 0,
-      preferenceCount: (item.preferenceCount as number) ?? 0,
-    };
+  /**
+   * Update a session's meta item, treating "no such session" as a no-op.
+   *
+   * Without the condition, UpdateItem would *create* a stub session item for an
+   * unknown id — an upsert nobody asked for, which is how a reset of a
+   * non-existent session used to leave a half-formed row behind.
+   */
+  private async updateSessionIfExists(
+    sessionId: string,
+    updateExpression: string,
+    values: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      await this.docClient.send(
+        new UpdateCommand({
+          TableName: this.tableName,
+          Key: { pk: sessionPk(this.userId, sessionId), sk: META_SK },
+          UpdateExpression: updateExpression,
+          ConditionExpression: 'attribute_exists(pk)',
+          ExpressionAttributeValues: values,
+        }),
+      );
+    } catch (err) {
+      if ((err as { name?: string }).name === 'ConditionalCheckFailedException') {
+        return;
+      }
+      throw err;
+    }
+  }
+}
+
+function toSessionData(item: Record<string, unknown>): SessionData {
+  return {
+    id: item.id as string,
+    createdAt: item.createdAt as string,
+    endedAt: (item.endedAt as string) ?? null,
+    messageCount: (item.messageCount as number) ?? 0,
+    preferenceCount: (item.preferenceCount as number) ?? 0,
+    lastActivity: (item.lastActivity as string) ?? (item.createdAt as string),
+    partnerName: (item.partnerName as string | null) ?? null,
+    title: (item.title as string | null) ?? null,
+  };
+}
+
+function toPreferenceWithHistory(item: Record<string, unknown>): PreferenceWithHistory {
+  return {
+    id: item.id as string,
+    sessionId: item.sessionId as string,
+    category: item.category as PreferenceCategory,
+    key: item.key as string,
+    value: item.value as string,
+    confidence: item.confidence as number,
+    sourceMessageId: item.sourceMessageId as string,
+    createdAt: item.createdAt as string,
+    updatedAt: item.updatedAt as string,
+    history: (item.history as PreferenceHistoryEntry[]) ?? [],
+  };
+}
+
+/**
+ * Hands out user-scoped DynamoDB stores over one shared connection pool.
+ *
+ * This is what production injects into createServer. There is no unscoped
+ * variant, by design.
+ */
+export class DynamoDBStoreFactory implements ScopedStorageFactory {
+  private readonly docClient: DynamoDBDocumentClient;
+  private readonly tableName: string;
+
+  constructor(docClient?: DynamoDBDocumentClient, tableName?: string) {
+    this.docClient = docClient ?? defaultDocClient();
+    this.tableName = tableName ?? config.dynamoTableName;
   }
 
-  private toPreferenceWithHistory(item: Record<string, unknown>): PreferenceWithHistory {
-    return {
-      id: item.id as string,
-      sessionId: item.sessionId as string,
-      category: item.category as PreferenceCategory,
-      key: item.key as string,
-      value: item.value as string,
-      confidence: item.confidence as number,
-      sourceMessageId: item.sourceMessageId as string,
-      createdAt: item.createdAt as string,
-      updatedAt: item.updatedAt as string,
-      history: (item.history as PreferenceHistoryEntry[]) ?? [],
-    };
+  forUser(userId: string, opts?: ScopedStorageOptions): StorageInterface {
+    return new DynamoDBStore(userId, this.docClient, this.tableName, opts?.ttlSeconds);
   }
 }

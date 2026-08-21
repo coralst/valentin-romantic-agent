@@ -1,9 +1,21 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as fc from 'fast-check';
-import { InMemoryStore } from '../in-memory-store';
+import { InMemoryStoreFactory } from '../in-memory-store';
+import type { StorageInterface } from '../storage-interface';
 import type { ChatMessage } from '../../../shared/interfaces/message';
 import type { PreferenceCategory } from '../../../shared/interfaces/preference';
 import { PREFERENCE_CATEGORIES } from '../../../shared/constants/categories';
+
+/**
+ * A store scoped to one throwaway user.
+ *
+ * There is deliberately no way to build an unscoped store — see
+ * ScopedStorageFactory. Tests that care about who owns what name their users;
+ * the property tests below only need *a* user, so they take the default.
+ */
+function newStore(userId = 'user-under-test'): StorageInterface {
+  return new InMemoryStoreFactory().forUser(userId);
+}
 
 // --- Generators ---
 
@@ -39,18 +51,18 @@ const extractedPrefArb = fc.record({
 // **Validates: Requirements 3.1, 3.2, 3.4**
 
 describe('Property 5: Message persistence round trip', () => {
-  let store: InMemoryStore;
+  let store: StorageInterface;
   let sessionId: string;
 
   beforeEach(async () => {
-    store = new InMemoryStore();
+    store = newStore();
     sessionId = await store.createSession();
   });
 
   it('saveMessage then getMessagesBySession returns message with identical fields', async () => {
     await fc.assert(
       fc.asyncProperty(chatMessageArb(sessionId), async (msg) => {
-        const freshStore = new InMemoryStore();
+        const freshStore = newStore();
         const sid = await freshStore.createSession();
         const message: ChatMessage = { ...msg, sessionId: sid };
 
@@ -73,7 +85,7 @@ describe('Property 5: Message persistence round trip', () => {
       fc.asyncProperty(
         fc.array(chatMessageArb(sessionId), { minLength: 0, maxLength: 20 }),
         async (messages) => {
-          const freshStore = new InMemoryStore();
+          const freshStore = newStore();
           const sid = await freshStore.createSession();
 
           for (const msg of messages) {
@@ -97,7 +109,7 @@ describe('Property 6: Preference persistence with valid structure', () => {
   it('persisted preference has non-empty id, valid category, non-empty key/value, confidence in [0,1]', async () => {
     await fc.assert(
       fc.asyncProperty(extractedPrefArb, async (extracted) => {
-        const store = new InMemoryStore();
+        const store = newStore();
         const sessionId = await store.createSession();
 
         const saved = await store.savePreference({
@@ -137,7 +149,7 @@ describe('Property 7: Preference update retains history', () => {
           maxLength: 10,
         }),
         async (newValues) => {
-          const store = new InMemoryStore();
+          const store = newStore();
           const sessionId = await store.createSession();
 
           const saved = await store.savePreference({
@@ -154,10 +166,13 @@ describe('Property 7: Preference update retains history', () => {
 
           for (let i = 0; i < newValues.length; i++) {
             const oldValue = currentValue;
-            result = await store.updatePreference(result.id, {
-              value: newValues[i],
-              sourceMessageId: `msg-${i + 1}`,
-            });
+            result = await store.updatePreference(
+              { sessionId, category: 'food', key: 'cuisine' },
+              {
+                value: newValues[i],
+                sourceMessageId: `msg-${i + 1}`,
+              },
+            );
             currentValue = newValues[i];
 
             // Most recent history entry should have the old value
@@ -179,11 +194,11 @@ describe('Property 7: Preference update retains history', () => {
 // --- clearSession ---
 
 describe('InMemoryStore.clearSession', () => {
-  let store: InMemoryStore;
+  let store: StorageInterface;
   let sessionId: string;
 
   beforeEach(async () => {
-    store = new InMemoryStore();
+    store = newStore();
     sessionId = await store.createSession();
     await store.savePreference({
       sessionId,
@@ -250,5 +265,178 @@ describe('InMemoryStore.clearSession', () => {
   it('is a no-op for an unknown session id', async () => {
     await expect(store.clearSession('does-not-exist')).resolves.toBeUndefined();
     expect(await store.getPreferencesBySession(sessionId)).toHaveLength(1);
+  });
+});
+
+// --- Cross-tenant isolation ---
+//
+// The security claim of the whole persistence layer: one user cannot reach
+// another's data even holding a valid session id. Both stores come from the
+// *same* factory and therefore share one data set — if they had private maps
+// every assertion below would pass without proving anything.
+
+describe('cross-tenant isolation', () => {
+  let alice: StorageInterface;
+  let bob: StorageInterface;
+  let aliceSession: string;
+
+  beforeEach(async () => {
+    const factory = new InMemoryStoreFactory();
+    alice = factory.forUser('alice');
+    bob = factory.forUser('bob');
+
+    aliceSession = await alice.createSession();
+    await alice.savePreference({
+      sessionId: aliceSession,
+      category: 'food',
+      key: 'cuisine',
+      value: 'Italian',
+      confidence: 0.9,
+      sourceMessageId: 'msg-1',
+    });
+    await alice.saveMessage({
+      id: 'msg-1',
+      sessionId: aliceSession,
+      sender: 'user',
+      content: 'She loves Italian food',
+      timestamp: '2026-01-01T00:00:00.000Z',
+    });
+  });
+
+  it('does not leak the session itself', async () => {
+    expect(await bob.getSession(aliceSession)).toBeNull();
+  });
+
+  it('does not leak messages', async () => {
+    expect(await bob.getMessagesBySession(aliceSession)).toEqual([]);
+  });
+
+  it('does not leak preferences', async () => {
+    expect(await bob.getPreferencesBySession(aliceSession)).toEqual([]);
+    expect(await bob.findPreference(aliceSession, 'food', 'cuisine')).toBeNull();
+  });
+
+  it('omits other users from listSessions', async () => {
+    await bob.createSession();
+
+    const bobIds = (await bob.listSessions()).map((s) => s.id);
+    expect(bobIds).toHaveLength(1);
+    expect(bobIds).not.toContain(aliceSession);
+  });
+
+  it('cannot clear another user\'s session', async () => {
+    await bob.clearSession(aliceSession);
+
+    expect(await alice.getPreferencesBySession(aliceSession)).toHaveLength(1);
+    expect(await alice.getMessagesBySession(aliceSession)).toHaveLength(1);
+  });
+
+  it('cannot delete another user\'s session', async () => {
+    await bob.deleteSession(aliceSession);
+
+    expect(await alice.getSession(aliceSession)).not.toBeNull();
+  });
+
+  it('cannot end another user\'s session', async () => {
+    await bob.endSession(aliceSession);
+
+    const session = await alice.getSession(aliceSession);
+    expect(session!.endedAt).toBeNull();
+  });
+
+  it('cannot rename another user\'s session', async () => {
+    await bob.updateSessionMeta(aliceSession, { title: 'hijacked' });
+
+    const session = await alice.getSession(aliceSession);
+    expect(session!.title).toBeNull();
+  });
+
+  it('keeps identical session ids apart across users', async () => {
+    // Two users can hold the same session id without colliding, because the
+    // user is part of the partition key rather than a field compared after
+    // the read.
+    const bobSession = await bob.createSession();
+    await bob.saveMessage({
+      id: 'bob-msg',
+      sessionId: bobSession,
+      sender: 'user',
+      content: 'Bob speaking',
+      timestamp: '2026-01-02T00:00:00.000Z',
+    });
+
+    const aliceMessages = await alice.getMessagesBySession(aliceSession);
+    expect(aliceMessages).toHaveLength(1);
+    expect(aliceMessages[0].id).toBe('msg-1');
+  });
+});
+
+// --- Session metadata ---
+
+describe('session metadata', () => {
+  it('records a partner name and a title', async () => {
+    const store = newStore();
+    const sessionId = await store.createSession();
+
+    await store.updateSessionMeta(sessionId, { partnerName: 'Maya' });
+    expect((await store.getSession(sessionId))!.partnerName).toBe('Maya');
+
+    await store.updateSessionMeta(sessionId, { title: 'Anniversary plans' });
+    const session = await store.getSession(sessionId);
+    expect(session!.title).toBe('Anniversary plans');
+    // A patch touches only the fields it names.
+    expect(session!.partnerName).toBe('Maya');
+  });
+
+  it('orders listSessions by most recent activity', async () => {
+    const store = newStore();
+    const older = await store.createSession();
+    const newer = await store.createSession();
+
+    await store.saveMessage({
+      id: 'm1',
+      sessionId: older,
+      sender: 'user',
+      content: 'first',
+      timestamp: '2026-01-01T00:00:00.000Z',
+    });
+    await store.saveMessage({
+      id: 'm2',
+      sessionId: newer,
+      sender: 'user',
+      content: 'second',
+      timestamp: '2026-02-01T00:00:00.000Z',
+    });
+
+    expect((await store.listSessions()).map((s) => s.id)).toEqual([newer, older]);
+  });
+
+  it('writes a batch of preferences with one counter bump', async () => {
+    const store = newStore();
+    const sessionId = await store.createSession();
+
+    const written = await store.savePreferencesBatch(sessionId, [
+      { category: 'food', key: 'cuisine', value: 'Italian', confidence: 0.9, sourceMessageId: 'm1' },
+      { category: 'music', key: 'genre', value: 'Indie', confidence: 0.8, sourceMessageId: 'm1' },
+    ]);
+
+    expect(written).toHaveLength(2);
+    expect((await store.getSession(sessionId))!.preferenceCount).toBe(2);
+  });
+
+  it('deleteSession removes the session and its contents', async () => {
+    const store = newStore();
+    const sessionId = await store.createSession();
+    await store.saveMessage({
+      id: 'm1',
+      sessionId,
+      sender: 'user',
+      content: 'hello',
+      timestamp: '2026-01-01T00:00:00.000Z',
+    });
+
+    await store.deleteSession(sessionId);
+
+    expect(await store.getSession(sessionId)).toBeNull();
+    expect(await store.getMessagesBySession(sessionId)).toEqual([]);
   });
 });

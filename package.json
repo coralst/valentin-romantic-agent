@@ -12,6 +12,8 @@
     "build": "vite build",
     "build:server": "tsc --project tsconfig.server.json",
     "test": "vitest --run",
+    "ddb-local:start": "docker run -d --rm -p 8000:8000 --name valentin-ddb-local amazon/dynamodb-local -jar DynamoDBLocal.jar -inMemory -sharedDb",
+    "ddb-local:stop": "docker stop valentin-ddb-local",
     "lint": "tsc --noEmit",
     "deploy:dev": "bash scripts/deploy.sh dev",
     "deploy:prod": "bash scripts/deploy.sh prod",

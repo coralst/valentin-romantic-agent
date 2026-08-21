@@ -1,4 +1,5 @@
-import { InMemoryStore } from './persistence/in-memory-store';
+import { InMemoryStoreFactory } from './persistence/in-memory-store';
+import { DynamoDBStoreFactory } from './persistence/dynamodb-store';
 import { InMemoryConversationMemory } from './persistence/conversation-memory';
 import { AwsBedrockClient } from './agent/bedrock-client';
 import { StubAgentCoreAdapter } from './agent/agentcore-adapter';
@@ -7,6 +8,12 @@ import { PreferenceExtractor } from './extraction/preference-extractor';
 import { EventRouter } from './api/event-router';
 import { WsGateway } from './api/ws-gateway';
 import { createHttpRoutes } from './api/http-routes';
+import type {
+  ScopedStorageFactory,
+  ScopedStorageOptions,
+  StorageInterface,
+} from './persistence/storage-interface';
+import { config } from './config';
 import type { ServerEvent } from '../shared/interfaces/ws-events';
 
 /**
@@ -35,11 +42,57 @@ export function resolveBroadcastSessionId(
   );
 }
 
+/** Injectable collaborators, so tests never reach a real AWS account */
+export interface ServerDeps {
+  /**
+   * Where user data lives. Defaults to DynamoDB in production and to memory
+   * everywhere else.
+   *
+   * Injection is not a nicety here: `__tests__/index.test.ts` calls
+   * `createServer()` eight times and three of those exercise storage for real.
+   * A production default with no seam would turn `npm test` into live traffic
+   * against `ValentinTable-dev`.
+   */
+  store?: ScopedStorageFactory;
+}
+
+/**
+ * The user whose data an unauthenticated request touches.
+ *
+ * A placeholder, and the *only* remaining hardcoded user id in the codebase —
+ * the store it replaces built `USER#anonymous` inline at four separate sites.
+ * PR 3 wires JWT verification and passes the Cognito `sub` here instead; until
+ * then everything still lands in one partition, but it does so in one place.
+ */
+export const ANONYMOUS_USER_ID = 'anonymous';
+
+/**
+ * The per-user half of the object graph.
+ *
+ * Bedrock client, AgentCore adapter and WsGateway are process singletons; these
+ * five are not, because each closes over a user-scoped store. All are
+ * constructor-only, so building them per connection costs nothing measurable.
+ */
+export interface UserServices {
+  store: StorageInterface;
+  memory: InMemoryConversationMemory;
+  extractor: PreferenceExtractor;
+  orchestrator: AgentOrchestrator;
+  eventRouter: EventRouter;
+  httpRoutes: ReturnType<typeof createHttpRoutes>;
+}
+
+/** Pick a storage backend from the environment */
+function defaultStoreFactory(): ScopedStorageFactory {
+  if (config.nodeEnv === 'production') {
+    return new DynamoDBStoreFactory();
+  }
+  return new InMemoryStoreFactory();
+}
+
 /** Initialize all dependencies and start the server */
-export function createServer() {
-  // Persistence
-  const store = new InMemoryStore();
-  const memory = new InMemoryConversationMemory(store);
+export function createServer(deps: ServerDeps = {}) {
+  const storeFactory = deps.store ?? defaultStoreFactory();
 
   // AWS Bedrock — always use real LLM, no stubs
   const bedrockClient = new AwsBedrockClient();
@@ -61,27 +114,43 @@ export function createServer() {
     }
   };
 
-  // Preference extractor with callback wired to event router
-  let eventRouter: EventRouter | null = null;
-  const extractor = new PreferenceExtractor(bedrockClient, store, (pref, isNew) => {
-    if (eventRouter) {
-      eventRouter.emitPreferenceUpdate(pref, isNew);
-    }
-  });
+  /** Build the user-scoped graph for one caller */
+  function forUser(userId: string, opts?: ScopedStorageOptions): UserServices {
+    const store = storeFactory.forUser(userId, opts);
+    const memory = new InMemoryConversationMemory(store);
 
-  // Agent orchestrator
-  const orchestrator = new AgentOrchestrator(
-    store,
-    memory,
-    bedrockClient,
-    agentCore,
-    extractor,
-  );
+    // The extractor's callback needs the router that is built from the
+    // orchestrator that is built from the extractor, so one of the three edges
+    // has to be closed late. This is that edge.
+    let eventRouter: EventRouter | null = null;
+    const extractor = new PreferenceExtractor(bedrockClient, store, (pref, isNew) => {
+      eventRouter?.emitPreferenceUpdate(pref, isNew);
+    });
 
-  // API layer
-  eventRouter = new EventRouter(orchestrator, emit);
-  gateway = new WsGateway(eventRouter);
-  const httpRoutes = createHttpRoutes(store);
+    const orchestrator = new AgentOrchestrator(
+      store,
+      memory,
+      bedrockClient,
+      agentCore,
+      extractor,
+    );
+
+    eventRouter = new EventRouter(orchestrator, emit);
+
+    return {
+      store,
+      memory,
+      extractor,
+      orchestrator,
+      eventRouter,
+      httpRoutes: createHttpRoutes(store),
+    };
+  }
+
+  // Until PR 3 lands JWT verification there is one caller, so the returned
+  // graph is that caller's. `forUser` is what the auth handler will use.
+  const anonymous = forUser(ANONYMOUS_USER_ID);
+  gateway = new WsGateway(anonymous.eventRouter);
 
   // Register agent with AgentCore on startup
   agentCore.registerAgent().then((agentId) => {
@@ -92,9 +161,11 @@ export function createServer() {
 
   return {
     gateway,
-    httpRoutes,
-    orchestrator,
-    store,
+    storeFactory,
+    forUser,
+    httpRoutes: anonymous.httpRoutes,
+    orchestrator: anonymous.orchestrator,
+    store: anonymous.store,
   };
 }
 

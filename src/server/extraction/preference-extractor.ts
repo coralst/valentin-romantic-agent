@@ -114,12 +114,21 @@ export class PreferenceExtractor implements PreferenceExtractorInterface {
     let isNew: boolean;
 
     if (existing) {
-      // Update existing preference — triggers history tracking
-      result = await this.storage.updatePreference(existing.id, {
-        value: validated.value,
-        confidence: validated.confidence,
-        sourceMessageId: message.id,
-      });
+      // Update existing preference — triggers history tracking.
+      // Addressed by natural key, which findPreference above was already given,
+      // so this needs no extra lookup.
+      result = await this.storage.updatePreference(
+        {
+          sessionId: message.sessionId,
+          category: validated.category,
+          key: validated.key,
+        },
+        {
+          value: validated.value,
+          confidence: validated.confidence,
+          sourceMessageId: message.id,
+        },
+      );
       isNew = false;
     } else {
       // Create new preference
@@ -134,9 +143,34 @@ export class PreferenceExtractor implements PreferenceExtractorInterface {
       isNew = true;
     }
 
+    // Denormalise the partner's name onto the session so the sidebar can label
+    // the conversation without fetching its whole profile. Nothing else ever
+    // writes this field — PartnerProfilePanel derives the name live for display
+    // and never writes back, which is why SessionEntry has always fallen through
+    // to "New conversation".
+    if (isPartnerNamePreference(validated.category, validated.key)) {
+      await this.storage.updateSessionMeta(message.sessionId, {
+        partnerName: validated.value,
+      });
+    }
+
     // Notify listeners
     if (this.onPreferenceUpdate) {
       this.onPreferenceUpdate(result, isNew);
     }
   }
+}
+
+/**
+ * Does this preference carry the partner's name?
+ *
+ * Mirrors the `partner_name` entry in the client's PROFILE_FIELD_REGISTRY. The
+ * registry itself is client-only and pulls in display concerns (labels, sections,
+ * ordering), so this restates the one mapping the server needs rather than
+ * dragging that module across the boundary. Keep the two in step.
+ */
+function isPartnerNamePreference(category: string, key: string): boolean {
+  if (category !== 'personality_traits') return false;
+  const normalised = key.trim().toLowerCase();
+  return normalised === 'name' || normalised === 'partner name';
 }

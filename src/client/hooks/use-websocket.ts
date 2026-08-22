@@ -6,6 +6,7 @@ import {
   publishInboundWsEvent,
   publishOutboundWsEvent,
 } from '../utils/ws-event-observer';
+import { getAccessToken, invalidateAccessToken } from '../auth/token-store';
 
 /** Return type of the useWebSocket hook */
 export interface UseWebSocketReturn {
@@ -25,6 +26,17 @@ interface UseWebSocketOptions {
 const INITIAL_RECONNECT_DELAY = 1000;
 const MAX_RECONNECT_DELAY = 30000;
 const HEARTBEAT_INTERVAL = 30000;
+
+/**
+ * The server's close codes for "you are not authenticated" and "you took too
+ * long to say who you are". Both mean the same thing to us: get a fresh token
+ * before trying again, rather than reconnecting with the token just rejected.
+ */
+export const WS_CLOSE_UNAUTHENTICATED = 4401;
+export const WS_CLOSE_AUTH_TIMEOUT = 4408;
+
+/** Reconnect sooner after an auth failure than after a network one */
+const AUTH_RETRY_DELAY = 500;
 
 /** Calculate exponential backoff delay capped at MAX_RECONNECT_DELAY */
 export function getBackoffDelay(attempt: number): number {
@@ -71,6 +83,11 @@ export function dispatchServerEvent(
       chatDispatch({ type: 'SET_CONNECTION', status: event.payload.status });
       break;
 
+    case 'auth_ok':
+      // Nothing to store: the connection is now bound to this user server-side,
+      // and `session_init` (or the resumed session) follows.
+      break;
+
     case 'error':
       // Errors are surfaced via lastError state
       break;
@@ -95,6 +112,15 @@ export function useWebSocket({
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttemptRef = useRef(0);
+  /**
+   * The session to resume, read at connect time.
+   *
+   * A ref rather than a `connect` dependency: naming `sessionId` in the callback's
+   * deps would tear down and rebuild the socket every time someone switched
+   * sessions in the sidebar.
+   */
+  const sessionIdRef = useRef<string | null>(sessionId);
+  sessionIdRef.current = sessionId;
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -145,6 +171,36 @@ export function useWebSocket({
       setLastError(null);
       reconnectAttemptRef.current = 0;
       startHeartbeat();
+
+      /*
+       * Authenticate in the first frame.
+       *
+       * Not a handshake header (browsers cannot set them), not `?token=` — the
+       * CloudFront origin policy strips query strings on /ws, and a token in a
+       * URL would sit in CloudFront and ALB access logs forever. The server
+       * honours exactly one event until this arrives and closes the connection
+       * if it does not.
+       *
+       * Passing the current session id makes this a *resume*: without it the
+       * server mints a new session, which is what used to shred history on
+       * every reconnect.
+       */
+      void (async () => {
+        const token = await getAccessToken();
+        if (ws.readyState !== WebSocket.OPEN) return;
+
+        const frame: ClientEvent = {
+          type: 'auth',
+          payload: {
+            token: token ?? '',
+            ...(sessionIdRef.current ? { sessionId: sessionIdRef.current } : {}),
+          },
+          timestamp: new Date().toISOString(),
+        };
+        ws.send(JSON.stringify(frame));
+        // Deliberately not published to the inspector: the frame carries a
+        // bearer token and the inspector panel is on screen during demos.
+      })();
     };
 
     ws.onmessage = (event) => {
@@ -160,12 +216,27 @@ export function useWebSocket({
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       clearTimers();
       setConnectionStatus('reconnecting');
       chatDispatch({ type: 'SET_CONNECTION', status: 'reconnecting' });
 
-      const delay = getBackoffDelay(reconnectAttemptRef.current);
+      const rejectedUs =
+        event.code === WS_CLOSE_UNAUTHENTICATED ||
+        event.code === WS_CLOSE_AUTH_TIMEOUT;
+
+      if (rejectedUs) {
+        // Reconnecting with the same rejected token would just be refused
+        // again. Mark it stale so the next attempt refreshes first; if the
+        // refresh fails the auth provider signs out and unmounts this hook.
+        invalidateAccessToken();
+      }
+
+      // Still backs off on repeated failures — an auth loop must not become a
+      // hot loop against Cognito.
+      const delay = rejectedUs
+        ? Math.max(AUTH_RETRY_DELAY, getBackoffDelay(reconnectAttemptRef.current - 1))
+        : getBackoffDelay(reconnectAttemptRef.current);
       reconnectAttemptRef.current += 1;
 
       reconnectTimerRef.current = setTimeout(() => {

@@ -1,6 +1,3 @@
-import { InMemoryStore } from './in-memory-store';
-import { DynamoDBStore } from './dynamodb-store';
-import type { StorageInterface } from './storage-interface';
 import { logger } from '../logging';
 
 /** Which persistence backend to construct. */
@@ -34,21 +31,8 @@ export function resolveStorageBackend(
   return 'memory';
 }
 
-/**
- * Construct the storage layer the server should use.
- *
- * The two implementations are interchangeable behind `StorageInterface`, so
- * this is the only place in the server that knows which one is live.
- */
-export function createStore(
-  backend: StorageBackend = resolveStorageBackend(),
-): StorageInterface {
-  if (backend === 'dynamodb') {
-    const store = new DynamoDBStore();
-    logger.info('storage.initialized', { backend: 'dynamodb' });
-    return store;
-  }
-
-  logger.info('storage.initialized', { backend: 'memory' });
-  return new InMemoryStore();
-}
+// There is deliberately no `createStore()` here any more. Stores are scoped to a
+// user, so the only legitimate way to obtain one is a `ScopedStorageFactory` —
+// see `defaultStoreFactory` in `../index.ts`, this module's one consumer. An
+// unscoped constructor would build a store with no user in its partition key,
+// which is exactly the cross-tenant bug the key change fixed.

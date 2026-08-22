@@ -5,6 +5,7 @@ import type { BedrockClient } from '../agent/bedrock-client';
 import { EXTRACT_PREFERENCES_TOOL } from '../agent/prompts';
 import { ExtractionError } from '../../shared/errors/extraction-error';
 import { mapCategory } from './category-mapper';
+import { isPartnerNamePreference } from './partner-name';
 import { isProfileFieldId } from '../../shared/constants/profile-fields';
 
 /** Callback invoked when a preference is persisted */
@@ -197,12 +198,21 @@ export class PreferenceExtractor implements PreferenceExtractorInterface {
     let isNew: boolean;
 
     if (existing) {
-      // Update existing preference — triggers history tracking
-      result = await this.storage.updatePreference(existing.id, {
-        value: validated.value,
-        confidence: validated.confidence,
-        sourceMessageId: message.id,
-      });
+      // Update existing preference — triggers history tracking.
+      // Addressed by natural key, which findPreference above was already given,
+      // so this needs no extra lookup.
+      result = await this.storage.updatePreference(
+        {
+          sessionId: message.sessionId,
+          category: validated.category,
+          key: validated.key,
+        },
+        {
+          value: validated.value,
+          confidence: validated.confidence,
+          sourceMessageId: message.id,
+        },
+      );
       isNew = false;
     } else {
       // Create new preference
@@ -216,6 +226,17 @@ export class PreferenceExtractor implements PreferenceExtractorInterface {
         sourceMessageId: message.id,
       });
       isNew = true;
+    }
+
+    // Denormalise the partner's name onto the session so the sidebar can label
+    // the conversation without fetching its whole profile. Nothing else ever
+    // writes this field — PartnerProfilePanel derives the name live for display
+    // and never writes back, which is why SessionEntry has always fallen through
+    // to "New conversation".
+    if (isPartnerNamePreference(validated.category, validated.key)) {
+      await this.storage.updateSessionMeta(message.sessionId, {
+        partnerName: validated.value,
+      });
     }
 
     // Notify listeners

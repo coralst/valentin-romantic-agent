@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { logRecordToSpan, startSpanBridge } from '../span-bridge';
-import { logger, resetServerLogSubscribers } from '../../logging';
+import { logger, resetServerLogSubscribers, withUserScope } from '../../logging';
 import { resolveBroadcastSessionId } from '../../index';
 import type { AwsSpan, ServerEvent } from '../../../shared/interfaces/ws-events';
 import type { ServerLogRecord } from '../../logging';
@@ -175,14 +175,34 @@ describe('startSpanBridge', () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const emitted: ServerEvent[] = [];
-    const stop = startSpanBridge((event) => emitted.push(event));
-    return { emitted, stop };
+    const routedTo: string[] = [];
+    const stop = startSpanBridge((userId, event) => {
+      routedTo.push(userId);
+      emitted.push(event);
+    });
+    return { emitted, routedTo, stop };
+  }
+
+  /**
+   * Log the way production does — inside a user scope set once by `WsGateway`,
+   * not stamped by hand at each call site. Going through the real seam is what
+   * keeps these tests honest: if the scope stopped reaching log records, every
+   * span would become unroutable in production, and this file would say so.
+   */
+  function logAs(userId: string, fn: () => void): void {
+    withUserScope(userId, fn);
   }
 
   it('turns a real log call into an aws_span event', () => {
     const { emitted, stop } = bridge();
 
-    logger.info('preference.saved', { sessionId: 's-1', category: 'music', durationMs: 18 });
+    logAs('u-1', () =>
+      logger.info('preference.saved', {
+        sessionId: 's-1',
+        category: 'music',
+        durationMs: 18,
+      }),
+    );
 
     stop();
     expect(emitted).toHaveLength(1);
@@ -192,9 +212,61 @@ describe('startSpanBridge', () => {
 
   it('stamps a timestamp on the envelope', () => {
     const { emitted, stop } = bridge();
-    logger.info('preference.saved', { sessionId: 's-1', category: 'music' });
+    logAs('u-1', () => logger.info('preference.saved', { sessionId: 's-1', category: 'music' }));
     stop();
     expect(Date.parse(emitted[0].timestamp)).not.toBeNaN();
+  });
+
+  /**
+   * Routing needs the user as well as the session. Session ids live under a user
+   * in storage, so two people can hold the same one — a session-only broadcast
+   * would put one person's spans on another person's screen.
+   */
+  it('routes each span to the user whose work produced it', () => {
+    const { routedTo, stop } = bridge();
+
+    logAs('alice', () => logger.info('preference.saved', { sessionId: 's-1', category: 'music' }));
+    logAs('bob', () =>
+      logger.info('bedrock.converse', { sessionId: 's-1', operation: 'reply', durationMs: 3 }),
+    );
+
+    stop();
+    expect(routedTo).toEqual(['alice', 'bob']);
+  });
+
+  /**
+   * A userId stamped by the call site wins over the ambient scope. `DynamoDBStore`
+   * knows its own user for certain — it is a constructor field — so it says so
+   * explicitly rather than trusting whatever scope happens to be active.
+   */
+  it('prefers an explicitly logged userId over the ambient scope', () => {
+    const { routedTo, stop } = bridge();
+
+    logAs('scope-user', () =>
+      logger.info('preference.saved', {
+        sessionId: 's-1',
+        category: 'music',
+        userId: 'explicit-user',
+      }),
+    );
+
+    stop();
+    expect(routedTo).toEqual(['explicit-user']);
+  });
+
+  /**
+   * The failure this guards is silence, not a crash: a span with no user cannot
+   * be addressed to any connection, and inventing one would mean broadcasting a
+   * measurement to whoever happened to be listening.
+   */
+  it('drops a span it cannot attribute to a user', () => {
+    const { emitted, stop } = bridge();
+
+    // No scope, no explicit userId — a boot-time or background log line.
+    logger.info('preference.saved', { sessionId: 's-1', category: 'music' });
+
+    stop();
+    expect(emitted).toEqual([]);
   });
 
   /**
@@ -206,8 +278,14 @@ describe('startSpanBridge', () => {
   it('emits spans the broadcast path can actually route', () => {
     const { emitted, stop } = bridge();
 
-    logger.info('preference.saved', { sessionId: 's-42', category: 'music' });
-    logger.info('bedrock.converse', { sessionId: 's-42', operation: 'chat-reply', durationMs: 9 });
+    logAs('u-1', () => {
+      logger.info('preference.saved', { sessionId: 's-42', category: 'music' });
+      logger.info('bedrock.converse', {
+        sessionId: 's-42',
+        operation: 'chat-reply',
+        durationMs: 9,
+      });
+    });
 
     stop();
     expect(emitted).toHaveLength(2);
@@ -221,8 +299,10 @@ describe('startSpanBridge', () => {
   it('emits nothing for logs that are not AWS calls', () => {
     const { emitted, stop } = bridge();
 
-    logger.info('session.created', { sessionId: 's-1' });
-    logger.error('ws.parse_failed', { reason: 'bad json' });
+    logAs('u-1', () => {
+      logger.info('session.created', { sessionId: 's-1' });
+      logger.error('ws.parse_failed', { reason: 'bad json' });
+    });
 
     stop();
     expect(emitted).toEqual([]);
@@ -248,8 +328,12 @@ describe('startSpanBridge', () => {
       throw new Error('socket closed');
     });
 
+    // Inside a user scope, so the emitter is actually reached — an unattributable
+    // span is dropped before it, which would make this pass for the wrong reason.
     expect(() =>
-      logger.info('preference.saved', { sessionId: 's-1', category: 'music' }),
+      withUserScope('u-1', () =>
+        logger.info('preference.saved', { sessionId: 's-1', category: 'music' }),
+      ),
     ).not.toThrow();
 
     resetServerLogSubscribers();

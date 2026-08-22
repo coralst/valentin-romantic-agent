@@ -1,17 +1,26 @@
-import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useReducer,
+  useRef,
+} from 'react';
 import type { ChatMessage } from '../../shared/interfaces/message';
 import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
 import {
   type StoredSession,
-  loadSessions,
-  saveSessions,
-  saveSession,
-  deleteSession as deleteSessionFromStore,
-  renameSession as renameSessionInStore,
-  createNewSession,
+  discardLegacySessions,
   loadSidebarCollapsed,
   saveSidebarCollapsed,
 } from '../hooks/use-session-store';
+import {
+  createRemoteSession,
+  deleteRemoteSession,
+  fetchSessionDetail,
+  fetchSessions,
+  renameRemoteSession,
+} from '../utils/session-api';
 
 /** Session state managed by the context */
 export interface SessionState {
@@ -19,6 +28,15 @@ export interface SessionState {
   activeSessionId: string | null;
   sidebarCollapsed: boolean;
   sidebarOpen: boolean; // for mobile overlay
+  /** True while the list, or a transcript being switched to, is in flight */
+  loading: boolean;
+  /** A failure worth showing next to the conversation list */
+  error: string | null;
+  /**
+   * A one-off message shown after the list loads — currently only used to say
+   * that browser-local conversations were discarded on first sign-in.
+   */
+  notice: string | null;
 }
 
 /** Actions the session reducer handles */
@@ -29,25 +47,38 @@ export type SessionAction =
   | { type: 'INSERT_SESSION'; session: StoredSession }
   | { type: 'DELETE_SESSION'; id: string }
   | { type: 'RENAME_SESSION'; id: string; title: string }
-  | { type: 'UPDATE_SESSION'; id: string; messages: ChatMessage[]; preferences: PreferenceWithHistory[]; partnerName?: string | null }
+  | { type: 'UPDATE_SESSION'; id: string; messages: ChatMessage[]; preferences: PreferenceWithHistory[]; partnerName?: string | null; lastActivity?: string }
   | { type: 'TOGGLE_SIDEBAR' }
-  | { type: 'SET_SIDEBAR_OPEN'; open: boolean };
+  | { type: 'SET_SIDEBAR_OPEN'; open: boolean }
+  | { type: 'SET_LOADING'; loading: boolean }
+  | { type: 'SET_ERROR'; error: string | null }
+  | { type: 'SET_NOTICE'; notice: string | null };
 
 const initialState: SessionState = {
   sessions: [],
   activeSessionId: null,
   sidebarCollapsed: false,
   sidebarOpen: false,
+  loading: true,
+  error: null,
+  notice: null,
 };
+
+/** Newest conversation first — the order the sidebar renders */
+function byRecency(a: StoredSession, b: StoredSession): number {
+  return new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime();
+}
 
 function sessionReducer(state: SessionState, action: SessionAction): SessionState {
   switch (action.type) {
     case 'LOAD_SESSIONS':
       return {
         ...state,
-        sessions: action.sessions,
+        sessions: [...action.sessions].sort(byRecency),
         activeSessionId: action.activeId,
         sidebarCollapsed: action.collapsed,
+        loading: false,
+        error: null,
       };
 
     case 'SET_ACTIVE':
@@ -94,6 +125,13 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
       return { ...state, sessions };
     }
 
+    /**
+     * Fill in a session's transcript and profile, fetched from the server.
+     *
+     * `lastActivity` is only overwritten when the caller supplies one. Merely
+     * opening a conversation must not bump it to the top of the list — the
+     * sidebar's order should reflect when someone last *said* something.
+     */
     case 'UPDATE_SESSION': {
       const updated = state.sessions.map((s) => {
         if (s.id !== action.id) return s;
@@ -102,14 +140,11 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
           messages: action.messages,
           preferences: action.preferences,
           messageCount: action.messages.length,
-          lastActivity: new Date().toISOString(),
+          lastActivity: action.lastActivity ?? s.lastActivity,
           partnerName: action.partnerName !== undefined ? action.partnerName : s.partnerName,
         };
       });
-      // Re-sort by lastActivity descending
-      updated.sort(
-        (a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime(),
-      );
+      updated.sort(byRecency);
       return {
         ...state,
         sessions: updated,
@@ -131,6 +166,15 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
         sidebarOpen: action.open,
       };
 
+    case 'SET_LOADING':
+      return { ...state, loading: action.loading };
+
+    case 'SET_ERROR':
+      return { ...state, error: action.error, loading: false };
+
+    case 'SET_NOTICE':
+      return { ...state, notice: action.notice };
+
     default:
       return state;
   }
@@ -139,15 +183,15 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
 interface SessionContextValue {
   state: SessionState;
   activeSession: StoredSession | null;
-  createSession: () => StoredSession;
+  createSession: () => Promise<StoredSession>;
   /**
    * Insert an already-built session (e.g. one created server-side) into the
    * store without focusing it. Pair with switchSession to bring it forward.
    */
   adoptSession: (session: StoredSession) => void;
-  switchSession: (id: string) => void;
-  removeSession: (id: string) => void;
-  renameSession: (id: string, title: string) => void;
+  switchSession: (id: string) => Promise<void>;
+  removeSession: (id: string) => Promise<void>;
+  renameSession: (id: string, title: string) => Promise<void>;
   /**
    * Write a transcript into the session with the given id.
    *
@@ -166,55 +210,165 @@ interface SessionContextValue {
   ) => void;
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
+  dismissNotice: () => void;
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
 
-/** Provider that wraps children with session history state */
+function describe(error: unknown): string {
+  return error instanceof Error ? error.message : 'an unknown problem occurred';
+}
+
+/**
+ * Provider that wraps children with session history state.
+ *
+ * The list lives on the server, keyed by the signed-in user, so a conversation
+ * survives a deploy, a cache clear and a different browser. It used to live in
+ * localStorage, which meant none of those held — and since the stored sessions
+ * never carried any messages, switching conversations always showed an empty
+ * transcript. That is the bug this replaces.
+ */
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(sessionReducer, initialState);
 
-  // Load sessions on mount
-  useEffect(() => {
-    const sessions = loadSessions();
-    const collapsed = loadSidebarCollapsed();
-    const activeId = sessions.length > 0 ? sessions[0].id : null;
-    dispatch({ type: 'LOAD_SESSIONS', sessions, activeId, collapsed });
-  }, []);
+  /**
+   * Which sessions already hold their full transcript.
+   *
+   * Switching to one of these needs no round trip, which is what keeps the demo
+   * button — it seeds a session and hands us the preferences directly — from
+   * re-fetching what it just supplied.
+   */
+  const hydrated = useRef<Set<string>>(new Set());
+  const booted = useRef(false);
 
-  // Persist sessions whenever they change (after initial load)
   useEffect(() => {
-    if (state.sessions.length > 0) {
-      saveSessions(state.sessions);
-    }
-  }, [state.sessions]);
+    // React 19 StrictMode mounts effects twice; the list load is idempotent but
+    // the legacy discard notice is not.
+    if (booted.current) return;
+    booted.current = true;
+
+    let cancelled = false;
+    const discarded = discardLegacySessions();
+
+    void (async () => {
+      try {
+        const sessions = await fetchSessions();
+        const first = sessions[0];
+
+        // Hydrate the conversation we are about to open *before* focusing it.
+        // SessionSyncer reacts to the active id changing and reads whatever
+        // messages are present at that moment, so filling them in afterwards
+        // would leave the transcript blank until the next switch.
+        if (first) {
+          try {
+            const detail = await fetchSessionDetail(first.id);
+            sessions[0] = detail;
+            hydrated.current.add(detail.id);
+          } catch {
+            // A list we can show beats a blank sidebar; the transcript will
+            // arrive when they click the conversation.
+          }
+        }
+
+        if (cancelled) return;
+        dispatch({
+          type: 'LOAD_SESSIONS',
+          sessions,
+          activeId: first?.id ?? null,
+          collapsed: loadSidebarCollapsed(),
+        });
+        if (discarded > 0) {
+          dispatch({
+            type: 'SET_NOTICE',
+            notice:
+              discarded === 1
+                ? 'One conversation saved only in this browser was cleared. Conversations are now kept to your account.'
+                : `${discarded} conversations saved only in this browser were cleared. Conversations are now kept to your account.`,
+          });
+        }
+      } catch (error) {
+        if (cancelled) return;
+        dispatch({
+          type: 'SET_ERROR',
+          error: `Couldn't load your conversations — ${describe(error)}.`,
+        });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const activeSession = state.sessions.find((s) => s.id === state.activeSessionId) ?? null;
 
-  const createSession = useCallback((): StoredSession => {
-    const session = createNewSession();
-    saveSession(session);
+  const createSession = useCallback(async (): Promise<StoredSession> => {
+    const session = await createRemoteSession();
+    // Brand new, so there is nothing to fetch.
+    hydrated.current.add(session.id);
     dispatch({ type: 'ADD_SESSION', session });
     return session;
   }, []);
 
   const adoptSession = useCallback((session: StoredSession) => {
-    saveSession(session);
+    hydrated.current.add(session.id);
     dispatch({ type: 'INSERT_SESSION', session });
   }, []);
 
-  const switchSession = useCallback((id: string) => {
-    dispatch({ type: 'SET_ACTIVE', id });
+  const switchSession = useCallback(async (id: string) => {
+    if (hydrated.current.has(id)) {
+      dispatch({ type: 'SET_ACTIVE', id });
+      return;
+    }
+
+    dispatch({ type: 'SET_LOADING', loading: true });
+    try {
+      const detail = await fetchSessionDetail(id);
+      hydrated.current.add(id);
+      dispatch({
+        type: 'UPDATE_SESSION',
+        id,
+        messages: detail.messages,
+        preferences: detail.preferences,
+        partnerName: detail.partnerName,
+      });
+      dispatch({ type: 'SET_LOADING', loading: false });
+      dispatch({ type: 'SET_ACTIVE', id });
+    } catch (error) {
+      // Deliberately not switching: showing an empty transcript labelled with
+      // someone's conversation is worse than staying where they were.
+      dispatch({
+        type: 'SET_ERROR',
+        error: `Couldn't open that conversation — ${describe(error)}.`,
+      });
+    }
   }, []);
 
-  const removeSession = useCallback((id: string) => {
-    deleteSessionFromStore(id);
+  const removeSession = useCallback(async (id: string) => {
+    // Optimistic: the row disappears at once and comes back if the server
+    // refuses, which is the right trade for a button people click decisively.
     dispatch({ type: 'DELETE_SESSION', id });
+    hydrated.current.delete(id);
+    try {
+      await deleteRemoteSession(id);
+    } catch (error) {
+      dispatch({
+        type: 'SET_ERROR',
+        error: `Couldn't delete that conversation — ${describe(error)}.`,
+      });
+    }
   }, []);
 
-  const renameSession = useCallback((id: string, title: string) => {
-    renameSessionInStore(id, title);
+  const renameSession = useCallback(async (id: string, title: string) => {
     dispatch({ type: 'RENAME_SESSION', id, title });
+    try {
+      await renameRemoteSession(id, title);
+    } catch (error) {
+      dispatch({
+        type: 'SET_ERROR',
+        error: `Couldn't rename that conversation — ${describe(error)}.`,
+      });
+    }
   }, []);
 
   const persistSession = useCallback(
@@ -238,6 +392,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'SET_SIDEBAR_OPEN', open });
   }, []);
 
+  const dismissNotice = useCallback(() => {
+    dispatch({ type: 'SET_NOTICE', notice: null });
+    dispatch({ type: 'SET_ERROR', error: null });
+  }, []);
+
   return (
     <SessionContext.Provider
       value={{
@@ -251,6 +410,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         persistSession,
         toggleSidebar,
         setSidebarOpen,
+        dismissNotice,
       }}
     >
       {children}

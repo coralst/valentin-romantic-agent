@@ -156,6 +156,7 @@ const OWNERSHIP = [
   ['docs/design/', 'ui-designer'],
   // ── application code ────────────────────────────────────────────────────
   ['src/client/components/', 'frontend-dev'],
+  ['src/client/auth/', 'frontend-dev'],
   ['src/client/hooks/', 'frontend-dev'],
   ['src/client/context/', 'frontend-dev'],
   ['src/client/utils/', 'frontend-dev'],

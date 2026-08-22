@@ -1,7 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { createStore, resolveStorageBackend } from '../create-store';
-import { InMemoryStore } from '../in-memory-store';
-import { DynamoDBStore } from '../dynamodb-store';
+import { resolveStorageBackend } from '../create-store';
 import { resetServerLogSubscribers, subscribeToServerLogs } from '../../logging';
 import type { ServerLogRecord } from '../../logging';
 
@@ -68,48 +66,13 @@ describe('resolveStorageBackend', () => {
     vi.stubEnv('STORAGE_BACKEND', 'dynamodb');
     expect(resolveStorageBackend()).toBe('dynamodb');
   });
-});
-
-describe('createStore', () => {
-  afterEach(() => {
-    resetServerLogSubscribers();
-    vi.restoreAllMocks();
-  });
-
-  it('builds an InMemoryStore for the memory backend', () => {
-    expect(createStore('memory')).toBeInstanceOf(InMemoryStore);
-  });
-
-  it('builds a DynamoDBStore for the dynamodb backend', () => {
-    expect(createStore('dynamodb')).toBeInstanceOf(DynamoDBStore);
-  });
-
-  /**
-   * Which backend is live is invisible once the server is running — everything
-   * downstream sees only `StorageInterface`. One log line at boot is the only
-   * way to tell a durable deployment from an amnesiac one.
-   */
-  it('announces which backend it built', () => {
-    const { records, stop } = captureLogs();
-    vi.spyOn(console, 'log').mockImplementation(() => {});
-
-    createStore('dynamodb');
-
-    stop();
-    expect(records).toEqual([
-      expect.objectContaining({
-        event: 'storage.initialized',
-        data: { backend: 'dynamodb' },
-      }),
-    ]);
-  });
 
   /**
    * The default is what every existing test and every credential-less developer
    * relies on. If this ever flips, the whole suite starts reaching for AWS.
    */
-  it('defaults to memory with no argument and no env var', () => {
+  it('defaults to memory when the env var is blank', () => {
     vi.stubEnv('STORAGE_BACKEND', '');
-    expect(createStore()).toBeInstanceOf(InMemoryStore);
+    expect(resolveStorageBackend()).toBe('memory');
   });
 });

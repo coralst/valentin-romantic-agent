@@ -6,9 +6,58 @@ import { ChatProvider, useChatContext } from '../chat-context';
 import { PreferencesProvider, usePreferencesContext } from '../preferences-context';
 import { SessionSyncer } from '../../App';
 import { PERSIST_DEBOUNCE_MS } from '../../hooks/use-session-persistence';
-import { loadSessions } from '../../hooks/use-session-store';
+import type { StoredSession } from '../../hooks/use-session-store';
 import type { ChatMessage } from '../../../shared/interfaces/message';
 import type { PreferenceWithHistory } from '../../../shared/interfaces/preference';
+
+/**
+ * A stand-in for the server, holding the sessions across remounts.
+ *
+ * The sidebar's durable store is DynamoDB now, not localStorage, so the
+ * round-trip these tests guard is `fetchSessions`/`fetchSessionDetail` rather
+ * than a JSON blob in web storage. What is being tested is unchanged: the
+ * SessionSyncer write path, and that a write queued while A was on screen is
+ * never applied to B.
+ *
+ * `persistSession` still only dispatches into client state — the transcript
+ * itself reaches DynamoDB over the socket, on the server side of the turn — so
+ * the fake mirrors client writes into `remote` explicitly, the way a reload
+ * would see them.
+ */
+const remote = new Map<string, StoredSession>();
+let nextId = 0;
+
+vi.mock('../../utils/session-api', () => ({
+  fetchSessions: vi.fn(async () =>
+    [...remote.values()].map((session) => ({ ...session, messages: [], preferences: [] })),
+  ),
+  fetchSessionDetail: vi.fn(async (id: string) => {
+    const found = remote.get(id);
+    if (!found) throw new Error(`no such session: ${id}`);
+    return { ...found };
+  }),
+  createRemoteSession: vi.fn(async () => {
+    const session: StoredSession = {
+      id: `sess-${++nextId}`,
+      title: null,
+      partnerName: null,
+      messages: [],
+      preferences: [],
+      lastActivity: '2026-08-21T10:00:00.000Z',
+      messageCount: 0,
+    };
+    remote.set(session.id, session);
+    return { ...session };
+  }),
+  deleteRemoteSession: vi.fn(async (id: string) => {
+    remote.delete(id);
+  }),
+  renameRemoteSession: vi.fn(async (id: string, title: string) => {
+    const found = remote.get(id);
+    if (found) remote.set(id, { ...found, title });
+  }),
+  describeFailure: (error: unknown) => String(error),
+}));
 
 function makeMessage(content: string, overrides: Partial<ChatMessage> = {}): ChatMessage {
   return {
@@ -60,12 +109,25 @@ function renderApp() {
     { wrapper },
   );
 
+  /** Mirror client state back into the fake server, as a real turn would. */
+  const mirror = (id: string) => {
+    const stored = view.result.current.session.state.sessions.find((s) => s.id === id);
+    if (stored) remote.set(id, { ...stored });
+  };
+
   const helpers = {
+    /** Let the mount load, or any awaited call, settle. */
+    async flush() {
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    },
     /** Click "New conversation". Returns the new session id. */
-    newConversation(): string {
+    async newConversation(): Promise<string> {
       let id = '';
-      act(() => {
-        id = view.result.current.session.createSession().id;
+      await act(async () => {
+        id = (await view.result.current.session.createSession()).id;
       });
       // Let SessionSyncer's switch effect run for the new session.
       act(() => {
@@ -94,9 +156,12 @@ function renderApp() {
       });
     },
     /** Click a session in the sidebar. */
-    switchTo(id: string) {
-      act(() => {
-        view.result.current.session.switchSession(id);
+    async switchTo(id: string) {
+      // The transcript the server would hand back is whatever the client last
+      // held for that session.
+      mirror(id);
+      await act(async () => {
+        await view.result.current.session.switchSession(id);
       });
       act(() => {
         vi.advanceTimersByTime(0);
@@ -111,13 +176,23 @@ function renderApp() {
     storedSession(id: string) {
       return view.result.current.session.state.sessions.find((s) => s.id === id);
     },
+    mirror,
   };
 
   return { ...view, ...helpers };
 }
 
+/** Mount, and wait for the on-mount session list to arrive. */
+async function bootApp() {
+  const view = renderApp();
+  await view.flush();
+  return view;
+}
+
 describe('session message persistence', () => {
   beforeEach(() => {
+    remote.clear();
+    nextId = 0;
     localStorage.clear();
     vi.useFakeTimers();
   });
@@ -125,6 +200,7 @@ describe('session message persistence', () => {
   afterEach(() => {
     vi.useRealTimers();
     localStorage.clear();
+    remote.clear();
   });
 
   /**
@@ -132,18 +208,18 @@ describe('session message persistence', () => {
    * stayed `[]` forever, so switching back showed an empty transcript beside a
    * session row that still had its title and timestamp.
    */
-  it('restores the transcript after switching away and back', () => {
-    const view = renderApp();
+  it('restores the transcript after switching away and back', async () => {
+    const view = await bootApp();
 
-    const a = view.newConversation();
+    const a = await view.newConversation();
     view.sendMessage('Tell me about anniversary gifts');
     view.receiveMessage('Happily — what does she love?');
     view.settle();
 
-    const b = view.newConversation();
+    const b = await view.newConversation();
     expect(view.result.current.chat.state.messages).toEqual([]);
 
-    view.switchTo(a);
+    await view.switchTo(a);
 
     const restored = view.result.current.chat.state.messages.map((m) => m.content);
     expect(restored).toEqual([
@@ -154,16 +230,16 @@ describe('session message persistence', () => {
     expect(b).not.toBe(a);
   });
 
-  it('restores preferences alongside the transcript', () => {
-    const view = renderApp();
+  it('restores preferences alongside the transcript', async () => {
+    const view = await bootApp();
 
-    const a = view.newConversation();
+    const a = await view.newConversation();
     view.sendMessage('She loves Italian food');
     view.addPreference(makePreference({ value: 'Italian' }));
     view.settle();
 
-    const b = view.newConversation();
-    view.switchTo(a);
+    const b = await view.newConversation();
+    await view.switchTo(a);
 
     expect(view.result.current.preferences.state.preferences.food.map((p) => p.value)).toEqual([
       'Italian',
@@ -178,15 +254,15 @@ describe('session message persistence', () => {
    * effect were addressed to "the active session" rather than to the session the
    * messages belong to, B would end up holding A's transcript.
    */
-  it('does not pollute the incoming session with the outgoing transcript', () => {
-    const view = renderApp();
+  it('does not pollute the incoming session with the outgoing transcript', async () => {
+    const view = await bootApp();
 
-    const a = view.newConversation();
+    const a = await view.newConversation();
     view.sendMessage('message for A');
     view.receiveMessage('reply for A');
     // Deliberately do NOT settle — the write is still pending at switch time.
 
-    const b = view.newConversation();
+    const b = await view.newConversation();
     // Let every timer drain, including anything queued before the switch.
     view.settle();
     view.settle();
@@ -206,7 +282,7 @@ describe('session message persistence', () => {
     ]);
 
     // And switching back still shows A's transcript, not a merged one.
-    view.switchTo(a);
+    await view.switchTo(a);
     expect(view.result.current.chat.state.messages).toHaveLength(2);
   });
 
@@ -215,15 +291,15 @@ describe('session message persistence', () => {
    * switch dispatch — rather than before it — writes A's preferences under B's
    * id, which is how this surfaced when the ordering was wrong.
    */
-  it('does not pollute the incoming session with the outgoing preferences', () => {
-    const view = renderApp();
+  it('does not pollute the incoming session with the outgoing preferences', async () => {
+    const view = await bootApp();
 
-    const a = view.newConversation();
+    const a = await view.newConversation();
     view.sendMessage('She loves Italian food');
     view.addPreference(makePreference({ id: 'pref-a', value: 'Italian' }));
     // Pending write at switch time.
 
-    const b = view.newConversation();
+    const b = await view.newConversation();
     view.settle();
     view.settle();
 
@@ -232,26 +308,26 @@ describe('session message persistence', () => {
     expect(view.storedSession(a)?.preferences.map((p) => p.value)).toEqual(['Italian']);
   });
 
-  it('keeps two conversations independent across repeated switches', () => {
-    const view = renderApp();
+  it('keeps two conversations independent across repeated switches', async () => {
+    const view = await bootApp();
 
-    const a = view.newConversation();
+    const a = await view.newConversation();
     view.sendMessage('A first');
     view.settle();
 
-    const b = view.newConversation();
+    const b = await view.newConversation();
     view.sendMessage('B first');
     view.settle();
 
-    view.switchTo(a);
+    await view.switchTo(a);
     expect(view.result.current.chat.state.messages.map((m) => m.content)).toEqual(['A first']);
     view.sendMessage('A second');
     view.settle();
 
-    view.switchTo(b);
+    await view.switchTo(b);
     expect(view.result.current.chat.state.messages.map((m) => m.content)).toEqual(['B first']);
 
-    view.switchTo(a);
+    await view.switchTo(a);
     expect(view.result.current.chat.state.messages.map((m) => m.content)).toEqual([
       'A first',
       'A second',
@@ -259,16 +335,17 @@ describe('session message persistence', () => {
   });
 
   describe('reload persistence', () => {
-    it('survives a loadSessions round-trip', () => {
-      const view = renderApp();
+    it('survives a server round-trip', async () => {
+      const view = await bootApp();
 
-      const a = view.newConversation();
+      const a = await view.newConversation();
       view.sendMessage('remember this after reload');
       view.receiveMessage('I will');
       view.settle();
 
-      // What a fresh page load would read back off localStorage.
-      const reloaded = loadSessions().find((s) => s.id === a);
+      // What a fresh page load would read back off the server.
+      view.mirror(a);
+      const reloaded = remote.get(a);
 
       expect(reloaded).toBeDefined();
       expect(reloaded?.messages.map((m) => m.content)).toEqual([
@@ -278,15 +355,16 @@ describe('session message persistence', () => {
       expect(reloaded?.messageCount).toBe(2);
     });
 
-    it('remounting the app restores the stored transcript into chat state', () => {
-      const first = renderApp();
-      const a = first.newConversation();
+    it('remounting the app restores the stored transcript into chat state', async () => {
+      const first = await bootApp();
+      const a = await first.newConversation();
       first.sendMessage('persisted across mounts');
       first.settle();
+      first.mirror(a);
       act(() => first.unmount());
 
-      // A brand new provider tree, loading from localStorage on mount.
-      const second = renderApp();
+      // A brand new provider tree, loading from the server on mount.
+      const second = await bootApp();
       act(() => {
         vi.advanceTimersByTime(0);
       });
@@ -299,10 +377,10 @@ describe('session message persistence', () => {
   });
 
   describe('debounce boundary', () => {
-    it('does not persist before the debounce elapses', () => {
-      const view = renderApp();
+    it('does not persist before the debounce elapses', async () => {
+      const view = await bootApp();
 
-      const a = view.newConversation();
+      const a = await view.newConversation();
       view.sendMessage('not yet written');
 
       act(() => {
@@ -316,17 +394,17 @@ describe('session message persistence', () => {
       expect(view.storedSession(a)?.messages).toHaveLength(1);
     });
 
-    it('flushes on switch even when the debounce has not fired', () => {
-      const view = renderApp();
+    it('flushes on switch even when the debounce has not fired', async () => {
+      const view = await bootApp();
 
-      const a = view.newConversation();
+      const a = await view.newConversation();
       view.sendMessage('flushed by the switch');
 
       // Switch immediately — well inside the debounce window.
       act(() => {
         vi.advanceTimersByTime(PERSIST_DEBOUNCE_MS - 1);
       });
-      const b = view.newConversation();
+      const b = await view.newConversation();
 
       expect(view.storedSession(a)?.messages.map((m) => m.content)).toEqual([
         'flushed by the switch',
@@ -336,10 +414,10 @@ describe('session message persistence', () => {
   });
 
   describe('title and partnerName', () => {
-    it('derives partnerName from a name preference without touching the title', () => {
-      const view = renderApp();
+    it('derives partnerName from a name preference without touching the title', async () => {
+      const view = await bootApp();
 
-      const a = view.newConversation();
+      const a = await view.newConversation();
       view.sendMessage('Her name is Alice');
       view.addPreference(
         makePreference({ category: 'personality_traits', key: 'name', value: 'Alice' }),
@@ -351,12 +429,12 @@ describe('session message persistence', () => {
       expect(view.storedSession(a)?.title).toBeNull();
     });
 
-    it('keeps a user-given title taking precedence over the derived partnerName', () => {
-      const view = renderApp();
+    it('keeps a user-given title taking precedence over the derived partnerName', async () => {
+      const view = await bootApp();
 
-      const a = view.newConversation();
-      act(() => {
-        view.result.current.session.renameSession(a, 'Anniversary planning');
+      const a = await view.newConversation();
+      await act(async () => {
+        await view.result.current.session.renameSession(a, 'Anniversary planning');
       });
       view.sendMessage('Her name is Alice');
       view.addPreference(
@@ -369,10 +447,10 @@ describe('session message persistence', () => {
       expect(stored?.partnerName).toBe('Alice');
     });
 
-    it('does not erase a known partnerName on a later turn without a name', () => {
-      const view = renderApp();
+    it('does not erase a known partnerName on a later turn without a name', async () => {
+      const view = await bootApp();
 
-      const a = view.newConversation();
+      const a = await view.newConversation();
       view.addPreference(
         makePreference({ category: 'personality_traits', key: 'name', value: 'Alice' }),
       );

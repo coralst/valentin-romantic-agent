@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { createPortal } from 'react-dom';
 import { colors, radii, layout, typography, insets, spacing, animation } from '../design-system/tokens';
 import { DemoToolbar } from './DemoToolbar';
+import { UserChip } from './UserChip';
 
 /** Which of the rail's view buttons is currently the active surface. */
 export type RailView = 'chat' | 'profile';
@@ -277,6 +278,11 @@ export function IconRail({
               style={getPopoverStyle(orientation, anchor)}
               data-testid="rail-demo-popover"
             >
+              {/* Who you are sits above the demo controls: the rail has no
+                  header to hang it off, and "account" and "demo" belong to the
+                  same cluster from the audience's point of view. Renders
+                  nothing when there is no AuthProvider. */}
+              <UserChip />
               <DemoToolbar />
             </div>,
             document.body,

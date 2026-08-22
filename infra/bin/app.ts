@@ -11,7 +11,10 @@ import { getConfig } from '../config/environments';
 
 const app = new cdk.App();
 const env = app.node.tryGetContext('env') || 'dev';
-const config = getConfig(env);
+// Optional override for environments whose CloudFront domain isn't in config yet:
+//   npx cdk deploy --context env=staging --context siteUrl=https://xyz.cloudfront.net/
+const siteUrl = app.node.tryGetContext('siteUrl') as string | undefined;
+const config = getConfig(env, siteUrl);
 
 // deploy.sh passes the git SHA so a rollback lands on a different image than
 // the one that failed. Defaults to 'latest' for a bare `cdk synth`/`cdk diff`.
@@ -40,7 +43,10 @@ const safetyStack = new SafetyStack(app, `Valentin-Safety-${env}`, {
   description: `Valentin Bedrock Guardrails (${env})`,
 });
 
-new AuthStack(app, `Valentin-Auth-${env}`, {
+// Callback URLs come from static config rather than the CloudFront distribution.
+// Reading cdnStack here would close the cycle Auth -> CDN -> Compute -> Auth,
+// which CDK rejects at synth (CdnStack already depends on ComputeStack below).
+const authStack = new AuthStack(app, `Valentin-Auth-${env}`, {
   config,
   env: stackEnv,
   description: `Valentin Cognito authentication (${env})`,
@@ -55,11 +61,18 @@ const computeStack = new ComputeStack(app, `Valentin-Compute-${env}`, {
   guardrailId: safetyStack.guardrailId,
   guardrailVersion: safetyStack.guardrailVersion,
   imageTag,
+  userPoolId: authStack.userPool.userPoolId,
+  userPoolArn: authStack.userPool.userPoolArn,
+  spaClientId: authStack.userPoolClient.userPoolClientId,
+  demoClientId: authStack.demoClient.userPoolClientId,
+  demoSecret: authStack.demoSecret,
+  cognitoDomainPrefix: authStack.userPoolDomainPrefix,
   env: stackEnv,
   description: `Valentin ECS Fargate compute (${env})`,
 });
 computeStack.addStackDependency(networkStack);
 computeStack.addStackDependency(dataStack);
+computeStack.addStackDependency(authStack);
 // The task reads BEDROCK_GUARDRAIL_ID from this stack, so the guardrail must
 // exist first. Without this the guardrail was deployed but never referenced.
 computeStack.addStackDependency(safetyStack);

@@ -5,6 +5,7 @@ import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
@@ -31,6 +32,23 @@ export interface ComputeStackProps extends cdk.StackProps {
   imageTag: string;
   /** Bucket for ALB access logs. */
   accessLogBucket: s3.IBucket;
+  /** Cognito User Pool the backend verifies access tokens against */
+  userPoolId: string;
+  userPoolArn: string;
+  /** Public SPA app client id — one of the two accepted token audiences */
+  spaClientId: string;
+  /** Server-only app client id used for the demo sign-in */
+  demoClientId: string;
+  /** Secret holding the demo account's credentials */
+  demoSecret: secretsmanager.ISecret;
+  /**
+   * Hosted UI domain prefix.
+   *
+   * Passed through to the browser via `GET /api/config` so the SPA needs no
+   * build-time AWS configuration at all — one bundle works locally and in every
+   * environment, and nobody has to copy ids out of the console.
+   */
+  cognitoDomainPrefix: string;
 }
 
 /**
@@ -120,6 +138,10 @@ export class ComputeStack extends cdk.Stack {
     // constructs. The previous hand-written statements used resources:['*']
     // with a StringLike condition on `valentin-*-<env>`, which never matched
     // the real table name `ValentinTable-<env>`.
+    //
+    // Deriving from the construct also covers `/index/*`, which a Query against
+    // GSI1 is authorized against rather than the table ARN — so the session
+    // list would 403 under a table-ARN-only grant.
     props.table.grantReadWriteData(taskRole);
     props.photoBucket.grantReadWrite(taskRole);
 
@@ -162,6 +184,19 @@ export class ComputeStack extends cdk.Stack {
       }),
     );
 
+    // Cognito: only what the demo sign-in needs, scoped to this one pool.
+    // AdminInitiateAuth is how POST /api/demo/login exchanges the stored demo
+    // password for real Cognito tokens. Notably absent: AdminCreateUser and
+    // AdminSetUserPassword — the task must not be able to mint pool users. That
+    // is scripts/seed-demo-user.sh's job, run once at deploy time by an
+    // operator identity, so no long-lived role holds pool-admin rights.
+    taskRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ['cognito-idp:AdminInitiateAuth'],
+        resources: [props.userPoolArn],
+      }),
+    );
+
     // --- Task Definition ---
     const taskDefinition = new ecs.FargateTaskDefinition(this, 'TaskDef', {
       memoryLimitMiB: config.memoryLimitMiB,
@@ -201,6 +236,13 @@ export class ComputeStack extends cdk.Stack {
         BEDROCK_MODEL_ID: config.bedrockModelId,
         AWS_REGION: cdk.Stack.of(this).region,
         NODE_ENV: 'production',
+        // Auth. The server treats missing Cognito config as a hard boot failure
+        // in production — see src/server/auth/jwt-verifier.ts.
+        COGNITO_USER_POOL_ID: props.userPoolId,
+        COGNITO_SPA_CLIENT_ID: props.spaClientId,
+        COGNITO_DEMO_CLIENT_ID: props.demoClientId,
+        DEMO_SECRET_ARN: props.demoSecret.secretArn,
+        COGNITO_DOMAIN: `https://${props.cognitoDomainPrefix}.auth.${cdk.Stack.of(this).region}.amazoncognito.com`,
       },
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: `valentin-${env}`,

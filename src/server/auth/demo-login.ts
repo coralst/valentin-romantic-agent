@@ -1,0 +1,216 @@
+import {
+  AdminInitiateAuthCommand,
+  CognitoIdentityProviderClient,
+} from '@aws-sdk/client-cognito-identity-provider';
+import {
+  GetSecretValueCommand,
+  SecretsManagerClient,
+} from '@aws-sdk/client-secrets-manager';
+import { config } from '../config';
+import type { HttpResponse } from '../api/http-routes';
+import type { StorageInterface } from '../persistence/storage-interface';
+import type { TokenVerifier } from './token-verifier';
+
+/**
+ * How long a demo conversation survives before the next demo click reaps it.
+ *
+ * Not "delete everything on each login": two people clicking "Try the demo"
+ * seconds apart would then wipe each other mid-conversation, at the worst
+ * possible moment. Thirty minutes is longer than any demo and shorter than the
+ * gap between them.
+ */
+const DEMO_SESSION_MAX_AGE_MS = 30 * 60 * 1000;
+
+/** Requests allowed per window, and the window. */
+const RATE_LIMIT_MAX = 10;
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+
+/**
+ * A single shared bucket, in process memory.
+ *
+ * The risk this guards is Bedrock spend, not privacy — the demo account holds
+ * nothing but fixture data. So a per-task approximation is enough; a precise
+ * distributed limiter would cost a round trip per click to protect a synthetic
+ * profile. The blanket WAF rate rule sits in front of this as a second layer.
+ */
+export class TokenBucket {
+  private timestamps: number[] = [];
+
+  constructor(
+    private readonly max = RATE_LIMIT_MAX,
+    private readonly windowMs = RATE_LIMIT_WINDOW_MS,
+  ) {}
+
+  /** True when the caller may proceed; records the attempt when it does */
+  tryConsume(now = Date.now()): boolean {
+    this.timestamps = this.timestamps.filter((t) => now - t < this.windowMs);
+    if (this.timestamps.length >= this.max) return false;
+    this.timestamps.push(now);
+    return true;
+  }
+}
+
+/** What the browser needs after a demo login */
+export interface DemoLoginBody {
+  accessToken: string;
+  refreshToken: string;
+  /** Seconds until the access token expires */
+  expiresIn: number;
+  /** A freshly seeded session, so the profile panel is populated on arrival */
+  sessionId: string;
+}
+
+/** Injectable collaborators, so tests never reach a real AWS account */
+export interface DemoLoginDeps {
+  cognito?: Pick<CognitoIdentityProviderClient, 'send'>;
+  secrets?: Pick<SecretsManagerClient, 'send'>;
+  /** Verifies the token we just minted, which is also how we learn the `sub` */
+  verifier: TokenVerifier;
+  /** Builds the demo user's scoped store once their `sub` is known */
+  storeFor: (userId: string) => StorageInterface;
+  /** Seeds the demo profile into a fresh session, returning its id */
+  seedSession: (storage: StorageInterface) => Promise<string>;
+  bucket?: TokenBucket;
+}
+
+interface DemoCredentials {
+  username: string;
+  password: string;
+}
+
+/**
+ * The one unauthenticated write endpoint: `POST /api/demo/login`.
+ *
+ * Cognito's Hosted UI password form cannot be prefilled, and shipping the demo
+ * password in the SPA bundle would make it public forever. So the server signs
+ * the shared demo account in on the caller's behalf, using a second app client
+ * that only it can reach, and hands back **real Cognito tokens**. They are
+ * indistinguishable from Hosted UI tokens, which is what keeps one code path
+ * downstream of login.
+ */
+export class DemoLoginService {
+  private readonly cognito: Pick<CognitoIdentityProviderClient, 'send'>;
+  private readonly secrets: Pick<SecretsManagerClient, 'send'>;
+  private readonly bucket: TokenBucket;
+  /** Cached for the process lifetime — the secret does not rotate mid-demo */
+  private credentials: DemoCredentials | null = null;
+
+  constructor(private readonly deps: DemoLoginDeps) {
+    this.cognito =
+      deps.cognito ??
+      new CognitoIdentityProviderClient({ region: config.awsRegion });
+    this.secrets =
+      deps.secrets ?? new SecretsManagerClient({ region: config.awsRegion });
+    this.bucket = deps.bucket ?? new TokenBucket();
+  }
+
+  /** True when the deployment has everything the demo button needs */
+  get isConfigured(): boolean {
+    return Boolean(config.cognito.userPoolId && config.cognito.demoClientId && config.cognito.demoSecretArn);
+  }
+
+  async login(): Promise<HttpResponse> {
+    if (!this.isConfigured) {
+      return {
+        status: 503,
+        body: { error: 'The demo account is not configured on this deployment' },
+      };
+    }
+
+    if (!this.bucket.tryConsume()) {
+      return { status: 429, body: { error: 'Too many demo logins, try again shortly' } };
+    }
+
+    const { username, password } = await this.readCredentials();
+
+    const auth = await this.cognito.send(
+      new AdminInitiateAuthCommand({
+        UserPoolId: config.cognito.userPoolId,
+        ClientId: config.cognito.demoClientId,
+        // Reachable only through the IAM-signed admin API, which only the task
+        // role may call. The browser-callable USER_PASSWORD_AUTH is not enabled
+        // on this client at all.
+        AuthFlow: 'ADMIN_USER_PASSWORD_AUTH',
+        AuthParameters: { USERNAME: username, PASSWORD: password },
+      }) as never,
+    );
+
+    const result = (auth as { AuthenticationResult?: {
+      AccessToken?: string;
+      RefreshToken?: string;
+      ExpiresIn?: number;
+    } }).AuthenticationResult;
+
+    if (!result?.AccessToken || !result.RefreshToken) {
+      // A challenge (NEW_PASSWORD_REQUIRED, MFA) means the seed script did not
+      // set the password as permanent. Nothing the caller can do about it.
+      return {
+        status: 502,
+        body: { error: 'The demo account could not be signed in' },
+      };
+    }
+
+    // Verifying our own token is not ceremony: it is how we learn the `sub`,
+    // and it fails loudly if the verifier's client allow-list is missing the
+    // demo client — the misconfiguration that would otherwise 401 every demo
+    // user later, looking like a broken endpoint.
+    const { userId } = await this.deps.verifier.verify(result.AccessToken);
+
+    const storage = this.deps.storeFor(userId);
+    await this.reapStaleSessions(storage);
+    const sessionId = await this.deps.seedSession(storage);
+
+    return {
+      status: 200,
+      body: {
+        accessToken: result.AccessToken,
+        refreshToken: result.RefreshToken,
+        expiresIn: result.ExpiresIn ?? 3600,
+        sessionId,
+      } satisfies DemoLoginBody,
+    };
+  }
+
+  /** Drop demo conversations old enough that nobody is still in them */
+  private async reapStaleSessions(storage: StorageInterface): Promise<void> {
+    const now = Date.now();
+    const sessions = await storage.listSessions();
+
+    const stale = sessions.filter((session) => {
+      const touched = Date.parse(session.lastActivity ?? session.createdAt);
+      return Number.isFinite(touched) && now - touched > DEMO_SESSION_MAX_AGE_MS;
+    });
+
+    // Best-effort: a failed reap must not cost someone their demo.
+    await Promise.all(
+      stale.map((session) =>
+        storage.deleteSession(session.id).catch(() => undefined),
+      ),
+    );
+  }
+
+  private async readCredentials(): Promise<DemoCredentials> {
+    if (this.credentials) return this.credentials;
+
+    const response = await this.secrets.send(
+      new GetSecretValueCommand({
+        SecretId: config.cognito.demoSecretArn,
+      }) as never,
+    );
+
+    const raw = (response as { SecretString?: string }).SecretString;
+    if (!raw) {
+      throw new Error('The demo credentials secret has no string value');
+    }
+
+    // Never logged, never returned — the only thing that leaves this method is
+    // a token.
+    const parsed = JSON.parse(raw) as Partial<DemoCredentials>;
+    if (!parsed.username || !parsed.password) {
+      throw new Error('The demo credentials secret is missing username or password');
+    }
+
+    this.credentials = { username: parsed.username, password: parsed.password };
+    return this.credentials;
+  }
+}

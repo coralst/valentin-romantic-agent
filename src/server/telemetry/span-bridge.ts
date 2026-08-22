@@ -2,8 +2,15 @@ import { subscribeToServerLogs, type ServerLogRecord } from '../logging';
 import { config } from '../config';
 import type { AwsSpan, ServerEvent } from '../../shared/interfaces/ws-events';
 
-/** Emits a server event to the client. Same shape as `index.ts`'s `emit`. */
-export type SpanEmitter = (event: ServerEvent) => void;
+/**
+ * Emits a server event to one user's clients. Same shape as `index.ts`'s
+ * `emitFor`, curried the other way round.
+ *
+ * The userId is not redundant with the span's sessionId: session ids live under
+ * a user in storage, so two users can hold the same one, and a session-only
+ * broadcast would put one person's spans on another person's screen.
+ */
+export type SpanEmitter = (userId: string, event: ServerEvent) => void;
 
 /** Read a string field, or undefined if absent or the wrong type. */
 function str(data: Record<string, unknown> | undefined, key: string): string | undefined {
@@ -89,6 +96,10 @@ export function logRecordToSpan(record: ServerLogRecord): AwsSpan | undefined {
  * opens, still highlights from WebSocket events, and still passes its tests. It
  * adds measured durations; it is not the thing that makes the drawer work.
  *
+ * Call this **once per process**, not once per connection: the returned
+ * unsubscribe is the only way to detach, and a per-connection bridge that
+ * discarded it would leak a subscriber per socket.
+ *
  * Returns an unsubscribe function.
  */
 export function startSpanBridge(emit: SpanEmitter): () => void {
@@ -96,7 +107,14 @@ export function startSpanBridge(emit: SpanEmitter): () => void {
     const span = logRecordToSpan(record);
     if (!span) return;
 
-    emit({
+    // No user, nowhere to send it. `logging.ts` supplies this from the ambient
+    // user scope for anything logged while serving a socket message, so a
+    // missing one means the log came from outside a request — a boot-time or
+    // background line, which no client is waiting on.
+    const userId = str(record.data, 'userId');
+    if (!userId) return;
+
+    emit(userId, {
       type: 'aws_span',
       payload: span,
       timestamp: new Date().toISOString(),

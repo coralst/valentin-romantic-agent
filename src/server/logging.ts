@@ -1,4 +1,33 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 type LogLevel = 'info' | 'warn' | 'error';
+
+/**
+ * The user a log line was produced on behalf of, when one is in scope.
+ *
+ * Telemetry is now per-user: `broadcastToSession` needs a userId as well as a
+ * sessionId, because two users may legitimately hold the same session id. Most
+ * call sites can stamp their own userId, but the Bedrock client cannot — it is
+ * a process singleton shared by every connection, and its `sendTimed` only ever
+ * receives a sessionId. Threading a userId down to it would mean editing the
+ * `BedrockClient` interface, the orchestrator and the extractor to carry a value
+ * none of them otherwise needs.
+ *
+ * An ambient scope, set once where the user is already known, gets every log
+ * line routed instead.
+ */
+const userScope = new AsyncLocalStorage<string>();
+
+/**
+ * Run `fn` with `userId` attached to every log record it produces.
+ *
+ * Set this at the point a request's user becomes known — currently one place,
+ * `WsGateway`'s message handling. Async continuations inherit the scope, so an
+ * await deep inside the orchestrator still logs under the right user.
+ */
+export function withUserScope<T>(userId: string, fn: () => T): T {
+  return userScope.run(userId, fn);
+}
 
 function formatLog(level: LogLevel, event: string, data?: Record<string, unknown>): string {
   return JSON.stringify({
@@ -55,7 +84,17 @@ export function resetServerLogSubscribers(): void {
  */
 function notify(level: LogLevel, event: string, data?: Record<string, unknown>): void {
   if (subscribers.size === 0) return;
-  const record: ServerLogRecord = { level, event, data };
+
+  // Stamped onto the in-process record only, never into `formatLog`. The userId
+  // is a Cognito `sub`, and CloudWatch log groups are retained far longer and
+  // read far more widely than this process's own subscribers.
+  const scopedUserId = data?.userId ?? userScope.getStore();
+  const record: ServerLogRecord = {
+    level,
+    event,
+    data: scopedUserId === undefined ? data : { ...data, userId: scopedUserId },
+  };
+
   for (const subscriber of subscribers) {
     try {
       subscriber(record);

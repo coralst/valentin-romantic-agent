@@ -59,7 +59,20 @@ const computeStack = new ComputeStack(app, `Valentin-Compute-${env}`, {
   photoBucket: dataStack.photoBucket,
   accessLogBucket: dataStack.accessLogBucket,
   guardrailId: safetyStack.guardrailId,
-  guardrailVersion: safetyStack.guardrailVersion,
+  /*
+   * Deliberately not `safetyStack.guardrailVersion`.
+   *
+   * Reading it turned the version number into a cross-stack export that Compute
+   * holds open, so the first attempt to change the policy was refused outright —
+   * "Cannot update export ... as it is in use by Valentin-Compute-dev" — and
+   * Safety rolled back with the fix undeployed. Had it succeeded, CFN would then
+   * have deleted the version the running task still named.
+   *
+   * DRAFT always reflects the policy in `safety-stack.ts`, which is the artefact
+   * this repo reviews, and exactly one service consumes this guardrail. Pass
+   * `--context guardrailVersion=<n>` to pin a published version instead.
+   */
+  guardrailVersion: (app.node.tryGetContext('guardrailVersion') as string) ?? 'DRAFT',
   imageTag,
   userPoolId: authStack.userPool.userPoolId,
   userPoolArn: authStack.userPool.userPoolArn,

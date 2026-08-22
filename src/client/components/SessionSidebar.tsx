@@ -1,27 +1,37 @@
 import { useEffect } from 'react';
-import { colors, spacing, typography, shadows, borderRadius, animation, breakpoints } from '../design-system/tokens';
+import {
+  colors,
+  spacing,
+  typography,
+  shadows,
+  radii,
+  insets,
+  layout,
+  animation,
+} from '../design-system/tokens';
 import { useSessionContext } from '../context/session-context';
 import { SessionEntry } from './SessionEntry';
+import { ArchitectureToggle } from './ArchitectureToggle';
 
-const SIDEBAR_WIDTH = 280;
-const RAIL_WIDTH = 56;
-
-const sidebarExpandedStyle: React.CSSProperties = {
-  width: SIDEBAR_WIDTH,
-  minWidth: SIDEBAR_WIDTH,
-  height: '100%',
+/**
+ * Column 2 of the window: the wordmark, the architecture magnifier, the
+ * new-conversation button and the conversation list on a sand ground.
+ *
+ * There is deliberately no collapsed rail any more. The mockup has no collapsed
+ * state, and the 76px claret icon rail in column 1 now plays the role the old
+ * collapse-to-rail mode was serving. The drawer therefore no longer needs a
+ * `SIDEBAR_WIDTH` / `RAIL_WIDTH` pair exported from here — the column is one
+ * fixed `layout.conversationListWidth`, and the drawer is anchored by a grid
+ * wrapper in `AppLayout` rather than by a hardcoded left inset.
+ */
+const columnStyle: React.CSSProperties = {
+  width: layout.conversationListWidth,
+  minWidth: 0,
+  minHeight: 0,
   display: 'flex',
   flexDirection: 'column',
-  backgroundColor: colors.surfaceElevated,
-  borderRight: `1px solid ${colors.borderSubtle}`,
-  transition: `width ${animation.durations.normal}ms ${animation.easing.easeInOut}, min-width ${animation.durations.normal}ms ${animation.easing.easeInOut}`,
-  overflow: 'hidden',
-};
-
-const sidebarRailStyle: React.CSSProperties = {
-  ...sidebarExpandedStyle,
-  width: RAIL_WIDTH,
-  minWidth: RAIL_WIDTH,
+  backgroundColor: colors.sand,
+  padding: `22px ${insets.tight}px ${spacing.sm}px`,
 };
 
 const mobileOverlayStyle: React.CSSProperties = {
@@ -45,74 +55,79 @@ const mobileBackdropStyle: React.CSSProperties = {
 };
 
 const mobileSidebarStyle: React.CSSProperties = {
+  ...columnStyle,
   position: 'relative',
-  width: SIDEBAR_WIDTH,
   height: '100%',
-  display: 'flex',
-  flexDirection: 'column',
-  backgroundColor: colors.surface,
   boxShadow: shadows.cardHover,
   transition: `transform ${animation.durations.normal}ms ${animation.easing.easeInOut}`,
   zIndex: 101,
 };
 
-const headerStyle: React.CSSProperties = {
+const wordmarkRowStyle: React.CSSProperties = {
   display: 'flex',
-  alignItems: 'center',
+  alignItems: 'flex-start',
   justifyContent: 'space-between',
-  padding: `${spacing.xs + 4}px ${spacing.xs + 4}px`,
-  borderBottom: `1px solid ${colors.borderSubtle}`,
   gap: spacing.xs,
 };
 
-const headerRailStyle: React.CSSProperties = {
-  ...headerStyle,
-  flexDirection: 'column',
-  padding: `${spacing.xs + 4}px ${spacing.xs / 2}px`,
-  gap: spacing.xs,
+const wordmarkActionsStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 2,
+  flexShrink: 0,
+};
+
+const wordmarkNameStyle: React.CSSProperties = {
+  fontFamily: typography.headingFontFamily,
+  fontSize: typography.px.headingLg,
+  fontWeight: typography.weights.normal,
+  color: colors.ink,
+  lineHeight: 1.1,
+  margin: 0,
+};
+
+const wordmarkSubtitleStyle: React.CSSProperties = {
+  fontFamily: typography.bodyFontFamily,
+  fontSize: typography.px.labelLoose,
+  color: colors.inkFaint,
+  marginBottom: spacing.sm,
 };
 
 const newChatButtonStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 6,
-  padding: `6px ${spacing.xs + 4}px`,
-  background: colors.accentGradient,
-  color: colors.textOnAccent,
+  width: '100%',
   border: 'none',
-  borderRadius: borderRadius.sm,
-  fontSize: typography.sizes.xs,
-  fontWeight: typography.weights.semibold,
-  fontFamily: typography.bodyFontFamily,
   cursor: 'pointer',
-  whiteSpace: 'nowrap',
+  borderRadius: radii.pill,
+  padding: '11px 0',
+  backgroundColor: colors.claret,
+  color: colors.textOnAccent,
+  fontFamily: typography.bodyFontFamily,
+  fontSize: typography.px.body,
+  fontWeight: typography.weights.medium,
+  marginBottom: spacing.sm,
+  boxShadow: '0 5px 14px rgba(140, 47, 69, 0.26)',
 };
 
-const newChatIconOnlyStyle: React.CSSProperties = {
-  ...newChatButtonStyle,
-  padding: '6px 8px',
-  borderRadius: borderRadius.sm,
-};
-
-const toggleButtonStyle: React.CSSProperties = {
+const closeButtonStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
   width: 28,
   height: 28,
+  flexShrink: 0,
   border: 'none',
-  borderRadius: borderRadius.sm,
+  borderRadius: radii.icon,
   backgroundColor: 'transparent',
   cursor: 'pointer',
-  fontSize: typography.sizes.sm,
-  color: colors.textSecondary,
+  fontSize: typography.px.control,
+  color: colors.inkMuted,
   transition: `background-color ${animation.durations.fast}ms ${animation.easing.easeInOut}`,
 };
 
 const sessionListStyle: React.CSSProperties = {
   flex: 1,
+  minHeight: 0,
   overflowY: 'auto',
-  padding: `${spacing.xs}px ${spacing.xs / 2}px`,
   display: 'flex',
   flexDirection: 'column',
   gap: 4,
@@ -123,16 +138,50 @@ const emptyStateStyle: React.CSSProperties = {
   flexDirection: 'column',
   alignItems: 'center',
   justifyContent: 'center',
-  padding: spacing.md,
+  padding: spacing.sm,
   textAlign: 'center',
   flex: 1,
 };
 
 const emptyTextStyle: React.CSSProperties = {
-  fontSize: typography.sizes.sm,
-  color: colors.textSecondary,
+  fontFamily: typography.bodyFontFamily,
+  fontSize: typography.px.label,
+  color: colors.inkFaint,
+  lineHeight: typography.lineHeights.normal,
+};
+
+const noticeStripStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: spacing.xs,
+  margin: `${spacing.xs}px ${spacing.xs / 2}px 0`,
+  padding: `${spacing.xs}px ${spacing.xs + 2}px`,
+  borderRadius: radii.kv,
+  backgroundColor: colors.champagne,
+  color: colors.inkMuted,
+};
+
+const errorStripStyle: React.CSSProperties = {
+  ...noticeStripStyle,
+  backgroundColor: 'rgba(180, 70, 70, 0.10)',
+  color: colors.error,
+};
+
+const noticeTextStyle: React.CSSProperties = {
+  flex: 1,
+  fontSize: typography.px.label,
   fontFamily: typography.bodyFontFamily,
   lineHeight: typography.lineHeights.normal,
+};
+
+const noticeDismissStyle: React.CSSProperties = {
+  border: 'none',
+  background: 'transparent',
+  padding: 0,
+  lineHeight: 1,
+  cursor: 'pointer',
+  color: 'inherit',
+  fontSize: typography.px.control,
 };
 
 interface SessionSidebarProps {
@@ -142,16 +191,15 @@ interface SessionSidebarProps {
 export function SessionSidebar({ isMobile }: SessionSidebarProps) {
   const {
     state,
-    activeSession,
     createSession,
     switchSession,
     removeSession,
     renameSession,
-    toggleSidebar,
     setSidebarOpen,
+    dismissNotice,
   } = useSessionContext();
 
-  const { sessions, activeSessionId, sidebarCollapsed, sidebarOpen } = state;
+  const { sessions, activeSessionId, sidebarOpen, loading, error, notice } = state;
 
   // Close mobile sidebar on Escape
   useEffect(() => {
@@ -163,21 +211,118 @@ export function SessionSidebar({ isMobile }: SessionSidebarProps) {
     return () => document.removeEventListener('keydown', handleKey);
   }, [isMobile, sidebarOpen, setSidebarOpen]);
 
+  // Every handler below talks to the server now. The failure is surfaced by the
+  // context as `state.error`, so these only need to stop an unhandled rejection
+  // from reaching the console.
   const handleNewChat = () => {
-    createSession();
+    void createSession().catch(() => {});
   };
 
   const handleSelect = (id: string) => {
-    switchSession(id);
+    void switchSession(id).catch(() => {});
   };
 
   const handleDelete = (id: string) => {
-    removeSession(id);
+    void removeSession(id).catch(() => {});
   };
 
   const handleRename = (id: string, title: string) => {
-    renameSession(id, title);
+    void renameSession(id, title).catch(() => {});
   };
+
+  /** The list body: loading, empty, or the conversations themselves */
+  const renderList = () => {
+    if (loading && sessions.length === 0) {
+      return (
+        <div style={emptyStateStyle} data-testid="session-list-loading">
+          <p style={emptyTextStyle}>Loading your conversations…</p>
+        </div>
+      );
+    }
+
+    if (sessions.length === 0) {
+      return (
+        <div style={emptyStateStyle} data-testid="session-empty-state">
+          <p style={emptyTextStyle}>
+            No conversations yet. Start your first chat to begin building a relationship profile.
+          </p>
+        </div>
+      );
+    }
+
+    return sessions.map((session) => (
+      <SessionEntry
+        key={session.id}
+        session={session}
+        isActive={session.id === activeSessionId}
+        onSelect={handleSelect}
+        onDelete={handleDelete}
+        onRename={handleRename}
+      />
+    ));
+  };
+
+  /** The notice strip, shown for a discarded local history or a failed call */
+  const renderMessage = () => {
+    const text = error ?? notice;
+    if (!text) return null;
+
+    return (
+      <div
+        style={error ? errorStripStyle : noticeStripStyle}
+        role="status"
+        data-testid={error ? 'session-error' : 'session-notice'}
+      >
+        <span style={noticeTextStyle}>{text}</span>
+        <button
+          style={noticeDismissStyle}
+          onClick={dismissNotice}
+          aria-label="Dismiss"
+        >
+          &times;
+        </button>
+      </div>
+    );
+  };
+
+  const wordmark = (
+    <div style={wordmarkRowStyle}>
+      <div>
+        <h3 style={wordmarkNameStyle}>Valentin</h3>
+      </div>
+      {/* The magnifier that raises the Live Architecture drawer. It sits here
+          rather than in the demo toolbar so it is reachable from every screen —
+          on mobile the toolbar is behind the rail's gear, two taps away. Compact
+          in both surfaces: the column is 226px and the text variant crowds the
+          wordmark. */}
+      <div style={wordmarkActionsStyle}>
+        <ArchitectureToggle compact />
+        {isMobile && (
+          <button
+            style={closeButtonStyle}
+            onClick={() => setSidebarOpen(false)}
+            aria-label="Close sidebar"
+          >
+            &times;
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
+  const body = (
+    <>
+      {wordmark}
+      <div style={wordmarkSubtitleStyle}>Romantic Agent</div>
+      <button style={newChatButtonStyle} onClick={handleNewChat} aria-label="New chat">
+        + New conversation
+      </button>
+      {renderMessage()}
+      <div style={sessionListStyle} data-testid="session-list">
+        {renderList()}
+      </div>
+    </>
+  );
 
   // Mobile: render as overlay when open
   if (isMobile) {
@@ -185,108 +330,27 @@ export function SessionSidebar({ isMobile }: SessionSidebarProps) {
 
     return (
       <div style={mobileOverlayStyle} data-testid="session-sidebar-overlay">
-        <div
-          style={mobileBackdropStyle}
-          onClick={() => setSidebarOpen(false)}
-          aria-hidden="true"
-        />
-        <aside style={mobileSidebarStyle} data-testid="session-sidebar" role="complementary" aria-label="Session history">
-          <div style={headerStyle}>
-            <button style={newChatButtonStyle} onClick={handleNewChat} aria-label="New chat">
-              <span>+</span>
-              <span>New chat</span>
-            </button>
-            <button
-              style={toggleButtonStyle}
-              onClick={() => setSidebarOpen(false)}
-              aria-label="Close sidebar"
-            >
-              &times;
-            </button>
-          </div>
-          <div style={sessionListStyle} data-testid="session-list">
-            {sessions.length === 0 ? (
-              <div style={emptyStateStyle} data-testid="session-empty-state">
-                <p style={emptyTextStyle}>
-                  No conversations yet. Start your first chat to begin building a relationship profile.
-                </p>
-              </div>
-            ) : (
-              sessions.map((session) => (
-                <SessionEntry
-                  key={session.id}
-                  session={session}
-                  isActive={session.id === activeSessionId}
-                  onSelect={handleSelect}
-                  onDelete={handleDelete}
-                  onRename={handleRename}
-                />
-              ))
-            )}
-          </div>
+        <div style={mobileBackdropStyle} onClick={() => setSidebarOpen(false)} aria-hidden="true" />
+        <aside
+          style={mobileSidebarStyle}
+          data-testid="session-sidebar"
+          role="complementary"
+          aria-label="Session history"
+        >
+          {body}
         </aside>
       </div>
     );
   }
 
-  // Desktop: collapsed rail
-  if (sidebarCollapsed) {
-    return (
-      <aside style={sidebarRailStyle} data-testid="session-sidebar" data-collapsed="true" role="complementary" aria-label="Session history">
-        <div style={headerRailStyle}>
-          <button style={newChatIconOnlyStyle} onClick={handleNewChat} aria-label="New chat" title="New chat">
-            <span>+</span>
-          </button>
-          <button
-            style={toggleButtonStyle}
-            onClick={toggleSidebar}
-            aria-label="Expand sidebar"
-            title="Expand sidebar"
-          >
-            &#9654;
-          </button>
-        </div>
-      </aside>
-    );
-  }
-
-  // Desktop: expanded
   return (
-    <aside style={sidebarExpandedStyle} data-testid="session-sidebar" data-collapsed="false" role="complementary" aria-label="Session history">
-      <div style={headerStyle}>
-        <button style={newChatButtonStyle} onClick={handleNewChat} aria-label="New chat">
-          <span>+</span>
-          <span>New chat</span>
-        </button>
-        <button
-          style={toggleButtonStyle}
-          onClick={toggleSidebar}
-          aria-label="Collapse sidebar"
-          title="Collapse sidebar"
-        >
-          &#9664;
-        </button>
-      </div>
-      <div style={sessionListStyle} data-testid="session-list">
-        {sessions.length === 0 ? (
-          <div style={emptyStateStyle} data-testid="session-empty-state">
-            <p style={emptyTextStyle}>
-              No conversations yet. Start your first chat to begin building a relationship profile.
-            </p>
-          </div>
-        ) : (
-          sessions.map((session) => (
-            <SessionEntry
-              key={session.id}
-              session={session}
-              isActive={session.id === activeSessionId}
-              onSelect={handleSelect}
-              onDelete={handleDelete}
-              onRename={handleRename}
-            />
-          ))
-        )}
-      </div>
+    <aside
+      style={columnStyle}
+      data-testid="session-sidebar"
+      role="complementary"
+      aria-label="Session history"
+    >
+      {body}
     </aside>
   );
 }

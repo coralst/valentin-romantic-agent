@@ -14,16 +14,28 @@
  * master-agent via the GitHub tools) using the decision this module returns.
  */
 
+const persona = require('../shared/persona-format.js');
+
 const APPROVAL_TOKEN = 'APPROVED-BY-MASTER-AGENT';
 
 /**
- * The master-agent persona signature that must accompany the approval token.
- * The master-agent signs every review with the 👔 persona header (see the
- * approval-comment format in git-workflow.md). Requiring this marker prevents a
- * sub-agent — or a quoted/echoed token in some other comment — from satisfying
- * the gate simply by containing the token string.
+ * The master-agent signs every review with the canonical persona header
+ * `**👔 Master Agent** — <subject>` (see git-workflow.md). Requiring that header
+ * prevents a sub-agent — or a quoted/echoed token in some other comment — from
+ * satisfying the gate simply by containing the token string.
+ *
+ * This used to be a local `/👔\s*master\s*agent/i` regex, which matched the
+ * persona ANYWHERE in the body — a comment that merely mentioned the master
+ * agent, or a bare token with no header at all, could open the gate. PRs 63-66
+ * merged exactly that way. Matching is now delegated to the single shared
+ * matcher in STRICT mode: the canonical header must actually be present, at the
+ * top of the comment, outside any code fence.
+ *
+ * @see ../shared/persona-format.js — the canonical form and the drift-era policy
  */
-const MASTER_PERSONA = /👔\s*master\s*agent/i;
+function hasMasterPersonaHeader(body) {
+  return persona.isSignedBy(body, 'master-agent');
+}
 
 /**
  * Detect whether a body of text contains the master-agent approval token.
@@ -58,8 +70,12 @@ function isBotAuthor(authorLogin) {
  *
  * We therefore require the approval token AND one of:
  *   - an explicit, caller-verified `isMasterAgent` flag, or
- *   - the master-agent persona signature (👔 Master Agent) in the body.
+ *   - the CANONICAL master-agent persona header (`**👔 Master Agent** — …`).
  * A recognized bot/third-party author is rejected outright.
+ *
+ * Note the deliberate strictness: a bare `APPROVED-BY-MASTER-AGENT` with no
+ * persona header FAILS this check. It always should have — PRs 63-66 are the
+ * four that slipped through when the persona test was a loose body-wide regex.
  *
  * @param {object} comment - { body, authorLogin, isMasterAgent }
  * @returns {boolean}
@@ -72,11 +88,8 @@ function isMasterApprovalComment(comment) {
   // quotes the token in a summary comment. Checked before the persona heuristic
   // so a bot cannot spoof the persona string either.
   if (isBotAuthor(comment.authorLogin)) return false;
-  // Otherwise require the master-agent persona signature in the body.
-  if (typeof comment.body === 'string' && MASTER_PERSONA.test(comment.body)) {
-    return true;
-  }
-  return false;
+  // Otherwise require the canonical master-agent persona header.
+  return hasMasterPersonaHeader(comment.body);
 }
 
 /**
@@ -144,7 +157,9 @@ function buildApprovalComment(opts = {}) {
     ? '✅ QA signed off (for user-facing changes)'
     : '➖ QA sign-off not required';
   return [
-    '**👔 Master Agent** — Review Complete',
+    // Written through the shared formatter so the comment this skill EMITS is
+    // guaranteed to satisfy the header this skill READS.
+    persona.formatHeader('master-agent', 'Review Complete'),
     '',
     ci,
     blocking,
@@ -174,6 +189,7 @@ if (require.main === module) {
 module.exports = {
   APPROVAL_TOKEN,
   hasApprovalToken,
+  hasMasterPersonaHeader,
   isBotAuthor,
   isMasterApprovalComment,
   evaluateMergeGate,

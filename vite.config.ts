@@ -30,11 +30,15 @@ export default defineConfig({
     // Preserve Vitest's built-in excludes (node_modules, dist, .idea, etc.)
     // instead of replacing them; only add ours on top.
     //
+    // `.claude/**` holds agent worktrees — full copies of this repo. Without it
+    // vitest globs into them and runs every test several times over, which
+    // exhausts memory rather than merely being slow.
+    //
     // `infra/**` is a separate npm project: `aws-cdk-lib` lives in
     // infra/package.json, and CI installs only the root manifest. Collected from
     // here the CDK suite fails to load with ERR_MODULE_NOT_FOUND — and it passes
     // locally only because a stray infra/node_modules happens to exist, which is
     // the worst kind of green. Run it with `npm run test:infra`.
-    exclude: [...configDefaults.exclude, 'e2e/**', 'infra/**'],
+    exclude: [...configDefaults.exclude, 'e2e/**', '.claude/**', 'infra/**'],
   },
 });

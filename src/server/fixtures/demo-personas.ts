@@ -1,0 +1,104 @@
+/**
+ * The demo profiles a visitor can choose between on the landing page.
+ *
+ * There is exactly one shared Cognito demo account. Adding a second persona by
+ * adding a second account would mean a second password in Secrets Manager, a
+ * second app client, and a second thing to rotate — all to show a different set
+ * of fixture rows. So the *seed* is parameterised and the credential is not: a
+ * persona is nothing more than a named bundle of preferences to write into a
+ * fresh session.
+ *
+ * The personas are fictional. No real person, and no identifying detail.
+ */
+
+import type { ExtractedPreference } from '../persistence/storage-interface';
+import { DEMO_PROFILE_PREFERENCES } from './demo-profile';
+
+/**
+ * Spelled out rather than derived from the list below.
+ *
+ * Deriving it would make the list's declaration circular with the `DemoPersona`
+ * annotation that keeps the list honest. Two personas is not a maintenance
+ * problem, and the union is what turns a mistyped id in a caller into a compile
+ * error instead of a silent fallback to Samantha.
+ */
+export type DemoPersonaId = 'samantha' | 'fresh';
+
+/** A selectable demo profile */
+export interface DemoPersona {
+  id: DemoPersonaId;
+  /** Shown on the landing page button and in the header chip once signed in */
+  name: string;
+  /** One line of landing-page copy explaining what this persona demonstrates */
+  blurb: string;
+  /** Seeded into the session the demo login creates */
+  preferences: readonly ExtractedPreference[];
+}
+
+export const DEMO_PERSONAS: readonly DemoPersona[] = [
+  {
+    id: 'samantha',
+    name: 'Samantha',
+    blurb: 'Three years together. He remembers all of it.',
+    preferences: DEMO_PROFILE_PREFERENCES,
+  },
+  {
+    id: 'fresh',
+    name: 'Start fresh',
+    blurb: 'An empty profile — Valentin asks about your partner from scratch.',
+    preferences: [],
+  },
+];
+
+/**
+ * The persona used when a caller names none.
+ *
+ * `POST /api/demo/login` shipped before personas existed and its callers send no
+ * body at all; they must keep landing on the populated profile.
+ */
+export const DEFAULT_PERSONA_ID: DemoPersonaId = 'samantha';
+
+// Looked up rather than indexed, so reordering the list above cannot silently
+// change which persona a body-less login lands on.
+const DEFAULT_PERSONA: DemoPersona =
+  DEMO_PERSONAS.find((persona) => persona.id === DEFAULT_PERSONA_ID) ??
+  DEMO_PERSONAS[0];
+
+/**
+ * Resolve a persona id, falling back to the default.
+ *
+ * Deliberately total rather than throwing: the id arrives in the body of an
+ * *unauthenticated* endpoint, so an unknown value is an ordinary thing for a
+ * stranger to send. Turning that into a 500 would hand anyone a trivial way to
+ * fill the error logs, and there is nothing to fail about — a demo has a
+ * perfectly good default to show them.
+ */
+export function resolvePersona(id: unknown): DemoPersona {
+  const match =
+    typeof id === 'string'
+      ? DEMO_PERSONAS.find((persona) => persona.id === id)
+      : undefined;
+  return match ?? DEFAULT_PERSONA;
+}
+
+/**
+ * The personas as `GET /api/config` advertises them.
+ *
+ * Counts only. That endpoint is the one route reachable before sign-in, so the
+ * preference *values* stay behind the token even though this particular fixture
+ * is synthetic — the shape of the response should not have to be re-audited the
+ * day someone seeds a persona from something real.
+ */
+export function describePersonas(): {
+  id: DemoPersonaId;
+  name: string;
+  blurb: string;
+  fieldCount: number;
+}[] {
+  return DEMO_PERSONAS.map(({ id, name, blurb, preferences }) => ({
+    id,
+    name,
+    blurb,
+    fieldCount: preferences.length,
+  }));
+}

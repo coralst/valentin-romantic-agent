@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { colors, spacing, typography, shadows, borderRadius, animation } from '../design-system/tokens';
+import { colors, spacing, typography, radii, animation } from '../design-system/tokens';
 import { formatRelativeTime } from '../hooks/use-session-store';
 import type { StoredSession } from '../hooks/use-session-store';
 
@@ -15,9 +15,9 @@ const entryBaseStyle: React.CSSProperties = {
   position: 'relative',
   display: 'flex',
   flexDirection: 'column',
-  gap: 4,
-  padding: `${spacing.xs}px ${spacing.xs + 4}px`,
-  borderRadius: borderRadius.md,
+  gap: 2,
+  padding: '11px 13px',
+  borderRadius: radii.chip,
   cursor: 'pointer',
   transition: `all ${animation.durations.fast}ms ${animation.easing.easeInOut}`,
   border: 'none',
@@ -27,45 +27,41 @@ const entryBaseStyle: React.CSSProperties = {
   fontFamily: typography.bodyFontFamily,
 };
 
-const titleStyle: React.CSSProperties = {
-  fontSize: typography.sizes.sm,
-  fontWeight: typography.weights.semibold,
-  color: colors.text,
-  margin: 0,
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-};
-
-const previewStyle: React.CSSProperties = {
-  fontSize: typography.sizes.xs,
-  color: colors.textSecondary,
-  margin: 0,
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-};
-
-const metaRowStyle: React.CSSProperties = {
+/** The title row: an olive presence dot on the active row, then the name. */
+const titleRowStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: spacing.xs,
+  gap: 6,
+  minWidth: 0,
 };
 
-const timeStyle: React.CSSProperties = {
-  fontSize: typography.sizes.xs,
-  color: colors.textSecondary,
+const activeDotStyle: React.CSSProperties = {
+  width: 6,
+  height: 6,
+  flexShrink: 0,
+  borderRadius: radii.pill,
+  backgroundColor: colors.olive,
 };
 
-const badgeStyle: React.CSSProperties = {
-  fontSize: '0.625rem',
+const titleStyle: React.CSSProperties = {
+  fontSize: typography.px.body,
   fontWeight: typography.weights.medium,
-  backgroundColor: colors.dustyRose,
-  color: colors.text,
-  borderRadius: borderRadius.full,
-  padding: '1px 6px',
-  lineHeight: 1.4,
+  color: colors.ink,
+  margin: 0,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+};
+
+/** "11m ago · 8 messages" — the mockup folds time and count into one line. */
+const sublineStyle: React.CSSProperties = {
+  fontSize: typography.px.caption,
+  color: colors.inkFaint,
+  margin: 0,
+  marginTop: 2,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
 };
 
 const actionRowStyle: React.CSSProperties = {
@@ -83,7 +79,7 @@ const actionButtonStyle: React.CSSProperties = {
   alignItems: 'center',
   justifyContent: 'center',
   border: 'none',
-  borderRadius: borderRadius.sm,
+  borderRadius: radii.icon,
   color: '#fff',
   fontSize: '0.75rem',
   cursor: 'pointer',
@@ -95,7 +91,7 @@ const actionButtonStyle: React.CSSProperties = {
 
 const renameButtonStyle: React.CSSProperties = {
   ...actionButtonStyle,
-  backgroundColor: colors.softBurgundy,
+  backgroundColor: colors.claret,
 };
 
 const deleteButtonStyle: React.CSSProperties = {
@@ -107,13 +103,13 @@ const renameInputStyle: React.CSSProperties = {
   width: '100%',
   boxSizing: 'border-box',
   padding: `4px ${spacing.xs / 2}px`,
-  fontSize: typography.sizes.sm,
-  fontWeight: typography.weights.semibold,
+  fontSize: typography.px.body,
+  fontWeight: typography.weights.medium,
   fontFamily: typography.bodyFontFamily,
-  color: colors.text,
-  border: `1px solid ${colors.softBurgundy}`,
-  borderRadius: borderRadius.sm,
-  backgroundColor: colors.surface,
+  color: colors.ink,
+  border: `1px solid ${colors.claret}`,
+  borderRadius: radii.icon,
+  backgroundColor: colors.porcelain,
   outline: 'none',
 };
 
@@ -123,11 +119,18 @@ export function SessionEntry({ session, isActive, onSelect, onDelete, onRename }
   const [draftTitle, setDraftTitle] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const lastMessage = session.messages.length > 0
-    ? session.messages[session.messages.length - 1].content
-    : '';
-  const preview = lastMessage.length > 40 ? lastMessage.slice(0, 40) + '...' : lastMessage;
   const title = session.title || session.partnerName || 'New conversation';
+
+  // "11m ago · 8 messages". The mockup drops the old message-preview line and
+  // the count badge in favour of this single muted subline.
+  const subline = [
+    formatRelativeTime(session.lastActivity),
+    session.messageCount > 0
+      ? `${session.messageCount} ${session.messageCount === 1 ? 'message' : 'messages'}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   // Focus and select the input when entering edit mode
   useEffect(() => {
@@ -153,10 +156,16 @@ export function SessionEntry({ session, isActive, onSelect, onDelete, onRename }
     setDraftTitle('');
   };
 
+  // The active row lifts off the sand as a white card; hover is a much quieter
+  // wash, so only one row ever reads as selected.
   const entryStyle: React.CSSProperties = {
     ...entryBaseStyle,
-    backgroundColor: isActive ? colors.highlight : isHovered ? colors.champagne : 'transparent',
-    boxShadow: isHovered ? shadows.subtle : 'none',
+    backgroundColor: isActive
+      ? colors.surface
+      : isHovered
+        ? 'rgba(255, 255, 255, 0.55)'
+        : 'transparent',
+    boxShadow: isActive ? '0 2px 6px rgba(42, 34, 38, 0.06)' : 'none',
     cursor: isEditing ? 'default' : 'pointer',
   };
 
@@ -194,15 +203,12 @@ export function SessionEntry({ session, isActive, onSelect, onDelete, onRename }
           data-testid="rename-session-input"
         />
       ) : (
-        <p style={titleStyle}>{title}</p>
+        <div style={titleRowStyle}>
+          {isActive && <i style={activeDotStyle} aria-hidden="true" />}
+          <p style={titleStyle}>{title}</p>
+        </div>
       )}
-      {preview && <p style={previewStyle}>{preview}</p>}
-      <div style={metaRowStyle}>
-        <span style={timeStyle}>{formatRelativeTime(session.lastActivity)}</span>
-        {session.messageCount > 0 && (
-          <span style={badgeStyle}>{session.messageCount}</span>
-        )}
-      </div>
+      <p style={sublineStyle}>{subline}</p>
     </>
   );
 

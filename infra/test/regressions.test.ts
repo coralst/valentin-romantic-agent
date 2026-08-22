@@ -15,6 +15,7 @@ import { NetworkStack } from '../lib/network-stack';
 import { DataStack } from '../lib/data-stack';
 import { SafetyStack } from '../lib/safety-stack';
 import { ComputeStack } from '../lib/compute-stack';
+import { AuthStack } from '../lib/auth-stack';
 import { MonitoringStack } from '../lib/monitoring-stack';
 
 const config = getConfig('dev');
@@ -30,6 +31,7 @@ beforeAll(() => {
   const network = new NetworkStack(app, 'Net', { config, env: stackEnv });
   const data = new DataStack(app, 'Data', { config, env: stackEnv });
   const safety = new SafetyStack(app, 'Safety', { config, env: stackEnv });
+  const auth = new AuthStack(app, 'Auth', { config, env: stackEnv });
 
   const compute = new ComputeStack(app, 'Compute', {
     config,
@@ -40,6 +42,12 @@ beforeAll(() => {
     guardrailId: safety.guardrailId,
     guardrailVersion: safety.guardrailVersion,
     imageTag: 'test-sha',
+    userPoolId: auth.userPool.userPoolId,
+    userPoolArn: auth.userPool.userPoolArn,
+    spaClientId: auth.userPoolClient.userPoolClientId,
+    demoClientId: auth.demoClient.userPoolClientId,
+    demoSecret: auth.demoSecret,
+    cognitoDomainPrefix: auth.userPoolDomainPrefix,
     env: stackEnv,
   });
 

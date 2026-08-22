@@ -20,8 +20,11 @@ function createMockStorage(): StorageInterface {
   return {
     createSession: vi.fn(),
     getSession: vi.fn(),
+    listSessions: vi.fn().mockResolvedValue([]),
+    updateSessionMeta: vi.fn().mockResolvedValue(undefined),
     endSession: vi.fn(),
     clearSession: vi.fn(),
+    deleteSession: vi.fn(),
     saveMessage: vi.fn(),
     getMessagesBySession: vi.fn(),
     savePreference: vi.fn().mockImplementation(async (pref) => ({
@@ -31,11 +34,12 @@ function createMockStorage(): StorageInterface {
       updatedAt: new Date().toISOString(),
       history: [],
     })),
-    updatePreference: vi.fn().mockImplementation(async (id, update) => ({
-      id,
-      sessionId: 'sess-1',
-      category: 'food',
-      key: 'favorite_cuisine',
+    savePreferencesBatch: vi.fn().mockResolvedValue([]),
+    updatePreference: vi.fn().mockImplementation(async (ref, update) => ({
+      id: 'pref-existing',
+      sessionId: ref.sessionId,
+      category: ref.category,
+      key: ref.key,
       value: update.value ?? 'old',
       confidence: update.confidence ?? 0.8,
       sourceMessageId: update.sourceMessageId ?? 'msg-1',
@@ -124,12 +128,50 @@ describe('PreferenceExtractor', () => {
 
     await extractor.extract(makeMessage(), []);
 
-    expect(storage.updatePreference).toHaveBeenCalledWith('pref-existing', {
-      value: 'Italian',
-      confidence: 0.95,
-      sourceMessageId: 'msg-1',
-    });
+    // Addressed by natural key, not by an opaque id: an id alone yields no
+    // DynamoDB key, which is what made the old signature unimplementable.
+    expect(storage.updatePreference).toHaveBeenCalledWith(
+      { sessionId: 'sess-1', category: 'food', key: 'favorite_cuisine' },
+      {
+        value: 'Italian',
+        confidence: 0.95,
+        sourceMessageId: 'msg-1',
+      },
+    );
     expect(onUpdate).toHaveBeenCalledWith(expect.anything(), false);
+  });
+
+  it('denormalises the partner name onto the session', async () => {
+    vi.mocked(bedrock.extractWithTool).mockResolvedValue({
+      toolName: 'extract_preferences',
+      input: {
+        preferences: [
+          { category: 'personality_traits', key: 'Name', value: 'Maya', confidence: 0.9 },
+        ],
+      },
+    });
+
+    await extractor.extract(makeMessage(), []);
+
+    // Key casing varies with whatever the model emits, so the match normalises.
+    expect(storage.updateSessionMeta).toHaveBeenCalledWith('sess-1', {
+      partnerName: 'Maya',
+    });
+  });
+
+  it('leaves session meta alone for preferences that are not the name', async () => {
+    vi.mocked(bedrock.extractWithTool).mockResolvedValue({
+      toolName: 'extract_preferences',
+      input: {
+        preferences: [
+          { category: 'food', key: 'favorite_cuisine', value: 'Italian', confidence: 0.9 },
+        ],
+      },
+    });
+
+    await extractor.extract(makeMessage(), []);
+
+    expect(storage.updateSessionMeta).not.toHaveBeenCalled();
   });
 
   it('logs error and returns empty on Bedrock failure', async () => {

@@ -8,6 +8,13 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    # `labeled`/`unlabeled` on top of the defaults (opened, synchronize,
+    # reopened) because the Scope Check job compares changed paths against the
+    # PR's `agent: *` labels, and a workflow run reads the labels frozen into
+    # the event payload that started it. Without these types, the remedy the
+    # failure message asks for — "apply the matching label" — could not clear
+    # the check: you had to push an unrelated commit to get a fresh payload.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 concurrency:
   # Key on the PR head ref when present so the push and pull_request events for
@@ -149,6 +156,70 @@ jobs:
       # separate path-filtered workflow. This closes the gap where a red
       # regression tier could not block a merge.
       - run: npx vitest --run .kiro/specs/cubic-ai-review-integration/__tests__ .kiro/specs/pr-conversation-monitoring/__tests__
+      # The persona matcher exists in two languages that cannot share code, only
+      # a fixture. Run BOTH self-checks so a change to one without the other is a
+      # red build rather than a silent divergence.
+      - run: node .kiro/skills/shared/persona-format.js --selfcheck
+      - run: python3 scripts/persona_format.py --selfcheck
+
+  scope-check:
+    name: Scope Check (paths vs agent labels)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    # ALWAYS RUNS. Deliberately no `paths:` filter and no job-level `if:` that
+    # could skip it: this repo's ruleset treats a SKIPPED required check as NOT
+    # satisfied, so a skip would make the PR unmergeable rather than "not
+    # applicable". The push-event case is handled by a STEP-LEVEL guard below,
+    # which lets the job still conclude `success`.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need the base commit to diff against, so no shallow clone.
+          fetch-depth: 0
+
+      # Everything below is step-guarded on this being a pull_request event.
+      # On a direct push to main there is no PR and no labels, so there is
+      # nothing to check — but the job must still report success.
+      - name: Collect changed paths
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          # `base.sha` is already the merge-base GitHub shows the PR diff
+          # against, so a two-dot diff here matches the Files-changed tab.
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git diff --name-only --diff-filter=d "$BASE_SHA" "$HEAD_SHA" > changed-paths.txt
+          echo "Changed paths:"
+          cat changed-paths.txt
+
+      - name: Collect agent labels
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          # Passed through the environment as JSON rather than interpolated into
+          # the script body: a label is attacker-influenced text and must never
+          # be pasted into a shell command.
+          LABELS_JSON: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          printf '%s' "$LABELS_JSON" > labels.json
+          echo "Labels on this PR:"
+          cat labels.json
+
+      # The decision itself lives in the skill (checkScope, reusing the same
+      # attributeOwner() ownership list the review router uses), unit-tested in
+      # .kiro/specs/pr-conversation-monitoring/__tests__/scope-check.test.ts.
+      # CI only feeds it inputs and propagates its exit code, so the gate cannot
+      # drift from the tested logic. No `node -e`/`python3 -c` inline script: a
+      # nested quoted one-liner inside a `run: |` block is exactly what shipped
+      # invalid YAML here once before.
+      - name: Check changed paths against agent labels
+        if: ${{ github.event_name == 'pull_request' }}
+        run: node .kiro/skills/shared/scope-check-ci.js changed-paths.txt labels.json
+
+      - name: Not a pull request — nothing to scope-check
+        if: ${{ github.event_name != 'pull_request' }}
+        run: echo "Push event, no PR labels to compare against. Reporting success."
 
   build:
     name: Build (vite)

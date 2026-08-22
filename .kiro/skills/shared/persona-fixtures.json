@@ -1,0 +1,201 @@
+{
+  "$comment": [
+    "Shared fixture for the persona-header matcher. Read by BOTH implementations:",
+    "  - JS:     .kiro/skills/shared/persona-format.js  (require'd by the pr-monitoring skills)",
+    "  - Python: scripts/persona_format.py              (used by scripts/generate-agent-graph.py)",
+    "The two languages cannot share code, so they share THIS FILE instead. Each",
+    "implementation has a self-check that runs every case below and asserts the",
+    "documented expectation, so the two matchers cannot drift apart silently.",
+    "Add a case here before changing either matcher."
+  ],
+
+  "canonicalForm": "**<emoji> <Persona>** — <subject>",
+
+  "agents": {
+    "master-agent": { "name": "Master Agent", "emoji": "👔", "graphKey": "master", "label": "master" },
+    "system-architect": { "name": "System Architect", "emoji": "🏗️", "graphKey": "architect", "label": "architect" },
+    "frontend-dev": { "name": "Frontend Dev", "emoji": "⚛️", "graphKey": "frontend", "label": "frontend" },
+    "backend-dev": { "name": "Backend Dev", "emoji": "🔧", "graphKey": "backend", "label": "backend" },
+    "ui-designer": { "name": "UI Designer", "emoji": "🎨", "graphKey": "design", "label": "design" },
+    "qa-agent": { "name": "QA Agent", "emoji": "🧪", "graphKey": "qa", "label": "qa" }
+  },
+
+  "$modes": [
+    "strict  — the ONLY form accepted going forward. Used by the live workflow:",
+    "          the approval gate and the turn router. A comment that does not",
+    "          match strict has no recognized author and cannot open the merge",
+    "          gate or satisfy a routing hand-off.",
+    "lenient — strict PLUS the historical drift eras below. Used ONLY for",
+    "          backfilling attribution over comments that already exist",
+    "          (scripts/generate-agent-graph.py). Never used to make a gate",
+    "          decision."
+  ],
+
+  "cases": [
+    {
+      "name": "canonical form, em dash subject",
+      "era": "canonical",
+      "header": "**👔 Master Agent** — Review Complete",
+      "strict": "master-agent",
+      "lenient": "master-agent"
+    },
+    {
+      "name": "canonical form, architect with variation selector",
+      "era": "canonical",
+      "header": "**🏗️ System Architect** — Technical Specification",
+      "strict": "system-architect",
+      "lenient": "system-architect"
+    },
+    {
+      "name": "canonical form, architect WITHOUT variation selector",
+      "era": "canonical",
+      "header": "**🏗 System Architect** — Technical Specification",
+      "strict": "system-architect",
+      "lenient": "system-architect"
+    },
+    {
+      "name": "canonical form, frontend",
+      "era": "canonical",
+      "header": "**⚛️ Frontend Dev** — Status Update",
+      "strict": "frontend-dev",
+      "lenient": "frontend-dev"
+    },
+    {
+      "name": "canonical form, backend",
+      "era": "canonical",
+      "header": "**🔧 Backend Dev** — good catch, that was a real hole.",
+      "strict": "backend-dev",
+      "lenient": "backend-dev"
+    },
+    {
+      "name": "canonical form, designer",
+      "era": "canonical",
+      "header": "**🎨 UI Designer** — Visual review",
+      "strict": "ui-designer",
+      "lenient": "ui-designer"
+    },
+    {
+      "name": "canonical form, qa",
+      "era": "canonical",
+      "header": "**🧪 QA Agent** — E2E Sign-off",
+      "strict": "qa-agent",
+      "lenient": "qa-agent"
+    },
+    {
+      "name": "canonical form with no subject (bare signature) still attributes",
+      "era": "canonical",
+      "header": "**🔧 Backend Dev**",
+      "strict": "backend-dev",
+      "lenient": "backend-dev"
+    },
+    {
+      "name": "header need not be the very first line",
+      "era": "canonical",
+      "header": "Some preamble line\n\n**👔 Master Agent** — Review Complete",
+      "strict": "master-agent",
+      "lenient": "master-agent"
+    },
+
+    {
+      "name": "DRIFT ERA 1 (PRs 57-58): emoji dropped, ASCII dashes",
+      "era": "no-emoji",
+      "header": "**Master Agent** --- Code Review",
+      "strict": null,
+      "lenient": "master-agent"
+    },
+    {
+      "name": "DRIFT ERA 1 (PRs 57-58): emoji dropped, frontend",
+      "era": "no-emoji",
+      "header": "**Frontend Dev**",
+      "strict": null,
+      "lenient": "frontend-dev"
+    },
+    {
+      "name": "DRIFT ERA 1 (PRs 57-58): emoji dropped, designer",
+      "era": "no-emoji",
+      "header": "**UI Designer**",
+      "strict": null,
+      "lenient": "ui-designer"
+    },
+
+    {
+      "name": "DRIFT ERA 2 (PR 61): '## Review:' heading, aliased role name",
+      "era": "review-heading",
+      "header": "## Review: Architecture Lead",
+      "strict": null,
+      "lenient": "system-architect"
+    },
+    {
+      "name": "DRIFT ERA 2 (PR 61): '## Review:' heading, Backend Developer",
+      "era": "review-heading",
+      "header": "## Review: Backend Developer",
+      "strict": null,
+      "lenient": "backend-dev"
+    },
+    {
+      "name": "DRIFT ERA 2 (PR 61): '## Review: Master Approval'",
+      "era": "review-heading",
+      "header": "## Review: Master Approval",
+      "strict": null,
+      "lenient": "master-agent"
+    },
+    {
+      "name": "DRIFT ERA 2 (PR 62): '## Review: Master (Initial Review)'",
+      "era": "review-heading",
+      "header": "## Review: Master (Initial Review)",
+      "strict": null,
+      "lenient": "master-agent"
+    },
+    {
+      "name": "DRIFT ERA 2 (PR 62): '## Review: Architect'",
+      "era": "review-heading",
+      "header": "## Review: Architect",
+      "strict": null,
+      "lenient": "system-architect"
+    },
+
+    {
+      "name": "DRIFT ERA 3 (PRs 63-66): bare approval token, NO persona header — rejected in BOTH modes",
+      "era": "bare-token",
+      "header": "APPROVED-BY-MASTER-AGENT\n\nReviewed as the trunk-clearing prerequisite for the demo-readiness work.",
+      "strict": null,
+      "lenient": null
+    },
+    {
+      "name": "DRIFT ERA 4 (PRs 49-50): no header of any kind — unattributable in BOTH modes",
+      "era": "headerless",
+      "header": "Workflow verification successful — all phases confirmed operational.",
+      "strict": null,
+      "lenient": null
+    },
+
+    {
+      "name": "a quoted/echoed canonical header inside a fenced code block does not attribute",
+      "era": "adversarial",
+      "header": "Here is the format to use:\n\n```\n**👔 Master Agent** — Review Complete\n```",
+      "strict": null,
+      "lenient": null
+    },
+    {
+      "name": "an unknown persona name does not attribute",
+      "era": "adversarial",
+      "header": "**👔 Release Manager** — shipping it",
+      "strict": null,
+      "lenient": null
+    },
+    {
+      "name": "emoji present but persona name missing does not attribute",
+      "era": "adversarial",
+      "header": "**👔** — Review Complete",
+      "strict": null,
+      "lenient": null
+    },
+    {
+      "name": "empty body does not attribute",
+      "era": "adversarial",
+      "header": "",
+      "strict": null,
+      "lenient": null
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
 import { InMemoryConversationMemory } from '../conversation-memory';
-import { InMemoryStore } from '../in-memory-store';
+import { InMemoryStoreFactory } from '../in-memory-store';
 import type { ChatMessage } from '../../../shared/interfaces/message';
 
 // --- Generators ---
@@ -54,7 +54,7 @@ describe('Property 8: Context window stays within token budget', () => {
         fc.array(rawMessageArb, { minLength: 1, maxLength: 30 }),
         fc.integer({ min: 1, max: 5000 }),
         async (rawMessages, maxTokens) => {
-          const store = new InMemoryStore();
+          const store = new InMemoryStoreFactory().forUser('user-under-test');
           const sessionId = await store.createSession();
           const memory = new InMemoryConversationMemory(store);
 
@@ -82,7 +82,7 @@ describe('Property 8: Context window stays within token budget', () => {
       fc.asyncProperty(
         fc.array(rawMessageArb, { minLength: 1, maxLength: 5 }),
         async (rawMessages) => {
-          const store = new InMemoryStore();
+          const store = new InMemoryStoreFactory().forUser('user-under-test');
           const sessionId = await store.createSession();
           const memory = new InMemoryConversationMemory(store);
 

@@ -138,16 +138,74 @@ describe('guardrail enforcement', () => {
     ).not.toBe(false);
   });
 
-  // ADDRESS matches place names, not just home addresses, and this agent plans
-  // dates and holidays. On the output side it blocked replies for naming a city.
-  it('does not judge the model output for ADDRESS', () => {
+  /** The guardrail's sensitive-information policy. */
+  function sensitiveInfo(): any {
     const guardrails = safetyTemplate.findResources('AWS::Bedrock::Guardrail');
-    const pii = Object.values<any>(guardrails)[0].Properties
-      .SensitiveInformationPolicyConfig.PiiEntitiesConfig;
-    const address = pii.find((e: any) => e.Type === 'ADDRESS');
+    return Object.values<any>(guardrails)[0].Properties.SensitiveInformationPolicyConfig;
+  }
 
-    expect(address.Action).toBe('BLOCK');
-    expect(address.OutputEnabled).toBe(false);
+  /*
+   * ADDRESS matches place names, not just home addresses, and this agent plans
+   * dates and holidays. Exempting the reply fixed half of it; the entity was
+   * still BLOCKing the prompt, where the visitor types "she's been saving for
+   * Kyoto" and "take her to Rome" — both measured as blocked against the live
+   * guardrail, along with Paris, Seattle and the bare word "France".
+   */
+  it('does not use the ADDRESS entity in either direction', () => {
+    const types = sensitiveInfo().PiiEntitiesConfig.map((e: any) => e.Type);
+    expect(types).not.toContain('ADDRESS');
+  });
+
+  // The risk the entity was there for is a residence, which has a shape.
+  it('blocks a residence by pattern instead', () => {
+    const regexes = sensitiveInfo().RegexesConfig ?? [];
+    const names = regexes.map((r: any) => r.Name);
+    expect(names).toContain('street-address');
+    for (const regex of regexes) {
+      expect(regex.Action).toBe('BLOCK');
+    }
+  });
+
+  // "42 Maple Street" is a residence; "Rome" is a date. The pattern has to tell
+  // them apart, since that distinction is the whole reason it replaced ADDRESS.
+  it('has a street-address pattern that matches a residence but not a city', () => {
+    const regexes = sensitiveInfo().RegexesConfig ?? [];
+    const street = new RegExp(
+      regexes.find((r: any) => r.Name === 'street-address').Pattern,
+    );
+
+    expect(street.test('She lives at 42 Maple Street')).toBe(true);
+    expect(street.test('Send the flowers to 221B Baker Street')).toBe(true);
+    expect(street.test('I want to take her to Rome for our anniversary')).toBe(false);
+    expect(street.test("She's been saving for Kyoto")).toBe(false);
+  });
+
+  // At HIGH, "Her ring size is 6 and she is 5 foot 4" tripped the SEXUAL filter,
+  // and her sizes are among the profile fields the agent asks for outright.
+  it('screens the prompt for SEXUAL at MEDIUM while holding the reply to HIGH', () => {
+    const guardrails = safetyTemplate.findResources('AWS::Bedrock::Guardrail');
+    const filters = Object.values<any>(guardrails)[0].Properties.ContentPolicyConfig
+      .FiltersConfig as Array<any>;
+    const sexual = filters.find((f) => f.Type === 'SEXUAL');
+
+    expect(sexual.InputStrength).toBe('MEDIUM');
+    expect(sexual.OutputStrength).toBe('HIGH');
+  });
+
+  it('still blocks the identifiers a partner profile never needs', () => {
+    const actions = Object.fromEntries(
+      sensitiveInfo().PiiEntitiesConfig.map((e: any) => [e.Type, e.Action]),
+    );
+    for (const type of [
+      'CREDIT_DEBIT_CARD_NUMBER',
+      'US_SOCIAL_SECURITY_NUMBER',
+      'PHONE',
+      'EMAIL',
+      'AWS_ACCESS_KEY',
+      'AWS_SECRET_KEY',
+    ]) {
+      expect(actions[type]).toBe('BLOCK');
+    }
   });
 });
 

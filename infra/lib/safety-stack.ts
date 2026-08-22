@@ -7,6 +7,14 @@ export interface SafetyStackProps extends cdk.StackProps {
   config: EnvironmentConfig;
 }
 
+/**
+ * Bumped whenever the guardrail's policy below changes.
+ *
+ * 2 — NAME and AGE no longer anonymised.
+ * 1 — initial policy.
+ */
+const POLICY_REVISION = 2;
+
 export class SafetyStack extends cdk.Stack {
   public readonly guardrailId: string;
   public readonly guardrailVersion: string;
@@ -75,10 +83,20 @@ export class SafetyStack extends cdk.Stack {
       },
     });
 
-    // Create a guardrail version for stable deployment references
+    /*
+     * A published version, referenced by the container.
+     *
+     * Versions are immutable snapshots, and this resource has no dependency on the
+     * policy above — so editing a filter changes only DRAFT, and the running task
+     * keeps enforcing the version it was given. `POLICY_REVISION` is what makes an
+     * edit reach production: bumping it changes this resource's description, CFN
+     * replaces it, and a new version number flows through to the task definition.
+     *
+     * Bump it in the same commit as any policy change above.
+     */
     const guardrailVersion = new bedrock.CfnGuardrailVersion(this, 'GuardrailVersion', {
       guardrailIdentifier: guardrail.attrGuardrailId,
-      description: `Version for ${config.env} environment`,
+      description: `Version for ${config.env} environment (policy revision ${POLICY_REVISION})`,
     });
 
     this.guardrailId = guardrail.attrGuardrailId;

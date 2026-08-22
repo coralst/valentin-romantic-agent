@@ -54,6 +54,32 @@ describe('DEMO_PROFILE_PREFERENCES', () => {
     expect(resolved.get('ring_size')).toBeTruthy();
   });
 
+  /**
+   * The seeded rows must carry the same `fieldId` a live extraction would.
+   *
+   * The client can reach a field id from `(category, key)` through the registry,
+   * so the panel was always right. The *server* cannot: it reads preferences
+   * straight out of storage to build Valentin's system prompt, and `fieldId` is
+   * the only field it can key on. With it absent, a fully-seeded Samantha looked
+   * empty to him — `partnerNameFrom` found no name, so he greeted the visitor as
+   * a stranger, and every one of the twenty-one fields was reported to him as
+   * "still unknown".
+   */
+  it('stamps the canonical field id on every row, as extraction does', () => {
+    const wrong = DEMO_PROFILE_PREFERENCES.filter(
+      (pref) => pref.fieldId !== resolveField(pref.category, pref.key),
+    ).map((pref) => `${pref.category}:${pref.key} -> ${String(pref.fieldId)}`);
+
+    expect(wrong).toEqual([]);
+  });
+
+  it('names the partner under the id the server looks her up by', () => {
+    const name = DEMO_PROFILE_PREFERENCES.find(
+      (pref) => pref.fieldId === 'partner_name',
+    );
+    expect(name?.value).toBe('Samantha');
+  });
+
   it('gives every value a confidence a panel can render', () => {
     for (const pref of DEMO_PROFILE_PREFERENCES) {
       expect(pref.confidence).toBeGreaterThan(0);

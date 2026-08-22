@@ -23,6 +23,7 @@ const config = getConfig('dev');
 let computeTemplate: Template;
 let monitoringTemplate: Template;
 let dataTemplate: Template;
+let safetyTemplate: Template;
 
 beforeAll(() => {
   const app = new cdk.App();
@@ -63,7 +64,17 @@ beforeAll(() => {
   computeTemplate = Template.fromStack(compute);
   monitoringTemplate = Template.fromStack(monitoring);
   dataTemplate = Template.fromStack(data);
+  safetyTemplate = Template.fromStack(safety);
 });
+
+/** The guardrail's denied-topic list, keyed by topic name. */
+function deniedTopics(): Record<string, any> {
+  const guardrails = safetyTemplate.findResources('AWS::Bedrock::Guardrail');
+  const props = Object.values<any>(guardrails)[0].Properties;
+  return Object.fromEntries(
+    props.TopicPolicyConfig.TopicsConfig.map((t: any) => [t.Name, t]),
+  );
+}
 
 /** The container's environment block, as a name -> value map. */
 function containerEnv(): Record<string, unknown> {
@@ -108,6 +119,23 @@ describe('guardrail enforcement', () => {
 
   it('passes a pinned guardrail version', () => {
     expect(containerEnv().BEDROCK_GUARDRAIL_VERSION).toBeDefined();
+  });
+
+  // The off-topic topic judged Valentin's own replies and got the most important
+  // one wrong: asked what to get her for their anniversary, he wrote four
+  // specific gift ideas from her profile and the classifier replaced the whole
+  // answer with the blocked-output message. Confirmed against the live guardrail
+  // — the prompt scored `action: NONE`, the reply scored `BLOCKED`.
+  it('does not judge the model output for the off-topic topic', () => {
+    expect(deniedTopics()['off-topic'].OutputEnabled).toBe(false);
+  });
+
+  // Leaking the system prompt is an output-side risk by definition, so this one
+  // must keep judging replies.
+  it('still judges the model output for prompt extraction', () => {
+    expect(
+      deniedTopics()['system-prompt-extraction'].OutputEnabled,
+    ).not.toBe(false);
   });
 });
 

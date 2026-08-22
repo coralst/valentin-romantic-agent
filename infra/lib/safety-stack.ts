@@ -10,10 +10,11 @@ export interface SafetyStackProps extends cdk.StackProps {
 /**
  * Bumped whenever the guardrail's policy below changes.
  *
+ * 3 — the off-topic topic no longer judges Valentin's own replies.
  * 2 — NAME and AGE no longer anonymised.
  * 1 — initial policy.
  */
-const POLICY_REVISION = 2;
+const POLICY_REVISION = 3;
 
 export class SafetyStack extends cdk.Stack {
   public readonly guardrailId: string;
@@ -26,10 +27,23 @@ export class SafetyStack extends cdk.Stack {
 
     const guardrail = new bedrock.CfnGuardrail(this, 'ValentinGuardrail', {
       name: config.guardrailName,
+      /*
+       * Both messages are worded as Valentin declining *this* turn, not as him
+       * announcing the limits of his job.
+       *
+       * The old pair ("I can only help with learning about your partner. Could
+       * you tell me more about their preferences?" / "Let me stay focused on
+       * your partner profile. What else can I learn about them?") landed on
+       * people mid-conversation about a partner he already knew twenty-one facts
+       * about, and read as though he had forgotten her and could do nothing
+       * else. They also matched the client-side fallback in `bedrock-client.ts`
+       * word for word, so there was no way to tell from a transcript which of
+       * the two had spoken.
+       */
       blockedInputMessaging:
-        'I can only help with learning about your partner. Could you tell me more about their preferences?',
+        "That one I'd rather not go into — but I'm still right here. Shall we talk about her instead?",
       blockedOutputsMessaging:
-        'Let me stay focused on your partner profile. What else can I learn about them?',
+        "I started to answer that and thought better of it. Ask me again another way and I'll try.",
       contentPolicyConfig: {
         filtersConfig: [
           { type: 'SEXUAL', inputStrength: 'HIGH', outputStrength: 'HIGH' },
@@ -72,6 +86,26 @@ export class SafetyStack extends cdk.Stack {
             definition:
               'Requests unrelated to romantic relationships, partner preferences, gift ideas, or date planning',
             type: 'DENY',
+            /*
+             * INPUT ONLY. This topic judged Valentin's own replies too, and it
+             * was wrong about them in the single most important case: asked
+             * "What should I get her for our anniversary?", the model wrote four
+             * specific, on-topic gift ideas drawn from her profile — and the
+             * classifier marked that reply `off-topic` and replaced all of it
+             * with `blockedOutputsMessaging`. Verified against the live
+             * guardrail with `ApplyGuardrail`/Converse traces: the input scored
+             * `action: NONE`, the reply scored `BLOCKED`.
+             *
+             * The topic is defined by what it excludes, which reads as a
+             * sentence about a *request*. A long assistant answer naming
+             * cottages, trail shoes and poetry anthologies matches the surface
+             * of it however on-topic the answer actually is. Nothing is lost by
+             * scoping it to the prompt: this topic exists to stop a visitor
+             * dragging Valentin off his job, and a prompt he never sees cannot
+             * produce an off-topic answer. The content filters below, and
+             * `system-prompt-extraction`, still judge every reply.
+             */
+            outputEnabled: false,
           },
           {
             name: 'system-prompt-extraction',

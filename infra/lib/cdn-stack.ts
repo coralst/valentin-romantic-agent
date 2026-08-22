@@ -5,12 +5,14 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import { Construct } from 'constructs';
+import { EnvironmentConfig } from '../config/environments';
 
 export interface CdnStackProps extends cdk.StackProps {
-  /** Environment name (dev, staging, prod) */
-  environment: string;
+  config: EnvironmentConfig;
   /** ALB to use as the API origin */
   alb: elbv2.IApplicationLoadBalancer;
+  /** Bucket for CloudFront standard access logs. */
+  accessLogBucket: s3.IBucket;
 }
 
 /**
@@ -29,14 +31,19 @@ export class CdnStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: CdnStackProps) {
     super(scope, id, props);
 
-    const env = props.environment;
+    const { config } = props;
+    const env = config.env;
 
     // --- S3 Bucket for static frontend ---
+    // Note: DataStack also declares a `valentin-frontend-<env>` bucket that
+    // nothing consumes. Converging the two is deliberately out of scope here —
+    // this bucket is RETAIN, so removing it would orphan the real one.
     this.staticBucket = new s3.Bucket(this, 'StaticBucket', {
       bucketName: `valentin-static-${env}`,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
       encryption: s3.BucketEncryption.S3_MANAGED,
+      versioned: true,
     });
 
     // --- WAF Web ACL ---
@@ -163,6 +170,13 @@ export class CdnStack extends cdk.Stack {
         },
       ],
       webAclId: webAcl.attrArn,
+      priceClass: config.cloudfrontPriceClass,
+      enableLogging: true,
+      logBucket: props.accessLogBucket,
+      logFilePrefix: `cloudfront/${env}/`,
+      // minimumProtocolVersion cannot be raised above the default while the
+      // distribution uses the CloudFront default certificate. Requires a
+      // custom domain plus an ACM certificate.
     });
 
     // --- Outputs ---

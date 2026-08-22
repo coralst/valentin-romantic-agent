@@ -1,5 +1,6 @@
 import * as cdk from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as kms from 'aws-cdk-lib/aws-kms';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 import { EnvironmentConfig } from '../config/environments';
@@ -12,6 +13,7 @@ export class DataStack extends cdk.Stack {
   public readonly table: dynamodb.ITable;
   public readonly photoBucket: s3.IBucket;
   public readonly frontendBucket: s3.IBucket;
+  public readonly accessLogBucket: s3.IBucket;
 
   constructor(scope: Construct, id: string, props: DataStackProps) {
     super(scope, id, props);
@@ -27,6 +29,7 @@ export class DataStack extends cdk.Stack {
       pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       encryption: dynamodb.TableEncryption.AWS_MANAGED,
       timeToLiveAttribute: 'ttl',
+      deletionProtection: config.deletionProtection,
       removalPolicy: config.env === 'prod'
         ? cdk.RemovalPolicy.RETAIN
         : cdk.RemovalPolicy.DESTROY,
@@ -40,11 +43,26 @@ export class DataStack extends cdk.Stack {
       projectionType: dynamodb.ProjectionType.ALL,
     });
 
+    // Customer managed key for user photos, in environments that opt in.
+    // Bucket keys are enabled by CDK for KMS buckets, so per-request KMS calls
+    // stay cheap.
+    const photoKey = config.photoBucketKmsEncryption
+      ? new kms.Key(this, 'PhotoKey', {
+          alias: `valentin-photos-${config.env}`,
+          description: `Encrypts Valentin user photos (${config.env})`,
+          enableKeyRotation: true,
+          removalPolicy: config.env === 'prod'
+            ? cdk.RemovalPolicy.RETAIN
+            : cdk.RemovalPolicy.DESTROY,
+        })
+      : undefined;
+
     // S3 bucket for photos (private, lifecycle to Glacier IA)
     this.photoBucket = new s3.Bucket(this, 'PhotoBucket', {
       bucketName: config.photoBucketName,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      encryption: s3.BucketEncryption.S3_MANAGED,
+      encryption: photoKey ? s3.BucketEncryption.KMS : s3.BucketEncryption.S3_MANAGED,
+      encryptionKey: photoKey,
       versioned: true,
       lifecycleRules: [
         {
@@ -68,6 +86,27 @@ export class DataStack extends cdk.Stack {
       bucketName: config.frontendBucketName,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.S3_MANAGED,
+      removalPolicy: config.env === 'prod'
+        ? cdk.RemovalPolicy.RETAIN
+        : cdk.RemovalPolicy.DESTROY,
+      autoDeleteObjects: config.env !== 'prod',
+    });
+
+    // S3 bucket for ALB and CloudFront access logs.
+    // SSE-S3 rather than KMS: the ALB log delivery service cannot write to a
+    // bucket encrypted with a customer managed key. ACLs stay enabled because
+    // CloudFront standard logging still delivers via ACL.
+    this.accessLogBucket = new s3.Bucket(this, 'AccessLogBucket', {
+      bucketName: `valentin-access-logs-${config.env}`,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      objectOwnership: s3.ObjectOwnership.OBJECT_WRITER,
+      lifecycleRules: [
+        {
+          id: 'ExpireAccessLogs',
+          expiration: cdk.Duration.days(90),
+        },
+      ],
       removalPolicy: config.env === 'prod'
         ? cdk.RemovalPolicy.RETAIN
         : cdk.RemovalPolicy.DESTROY,

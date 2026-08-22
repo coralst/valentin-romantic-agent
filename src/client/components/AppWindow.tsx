@@ -61,7 +61,7 @@ export const DESKTOP_COLUMNS = [
  * The two columns of the dossier shell: icon rail | board (`full-profile.html:19`).
  *
  * The rail keeps its exact 76px so switching surfaces does not shift it by a
- * pixel — the ♥ you clicked has to still be under the cursor.
+ * pixel — nothing you clicked has to move while the surface swaps.
  */
 export const DOSSIER_COLUMNS = [
   `${layout.iconRailWidth}px`,

@@ -146,7 +146,7 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
   const { closeDossier } = useViewContext();
 
   /**
-   * Escape closes the dossier, which also returns focus to the rail's ♥.
+   * Escape closes the dossier, which also returns focus to her portrait in the brief.
    *
    * Bound on `document` rather than on the shell, because the user may well be
    * inside a `ProfileField` input three cards down when they give up on it.

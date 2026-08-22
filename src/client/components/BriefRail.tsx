@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { usePreferencesContext } from '../context/preferences-context';
 import { useProfileStoreContext } from '../context/profile-store-context';
 import { useChatContext } from '../context/chat-context';
@@ -173,8 +173,7 @@ interface BriefRailProps {
  */
 export function BriefRail({ isMobile = false }: BriefRailProps) {
   const { state: preferencesState } = usePreferencesContext();
-  const { state: profileState, dispatch: profileDispatch, getFieldValue } =
-    useProfileStoreContext();
+  const { state: profileState, getFieldValue } = useProfileStoreContext();
   const { dispatch: chatDispatch } = useChatContext();
   /*
    * Optional, not required: the footer grows its "Full profile →" link when the
@@ -185,7 +184,6 @@ export function BriefRail({ isMobile = false }: BriefRailProps) {
 
   /** Field ids whose nudge the user has waved off this session. */
   const [dismissedGaps, setDismissedGaps] = useState<Set<string>>(new Set());
-  const photoInputRef = useRef<HTMLInputElement>(null);
 
   const isFilled = useCallback(
     (fieldId: string) => getFieldValue(fieldId) !== null,
@@ -277,42 +275,23 @@ export function BriefRail({ isMobile = false }: BriefRailProps) {
     setDismissedGaps((prev) => new Set(prev).add(nudgeGap.fieldId));
   }, [nudgeGap]);
 
-  const handlePhotoChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      event.target.value = '';
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (loaded) => {
-        const dataUrl = loaded.target?.result;
-        if (typeof dataUrl === 'string') profileDispatch({ type: 'SET_PHOTO', dataUrl });
-      };
-      reader.readAsDataURL(file);
-    },
-    [profileDispatch],
-  );
-
   const isCompletelyEmpty = filled === 0 && !profileState.partnerPhoto;
 
   return (
     <div style={aliasWrapperStyle} data-testid="partner-profile-panel">
       <aside style={railStyle} data-testid="brief-rail" aria-label="Her brief">
         <div style={getScrollStyle(isMobile)} data-testid="brief-scroll">
+          {/* Her portrait is the way into her profile. The photo *upload* moved
+              to the dossier's own avatar, which already owned the validation —
+              a header cameo that opens a file dialog is not what a click on a
+              face is asking for. */}
           <WhoHeader
             name={name}
             subtitle={subtitle}
             photo={profileState.partnerPhoto}
             portrait={portraitForPartner(name)}
-            onEditPhoto={() => photoInputRef.current?.click()}
-          />
-          <input
-            ref={photoInputRef}
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            onChange={handlePhotoChange}
-            style={{ display: 'none' }}
-            aria-hidden="true"
-            data-testid="brief-photo-input"
+            onOpenProfile={view?.openDossier}
+            cameoRef={view?.dossierToggleRef}
           />
 
           {profileState.storageError && (

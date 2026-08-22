@@ -217,12 +217,15 @@ function AppLayoutContent() {
   };
 
   /**
-   * What the rail's ◆ and ♥ do on desktop.
+   * What the rail's ◆ does on desktop.
    *
    * The desktop rail used to be rendered without `onViewChange` at all, which
    * made the ◆ call an undefined prop — it looked like a button and did nothing.
    * Both surfaces are on screen there, so "switch to chat" means "leave the
    * dossier if it is up, and put the caret in the composer"; see `returnToChat`.
+   * The 'profile' branch is kept because `RailView` still allows it, and the one
+   * honest answer to it is her profile — but nothing in the rail asks for it any
+   * more now that her portrait is the door.
    */
   const changeDesktopView = (panel: 'chat' | 'profile') => {
     if (panel === 'chat') view.returnToChat();
@@ -235,7 +238,7 @@ function AppLayoutContent() {
    * A no-op on desktop chat — that is the honest answer there, because home is
    * already what you are looking at — and never an error. `closeDossier` is
    * guarded rather than called blind so a click on the chat shell does not yank
-   * focus to the ♥ for no reason.
+   * focus to her portrait in the brief for no reason.
    */
   const goHome = () => {
     if (isDossier) view.closeDossier();
@@ -260,9 +263,6 @@ function AppLayoutContent() {
                 onViewChange={changePanel}
                 onGoHome={() => changePanel('chat')}
                 onOpenSessions={() => setSidebarOpen(true)}
-                isDossierActive={isDossier}
-                onToggleDossier={view.toggleDossier}
-                dossierToggleRef={view.dossierToggleRef}
               />
               <div style={windowCellStyle}>
                 <MobileNav
@@ -320,9 +320,10 @@ function AppLayoutContent() {
                   : COLLAPSED_CHAT_COLUMNS
             }
           >
-            {/* In the chat shell both surfaces are on screen at once, so no rail
-                button claims to be the active view. The dossier is a single
-                surface, so there the ♥ does. */}
+            {/* `activeView={null}`: on desktop the chat shell shows both
+                surfaces at once, so no rail button claims to be the active
+                view. Her profile is not in the rail at all — it opens from her
+                portrait in the brief. */}
             <IconRail
               orientation="column"
               activeView={null}
@@ -338,9 +339,6 @@ function AppLayoutContent() {
                   : () => setListOpen((open) => !open)
               }
               isSessionsOpen={hasListColumn}
-              isDossierActive={isDossier}
-              onToggleDossier={view.toggleDossier}
-              dossierToggleRef={view.dossierToggleRef}
             />
             {isDossier ? (
               <div

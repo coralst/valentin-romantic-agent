@@ -195,6 +195,7 @@ describe('describePersonas', () => {
         'fieldCount',
         'id',
         'name',
+        'userName',
       ]);
 
       const carriesNoValues = `${described.id} ${described.blurb}`;

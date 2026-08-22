@@ -135,6 +135,9 @@ describe('GET /api/config', () => {
       DEMO_PERSONAS.map((persona) => ({
         id: persona.id,
         name: persona.name,
+        // The person signed in when the persona loads — "Ralf", not "Samantha".
+        // The account chip reads this one; see `demo-personas.ts`.
+        userName: persona.userName,
         blurb: persona.blurb,
         fieldCount: persona.preferences.length,
       })),

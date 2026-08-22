@@ -32,9 +32,56 @@ const CONSEQUENCE_BY_PATTERN: Readonly<Record<string, string>> = {
   hate: 'Take it off the list for good.',
 };
 
-/** Sentence-case a key like "allergies" for use as a caution title prefix. */
-function titleCase(key: string): string {
-  return key.charAt(0).toUpperCase() + key.slice(1);
+/**
+ * Sentence-case an extracted key for use as a caution title prefix.
+ *
+ * Keys arrive in whatever shape the model emitted, and a real run produced
+ * `shellfish_allergy`, which rendered literally as "Shellfish_allergy: badly
+ * allergic to shellfish" — a database identifier shown to a person. Underscores
+ * and hyphens become spaces before the first letter is raised.
+ */
+export function titleCase(key: string): string {
+  const words = key.replace(/[_-]+/g, ' ').trim();
+  if (!words) return '';
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * The shared opening of a word's inflections — "allerg" for both "allergy" and
+ * "allergic". Crude on purpose: this decides a label, not a search result, and a
+ * missed match only costs a slightly redundant title.
+ */
+function stem(word: string): string {
+  return word.replace(/(ies|ied|ing|ic|al|y|s)$/, '');
+}
+
+/**
+ * The caution's headline: "<key>: <value>", unless the value already says the key.
+ *
+ * The same live run that produced `shellfish_allergy` gave it the value "badly
+ * allergic to shellfish", so the naive join read "Shellfish allergy: badly allergic
+ * to shellfish" — the same fact twice. When the value already carries the words of
+ * the key, the value alone is the better sentence.
+ */
+export function cautionTitle(key: string, value: string): string {
+  const label = titleCase(key);
+  const spoken = value.trim();
+  if (!spoken) return label;
+
+  const haystack = spoken.toLowerCase();
+  const significant = label
+    .toLowerCase()
+    .split(' ')
+    // Short words ("of", "to") are not evidence either way.
+    .filter((word) => word.length > 3);
+
+  // Compare on a stem, not the whole word: the key said "allergy" and the value
+  // said "allergic", which are the same fact in two inflections.
+  const covered =
+    significant.length > 0 && significant.every((word) => haystack.includes(stem(word)));
+
+  if (covered) return spoken.charAt(0).toUpperCase() + spoken.slice(1);
+  return `${label}: ${spoken}`;
 }
 
 /**
@@ -71,7 +118,7 @@ export function deriveCautions(
       // the row and loses its identity for no reason. category+key is stable
       // across re-extraction and is present even on a partial record.
       id: `${preference.category}:${preference.key}`,
-      title: `${titleCase(preference.key)}: ${preference.value}`,
+      title: cautionTitle(preference.key, preference.value),
       consequence: CONSEQUENCE_BY_PATTERN[pattern] ?? 'Worth checking before you commit.',
     });
   }

@@ -11,6 +11,7 @@ import { PROFILE_FIELD_REGISTRY, getDateFields } from '../utils/profile-field-re
 import { deriveOccasions } from '../utils/occasion-derivation';
 import { rankUnfilledFields, type FieldGap } from '../utils/field-payoff';
 import { getAgeBucketFromValue } from '../utils/age-bucket';
+import { formatBirthdayValue } from '../utils/birthday-display';
 import { deriveCautions } from './brief/KeepInMind';
 import { IdentityHeader } from './dossier/IdentityHeader';
 import { CardBoard, spanAllStyle, spanTwoStyle } from './dossier/CardBoard';
@@ -21,12 +22,10 @@ import { WorthAskingNext } from './dossier/WorthAskingNext';
 import { AlsoMentioned } from './dossier/AlsoMentioned';
 import { EverythingIKnow } from './dossier/EverythingIKnow';
 
-/** "17 June 1988 · mid-thirties · Gemini" — the same subtitle the rail builds. */
-const BIRTHDAY_FORMAT = new Intl.DateTimeFormat('en-GB', {
-  day: 'numeric',
-  month: 'long',
-  year: 'numeric',
-});
+/*
+ * "17 June 1988 · mid-thirties · Gemini" — the same subtitle the rail builds, from
+ * the same guarded formatter. See `birthday-display.ts`.
+ */
 
 /**
  * The shell: a column flexbox whose first child is pinned and whose second
@@ -172,8 +171,8 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
   const subtitle = useMemo(() => {
     const parts: string[] = [];
     if (birthdayValue) {
-      const parsed = new Date(birthdayValue);
-      if (!isNaN(parsed.getTime())) parts.push(BIRTHDAY_FORMAT.format(parsed));
+      const said = formatBirthdayValue(birthdayValue);
+      if (said) parts.push(said);
       const bucket = getAgeBucketFromValue(birthdayValue);
       if (bucket) parts.push(bucket);
     }

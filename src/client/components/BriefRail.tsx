@@ -10,6 +10,7 @@ import {
 import { deriveOccasions } from '../utils/occasion-derivation';
 import { rankUnfilledFields, type FieldGap } from '../utils/field-payoff';
 import { getAgeBucketFromValue } from '../utils/age-bucket';
+import { formatBirthdayValue } from '../utils/birthday-display';
 import { PREFERENCE_CATEGORIES } from '../../shared/constants/categories';
 import { WhoHeader } from './brief/WhoHeader';
 import { NextUp } from './brief/NextUp';
@@ -66,12 +67,11 @@ function truncate(value: string, max: number): string {
   return `${(lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
 }
 
-/** "17 June 1988 · mid-thirties · Gemini" — whichever parts are known. */
-const BIRTHDAY_FORMAT = new Intl.DateTimeFormat('en-GB', {
-  day: 'numeric',
-  month: 'long',
-  year: 'numeric',
-});
+/*
+ * The subtitle reads "17 June 1988 · mid-thirties · Gemini" — whichever parts are
+ * known. The date comes from `formatBirthdayValue`, which refuses to invent a day
+ * and a month from a partial value; see `birthday-display.ts`.
+ */
 
 /**
  * The legacy-alias wrapper.
@@ -200,8 +200,8 @@ export function BriefRail({ isMobile = false }: BriefRailProps) {
   const subtitle = useMemo(() => {
     const parts: string[] = [];
     if (birthdayValue) {
-      const parsed = new Date(birthdayValue);
-      if (!isNaN(parsed.getTime())) parts.push(BIRTHDAY_FORMAT.format(parsed));
+      const said = formatBirthdayValue(birthdayValue);
+      if (said) parts.push(said);
       const bucket = getAgeBucketFromValue(birthdayValue);
       if (bucket) parts.push(bucket);
     }

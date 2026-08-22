@@ -33,7 +33,7 @@ asserts the two agree. **Change both, in the same PR** — the test fails otherw
 | Agent | Label | Paths | Must not touch |
 |---|---|---|---|
 | 🏗️ System Architect | `agent: architect` | `src/shared/` | `src/client/`, `src/server/` |
-| ⚛️ Frontend Dev | `agent: frontend` | `src/client/components/`, `src/client/auth/`, `src/client/hooks/`, `src/client/context/`, `src/client/utils/`, `src/client/App.tsx`, `src/client/main.tsx`, `src/client/vite-env.d.ts` | `src/shared/`, `src/client/design-system/`, `src/server/` |
+| ⚛️ Frontend Dev | `agent: frontend` | `src/client/components/`, `src/client/auth/`, `src/client/hooks/`, `src/client/context/`, `src/client/utils/`, `src/client/demo/`, `src/client/App.tsx`, `src/client/main.tsx`, `src/client/vite-env.d.ts` | `src/shared/`, `src/client/design-system/`, `src/server/` |
 | 🔧 Backend Dev | `agent: backend` | `src/server/` | `src/client/`, `src/shared/` |
 | 🎨 UI Designer | `agent: design` | `src/client/design-system/`, `docs/design/` | component logic, `src/server/`, shared types |
 | 🧪 QA Agent | `agent: qa` | `e2e/`, `playwright.config.ts`, `src/test-setup.ts` | all of `src/` |

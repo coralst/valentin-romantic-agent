@@ -160,6 +160,9 @@ const OWNERSHIP = [
   ['src/client/hooks/', 'frontend-dev'],
   ['src/client/context/', 'frontend-dev'],
   ['src/client/utils/', 'frontend-dev'],
+  // The guided intro: a client-side script and the hook that plays it through
+  // the same reducers the socket feeds, so it is frontend work like any view.
+  ['src/client/demo/', 'frontend-dev'],
   ['src/client/App.tsx', 'frontend-dev'],
   ['src/client/main.tsx', 'frontend-dev'],
   ['src/client/vite-env.d.ts', 'frontend-dev'],

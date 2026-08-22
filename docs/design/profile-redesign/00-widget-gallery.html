@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Valentin · Widget Gallery & Design Principles</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   VALENTIN DESIGN SYSTEM — extended from src/client/design-system/tokens.ts
+   Base palette is untouched. What is NEW is the *semantic hue family*:
+   every domain of knowledge gets its own accent so the page groups
+   itself by meaning instead of being one flat sheet of cream.
+   ═══════════════════════════════════════════════════════════════ */
+:root{
+  /* --- existing core tokens (do not change) --- */
+  --burgundy:#9B3A52; --burgundy-lift:#C4566E; --plum:#5C2434;
+  --rose:#D4A0A8; --blush:#F2D4D8; --champagne:#F7EDE2;
+  --ivory:#FDFAF7; --cream:#FFF9F5; --taupe:#B8A99A;
+  --bg:#F8F5F2; --surface:#FFFFFF;
+  --ink:#2D2024; --ink-2:#8A7A7E;
+  --border:#EDE6E0; --border-soft:#F2ECE7;
+  --ok:#4A9B6A; --err:#D94452;
+
+  /* --- NEW: semantic accent families (one hue per domain) --- */
+  --c-date:#C4566E;   --c-date-bg:#FDEEF1;   /* occasions, anniversaries  */
+  --c-gift:#C0873A;   --c-gift-bg:#FBF2E4;   /* gifts, budget, orders     */
+  --c-taste:#C0684A;  --c-taste-bg:#FBEDE7;  /* food, drink, cuisine      */
+  --c-mood:#87699A;   --c-mood-bg:#F5F0F9;   /* feelings, memories, music */
+  --c-fact:#4E7C86;   --c-fact-bg:#EAF2F4;   /* sizes, logistics, hard data*/
+  --c-grow:#5E8C6A;   --c-grow-bg:#EDF4EF;   /* confirmed, verified, done  */
+  --c-kin:#A05A7A;    --c-kin-bg:#F9EDF3;    /* her people — family, names */
+
+  --r-sm:6px; --r-md:10px; --r-lg:16px; --r-xl:20px; --r-xxl:24px; --r-full:9999px;
+  --sh-card:0 1px 3px rgba(45,32,36,.06), 0 4px 12px rgba(45,32,36,.04);
+  --sh-hover:0 2px 8px rgba(45,32,36,.08), 0 10px 28px rgba(45,32,36,.07);
+  --ease:cubic-bezier(.2,.8,.2,1);
+  --serif:'Playfair Display',Georgia,serif;
+  --sans:'Inter','Helvetica Neue',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:var(--sans); color:var(--ink); background:var(--bg);
+  background-image:
+    radial-gradient(900px 500px at 12% -8%, #FDEEF1 0%, transparent 60%),
+    radial-gradient(800px 460px at 92% 4%, #F7EDE2 0%, transparent 62%);
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1280px;margin:0 auto;padding:56px 32px 96px}
+
+/* ── page furniture ───────────────────────────────────────────── */
+.masthead{margin-bottom:48px}
+.eyebrow{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--burgundy);font-weight:600}
+h1{font-family:var(--serif);font-size:52px;font-weight:600;letter-spacing:-.02em;margin:10px 0 12px;line-height:1.05}
+h1 em{font-style:italic;color:var(--burgundy)}
+.lede{max-width:62ch;color:var(--ink-2);font-size:16px;line-height:1.7}
+h2.sec{font-family:var(--serif);font-size:27px;font-weight:600;margin:64px 0 6px;display:flex;align-items:baseline;gap:12px}
+h2.sec span{font-family:var(--sans);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--taupe);font-weight:600}
+.sec-note{color:var(--ink-2);font-size:14px;margin-bottom:26px;max-width:70ch}
+.rule{height:1px;background:linear-gradient(90deg,var(--rose),transparent);margin:14px 0 0}
+
+/* ── widget shells ────────────────────────────────────────────── */
+.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:20px}
+.w{grid-column:span 4;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-xl);
+   padding:20px;box-shadow:var(--sh-card);position:relative;overflow:hidden;
+   transition:transform .25s var(--ease),box-shadow .25s var(--ease)}
+.w:hover{transform:translateY(-3px);box-shadow:var(--sh-hover)}
+.w.s3{grid-column:span 3}.w.s6{grid-column:span 6}.w.s8{grid-column:span 8}.w.s12{grid-column:span 12}
+/* the coloured rail is the grouping cue — 3px of hue does the work of a heading */
+.w::before{content:"";position:absolute;inset:0 auto 0 0;width:3px;background:var(--accent,var(--rose))}
+.w[data-tone=date] {--accent:var(--c-date); --tint:var(--c-date-bg)}
+.w[data-tone=gift] {--accent:var(--c-gift); --tint:var(--c-gift-bg)}
+.w[data-tone=taste]{--accent:var(--c-taste);--tint:var(--c-taste-bg)}
+.w[data-tone=mood] {--accent:var(--c-mood); --tint:var(--c-mood-bg)}
+.w[data-tone=fact] {--accent:var(--c-fact); --tint:var(--c-fact-bg)}
+.w[data-tone=grow] {--accent:var(--c-grow); --tint:var(--c-grow-bg)}
+.w[data-tone=kin]  {--accent:var(--c-kin);  --tint:var(--c-kin-bg)}
+.w.tinted{background:linear-gradient(160deg,var(--tint) 0%,var(--surface) 72%)}
+.w-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}
+.w-title{font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;color:var(--accent,var(--burgundy));display:flex;align-items:center;gap:7px}
+.ico{width:18px;height:18px;border-radius:6px;background:var(--accent);color:#fff;display:grid;place-items:center;font-size:10px;flex:none}
+.pill{font-size:10px;font-weight:600;padding:3px 8px;border-radius:var(--r-full);background:var(--tint,var(--champagne));color:var(--accent,var(--burgundy))}
+.wid-id{position:absolute;top:10px;right:12px;font-size:9px;color:#D8CFC8;font-weight:600;letter-spacing:.08em}
+.cap{margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);font-size:11.5px;color:var(--ink-2);line-height:1.55}
+.cap b{color:var(--ink);font-weight:600}
+
+/* ── shared micro-components ──────────────────────────────────── */
+.big{font-family:var(--serif);font-size:40px;line-height:1;font-weight:600;letter-spacing:-.02em}
+.sub{font-size:12px;color:var(--ink-2);margin-top:6px}
+.row{display:flex;align-items:center;gap:10px}
+.chip{font-size:11.5px;padding:5px 11px;border-radius:var(--r-full);background:var(--champagne);color:var(--plum);font-weight:500;border:1px solid var(--border)}
+.chip.on{background:var(--accent);color:#fff;border-color:transparent}
+.bar{height:7px;border-radius:var(--r-full);background:var(--border-soft);overflow:hidden}
+.bar>i{display:block;height:100%;border-radius:var(--r-full);background:var(--accent)}
+.btn{font-family:var(--sans);font-size:12px;font-weight:600;padding:8px 14px;border-radius:var(--r-full);
+     border:1px solid var(--border);background:#fff;color:var(--plum);cursor:pointer;transition:.2s var(--ease)}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.solid{background:var(--accent);border-color:transparent;color:#fff}
+.btn.solid:hover{filter:brightness(1.07);color:#fff}
+.meta{font-size:11px;color:var(--taupe);letter-spacing:.04em}
+
+/* ── individual widget internals ─────────────────────────────── */
+/* 01 pulse ring */
+.ring{width:112px;height:112px;border-radius:50%;flex:none;display:grid;place-items:center;
+  background:conic-gradient(var(--c-date) 0 84%, #EFE7E2 84% 100%)}
+.ring i{width:88px;height:88px;border-radius:50%;background:#fff;display:grid;place-items:center;
+  font-family:var(--serif);font-size:26px;font-weight:600;font-style:normal}
+/* 02 calendar */
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;font-size:10.5px;text-align:center}
+.cal b{color:var(--taupe);font-weight:600;font-size:9px;letter-spacing:.06em;padding-bottom:4px}
+.cal s{text-decoration:none;padding:6px 0;border-radius:8px;color:var(--ink-2)}
+.cal s.dim{color:#DCD3CD}
+.cal s.today{background:var(--plum);color:#fff;font-weight:600}
+.cal s.ev{font-weight:600;color:#fff}
+.cal s.ev.d{background:var(--c-date)} .cal s.ev.g{background:var(--c-gift)} .cal s.ev.m{background:var(--c-mood)}
+.legend{display:flex;gap:12px;margin-top:12px;font-size:10.5px;color:var(--ink-2);flex-wrap:wrap}
+.legend i{width:8px;height:8px;border-radius:3px;display:inline-block;margin-right:5px}
+/* 03 timeline */
+.tl{position:relative;padding-left:20px}
+.tl::before{content:"";position:absolute;left:5px;top:6px;bottom:6px;width:2px;
+  background:linear-gradient(180deg,var(--c-date),var(--c-gift),var(--border))}
+.tl li{list-style:none;position:relative;padding:9px 0}
+.tl li::before{content:"";position:absolute;left:-19px;top:14px;width:10px;height:10px;border-radius:50%;
+  background:#fff;border:2.5px solid var(--dot,var(--rose))}
+.tl h4{font-family:var(--serif);font-size:16px;font-weight:600}
+.tl .when{font-size:11.5px;color:var(--ink-2)}
+.tl .away{float:right;font-size:11px;font-weight:700;color:var(--dot)}
+/* 04 reminders */
+.task{display:flex;gap:11px;align-items:flex-start;padding:10px;border-radius:var(--r-md);background:var(--tint);margin-bottom:8px}
+.tick{width:17px;height:17px;border-radius:5px;border:1.5px solid var(--accent);flex:none;margin-top:1px;display:grid;place-items:center;color:var(--accent);font-size:10px}
+.tick.done{background:var(--accent);color:#fff;border-color:transparent}
+.task .t{font-size:13px;font-weight:500;line-height:1.35}
+.task .d{font-size:10.5px;color:var(--ink-2);margin-top:3px}
+/* 05 gift board */
+.gifts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.gift{border:1px solid var(--border);border-radius:var(--r-md);padding:11px;background:#fff}
+.gift .n{font-size:12.5px;font-weight:600;line-height:1.3}
+.gift .p{font-family:var(--serif);font-size:17px;color:var(--c-gift);margin-top:6px}
+.gift .s{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--taupe);margin-top:4px}
+/* 06 guess stack */
+.stack{position:relative}
+.gcard{border:1px solid var(--border);border-radius:var(--r-lg);padding:14px;background:#fff;box-shadow:var(--sh-card)}
+.gcard.back{position:absolute;inset:8px -6px auto -6px;transform:rotate(-1.2deg) translateY(-9px);opacity:.5;z-index:-1}
+/* 07 completeness */
+.comp{display:flex;flex-direction:column;gap:11px}
+.comp .l{display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px}
+.comp .l b{font-weight:600}
+/* 08 radar */
+.radar{display:block;margin:0 auto}
+/* 09 heatmap */
+.heat{display:grid;grid-template-columns:repeat(14,1fr);gap:4px}
+.heat s{aspect-ratio:1;border-radius:4px;background:var(--h,#F1E9E4)}
+/* 10 memory strip */
+.mem{display:flex;gap:9px;overflow:hidden}
+.mem div{flex:1;aspect-ratio:3/4;border-radius:var(--r-md);display:grid;place-items:flex-end;padding:8px;
+  font-size:9.5px;color:#fff;font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,.4)}
+/* 11 budget dial */
+.dial{position:relative;width:100%;height:78px}
+/* 12 quick chips */
+.chips{display:flex;flex-wrap:wrap;gap:7px}
+/* 13 wallet card */
+.wallet{border-radius:var(--r-lg);padding:16px;color:#fff;background:linear-gradient(135deg,var(--plum),var(--burgundy) 70%);position:relative;overflow:hidden}
+.wallet::after{content:"";position:absolute;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,.08);right:-46px;top:-56px}
+.wallet .k{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;opacity:.7}
+.wallet .v{font-family:var(--serif);font-size:19px;margin-top:2px}
+.wallet .g{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-top:14px}
+/* 14 weather */
+.wx{display:flex;align-items:center;gap:14px}
+.wx .t{font-family:var(--serif);font-size:34px}
+/* 15 playlist */
+.track{display:flex;align-items:center;gap:10px;padding:7px 0}
+.track .a{width:34px;height:34px;border-radius:8px;flex:none;background:linear-gradient(135deg,var(--c-mood),var(--rose))}
+.track .n{font-size:12.5px;font-weight:500}
+.track .b{font-size:10.5px;color:var(--ink-2)}
+.eq{display:flex;gap:2px;align-items:flex-end;height:14px;margin-left:auto}
+.eq i{width:2.5px;background:var(--c-mood);border-radius:2px;animation:eq 1.1s var(--ease) infinite alternate}
+@keyframes eq{from{height:3px}to{height:14px}}
+/* 16 places */
+.place{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--border-soft);align-items:center}
+.place:last-child{border:0}
+.place .pin{width:26px;height:26px;border-radius:50%;background:var(--tint);color:var(--accent);display:grid;place-items:center;font-size:11px;flex:none}
+.stars{margin-left:auto;font-size:10px;color:var(--c-gift);letter-spacing:1px}
+/* 17 milestone */
+.mile{text-align:center;padding:6px 0}
+.mile .n{font-family:var(--serif);font-size:52px;font-weight:600;color:var(--c-date);line-height:1}
+.mile .next{margin-top:12px;font-size:11.5px;color:var(--ink-2)}
+/* 18 zodiac */
+.zod{display:flex;gap:14px;align-items:center}
+.zod .glyph{width:56px;height:56px;border-radius:50%;background:var(--tint);display:grid;place-items:center;font-size:26px;color:var(--accent);flex:none}
+/* 19 prompt tiles */
+.prompts{display:grid;gap:8px}
+.prompt{padding:11px 13px;border-radius:var(--r-md);background:var(--tint);font-size:12.5px;line-height:1.4;
+  border:1px solid transparent;cursor:pointer;transition:.2s var(--ease);display:flex;justify-content:space-between;gap:10px}
+.prompt:hover{border-color:var(--accent);transform:translateX(3px)}
+.prompt span{color:var(--accent);font-weight:700}
+/* 20 activity feed */
+.feed li{list-style:none;display:flex;gap:10px;padding:8px 0;font-size:12px;line-height:1.45;align-items:flex-start}
+.feed .dot{width:7px;height:7px;border-radius:50%;margin-top:5px;flex:none;background:var(--d)}
+.feed time{display:block;font-size:10px;color:var(--taupe);margin-top:2px}
+/* 21 confidence */
+.conf{display:flex;gap:6px;align-items:center}
+.conf s{flex:1;height:5px;border-radius:3px;background:var(--border-soft)}
+.conf s.f{background:var(--accent)}
+/* 22 sparkline */
+/* 23 careful list */
+.careful{display:flex;gap:9px;align-items:center;padding:9px 11px;border-radius:var(--r-md);background:#FDF0F1;margin-bottom:7px;border:1px solid #F6DDE0}
+.careful .x{width:19px;height:19px;border-radius:50%;background:var(--err);color:#fff;display:grid;place-items:center;font-size:10px;flex:none}
+/* 24 quick order */
+.order{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tile{border-radius:var(--r-md);padding:14px 12px;text-align:center;color:#fff;font-size:11.5px;font-weight:600;cursor:pointer;transition:.2s var(--ease)}
+.tile:hover{transform:translateY(-2px)}
+.tile em{display:block;font-size:22px;font-style:normal;margin-bottom:6px}
+/* 25 sticky note */
+.sticky{background:#FFF6D9;border-radius:4px;padding:15px;box-shadow:0 6px 16px rgba(45,32,36,.09);
+  transform:rotate(-1deg);font-size:13px;line-height:1.6;color:#5B4A28;position:relative}
+.sticky::before{content:"";position:absolute;top:-7px;left:50%;width:52px;height:15px;transform:translateX(-50%) rotate(-2deg);background:rgba(212,160,168,.55);border-radius:2px}
+/* 26 badges */
+.badges{display:flex;gap:9px;flex-wrap:wrap}
+.badge{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;font-size:19px;
+  background:var(--tint);border:1.5px solid var(--accent);color:var(--accent)}
+.badge.locked{background:#F6F2EF;border-color:var(--border);color:#D5CBC5;border-style:dashed}
+/* 27 clocks */
+.clocks{display:flex;gap:18px}
+.clock{text-align:center;flex:1}
+.clock .h{font-family:var(--serif);font-size:24px}
+/* 28 wishlist */
+.wish{display:flex;gap:10px;align-items:center;padding:8px 0}
+.wish .th{width:38px;height:38px;border-radius:8px;background:var(--tint);flex:none}
+/* 29 love-language split */
+.split{display:flex;height:12px;border-radius:var(--r-full);overflow:hidden}
+.split i{height:100%}
+/* 30 relationship weather */
+.rw{display:flex;gap:6px;align-items:flex-end;height:56px}
+.rw i{flex:1;border-radius:4px 4px 0 0;background:linear-gradient(180deg,var(--c-mood),#E2D4EC)}
+/* 31 family tree */
+.tree{padding:4px 0}
+.gen{display:flex;justify-content:center;gap:11px;position:relative;flex-wrap:wrap}
+.gen.g1,.gen.g2{margin-bottom:22px}
+.gen.g1::after,.gen.g2::after{content:"";position:absolute;left:50%;bottom:-22px;width:2px;height:22px;background:var(--border)}
+.gen.g2::before,.gen.g3::before{content:"";position:absolute;left:24%;right:24%;top:-11px;height:2px;background:var(--border)}
+.gen.g3::before{left:34%;right:34%}
+.gen.g2 .kin::before,.gen.g3 .kin::before{content:"";position:absolute;left:50%;top:-11px;width:2px;height:11px;background:var(--border)}
+.kin{position:relative;background:#fff;border:1px solid var(--border);border-radius:var(--r-md);padding:9px 12px 9px 9px;
+  display:flex;align-items:center;gap:9px;min-width:132px;transition:.2s var(--ease);cursor:pointer}
+.kin:hover{border-color:var(--c-kin);box-shadow:var(--sh-card);transform:translateY(-2px)}
+.kin .fav{width:28px;height:28px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:13px;
+  background:var(--c-kin-bg);color:var(--c-kin);font-weight:700;font-family:var(--serif)}
+.kin .nm{font-size:12.5px;font-weight:700;line-height:1.2}
+.kin .rl{font-size:10px;color:var(--taupe);margin-top:2px}
+.kin .bd{margin-left:auto;font-size:9.5px;font-weight:700;color:var(--c-kin);background:var(--c-kin-bg);
+  padding:3px 7px;border-radius:var(--r-full);white-space:nowrap}
+.kin.her{background:linear-gradient(135deg,var(--c-date),var(--burgundy));border-color:transparent;color:#fff}
+.kin.her .fav{background:rgba(255,255,255,.22);color:#fff}
+.kin.her .rl{color:rgba(255,255,255,.72)}
+.kin.her .bd{background:rgba(255,255,255,.2);color:#fff}
+.kin.you{background:var(--champagne);border-style:dashed;border-color:var(--rose)}
+.kin.soon .bd{background:var(--c-date);color:#fff}
+.kin.gap{border-style:dashed;color:var(--taupe)}
+.kin.gap .fav{background:#F6F2EF;color:#CFC5BF}
+.treekey{display:flex;gap:15px;flex-wrap:wrap;margin-top:14px;font-size:10.5px;color:var(--ink-2)}
+.treekey span{display:flex;align-items:center;gap:6px}
+.treekey i{width:8px;height:8px;border-radius:2.5px;display:inline-block}
+/* 32 family birthdays */
+.kinlist div{display:flex;align-items:center;gap:9px;padding:8px 0;border-bottom:1px solid var(--border-soft)}
+.kinlist div:last-child{border:0}
+.kinlist .av2{width:26px;height:26px;border-radius:50%;background:var(--c-kin-bg);color:var(--c-kin);display:grid;
+  place-items:center;font-size:11px;font-weight:700;flex:none;font-family:var(--serif)}
+.kinlist .nm{font-size:12px;font-weight:600}
+.kinlist .rl{font-size:10px;color:var(--taupe)}
+.kinlist .aw{margin-left:auto;font-size:11px;font-weight:700;color:var(--c-kin)}
+
+/* ── principles ───────────────────────────────────────────────── */
+.prin{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.p{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:20px;position:relative}
+.p .n{font-family:var(--serif);font-size:13px;color:#fff;background:var(--burgundy);width:26px;height:26px;border-radius:50%;display:grid;place-items:center;margin-bottom:12px}
+.p h3{font-size:14.5px;font-weight:600;margin-bottom:7px}
+.p p{font-size:12.5px;color:var(--ink-2);line-height:1.65}
+.swatches{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
+.sw{width:118px}
+.sw i{display:block;height:56px;border-radius:var(--r-md);box-shadow:inset 0 0 0 1px rgba(0,0,0,.05)}
+.sw b{display:block;font-size:11px;margin-top:7px;font-weight:600}
+.sw s{display:block;text-decoration:none;font-size:10px;color:var(--ink-2)}
+footer{margin-top:72px;padding-top:22px;border-top:1px solid var(--border);font-size:12px;color:var(--taupe)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="masthead">
+  <div class="eyebrow">Valentin · design exploration · not wired to anything</div>
+  <h1>The <em>widget</em> kit</h1>
+  <p class="lede">Thirty-two widgets and ten principles for rebuilding the partner profile. The problem with the page today
+  is not that it is ugly — it is that <b>everything looks equally important</b>. One cream card is a countdown, the next
+  is a data table, the next is an empty state, and nothing tells your eye where to land. The fix is a semantic hue
+  family: each kind of knowledge gets a colour, a shape, and a density of its own.</p>
+  <div class="rule"></div>
+</header>
+
+<!-- ═══════════ COLOUR SYSTEM ═══════════ -->
+<h2 class="sec">Colour does the grouping <span>the one big idea</span></h2>
+<p class="sec-note">Seven accent families extend the existing Valentine palette — all desaturated to sit beside burgundy
+without fighting it. A widget declares <code>data-tone</code> and inherits its rail, its icon, its tint and its bar fill.
+No new heading text needed: hue <em>is</em> the category.</p>
+<div class="swatches">
+  <div class="sw"><i style="background:#C4566E"></i><b>Occasions</b><s>#C4566E · dates, countdowns</s></div>
+  <div class="sw"><i style="background:#C0873A"></i><b>Gifts & budget</b><s>#C0873A · money, orders</s></div>
+  <div class="sw"><i style="background:#C0684A"></i><b>Taste</b><s>#C0684A · food, drink, places</s></div>
+  <div class="sw"><i style="background:#87699A"></i><b>Feeling</b><s>#87699A · mood, music, memory</s></div>
+  <div class="sw"><i style="background:#4E7C86"></i><b>Hard facts</b><s>#4E7C86 · sizes, logistics</s></div>
+  <div class="sw"><i style="background:#5E8C6A"></i><b>Confirmed</b><s>#5E8C6A · verified, done</s></div>
+  <div class="sw"><i style="background:#A05A7A"></i><b>Her people</b><s>#A05A7A · family, names</s></div>
+  <div class="sw"><i style="background:#9B3A52"></i><b>Valentin</b><s>#9B3A52 · the agent's own voice</s></div>
+  <div class="sw"><i style="background:#5C2434"></i><b>Plum</b><s>#5C2434 · chrome, sidebar, wallet</s></div>
+</div>
+
+<!-- ═══════════ WIDGETS ═══════════ -->
+<h2 class="sec">Widgets <span>W01 – W32</span></h2>
+<p class="sec-note">Each is self-contained and drops into any of the five layouts. Captions say what the widget is
+<b>for</b> — the job it does that a paragraph of cream text was doing badly. <b>W31, the family tree</b>, is at the
+bottom and appears in all five layouts.</p>
+
+<div class="grid">
+
+  <!-- W01 -->
+  <div class="w s6 tinted" data-tone="date"><span class="wid-id">W01</span>
+    <div class="w-head"><div class="w-title"><i class="ico">♥</i>How well I know her</div><span class="pill">21 of 21</span></div>
+    <div class="row" style="gap:20px">
+      <div class="ring"><i>84<small style="font-size:13px">%</small></i></div>
+      <div>
+        <div style="font-family:var(--serif);font-size:20px;line-height:1.3">You're one honest answer<br>from a complete picture.</div>
+        <div class="sub">17 confirmed · 3 guessed · 1 stale (sizes, 7 months old)</div>
+        <div class="row" style="margin-top:13px"><button class="btn solid">Ask me what's missing</button><button class="btn">Refresh stale</button></div>
+      </div>
+    </div>
+    <div class="cap"><b>Replaces</b> the row of tiny dots in the header. A ring is readable at a glance, and the
+    sentence beside it turns a metric into a next action.</div>
+  </div>
+
+  <!-- W02 -->
+  <div class="w s6" data-tone="date"><span class="wid-id">W02</span>
+    <div class="w-head"><div class="w-title"><i class="ico">📅</i>September</div><span class="pill">2 marked</span></div>
+    <div class="cal">
+      <b>M</b><b>T</b><b>W</b><b>T</b><b>F</b><b>S</b><b>S</b>
+      <s class="dim">1</s><s class="dim">2</s><s>3</s><s>4</s><s>5</s><s>6</s><s>7</s>
+      <s>8</s><s>9</s><s>10</s><s class="ev g">11</s><s>12</s><s>13</s><s>14</s>
+      <s>15</s><s>16</s><s>17</s><s class="ev d">18</s><s>19</s><s>20</s><s>21</s>
+      <s class="today">22</s><s>23</s><s>24</s><s>25</s><s>26</s><s class="ev m">27</s><s>28</s>
+      <s>29</s><s>30</s><s class="dim">1</s><s class="dim">2</s><s class="dim">3</s><s class="dim">4</s><s class="dim">5</s>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--c-date)"></i>Anniversary</span>
+      <span><i style="background:var(--c-gift)"></i>Order / book by</span>
+      <span><i style="background:var(--c-mood)"></i>Just because</span>
+      <span><i style="background:var(--plum)"></i>Today</span>
+    </div>
+    <div class="cap"><b>New.</b> Occasions and their lead-time deadlines on the same grid, so "book by the 11th"
+    is visibly a week before "the 18th" instead of a sentence you have to parse.</div>
+  </div>
+
+  <!-- W03 -->
+  <div class="w s4" data-tone="date"><span class="wid-id">W03</span>
+    <div class="w-head"><div class="w-title"><i class="ico">→</i>What's coming</div></div>
+    <ul class="tl">
+      <li style="--dot:var(--c-date)"><span class="away">27d</span><h4>Anniversary</h4><div class="when">Fri 18 September</div></li>
+      <li style="--dot:var(--c-gift)"><span class="away">193d</span><h4>Together since</h4><div class="when">Wed 3 March</div></li>
+      <li style="--dot:var(--taupe)"><span class="away">294d</span><h4>Her birthday</h4><div class="when">Sat 12 June</div></li>
+    </ul>
+    <div class="cap"><b>Kept, retuned.</b> Dot colour now encodes urgency, and the day count is the loudest thing
+    in the row because it is the only number you actually act on.</div>
+  </div>
+
+  <!-- W04 -->
+  <div class="w s4 tinted" data-tone="gift"><span class="wid-id">W04</span>
+    <div class="w-head"><div class="w-title"><i class="ico">✓</i>Do this soon</div><span class="pill">3 open</span></div>
+    <div class="task"><span class="tick">✓</span><div><div class="t">Book the restaurant</div><div class="d">By 11 Sept · a week of slack</div></div></div>
+    <div class="task"><span class="tick"></span><div><div class="t">Order the gift</div><div class="d">By 29 May · two weeks of slack</div></div></div>
+    <div class="task"><span class="tick done">✓</span><div><div class="t" style="text-decoration:line-through;color:var(--ink-2)">Plan the weekend</div><div class="d">Done 3 days early</div></div></div>
+    <div class="cap"><b>New.</b> The lead-time badges buried inside each occasion, pulled out into one honest
+    to-do list. Checkboxes make the page something you <em>use</em>, not just read.</div>
+  </div>
+
+  <!-- W05 -->
+  <div class="w s4" data-tone="gift"><span class="wid-id">W05</span>
+    <div class="w-head"><div class="w-title"><i class="ico">🎁</i>Gift shortlist</div><span class="pill">$80 target</span></div>
+    <div class="gifts">
+      <div class="gift"><div class="n">Ceramic pour-over set</div><div class="p">$74</div><div class="s">In budget</div></div>
+      <div class="gift"><div class="n">Indie folk vinyl box</div><div class="p">$92</div><div class="s">Slightly over</div></div>
+      <div class="gift"><div class="n">Merino knit, UK 10</div><div class="p">$120</div><div class="s">Milestone only</div></div>
+      <div class="gift" style="border-style:dashed;display:grid;place-items:center;color:var(--c-gift);font-size:12px;font-weight:600">+ Ask Valentin</div>
+    </div>
+    <div class="cap"><b>New.</b> Ideas checked against the known budget and the known sizes — the profile's facts
+    doing work instead of sitting in a table.</div>
+  </div>
+
+  <!-- W06 -->
+  <div class="w s5" data-tone="grow"><span class="wid-id">W06</span>
+    <div class="w-head"><div class="w-title"><i class="ico">?</i>Confirm my guesses</div><span class="pill">11 waiting</span></div>
+    <div class="stack">
+      <div class="gcard back"></div>
+      <div class="gcard">
+        <div class="row" style="justify-content:space-between"><span class="chip" style="background:var(--c-mood-bg);color:var(--c-mood);border-color:transparent">Feeling</span><span class="meta">Guess 1 of 11</span></div>
+        <div style="font-family:var(--serif);font-size:17px;line-height:1.4;margin:11px 0 6px">Indie folk — the kind with close harmonies?</div>
+        <div style="font-size:11.5px;color:var(--ink-2)">Inferred from the demo profile, not from anything you told me.</div>
+        <div class="conf" style="margin:12px 0"><s class="f"></s><s class="f"></s><s class="f"></s><s></s><s></s><span class="meta">likely</span></div>
+        <div class="row"><button class="btn solid">That's right</button><button class="btn">Not quite</button><button class="btn">Skip</button></div>
+      </div>
+    </div>
+    <div class="cap"><b>Kept, restructured.</b> One card at a time instead of an infinite scroll of near-identical
+    boxes. Stacked edges promise "there are more" without rendering them.</div>
+  </div>
+
+  <!-- W07 -->
+  <div class="w s4" data-tone="grow"><span class="wid-id">W07</span>
+    <div class="w-head"><div class="w-title"><i class="ico">▤</i>What I still lack</div></div>
+    <div class="comp">
+      <div><div class="l"><span>Basics</span><b style="color:var(--c-grow)">4 / 4</b></div><div class="bar" style="--accent:var(--c-grow)"><i style="width:100%"></i></div></div>
+      <div><div class="l"><span>Interests</span><b style="color:var(--c-mood)">4 / 4</b></div><div class="bar" style="--accent:var(--c-mood)"><i style="width:100%"></i></div></div>
+      <div><div class="l"><span>Sizes</span><b style="color:var(--c-fact)">3 / 3</b></div><div class="bar" style="--accent:var(--c-fact)"><i style="width:100%"></i></div></div>
+      <div><div class="l"><span>Occasions</span><b style="color:var(--c-date)">6 / 8</b></div><div class="bar" style="--accent:var(--c-date)"><i style="width:75%"></i></div></div>
+      <div><div class="l"><span>Gifting</span><b style="color:var(--c-gift)">4 / 6</b></div><div class="bar" style="--accent:var(--c-gift)"><i style="width:66%"></i></div></div>
+    </div>
+    <div class="cap"><b>Replaces</b> the "4 of 4" labels scattered across the fact table. Five bars answer
+    "where are the holes?" in one second.</div>
+  </div>
+
+  <!-- W08 -->
+  <div class="w s3" data-tone="mood"><span class="wid-id">W08</span>
+    <div class="w-head"><div class="w-title"><i class="ico">✦</i>Love languages</div></div>
+    <svg class="radar" width="180" height="150" viewBox="0 0 180 150">
+      <g fill="none" stroke="#EDE6E0"><polygon points="90,18 152,62 128,134 52,134 28,62"/><polygon points="90,47 121,69 109,105 71,105 59,69" /></g>
+      <polygon points="90,26 145,66 116,124 62,118 44,70" fill="rgba(135,105,154,.22)" stroke="#87699A" stroke-width="2"/>
+      <g fill="#8A7A7E" font-size="9" font-family="Inter" text-anchor="middle">
+        <text x="90" y="11">Quality time</text><text x="166" y="60">Words</text>
+        <text x="132" y="147">Touch</text><text x="46" y="147">Gifts</text><text x="16" y="60">Acts</text>
+      </g>
+    </svg>
+    <div class="cap"><b>New.</b> A shape is memorable where five percentages are not — and it makes lopsidedness
+    (all gifts, no time) impossible to miss.</div>
+  </div>
+
+  <!-- W09 -->
+  <div class="w s5" data-tone="grow"><span class="wid-id">W09</span>
+    <div class="w-head"><div class="w-title"><i class="ico">≡</i>Gesture streak</div><span class="pill">6 weeks</span></div>
+    <div class="heat">
+      <s style="--h:#EDF4EF"></s><s style="--h:#D6E8DC"></s><s style="--h:#EDF4EF"></s><s style="--h:#9CC7AC"></s><s style="--h:#EDF4EF"></s><s style="--h:#D6E8DC"></s><s style="--h:#5E8C6A"></s>
+      <s style="--h:#EDF4EF"></s><s style="--h:#EDF4EF"></s><s style="--h:#D6E8DC"></s><s style="--h:#9CC7AC"></s><s style="--h:#5E8C6A"></s><s style="--h:#D6E8DC"></s><s style="--h:#EDF4EF"></s>
+      <s style="--h:#D6E8DC"></s><s style="--h:#9CC7AC"></s><s style="--h:#EDF4EF"></s><s style="--h:#EDF4EF"></s><s style="--h:#D6E8DC"></s><s style="--h:#5E8C6A"></s><s style="--h:#9CC7AC"></s>
+      <s style="--h:#EDF4EF"></s><s style="--h:#D6E8DC"></s><s style="--h:#5E8C6A"></s><s style="--h:#9CC7AC"></s><s style="--h:#EDF4EF"></s><s style="--h:#EDF4EF"></s><s style="--h:#D6E8DC"></s>
+    </div>
+    <div class="sub">Four weeks of small things — a note, a coffee, a playlist. Darker is more.</div>
+    <div class="cap"><b>New.</b> Borrowed from contribution graphs, but the point here is gentle: it rewards
+    consistency rather than shaming gaps. Never show a broken-streak warning.</div>
+  </div>
+
+  <!-- W10 -->
+  <div class="w s4" data-tone="mood"><span class="wid-id">W10</span>
+    <div class="w-head"><div class="w-title"><i class="ico">◫</i>Memory lane</div><span class="pill">14 saved</span></div>
+    <div class="mem">
+      <div style="background:linear-gradient(160deg,#C4566E,#8B3A52)">Kyoto, spring</div>
+      <div style="background:linear-gradient(160deg,#C0873A,#8A5D22)">First flat</div>
+      <div style="background:linear-gradient(160deg,#87699A,#5B4370)">That gig</div>
+      <div style="background:linear-gradient(160deg,#4E7C86,#33565E)">Coast trip</div>
+    </div>
+    <div class="cap"><b>New.</b> Warmth, and a reason to come back to the page when there is no occasion pending.
+    Also the natural place to attach the stories behind the facts.</div>
+  </div>
+
+  <!-- W11 -->
+  <div class="w s4" data-tone="gift"><span class="wid-id">W11</span>
+    <div class="w-head"><div class="w-title"><i class="ico">$</i>Gift budget</div><span class="pill">this year</span></div>
+    <svg class="dial" viewBox="0 0 200 84">
+      <path d="M18 76 A 82 82 0 0 1 182 76" fill="none" stroke="#F1E9E4" stroke-width="15" stroke-linecap="round"/>
+      <path d="M18 76 A 82 82 0 0 1 152 20" fill="none" stroke="#C0873A" stroke-width="15" stroke-linecap="round"/>
+      <text x="100" y="63" text-anchor="middle" font-family="Playfair Display" font-size="30" fill="#2D2024">$310</text>
+      <text x="100" y="79" text-anchor="middle" font-family="Inter" font-size="10" fill="#8A7A7E">of $480 planned</text>
+    </svg>
+    <div class="row" style="justify-content:space-between;margin-top:6px"><span class="meta">Everyday $80 · milestones higher</span><span class="chip" style="background:var(--c-gift-bg);color:var(--c-gift);border:0">on track</span></div>
+    <div class="cap"><b>Promotes</b> the "gift budget" fact from a table row into a live gauge, so the number
+    means something in November as well as in June.</div>
+  </div>
+
+  <!-- W12 -->
+  <div class="w s4" data-tone="taste"><span class="wid-id">W12</span>
+    <div class="w-head"><div class="w-title"><i class="ico">✳</i>Her yes-list</div></div>
+    <div class="chips">
+      <span class="chip on">Northern Italian</span><span class="chip">Brown butter</span><span class="chip">Sage</span>
+      <span class="chip on">Indie folk</span><span class="chip">Close harmonies</span><span class="chip">Peonies</span>
+      <span class="chip">Dark chocolate</span><span class="chip on">Kyoto in blossom</span><span class="chip">Long walks</span>
+      <span class="chip">Second-hand books</span>
+    </div>
+    <div class="cap"><b>Compresses</b> a dozen table rows into a scannable cloud. Filled chips are confirmed by you;
+    outlined are still Valentin's guesses — one visual difference, no legend needed.</div>
+  </div>
+
+  <!-- W13 -->
+  <div class="w s4" data-tone="fact"><span class="wid-id">W13</span>
+    <div class="w-head"><div class="w-title"><i class="ico">▭</i>Sizes card</div><span class="pill">tap to copy</span></div>
+    <div class="wallet">
+      <div class="k">Samantha · sizes</div>
+      <div class="g">
+        <div><div class="k">Clothing</div><div class="v">UK 10 / EU 38</div></div>
+        <div><div class="k">Shoe</div><div class="v">UK 6 / EU 39</div></div>
+        <div><div class="k">Ring</div><div class="v">M ½</div></div>
+        <div><div class="k">Note</div><div class="v" style="font-size:13px;font-family:var(--sans)">Sizes up for knitwear</div></div>
+      </div>
+    </div>
+    <div class="cap"><b>New shape for old data.</b> You need sizes while standing in a shop, so they get the one
+    treatment that survives a phone screen: a dark card you can read in one look.</div>
+  </div>
+
+  <!-- W14 -->
+  <div class="w s4" data-tone="taste"><span class="wid-id">W14</span>
+    <div class="w-head"><div class="w-title"><i class="ico">☂</i>This weekend</div></div>
+    <div class="wx">
+      <div class="t">19°</div>
+      <div><div style="font-size:13px;font-weight:600">Clear Saturday evening</div><div class="sub" style="margin-top:3px">Good for the terrace table she liked. Rain Sunday — keep it indoors.</div></div>
+    </div>
+    <div class="cap"><b>New.</b> Context that turns a suggestion into a plan. Small, low-commitment, and the only
+    widget allowed to be about the world rather than about her.</div>
+  </div>
+
+  <!-- W15 -->
+  <div class="w s4" data-tone="mood"><span class="wid-id">W15</span>
+    <div class="w-head"><div class="w-title"><i class="ico">♫</i>Made for her</div><span class="pill">32 min</span></div>
+    <div class="track"><span class="a"></span><div><div class="n">Close Harmony</div><div class="b">The Longest Winter</div></div>
+      <span class="eq"><i style="animation-delay:0s"></i><i style="animation-delay:.15s"></i><i style="animation-delay:.3s"></i><i style="animation-delay:.45s"></i></span></div>
+    <div class="track"><span class="a" style="background:linear-gradient(135deg,#C4566E,#F2D4D8)"></span><div><div class="n">Paper Boats</div><div class="b">Mara Vale</div></div></div>
+    <div class="track"><span class="a" style="background:linear-gradient(135deg,#4E7C86,#B8D3D8)"></span><div><div class="n">Kyoto, Slowly</div><div class="b">Hana Ito</div></div></div>
+    <div class="cap"><b>New.</b> The music fact becoming something you can actually send her. Widgets that
+    produce a gesture beat widgets that describe a preference.</div>
+  </div>
+
+  <!-- W16 -->
+  <div class="w s4" data-tone="taste"><span class="wid-id">W16</span>
+    <div class="w-head"><div class="w-title"><i class="ico">◉</i>Where to take her</div></div>
+    <div class="place"><span class="pin">🍝</span><div><div style="font-size:12.5px;font-weight:600">Osteria Fiore</div><div class="meta">Northern Italian · 12 min</div></div><span class="stars">★★★★★</span></div>
+    <div class="place"><span class="pin">🥂</span><div><div style="font-size:12.5px;font-weight:600">Cellar &amp; Sage</div><div class="meta">Small plates · 8 min</div></div><span class="stars">★★★★☆</span></div>
+    <div class="place"><span class="pin">☕</span><div><div style="font-size:12.5px;font-weight:600">Morrow Coffee</div><div class="meta">Her Sunday spot</div></div><span class="stars">★★★★★</span></div>
+    <div class="cap"><b>New.</b> Matched against the cuisine she likes. Distance and rating are the two facts that
+    decide the booking, so nothing else is shown.</div>
+  </div>
+
+  <!-- W17 -->
+  <div class="w s3 tinted" data-tone="date"><span class="wid-id">W17</span>
+    <div class="w-head"><div class="w-title"><i class="ico">∞</i>Together</div></div>
+    <div class="mile"><div class="n">2,003</div><div class="meta" style="letter-spacing:.12em;text-transform:uppercase;font-size:10px;margin-top:6px">days</div>
+      <div class="next">Next round number — <b style="color:var(--c-date)">2,100</b> on 27 November</div></div>
+    <div class="cap"><b>New.</b> One enormous number as the page's emotional anchor. Every dashboard needs
+    exactly one hero figure; this is the candidate that costs nothing to compute.</div>
+  </div>
+
+  <!-- W18 -->
+  <div class="w s3" data-tone="mood"><span class="wid-id">W18</span>
+    <div class="w-head"><div class="w-title"><i class="ico">✧</i>Gemini</div></div>
+    <div class="zod"><div class="glyph">♊</div><div><div style="font-size:12.5px;font-weight:600">12 June 1994</div><div class="sub" style="margin-top:3px">Early thirties. Curious, talks fast, hates being rushed into a decision.</div></div></div>
+    <div class="cap"><b>Kept, moved.</b> Today this is grey subtitle text under her name. As a card it earns its
+    keep by carrying the one-line character note with it.</div>
+  </div>
+
+  <!-- W19 -->
+  <div class="w s4 tinted" data-tone="grow"><span class="wid-id">W19</span>
+    <div class="w-head"><div class="w-title"><i class="ico">✎</i>Worth asking next</div></div>
+    <div class="prompts">
+      <div class="prompt">How does she feel about surprises? <span>→</span></div>
+      <div class="prompt">Any flower she actively dislikes? <span>→</span></div>
+      <div class="prompt">What was the best gift you ever gave her? <span>→</span></div>
+    </div>
+    <div class="cap"><b>Replaces</b> "Nothing left on my list" — a dead end. Even at 21 of 21 there is always a
+    deeper question; an empty state should offer, never apologise.</div>
+  </div>
+
+  <!-- W20 -->
+  <div class="w s4" data-tone="grow"><span class="wid-id">W20</span>
+    <div class="w-head"><div class="w-title"><i class="ico">◷</i>What I learned lately</div></div>
+    <ul class="feed">
+      <li><span class="dot" style="--d:var(--c-taste)"></span><div>Confirmed <b>Northern Italian</b> — you said "anything with brown butter"<time>2 hours ago</time></div></li>
+      <li><span class="dot" style="--d:var(--c-date)"></span><div>Moved the anniversary reminder a week earlier<time>Yesterday</time></div></li>
+      <li><span class="dot" style="--d:var(--c-mood)"></span><div>Guessed <b>indie folk</b> — waiting on you<time>Yesterday</time></div></li>
+      <li><span class="dot" style="--d:var(--c-fact)"></span><div>Noted she sizes up for knitwear<time>Last week</time></div></li>
+    </ul>
+    <div class="cap"><b>New.</b> Makes the agent legible. People trust a system that shows its work, and the
+    dot colours quietly teach the whole colour language for free.</div>
+  </div>
+
+  <!-- W21 -->
+  <div class="w s3" data-tone="fact"><span class="wid-id">W21</span>
+    <div class="w-head"><div class="w-title"><i class="ico">◐</i>Confidence</div></div>
+    <div style="display:flex;flex-direction:column;gap:11px">
+      <div><div class="l" style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px"><span>Cuisine</span><span class="meta">93%</span></div><div class="conf"><s class="f"></s><s class="f"></s><s class="f"></s><s class="f"></s><s class="f"></s></div></div>
+      <div><div class="l" style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px"><span>Music</span><span class="meta">84%</span></div><div class="conf"><s class="f"></s><s class="f"></s><s class="f"></s><s class="f"></s><s></s></div></div>
+      <div><div class="l" style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px"><span>Shoe size</span><span class="meta">94%</span></div><div class="conf"><s class="f"></s><s class="f"></s><s class="f"></s><s class="f"></s><s class="f"></s></div></div>
+      <div><div class="l" style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px"><span>Budget</span><span class="meta">61%</span></div><div class="conf"><s class="f"></s><s class="f"></s><s class="f"></s><s></s><s></s></div></div>
+    </div>
+    <div class="cap"><b>Rethinks</b> the pink 97% / 91% / 84% pills. Five segments read faster than two digits,
+    and they stop the page looking like a spreadsheet of scores.</div>
+  </div>
+
+  <!-- W22 -->
+  <div class="w s3" data-tone="mood"><span class="wid-id">W22</span>
+    <div class="w-head"><div class="w-title"><i class="ico">◠</i>How it's been</div></div>
+    <div class="rw"><i style="height:60%"></i><i style="height:75%"></i><i style="height:45%"></i><i style="height:85%"></i><i style="height:70%"></i><i style="height:95%"></i><i style="height:80%"></i></div>
+    <div class="sub">Seven weeks, from your own notes. No judgement — just a memory aid.</div>
+    <div class="cap"><b>New, and deliberately vague.</b> Never quantify a relationship to two decimal places.
+    Bars without a y-axis suggest a trend and refuse to grade it.</div>
+  </div>
+
+  <!-- W23 -->
+  <div class="w s3" data-tone="date"><span class="wid-id">W23</span>
+    <div class="w-head"><div class="w-title" style="color:var(--err)"><i class="ico" style="background:var(--err)">!</i>Be careful</div></div>
+    <div class="careful"><span class="x">✕</span><div style="font-size:12.5px">Shellfish — allergic, not a preference</div></div>
+    <div class="careful"><span class="x">✕</span><div style="font-size:12.5px">No lilies, they set off her hay fever</div></div>
+    <div class="careful"><span class="x">✕</span><div style="font-size:12.5px">Never a surprise party</div></div>
+    <div class="cap"><b>New, and the most valuable widget here.</b> The current page can only say what she likes.
+    A single red-tinted card for hard "no"s prevents the one mistake that undoes a good gesture.</div>
+  </div>
+
+  <!-- W24 -->
+  <div class="w s3" data-tone="gift"><span class="wid-id">W24</span>
+    <div class="w-head"><div class="w-title"><i class="ico">⚡</i>One tap</div></div>
+    <div class="order">
+      <div class="tile" style="background:linear-gradient(140deg,#C4566E,#9B3A52)"><em>❀</em>Peonies</div>
+      <div class="tile" style="background:linear-gradient(140deg,#C0684A,#8E4630)"><em>◉</em>Chocolate</div>
+      <div class="tile" style="background:linear-gradient(140deg,#4E7C86,#33565E)"><em>▤</em>Book a table</div>
+      <div class="tile" style="background:linear-gradient(140deg,#87699A,#5B4370)"><em>✉</em>Write a note</div>
+    </div>
+    <div class="cap"><b>New.</b> Four gestures reachable without a conversation. The profile should be able to
+    <em>do</em> something, not only remember things.</div>
+  </div>
+
+  <!-- W25 -->
+  <div class="w s3" data-tone="mood"><span class="wid-id">W25</span>
+    <div class="w-head"><div class="w-title"><i class="ico">✐</i>Your own note</div></div>
+    <div class="sticky">She mentioned wanting to learn ceramics again — the studio near the canal does weekend
+      courses. Would make a good "just because".</div>
+    <div class="cap"><b>New.</b> An escape hatch for anything the schema has no field for. Deliberately looks
+    hand-made so it never competes with the structured cards.</div>
+  </div>
+
+  <!-- W26 -->
+  <div class="w s3" data-tone="grow"><span class="wid-id">W26</span>
+    <div class="w-head"><div class="w-title"><i class="ico">★</i>Milestones</div><span class="pill">5 of 8</span></div>
+    <div class="badges">
+      <span class="badge">♥</span><span class="badge">✎</span><span class="badge">🎁</span><span class="badge">✧</span><span class="badge">☕</span>
+      <span class="badge locked">?</span><span class="badge locked">?</span><span class="badge locked">?</span>
+    </div>
+    <div class="sub">Profile complete · First gift logged · A month of small things</div>
+    <div class="cap"><b>New, use sparingly.</b> Gamification is risky in an intimate product — keep it to quiet
+    proof of progress, never streak-shaming or leaderboards.</div>
+  </div>
+
+  <!-- W27 -->
+  <div class="w s3" data-tone="fact"><span class="wid-id">W27</span>
+    <div class="w-head"><div class="w-title"><i class="ico">◔</i>Her hours</div></div>
+    <div class="clocks">
+      <div class="clock"><div class="h">17:28</div><div class="meta">You · Tel Aviv</div></div>
+      <div class="clock" style="opacity:.55"><div class="h">15:28</div><div class="meta">Her · Lisbon</div></div>
+    </div>
+    <div class="sub" style="margin-top:10px">She's mid-afternoon. Good window to call until 19:00 your time.</div>
+    <div class="cap"><b>New, conditional.</b> Only renders when the two profiles sit in different zones —
+    a widget that appears when relevant beats a field that is always empty.</div>
+  </div>
+
+  <!-- W28 -->
+  <div class="w s3" data-tone="gift"><span class="wid-id">W28</span>
+    <div class="w-head"><div class="w-title"><i class="ico">☆</i>She hinted at</div><span class="pill">4 saved</span></div>
+    <div class="wish"><span class="th"></span><div><div style="font-size:12.5px;font-weight:600">Linen throw, oatmeal</div><div class="meta">Saved from a chat in May</div></div></div>
+    <div class="wish"><span class="th" style="background:var(--c-mood-bg)"></span><div><div style="font-size:12.5px;font-weight:600">Ceramics weekend course</div><div class="meta">You mentioned it last week</div></div></div>
+    <div class="wish"><span class="th" style="background:var(--c-taste-bg)"></span><div><div style="font-size:12.5px;font-weight:600">That olive-oil brand</div><div class="meta">From the Kyoto trip</div></div></div>
+    <div class="cap"><b>New.</b> Where "also mentioned" — currently an empty box promising future usefulness —
+    should end up: a real list with provenance on every line.</div>
+  </div>
+
+  <!-- W29 -->
+  <div class="w s6" data-tone="date"><span class="wid-id">W29</span>
+    <div class="w-head"><div class="w-title"><i class="ico">⏱</i>Next up · anniversary</div><span class="pill">27 days</span></div>
+    <div class="row" style="gap:26px;align-items:flex-end">
+      <div><div class="big" style="color:var(--c-date)">27</div><div class="meta">days</div></div>
+      <div><div class="big" style="font-size:26px">18 Sep</div><div class="meta">Friday</div></div>
+      <div style="flex:1">
+        <div class="split"><i style="background:var(--c-grow);width:34%"></i><i style="background:var(--c-gift);width:26%"></i><i style="background:var(--border-soft);width:40%"></i></div>
+        <div class="legend"><span><i style="background:var(--c-grow)"></i>Planned</span><span><i style="background:var(--c-gift)"></i>To book</span><span><i style="background:var(--border-soft)"></i>Not started</span></div>
+      </div>
+      <button class="btn solid">Plan it with me</button>
+    </div>
+    <div class="cap"><b>New.</b> A hero band for the single nearest occasion. Progress toward "ready" is the
+    status that matters, and it collapses three separate cards into one.</div>
+  </div>
+
+  <!-- W30 -->
+  <div class="w s6" data-tone="fact"><span class="wid-id">W30</span>
+    <div class="w-head"><div class="w-title"><i class="ico">▦</i>Everything I know</div><span class="pill">21 of 21</span></div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">
+      <div style="background:var(--c-taste-bg);border-radius:var(--r-md);padding:12px">
+        <div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--c-taste);font-weight:600;margin-bottom:9px">Taste · 4</div>
+        <div style="font-size:12px;line-height:1.6">Northern Italian<br>Brown butter &amp; sage<br>Dark chocolate<br>Flat white, no sugar</div></div>
+      <div style="background:var(--c-mood-bg);border-radius:var(--r-md);padding:12px">
+        <div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--c-mood);font-weight:600;margin-bottom:9px">Feeling · 4</div>
+        <div style="font-size:12px;line-height:1.6">Indie folk<br>Close harmonies<br>Second-hand books<br>Kyoto in blossom</div></div>
+      <div style="background:var(--c-fact-bg);border-radius:var(--r-md);padding:12px">
+        <div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--c-fact);font-weight:600;margin-bottom:9px">Facts · 3</div>
+        <div style="font-size:12px;line-height:1.6">UK 10 / EU 38<br>UK 6 / EU 39<br>Ring M ½</div></div>
+    </div>
+    <div class="cap"><b>Kept, compressed.</b> The long three-column table with a per-row Edit link becomes
+    coloured clusters. Editing moves to hover, so the default state is readable prose, not a form.</div>
+  </div>
+
+  <!-- W31 · FAMILY TREE -->
+  <div class="w s8" data-tone="kin"><span class="wid-id">W31</span>
+    <div class="w-head"><div class="w-title"><i class="ico">⚭</i>Her family — who's who</div><span class="pill">7 people · 2 gaps</span></div>
+    <div class="tree">
+      <div class="gen g1">
+        <div class="kin"><span class="fav">M</span><div><div class="nm">Miriam</div><div class="rl">Her mother · goes by "Mimi"</div></div><span class="bd">4 Feb</span></div>
+        <div class="kin"><span class="fav">D</span><div><div class="nm">David</div><div class="rl">Her father</div></div><span class="bd">19 Oct</span></div>
+      </div>
+      <div class="gen g2">
+        <div class="kin soon"><span class="fav">L</span><div><div class="nm">Leah</div><div class="rl">Older sister · in Berlin</div></div><span class="bd">9 Sep · 18d</span></div>
+        <div class="kin her"><span class="fav">S</span><div><div class="nm">Samantha</div><div class="rl">Her</div></div><span class="bd">12 Jun</span></div>
+        <div class="kin you"><span class="fav">♥</span><div><div class="nm">You</div><div class="rl">Together 2,003 days</div></div></div>
+        <div class="kin gap"><span class="fav">?</span><div><div class="nm">Brother?</div><div class="rl">Mentioned once — no name yet</div></div></div>
+      </div>
+      <div class="gen g3">
+        <div class="kin"><span class="fav">N</span><div><div class="nm">Noa</div><div class="rl">Niece · Leah's daughter, 6</div></div><span class="bd">2 Mar</span></div>
+        <div class="kin"><span class="fav" style="background:var(--c-grow-bg);color:var(--c-grow)">🐈</span><div><div class="nm">Biscuit</div><div class="rl">Her cat · adopted 2021</div></div></div>
+        <div class="kin gap"><span class="fav">?</span><div><div class="nm">Best friend?</div><div class="rl">"Her oldest friend" — no name yet</div></div></div>
+      </div>
+    </div>
+    <div class="treekey">
+      <span><i style="background:var(--c-date)"></i>Her</span>
+      <span><i style="background:var(--rose)"></i>You</span>
+      <span><i style="background:var(--c-kin)"></i>Name and birthday known</span>
+      <span><i style="background:#CFC5BF"></i>Gap — I've heard of them but can't name them</span>
+      <span><i style="background:var(--c-grow)"></i>Pets count</span>
+    </div>
+    <div class="cap"><b>New, and the strongest addition to the kit.</b> Forgetting her sister's name, or that her mother
+    goes by Mimi, is a small failure that costs more than a late gift — and it is exactly the kind of thing an agent
+    should hold for you. Three generations, partners and pets included, with a birthday chip on every node so the tree
+    doubles as a reminder source. Crucially it renders the <b>gaps</b>: people you've mentioned in passing whom Valentin
+    can't name yet, drawn as dashed cards. Each gap is a question worth asking, so the widget generates its own
+    next action instead of sitting there being complete. Click any node to open that person — their own small profile,
+    their birthday, what she's said about them, and what you gave them last year.</div>
+  </div>
+
+  <!-- W32 · FAMILY BIRTHDAYS -->
+  <div class="w s4" data-tone="kin"><span class="wid-id">W32</span>
+    <div class="w-head"><div class="w-title"><i class="ico">🎂</i>Their birthdays</div><span class="pill">next in 18d</span></div>
+    <div class="kinlist">
+      <div><span class="av2">L</span><div><div class="nm">Leah</div><div class="rl">Her sister · 9 September</div></div><span class="aw">18d</span></div>
+      <div><span class="av2">D</span><div><div class="nm">David</div><div class="rl">Her father · 19 October</div></div><span class="aw">58d</span></div>
+      <div><span class="av2">M</span><div><div class="nm">Miriam</div><div class="rl">Her mother · 4 February</div></div><span class="aw">166d</span></div>
+      <div><span class="av2">N</span><div><div class="nm">Noa</div><div class="rl">Her niece · 2 March</div></div><span class="aw">192d</span></div>
+    </div>
+    <div class="cap"><b>New, the tree's companion.</b> The flat, actionable read of W31 — because remembering her
+    sister's birthday scores higher with her than remembering her own. Feeds the calendar (W02) and the
+    reminder queue (W04) with its own mauve colour so family dates never get confused with the two of you.</div>
+  </div>
+
+</div>
+
+<!-- ═══════════ PRINCIPLES ═══════════ -->
+<h2 class="sec">Ten principles <span>why the above works</span></h2>
+<p class="sec-note">These are the rules every one of the five layouts obeys. If a future widget breaks one of them,
+it is the widget that is wrong.</p>
+<div class="prin">
+  <div class="p"><div class="n">1</div><h3>Colour carries meaning, never decoration</h3><p>Seven accent families, one per domain. A user learns the language in about ten seconds and then navigates by hue. Adding a seventh colour because a card looked plain is how systems die.</p></div>
+  <div class="p"><div class="n">2</div><h3>One hero per screen</h3><p>Exactly one element is allowed to be huge — the days-together number, or the nearest countdown. Today every card is the same weight, which is why the page reads as monotone even though the content varies wildly.</p></div>
+  <div class="p"><div class="n">3</div><h3>Group by the user's question, not the schema</h3><p>Nobody asks "show me my Basics fields". They ask "what's coming?", "what do I buy?", "what don't I know yet?". Zones answer questions; the database layout is an implementation detail.</p></div>
+  <div class="p"><div class="n">4</div><h3>Vary density on purpose</h3><p>A countdown gets air; a fact table gets tight rows. Uniform padding across dissimilar content is the single biggest cause of the flat feeling in the current design.</p></div>
+  <div class="p"><div class="n">5</div><h3>Show the shape of the data</h3><p>Rings, bars, radars, heatmaps and sparklines beat sentences for anything numeric. Reserve prose for the one thing charts cannot do: the agent's voice.</p></div>
+  <div class="p"><div class="n">6</div><h3>Empty states offer, never apologise</h3><p>"Nothing left on my list" is a dead end. Replace it with a deeper question, a suggestion, or a next action. An empty widget should be the most inviting thing on the page.</p></div>
+  <div class="p"><div class="n">7</div><h3>Warm depth, never grey depth</h3><p>Shadows are tinted with the ink colour (45,32,36), borders are warm, tints are 4–8% hue on ivory. A single neutral grey anywhere makes the whole palette look accidental.</p></div>
+  <div class="p"><div class="n">8</div><h3>Hue is never the only signal</h3><p>Every coloured element also carries an icon, a label or a shape, so the page survives colour-blindness and greyscale printing. Body text stays at 4.5:1 against its tint — accents are for chrome, not paragraphs.</p></div>
+  <div class="p"><div class="n">9</div><h3>Progressive disclosure over completeness</h3><p>Eleven pending guesses render as one card with a stacked edge. Edit links appear on hover. Show the next decision, keep the rest one gesture away.</p></div>
+  <div class="p"><div class="n">10</div><h3>Restraint in an intimate product</h3><p>200–400ms ease-out, nothing bouncing, no confetti, no streak guilt. Motion confirms, it does not perform. The interface is the quiet friend who remembers things, not a game.</p></div>
+</div>
+
+<footer>
+  Widget kit · palette extended from <code>src/client/design-system/tokens.ts</code> · mockup only, nothing wired.
+  Layout proposals live in <code>01</code>–<code>05</code>, each pairing one profile-page layout with one sidebar treatment.
+</footer>
+</div>
+</body>
+</html>

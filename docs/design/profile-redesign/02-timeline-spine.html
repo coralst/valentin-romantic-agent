@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Layout 2 · Timeline Spine — Valentin</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --burgundy:#9B3A52;--burgundy-lift:#C4566E;--plum:#5C2434;--rose:#D4A0A8;--blush:#F2D4D8;
+  --champagne:#F7EDE2;--ivory:#FDFAF7;--cream:#FFF9F5;--taupe:#B8A99A;--bg:#F8F5F2;--surface:#fff;
+  --ink:#2D2024;--ink-2:#8A7A7E;--border:#EDE6E0;--border-soft:#F2ECE7;--ok:#4A9B6A;--err:#D94452;
+  --c-date:#C4566E;--c-date-bg:#FDEEF1;--c-gift:#C0873A;--c-gift-bg:#FBF2E4;
+  --c-taste:#C0684A;--c-taste-bg:#FBEDE7;--c-mood:#87699A;--c-mood-bg:#F5F0F9;
+  --c-fact:#4E7C86;--c-fact-bg:#EAF2F4;--c-grow:#5E8C6A;--c-grow-bg:#EDF4EF;
+  --c-kin:#A05A7A;--c-kin-bg:#F9EDF3;
+  --r-md:10px;--r-lg:16px;--r-xl:20px;--r-xxl:24px;--r-full:9999px;
+  --sh:0 1px 3px rgba(45,32,36,.06),0 4px 12px rgba(45,32,36,.04);
+  --sh-h:0 2px 8px rgba(45,32,36,.08),0 12px 30px rgba(45,32,36,.07);
+  --ease:cubic-bezier(.2,.8,.2,1);--serif:'Playfair Display',Georgia,serif;--sans:'Inter',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);color:var(--ink);background:#EFE9E4;-webkit-font-smoothing:antialiased;padding:34px}
+.doc{max-width:1500px;margin:0 auto 26px}
+.doc .eyebrow{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--burgundy);font-weight:600}
+.doc h1{font-family:var(--serif);font-size:38px;font-weight:600;margin:8px 0 10px;letter-spacing:-.02em}
+.doc h1 em{font-style:italic;color:var(--burgundy)}
+.doc p{max-width:80ch;color:#6E6065;font-size:14px;line-height:1.7}
+.doc .tags{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.doc .tags s{text-decoration:none;font-size:11px;font-weight:600;padding:5px 11px;border-radius:var(--r-full);background:#fff;color:var(--plum);border:1px solid var(--border)}
+.app{max-width:1500px;margin:0 auto;display:flex;background:var(--bg);border-radius:var(--r-xxl);
+  overflow:hidden;box-shadow:0 24px 70px rgba(45,32,36,.16);min-height:1020px}
+
+/* ══════ SIDEBAR VARIANT B · "Icon rail that blooms on hover" ══════ */
+aside{width:72px;flex:none;background:linear-gradient(180deg,var(--plum),#3E1420);color:#fff;
+  padding:16px 0;display:flex;flex-direction:column;align-items:center;gap:8px;
+  transition:width .3s var(--ease);overflow:hidden;position:relative;z-index:5}
+aside:hover{width:224px;align-items:stretch;padding:16px 14px;box-shadow:14px 0 40px rgba(45,32,36,.22)}
+.av{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,var(--rose),var(--blush));
+  display:grid;place-items:center;font-size:18px;flex:none;box-shadow:0 0 0 2px rgba(255,255,255,.22);margin-bottom:6px}
+aside:hover .av{margin-left:2px}
+.who{display:none}
+aside:hover .who{display:block}
+.who .n{font-family:var(--serif);font-size:15px}
+.who .s{font-size:10px;color:rgba(255,255,255,.55)}
+.top-row{display:flex;align-items:center;gap:10px}
+nav{display:flex;flex-direction:column;gap:4px;width:100%;margin-top:12px}
+nav a{display:flex;align-items:center;gap:12px;padding:11px;border-radius:var(--r-md);color:rgba(255,255,255,.65);
+  text-decoration:none;font-size:13px;font-weight:500;transition:.2s var(--ease);white-space:nowrap;justify-content:center}
+aside:hover nav a{justify-content:flex-start}
+nav a i{width:18px;text-align:center;font-size:14px;flex:none}
+nav a span{display:none}
+aside:hover nav a span{display:inline}
+nav a:hover{background:rgba(255,255,255,.09);color:#fff}
+nav a.on{background:rgba(255,255,255,.15);color:#fff;font-weight:600}
+nav a.on::after{content:"";position:absolute;left:0;width:3px;height:22px;border-radius:0 3px 3px 0;background:var(--rose)}
+nav a{position:relative}
+nav a b{margin-left:auto;font-size:10px;font-weight:700;background:var(--rose);color:var(--plum);padding:2px 7px;border-radius:var(--r-full);display:none}
+aside:hover nav a b{display:inline}
+/* collapsed badge dot */
+nav a em{position:absolute;top:8px;right:16px;width:7px;height:7px;border-radius:50%;background:var(--rose);font-style:normal}
+aside:hover nav a em{display:none}
+.rail-mini{width:100%;margin-top:auto;display:flex;flex-direction:column;gap:9px;align-items:center}
+aside:hover .rail-mini{align-items:stretch}
+.mini-ring{width:42px;height:42px;border-radius:50%;background:conic-gradient(var(--rose) 0 84%,rgba(255,255,255,.16) 84%);
+  display:grid;place-items:center;flex:none}
+.mini-ring i{width:33px;height:33px;border-radius:50%;background:var(--plum);display:grid;place-items:center;
+  font-size:10.5px;font-weight:700;font-style:normal}
+.mini-count{width:42px;height:42px;border-radius:12px;background:rgba(255,255,255,.1);display:grid;place-items:center;
+  font-family:var(--serif);font-size:15px;flex:none}
+.expanded-only{display:none}
+aside:hover .expanded-only{display:block}
+aside:hover .collapsed-only{display:none}
+.sw{background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.11);border-radius:var(--r-lg);padding:12px}
+.sw .k{font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.55);font-weight:600}
+.sw .big{font-family:var(--serif);font-size:26px;line-height:1.1;margin-top:4px}
+.sw .sub{font-size:10px;color:rgba(255,255,255,.6);margin-top:3px}
+.hint{position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:9px;color:rgba(255,255,255,.3)}
+aside:hover .hint{display:none}
+
+/* ══════ MAIN ══════ */
+main{flex:1;min-width:0;display:flex;flex-direction:column;position:relative}
+header.top{padding:22px 34px;background:linear-gradient(180deg,#fff 0%,#FFFCFA 100%);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:18px}
+.hero-av{width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,var(--blush),var(--rose));
+  display:grid;place-items:center;font-size:26px;flex:none;box-shadow:0 0 0 3px #fff,0 0 0 4px var(--blush)}
+header.top h1{font-family:var(--serif);font-size:31px;font-weight:600;line-height:1.05}
+header.top .meta{font-size:12px;color:var(--ink-2);margin-top:3px}
+.knowbar{margin-left:auto;display:flex;align-items:center;gap:14px}
+.knowbar .lbl{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--taupe);font-weight:600;text-align:right;line-height:1.5}
+.seg{display:flex;gap:3px}
+.seg s{width:9px;height:9px;border-radius:3px;background:var(--border)}
+.seg s.f{background:var(--c-grow)}.seg s.g{background:var(--c-gift)}
+.cta{background:linear-gradient(135deg,var(--burgundy),var(--burgundy-lift));color:#fff;border:0;padding:11px 19px;
+  border-radius:var(--r-full);font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(155,58,82,.28)}
+
+/* ── the spine ── */
+.spine{flex:1;padding:30px 34px 50px;position:relative}
+.spine::before{content:"";position:absolute;left:50%;top:14px;bottom:26px;width:3px;margin-left:-1.5px;border-radius:2px;
+  background:linear-gradient(180deg,var(--c-date) 0%,var(--c-gift) 26%,var(--c-taste) 48%,var(--c-mood) 70%,var(--border) 100%)}
+.era{position:relative;text-align:center;margin:0 0 22px}
+.era s{text-decoration:none;display:inline-block;background:var(--plum);color:#fff;font-size:10px;font-weight:700;
+  letter-spacing:.16em;text-transform:uppercase;padding:6px 16px;border-radius:var(--r-full);position:relative;z-index:2;
+  box-shadow:0 3px 10px rgba(92,36,52,.25)}
+.node{display:grid;grid-template-columns:1fr 62px 1fr;align-items:start;margin-bottom:20px}
+.node .knot{grid-column:2;display:grid;place-items:center;padding-top:22px}
+.node .knot i{width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid var(--a,var(--rose));
+  box-shadow:0 0 0 5px var(--bg);position:relative;z-index:2}
+.node.left  > .card{grid-column:1}
+.node.right > .card{grid-column:3}
+.node.left  > .card{margin-right:6px}
+.node.right > .card{margin-left:6px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-xl);padding:18px;box-shadow:var(--sh);
+  position:relative;overflow:hidden;transition:transform .25s var(--ease),box-shadow .25s var(--ease)}
+.card:hover{transform:translateY(-3px);box-shadow:var(--sh-h)}
+.card::before{content:"";position:absolute;inset:0 auto 0 0;width:3px;background:var(--a,var(--rose))}
+.node.left .card::before{inset:0 0 0 auto}
+.card[data-tone=date]{--a:var(--c-date);--t:var(--c-date-bg)}
+.card[data-tone=gift]{--a:var(--c-gift);--t:var(--c-gift-bg)}
+.card[data-tone=taste]{--a:var(--c-taste);--t:var(--c-taste-bg)}
+.card[data-tone=mood]{--a:var(--c-mood);--t:var(--c-mood-bg)}
+.card[data-tone=fact]{--a:var(--c-fact);--t:var(--c-fact-bg)}
+.card[data-tone=grow]{--a:var(--c-grow);--t:var(--c-grow-bg)}
+.card[data-tone=kin]{--a:var(--c-kin);--t:var(--c-kin-bg)}
+.node.full > .card{grid-column:1 / -1;margin:0;text-align:left}
+.node.full > .card .h{flex-direction:row}
+.card.tint{background:linear-gradient(155deg,var(--t) 0%,#fff 72%)}
+.node.left .card{text-align:right}
+.node.left .h{flex-direction:row-reverse}
+.node.left .chips,.node.left .order,.node.left .row{justify-content:flex-end}
+.h{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.h .t{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;color:var(--a);display:flex;align-items:center;gap:7px}
+.h .t i{width:17px;height:17px;border-radius:5px;background:var(--a);color:#fff;display:grid;place-items:center;font-size:9px;flex:none}
+.pill{font-size:10px;font-weight:600;padding:3px 8px;border-radius:var(--r-full);background:var(--t);color:var(--a)}
+.meta{font-size:11px;color:var(--taupe)}
+.sub{font-size:11.5px;color:var(--ink-2);margin-top:5px;line-height:1.55}
+.ttl{font-family:var(--serif);font-size:21px;font-weight:600;line-height:1.2}
+.away{font-family:var(--serif);font-size:34px;color:var(--a);line-height:1}
+.btn{font-family:var(--sans);font-size:12px;font-weight:600;padding:8px 14px;border-radius:var(--r-full);
+  border:1px solid var(--border);background:#fff;color:var(--plum);cursor:pointer;transition:.2s var(--ease)}
+.btn:hover{border-color:var(--a);color:var(--a)}
+.btn.solid{background:var(--a);border-color:transparent;color:#fff}
+.row{display:flex;align-items:center;gap:8px}
+.chip{font-size:11px;padding:4px 10px;border-radius:var(--r-full);background:var(--champagne);color:var(--plum);border:1px solid var(--border)}
+.chip.on{background:var(--a);color:#fff;border-color:transparent}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.bar{height:6px;border-radius:var(--r-full);background:var(--border-soft);overflow:hidden}
+.bar>i{display:block;height:100%;background:var(--a);border-radius:var(--r-full)}
+.task{display:flex;gap:10px;align-items:flex-start;padding:9px 10px;border-radius:var(--r-md);background:var(--t);margin-bottom:6px}
+.node.left .task{flex-direction:row-reverse;text-align:right}
+.tick{width:16px;height:16px;border-radius:5px;border:1.5px solid var(--a);flex:none;margin-top:1px;display:grid;place-items:center;color:var(--a);font-size:9px}
+.tick.done{background:var(--a);color:#fff;border-color:transparent}
+.careful{display:flex;gap:8px;align-items:center;padding:8px 10px;border-radius:var(--r-md);background:#FDF0F1;
+  margin-bottom:6px;border:1px solid #F6DDE0;font-size:11.5px}
+.node.left .careful{flex-direction:row-reverse}
+.careful .x{width:17px;height:17px;border-radius:50%;background:var(--err);color:#fff;display:grid;place-items:center;font-size:9px;flex:none}
+.wallet{border-radius:var(--r-lg);padding:15px;color:#fff;background:linear-gradient(135deg,var(--plum),var(--burgundy) 75%);position:relative;overflow:hidden;text-align:left}
+.wallet::after{content:"";position:absolute;width:130px;height:130px;border-radius:50%;background:rgba(255,255,255,.08);right:-40px;top:-50px}
+.wallet .k{font-size:9px;letter-spacing:.14em;text-transform:uppercase;opacity:.68}
+.wallet .v{font-family:var(--serif);font-size:16.5px;margin-top:1px}
+.wallet .g{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:12px}
+.order{display:flex;gap:8px;flex-wrap:wrap}
+.tile{border-radius:var(--r-md);padding:11px 13px;color:#fff;font-size:11px;font-weight:600;cursor:pointer;transition:.2s var(--ease)}
+.tile:hover{transform:translateY(-2px)}
+.note{margin-top:11px;padding-top:9px;border-top:1px dashed var(--border);font-size:10.5px;color:var(--taupe);line-height:1.5}
+.mem{display:flex;gap:8px}
+.mem div{flex:1;aspect-ratio:1;border-radius:var(--r-md);display:grid;place-items:end;padding:7px;color:#fff;font-size:10px;font-weight:600}
+.conf{display:flex;gap:5px;align-items:center}
+.node.left .conf{flex-direction:row-reverse}
+.conf s{flex:1;height:5px;border-radius:3px;background:var(--border-soft)}
+.conf s.f{background:var(--a)}
+.callout{position:absolute;background:var(--plum);color:#fff;font-size:10px;font-weight:600;padding:3px 8px;
+  border-radius:var(--r-full);top:-9px;left:16px;letter-spacing:.04em;box-shadow:var(--sh);z-index:3}
+.node.left .callout{left:auto;right:16px}
+/* the "now" hero straddling the spine */
+.now{grid-column:1 / -1;background:linear-gradient(135deg,#FDEEF1,#fff 55%,#FBF2E4);border:1px solid var(--border);
+  border-radius:var(--r-xxl);padding:24px 28px;box-shadow:var(--sh);position:relative;overflow:hidden;
+  display:flex;align-items:center;gap:30px;margin-bottom:24px}
+.now::after{content:"♥";position:absolute;right:8px;bottom:-54px;font-size:150px;color:rgba(196,86,110,.08);line-height:1}
+.now .num{font-family:var(--serif);font-size:66px;font-weight:600;line-height:.95;color:var(--c-date);letter-spacing:-.03em}
+.now .lbl{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--taupe);font-weight:600}
+.now .say{font-family:var(--serif);font-size:18px;line-height:1.45;max-width:30ch}
+.ring{width:92px;height:92px;border-radius:50%;flex:none;display:grid;place-items:center;
+  background:conic-gradient(var(--c-date) 0 84%,#EFE7E2 84%)}
+.ring i{width:73px;height:73px;border-radius:50%;background:#fff;display:grid;place-items:center;font-family:var(--serif);font-size:21px;font-weight:600;font-style:normal}
+
+/* ══════ W31 · FAMILY TREE (shared) ══════ */
+.tree{padding:4px 0}
+.gen{display:flex;justify-content:center;gap:10px;position:relative;flex-wrap:wrap;text-align:left}
+.gen.g1,.gen.g2{margin-bottom:22px}
+.gen.g1::after,.gen.g2::after{content:"";position:absolute;left:50%;bottom:-22px;width:2px;height:22px;background:var(--border)}
+.gen.g2::before{content:"";position:absolute;left:24%;right:24%;top:-11px;height:2px;background:var(--border)}
+.gen.g3::before{content:"";position:absolute;left:34%;right:34%;top:-11px;height:2px;background:var(--border)}
+.gen.g2 .kin::before,.gen.g3 .kin::before{content:"";position:absolute;left:50%;top:-11px;width:2px;height:11px;background:var(--border)}
+.kin{position:relative;background:#fff;border:1px solid var(--border);border-radius:10px;padding:9px 12px 9px 9px;
+  display:flex;align-items:center;gap:9px;min-width:130px;transition:.2s var(--ease);cursor:pointer}
+.kin:hover{border-color:var(--c-kin);box-shadow:var(--sh);transform:translateY(-2px)}
+.kin .fav{width:27px;height:27px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:12.5px;
+  background:var(--c-kin-bg);color:var(--c-kin);font-weight:700;font-family:var(--serif)}
+.kin .nm{font-size:12px;font-weight:700;line-height:1.2}
+.kin .rl{font-size:9.5px;color:var(--taupe);margin-top:2px}
+.kin .bd{margin-left:auto;font-size:9.5px;font-weight:700;color:var(--c-kin);background:var(--c-kin-bg);
+  padding:3px 7px;border-radius:9999px;white-space:nowrap}
+.kin.her{background:linear-gradient(135deg,var(--c-date),var(--burgundy));border-color:transparent;color:#fff}
+.kin.her .fav{background:rgba(255,255,255,.22);color:#fff}
+.kin.her .rl{color:rgba(255,255,255,.72)}
+.kin.her .bd{background:rgba(255,255,255,.2);color:#fff}
+.kin.you{background:var(--champagne);border-style:dashed;border-color:var(--rose)}
+.kin.soon .bd{background:var(--c-date);color:#fff}
+.kin.gap{border-style:dashed;color:var(--taupe)}
+.kin.gap .fav{background:#F6F2EF;color:#CFC5BF}
+.treekey{display:flex;gap:14px;flex-wrap:wrap;margin-top:13px;font-size:10px;color:var(--ink-2)}
+.treekey span{display:flex;align-items:center;gap:5px}
+.treekey i{width:8px;height:8px;border-radius:2.5px;display:inline-block}
+.kinlist div{display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid var(--border-soft)}
+.kinlist div:last-child{border:0}
+.kinlist .av2{width:25px;height:25px;border-radius:50%;background:var(--c-kin-bg);color:var(--c-kin);display:grid;
+  place-items:center;font-size:10.5px;font-weight:700;flex:none;font-family:var(--serif)}
+.kinlist .nm{font-size:11.5px;font-weight:600}
+.kinlist .rl{font-size:9.5px;color:var(--taupe)}
+.kinlist .aw{margin-left:auto;font-size:10.5px;font-weight:700;color:var(--c-kin)}
+</style>
+</head>
+<body>
+
+<div class="doc">
+  <div class="eyebrow">Layout proposal 2 of 5 · profile page + sidebar variant B</div>
+  <h1>Timeline <em>spine</em></h1>
+  <p>A relationship is a story in time, so the page is organised as one. A single coloured spine runs down the middle —
+  gradient from rose (soon) through amber (deadlines) to grey (far off) — with cards alternating left and right and
+  era markers breaking it into <em>This week</em>, <em>This month</em>, <em>Standing knowledge</em>. Facts that have no
+  date live at the bottom in the "always true" era. Strongest narrative layout, and the most emotionally warm of the
+  five; slightly less efficient per pixel than the bento.</p>
+  <div class="tags"><s>alternating spine</s><s>time-ordered zones</s><s>era markers</s><s>sidebar B · icon rail that blooms</s><s>most narrative</s></div>
+  <p style="margin-top:12px;color:var(--burgundy);font-weight:600;font-size:13px">↳ Hover the left rail to see it expand.</p>
+</div>
+
+<div class="app">
+
+  <!-- ── SIDEBAR VARIANT B ── -->
+  <aside>
+    <div class="top-row"><span class="av">🧔</span><div class="who"><div class="n">You</div><div class="s">Valentin is listening</div></div></div>
+    <nav>
+      <a href="#"><i>✧</i><span>Today</span></a>
+      <a href="#" class="on"><i>♥</i><span>Samantha</span></a>
+      <a href="#"><i>☰</i><span>Conversations</span><b>3</b><em></em></a>
+      <a href="#"><i>🎁</i><span>Gifts &amp; ideas</span></a>
+      <a href="#"><i>📅</i><span>Occasions</span><b>2</b><em></em></a>
+      <a href="#"><i>⚭</i><span>Her people</span><b>7</b><em></em></a>
+      <a href="#"><i>◫</i><span>Memories</span></a>
+      <a href="#"><i>⚙</i><span>Settings</span></a>
+    </nav>
+    <div class="rail-mini">
+      <div class="collapsed-only" style="display:flex;flex-direction:column;gap:9px;align-items:center">
+        <div class="mini-ring"><i>84%</i></div>
+        <div class="mini-count">27<sub style="font-size:8px;font-family:var(--sans)">d</sub></div>
+      </div>
+      <div class="expanded-only" style="display:none">
+        <div class="sw"><div class="k">Anniversary</div><div class="big">27 <span style="font-size:12px;font-family:var(--sans);opacity:.6">days</span></div><div class="sub">Book the table by the 11th</div></div>
+        <div class="sw" style="margin-top:9px"><div class="k">How well I know her</div><div class="big" style="font-size:22px">84%</div><div class="sub">11 guesses waiting</div></div>
+      </div>
+    </div>
+    <div class="hint">hover →</div>
+  </aside>
+
+  <!-- ── MAIN ── -->
+  <main>
+    <header class="top">
+      <span class="hero-av">👩</span>
+      <div>
+        <h1>Samantha</h1>
+        <div class="meta">12 June 1994 · early thirties · Gemini · together 2,003 days</div>
+      </div>
+      <div class="knowbar">
+        <div class="lbl">How well<br>I know her</div>
+        <div class="seg">
+          <s class="f"></s><s class="f"></s><s class="f"></s><s class="f"></s><s class="f"></s><s class="f"></s><s class="f"></s>
+          <s class="f"></s><s class="f"></s><s class="f"></s><s class="f"></s><s class="f"></s><s class="f"></s><s class="f"></s>
+          <s class="f"></s><s class="f"></s><s class="f"></s><s class="g"></s><s class="g"></s><s class="g"></s><s></s>
+        </div>
+        <button class="cta">Ask me what's missing</button>
+      </div>
+    </header>
+
+    <div class="spine">
+
+      <!-- NOW hero -->
+      <div class="now">
+        <div>
+          <div class="num">2,003</div>
+          <div class="lbl">days together</div>
+        </div>
+        <div class="say">Twenty-seven days to your anniversary. A third of it is planned — the table is the missing piece.</div>
+        <div class="ring" style="margin-left:auto"><i>84<small style="font-size:11px">%</small></i></div>
+      </div>
+
+      <div class="era"><s>This week</s></div>
+
+      <div class="node right">
+        <div class="knot" style="--a:var(--c-gift)"><i></i></div>
+        <div class="card tint" data-tone="gift">
+          <span class="callout">act now</span>
+          <div class="h"><div class="t"><i>✓</i>Do this soon</div><span class="pill">3 open</span></div>
+          <div class="task"><span class="tick">✓</span><div><div style="font-size:12.5px;font-weight:500">Book the restaurant</div><div class="meta">By 11 Sept · a week of slack</div></div></div>
+          <div class="task"><span class="tick"></span><div><div style="font-size:12.5px;font-weight:500">Order the gift</div><div class="meta">By 29 May · two weeks of slack</div></div></div>
+          <div class="task"><span class="tick done">✓</span><div><div style="font-size:12.5px;font-weight:500;text-decoration:line-through;color:var(--ink-2)">Plan the weekend</div><div class="meta">Done 3 days early</div></div></div>
+        </div>
+      </div>
+
+      <div class="node left">
+        <div class="card" data-tone="grow">
+          <div class="h"><div class="t"><i>?</i>Confirm my guesses</div><span class="pill">11 waiting</span></div>
+          <div class="ttl">Indie folk — the kind with close harmonies?</div>
+          <div class="sub">Inferred from the demo profile, not from anything you told me.</div>
+          <div class="conf" style="margin:11px 0"><span class="meta">likely</span><s class="f"></s><s class="f"></s><s class="f"></s><s></s><s></s></div>
+          <div class="row"><button class="btn">Not quite</button><button class="btn solid">That's right</button></div>
+          <div class="note">Ten more behind this one — one decision at a time.</div>
+        </div>
+        <div class="knot" style="--a:var(--c-grow)"><i></i></div>
+      </div>
+
+      <div class="era"><s>This month</s></div>
+
+      <div class="node right">
+        <div class="knot" style="--a:var(--c-date)"><i></i></div>
+        <div class="card tint" data-tone="date">
+          <div class="h"><div class="t"><i>♥</i>Anniversary</div><span class="pill">Fri 18 Sep</span></div>
+          <div class="row" style="gap:16px;align-items:flex-end">
+            <div><div class="away">27</div><div class="meta">days</div></div>
+            <div style="flex:1">
+              <div class="bar" style="--a:var(--c-grow);margin-bottom:6px"><i style="width:34%"></i></div>
+              <div class="meta">A third planned · restaurant still open · gift chosen</div>
+            </div>
+          </div>
+          <div class="row" style="margin-top:14px"><button class="btn solid">Plan it with me</button><button class="btn">Change the date</button></div>
+        </div>
+      </div>
+
+      <div class="node left">
+        <div class="card" data-tone="gift">
+          <div class="h"><div class="t"><i>🎁</i>Gift shortlist</div><span class="pill">$80 target</span></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;text-align:left">
+            <div style="border:1px solid var(--border);border-radius:var(--r-md);padding:10px"><div style="font-size:12px;font-weight:600">Ceramic pour-over</div><div style="font-family:var(--serif);font-size:16px;color:var(--c-gift);margin-top:4px">$74</div><div class="meta">In budget</div></div>
+            <div style="border:1px solid var(--border);border-radius:var(--r-md);padding:10px"><div style="font-size:12px;font-weight:600">Indie folk vinyl</div><div style="font-family:var(--serif);font-size:16px;color:var(--c-gift);margin-top:4px">$92</div><div class="meta">Slightly over</div></div>
+          </div>
+          <div class="note">Checked against the budget and the sizes you've already told me.</div>
+        </div>
+        <div class="knot" style="--a:var(--c-gift)"><i></i></div>
+      </div>
+
+      <div class="node right">
+        <div class="knot" style="--a:var(--c-taste)"><i></i></div>
+        <div class="card" data-tone="taste">
+          <div class="h"><div class="t"><i>◉</i>Where to take her</div><span class="pill">matched to her taste</span></div>
+          <div style="display:flex;flex-direction:column;gap:0">
+            <div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-soft)"><span style="width:25px;height:25px;border-radius:50%;background:var(--t);color:var(--a);display:grid;place-items:center;font-size:11px;flex:none">🍝</span><div><div style="font-size:12.5px;font-weight:600">Osteria Fiore</div><div class="meta">Northern Italian · 12 min</div></div><span style="margin-left:auto;font-size:10px;color:var(--c-gift);letter-spacing:1px">★★★★★</span></div>
+            <div style="display:flex;gap:10px;align-items:center;padding:8px 0"><span style="width:25px;height:25px;border-radius:50%;background:var(--t);color:var(--a);display:grid;place-items:center;font-size:11px;flex:none">🥂</span><div><div style="font-size:12.5px;font-weight:600">Cellar &amp; Sage</div><div class="meta">Small plates · 8 min</div></div><span style="margin-left:auto;font-size:10px;color:var(--c-gift);letter-spacing:1px">★★★★☆</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="era"><s>Later this year</s></div>
+
+      <div class="node left">
+        <div class="card" data-tone="date">
+          <div class="h"><div class="t"><i>∞</i>Together since</div><span class="pill">Wed 3 March</span></div>
+          <div class="row" style="gap:14px;align-items:flex-end;justify-content:flex-end"><div><div class="away" style="font-size:28px">193</div><div class="meta">days away</div></div><div class="sub" style="max-width:22ch">Plan by 28 Feb — three days of slack is what you usually leave.</div></div>
+        </div>
+        <div class="knot" style="--a:var(--c-date)"><i></i></div>
+      </div>
+
+      <div class="node right">
+        <div class="knot" style="--a:var(--taupe)"><i></i></div>
+        <div class="card" data-tone="date" style="--a:var(--taupe);--t:var(--champagne)">
+          <div class="h"><div class="t"><i>✧</i>Her birthday</div><span class="pill">Sat 12 June</span></div>
+          <div class="row" style="gap:14px;align-items:flex-end"><div><div class="away" style="font-size:28px">294</div><div class="meta">days away</div></div><div class="sub" style="max-width:24ch">Order by 29 May. Far enough off that I'll stay quiet about it until spring.</div></div>
+        </div>
+      </div>
+
+      <div class="era"><s>Always true</s></div>
+
+      <!-- family tree · W31 — straddles the spine, because her family sits under everything -->
+      <div class="node full">
+        <div class="card" data-tone="kin">
+          <span class="callout">new · W31</span>
+          <div class="h"><div class="t"><i>⚭</i>Her family — who's who</div><span class="pill">7 people · 2 gaps</span></div>
+          <div class="tree">
+            <div class="gen g1">
+              <div class="kin"><span class="fav">M</span><div><div class="nm">Miriam</div><div class="rl">Her mother · "Mimi"</div></div><span class="bd">4 Feb</span></div>
+              <div class="kin"><span class="fav">D</span><div><div class="nm">David</div><div class="rl">Her father</div></div><span class="bd">19 Oct</span></div>
+            </div>
+            <div class="gen g2">
+              <div class="kin soon"><span class="fav">L</span><div><div class="nm">Leah</div><div class="rl">Older sister · Berlin</div></div><span class="bd">9 Sep · 18d</span></div>
+              <div class="kin her"><span class="fav">S</span><div><div class="nm">Samantha</div><div class="rl">Her</div></div><span class="bd">12 Jun</span></div>
+              <div class="kin you"><span class="fav">♥</span><div><div class="nm">You</div><div class="rl">2,003 days</div></div></div>
+              <div class="kin gap"><span class="fav">?</span><div><div class="nm">Brother?</div><div class="rl">Mentioned once — no name</div></div></div>
+            </div>
+            <div class="gen g3">
+              <div class="kin"><span class="fav">N</span><div><div class="nm">Noa</div><div class="rl">Niece · Leah's daughter, 6</div></div><span class="bd">2 Mar</span></div>
+              <div class="kin"><span class="fav" style="background:var(--c-grow-bg);color:var(--c-grow)">🐈</span><div><div class="nm">Biscuit</div><div class="rl">Her cat · since 2021</div></div></div>
+            </div>
+          </div>
+          <div class="treekey">
+            <span><i style="background:var(--c-date)"></i>Her</span>
+            <span><i style="background:var(--rose)"></i>You</span>
+            <span><i style="background:var(--c-kin)"></i>Name &amp; birthday known</span>
+            <span><i style="background:#CFC5BF"></i>Gap — no name yet</span>
+          </div>
+          <div class="note">Dashed cards are people you've mentioned that I can't name yet. Each is a question worth asking.</div>
+        </div>
+      </div>
+
+      <div class="node right">
+        <div class="knot" style="--a:var(--c-kin)"><i></i></div>
+        <div class="card" data-tone="kin">
+          <div class="h"><div class="t"><i>🎂</i>Their birthdays</div><span class="pill">next in 18d</span></div>
+          <div class="kinlist">
+            <div><span class="av2">L</span><div><div class="nm">Leah</div><div class="rl">Her sister · 9 Sep</div></div><span class="aw">18d</span></div>
+            <div><span class="av2">D</span><div><div class="nm">David</div><div class="rl">Her father · 19 Oct</div></div><span class="aw">58d</span></div>
+            <div><span class="av2">M</span><div><div class="nm">Miriam</div><div class="rl">Her mother · 4 Feb</div></div><span class="aw">166d</span></div>
+            <div><span class="av2">N</span><div><div class="nm">Noa</div><div class="rl">Her niece · 2 Mar</div></div><span class="aw">192d</span></div>
+          </div>
+          <div class="note">Remembering her sister's birthday scores higher than remembering her own.</div>
+        </div>
+      </div>
+
+      <div class="node left">
+        <div class="card" data-tone="fact">
+          <div class="h"><div class="t"><i>▭</i>Sizes</div><span class="pill">tap to copy</span></div>
+          <div class="wallet">
+            <div class="k">Samantha · sizes</div>
+            <div class="g">
+              <div><div class="k">Clothing</div><div class="v">UK 10 / EU 38</div></div>
+              <div><div class="k">Shoe</div><div class="v">UK 6 / EU 39</div></div>
+              <div><div class="k">Ring</div><div class="v">M ½</div></div>
+              <div><div class="k">Note</div><div class="v" style="font-size:12px;font-family:var(--sans)">Sizes up for knits</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="knot" style="--a:var(--c-fact)"><i></i></div>
+      </div>
+
+      <div class="node right">
+        <div class="knot" style="--a:var(--c-taste)"><i></i></div>
+        <div class="card" data-tone="taste">
+          <div class="h"><div class="t"><i>✳</i>Her yes-list</div><span class="pill">10</span></div>
+          <div class="chips">
+            <span class="chip on">Northern Italian</span><span class="chip">Brown butter</span><span class="chip">Sage</span>
+            <span class="chip on">Indie folk</span><span class="chip">Peonies</span><span class="chip">Dark chocolate</span>
+            <span class="chip on">Kyoto in blossom</span><span class="chip">Second-hand books</span><span class="chip">Long walks</span>
+          </div>
+          <div class="note">Filled = confirmed by you. Outline = still my guess.</div>
+        </div>
+      </div>
+
+      <div class="node left">
+        <div class="card" data-tone="date" style="--a:var(--err);--t:#FDF0F1">
+          <div class="h"><div class="t" style="color:var(--err)"><i style="background:var(--err)">!</i>Be careful</div></div>
+          <div class="careful"><span class="x">✕</span>Shellfish — allergic, not a preference</div>
+          <div class="careful"><span class="x">✕</span>No lilies · they set off her hay fever</div>
+          <div class="careful"><span class="x">✕</span>Never a surprise party</div>
+          <div class="note">The one card that prevents an expensive mistake.</div>
+        </div>
+        <div class="knot" style="--a:var(--err)"><i></i></div>
+      </div>
+
+      <div class="node right">
+        <div class="knot" style="--a:var(--c-mood)"><i></i></div>
+        <div class="card" data-tone="mood">
+          <div class="h"><div class="t"><i>◫</i>Memory lane</div><span class="pill">14 saved</span></div>
+          <div class="mem">
+            <div style="background:linear-gradient(160deg,#C4566E,#8B3A52)">Kyoto</div>
+            <div style="background:linear-gradient(160deg,#C0873A,#8A5D22)">First flat</div>
+            <div style="background:linear-gradient(160deg,#87699A,#5B4370)">That gig</div>
+            <div style="background:linear-gradient(160deg,#4E7C86,#33565E)">Coast</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="node left">
+        <div class="card tint" data-tone="grow">
+          <div class="h"><div class="t"><i>✎</i>Worth asking next</div></div>
+          <div style="display:grid;gap:7px">
+            <div style="padding:10px 12px;border-radius:var(--r-md);background:#fff;border:1px solid var(--border);font-size:12px">How does she feel about surprises?</div>
+            <div style="padding:10px 12px;border-radius:var(--r-md);background:#fff;border:1px solid var(--border);font-size:12px">Any flower she actively dislikes?</div>
+            <div style="padding:10px 12px;border-radius:var(--r-md);background:#fff;border:1px solid var(--border);font-size:12px">Best gift you ever gave her?</div>
+          </div>
+          <div class="note">The spine never ends in an apology — it ends in a question.</div>
+        </div>
+        <div class="knot" style="--a:var(--c-grow)"><i></i></div>
+      </div>
+
+    </div>
+  </main>
+</div>
+</body>
+</html>

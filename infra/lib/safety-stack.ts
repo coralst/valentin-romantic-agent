@@ -33,9 +33,21 @@ export class SafetyStack extends cdk.Stack {
         ],
       },
       sensitiveInformationPolicyConfig: {
+        /*
+         * NAME and AGE are deliberately absent — user-approved, 2026-08-22.
+         *
+         * Anonymising them defeated the product: the guardrail rewrote the model's
+         * own words, so a live run answered "{NAME} — that's lovely" seconds after
+         * the user typed the partner's name, and an age came back a placeholder. A
+         * partner's name and birthday are the two facts this agent exists to
+         * remember and the first two it asks for — its subject matter rather than
+         * incidental PII, and already stored under their owner's own key.
+         *
+         * The genuinely dangerous identifiers below stay BLOCKed: nothing about
+         * remembering a name is a reason to carry a card number, an SSN, a home
+         * address or an AWS key.
+         */
         piiEntitiesConfig: [
-          { type: 'NAME', action: 'ANONYMIZE' },
-          { type: 'AGE', action: 'ANONYMIZE' },
           { type: 'CREDIT_DEBIT_CARD_NUMBER', action: 'BLOCK' },
           { type: 'US_SOCIAL_SECURITY_NUMBER', action: 'BLOCK' },
           { type: 'PHONE', action: 'BLOCK' },

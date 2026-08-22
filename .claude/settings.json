@@ -1,0 +1,16 @@
+{
+  "enabledMcpjsonServers": ["github", "playwright"],
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/guard-workflow.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

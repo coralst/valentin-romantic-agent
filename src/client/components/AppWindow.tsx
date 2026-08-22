@@ -72,6 +72,15 @@ function getFrameStyle(variant: AppWindowVariant, columns?: string): React.CSSPr
     backgroundColor: colors.porcelain,
     borderRadius: isMobile ? 0 : radii.window,
     overflow: 'hidden',
+    // The positioning context for overlays that cover part of the window without
+    // taking part in its grid — currently the integrations panel. Placing such an
+    // overlay with `gridColumn`/`gridRow` instead looks right until you notice
+    // that an explicitly placed item makes the grid's auto-placement step skip
+    // the cells it claims, which bumps the auto-placed shell children (the
+    // conversation list, the mobile content region) into an implicit extra row.
+    // `relative` also keeps the overlay inside the window's own clip, which is
+    // what preserves the 34px radius; see the note on `drawerHostStyle`.
+    position: 'relative',
     boxShadow: isMobile ? 'none' : WINDOW_SHADOW,
     display: 'grid',
     // Mobile stacks: claret top strip, then whatever the caller puts below it.

@@ -22,6 +22,8 @@ import {
   useArchitectureDrawer,
 } from '../context/architecture-drawer-context';
 import { useSessionContext } from '../context/session-context';
+import { IntegrationsProvider } from '../context/integrations-context';
+import { IntegrationsPanel } from './IntegrationsPanel';
 import { breakpoints, layout } from '../design-system/tokens';
 
 const liveRegionStyle: React.CSSProperties = {
@@ -123,7 +125,12 @@ export function AppLayout() {
       {/* Above the layout because the magnifier lives in the sidebar and the
           drawer is mounted beside the chat — sibling subtrees. */}
       <ArchitectureDrawerProvider>
-        <AppLayoutContent />
+        {/* Above the layout for the same reason: the badge that counts grants
+            lives on the rail, and the panel that changes the count is mounted
+            beside the chat. */}
+        <IntegrationsProvider>
+          <AppLayoutContent />
+        </IntegrationsProvider>
       </ArchitectureDrawerProvider>
     </ProfileStoreProvider>
   );
@@ -143,6 +150,17 @@ function AppLayoutContent() {
    * permanent part of the shell that the ☰ takes away, so the default is shown.
    */
   const [isListOpen, setListOpen] = useState(true);
+
+  /*
+   * Whether the integrations fan is up.
+   *
+   * A panel over the shell rather than a fifth surface: what it shows is "what
+   * Valentin can reach", which is a fact *about* the conversation you are having,
+   * and closing it should put you back exactly where you were. `useState` keeps
+   * that true — no history entry, nothing persisted, gone on reload.
+   */
+  const [isIntegrationsOpen, setIntegrationsOpen] = useState(false);
+  const toggleIntegrations = () => setIntegrationsOpen((open) => !open);
 
   // Read here rather than inside the drawer: the *layout* is what has to give up
   // the space, and only the layout owns the regions whose height it takes from.
@@ -240,6 +258,8 @@ function AppLayoutContent() {
                 isDossierActive={isDossier}
                 onToggleDossier={view.toggleDossier}
                 dossierToggleRef={view.dossierToggleRef}
+                onOpenIntegrations={toggleIntegrations}
+                isIntegrationsOpen={isIntegrationsOpen}
               />
               <div style={windowCellStyle}>
                 <MobileNav
@@ -279,6 +299,11 @@ function AppLayoutContent() {
                   <LiveArchitectureDrawer />
                 </div>
               </div>
+              {/* Inside the window, below the claret strip, so the same rail
+                  button that opened it is still there to close it. */}
+              {isIntegrationsOpen && (
+                <IntegrationsPanel isMobile onClose={() => setIntegrationsOpen(false)} />
+              )}
             </AppWindow>
             <SessionSidebar isMobile={true} />
             {liveRegion}
@@ -320,6 +345,8 @@ function AppLayoutContent() {
               isDossierActive={isDossier}
               onToggleDossier={view.toggleDossier}
               dossierToggleRef={view.dossierToggleRef}
+              onOpenIntegrations={toggleIntegrations}
+              isIntegrationsOpen={isIntegrationsOpen}
             />
             {isDossier ? (
               /* The drawer follows the dossier rather than unmounting with the
@@ -350,6 +377,16 @@ function AppLayoutContent() {
                   <LiveArchitectureDrawer />
                 </div>
               </>
+            )}
+            {/* Spans every track except the rail's, over both surfaces — the
+                dossier is as good a place to ask "what can he reach?" as the
+                chat is, and unmounting it on a surface switch would be a
+                surprise rather than a courtesy. */}
+            {isIntegrationsOpen && (
+              <IntegrationsPanel
+                isMobile={false}
+                onClose={() => setIntegrationsOpen(false)}
+              />
             )}
           </AppWindow>
           {liveRegion}

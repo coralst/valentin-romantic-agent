@@ -4,6 +4,7 @@ import { colors, radii, layout, typography, insets, spacing, animation } from '.
 import { DemoToolbar } from './DemoToolbar';
 import { UserChip } from './UserChip';
 import { useOptionalAuthContext } from '../context/auth-context';
+import { useIntegrations } from '../context/integrations-context';
 
 /** Which of the rail's view buttons is currently the active surface. */
 export type RailView = 'chat' | 'profile';
@@ -55,6 +56,14 @@ interface IconRailProps {
    * focus here rather than stranding it on a removed element.
    */
   dossierToggleRef?: React.RefObject<HTMLButtonElement | null>;
+  /**
+   * Raises the integrations panel. Optional so the rail still renders standalone
+   * in unit tests; the button is always drawn, because a rail whose composition
+   * depends on its props is a rail that shifts under the cursor between surfaces.
+   */
+  onOpenIntegrations?: () => void;
+  /** Whether that panel is the surface on screen, so the button can light up. */
+  isIntegrationsOpen?: boolean;
 }
 
 const INACTIVE_ICON_COLOR = 'rgba(255, 253, 251, 0.6)';
@@ -137,6 +146,88 @@ function getIconButtonStyle(isActive: boolean): React.CSSProperties {
 }
 
 const spacerStyle: React.CSSProperties = { flex: 1 };
+
+/**
+ * The band labels — "talk", "know", "act" — above each group of rail buttons.
+ *
+ * The rail's glyphs are a diamond, a heart, a hamburger and now a fan-out mark:
+ * legible once you know the app, opaque on first sight, and this is the first
+ * thing a visitor looks at. Three words say what the agent is made of — it talks,
+ * it knows her, it acts — and they cost four lines of chrome to say it.
+ *
+ * `aria-hidden` because they are a visual grouping only: every button already
+ * carries its own accessible name, and a screen reader announcing "talk" before
+ * "Conversation" would be reading the furniture. The column is the only
+ * orientation that gets them; the 56px mobile strip has no vertical room.
+ */
+const bandLabelStyle: React.CSSProperties = {
+  fontFamily: typography.bodyFontFamily,
+  fontSize: typography.px.micro,
+  fontWeight: typography.weights.semibold,
+  letterSpacing: '0.18em',
+  textTransform: 'uppercase',
+  color: 'rgba(255, 253, 251, 0.42)',
+  marginTop: 6,
+  flexShrink: 0,
+};
+
+/**
+ * The count of connected services, sat on the integrations button.
+ *
+ * Gold rather than claret-on-claret: the rail is claret, so the badge needs the
+ * app's other accent to read at 16px. It carries no accessible name of its own —
+ * the button's `aria-label` already spells the count out in words.
+ */
+const badgeStyle: React.CSSProperties = {
+  position: 'absolute',
+  top: 2,
+  right: 2,
+  minWidth: 16,
+  height: 16,
+  padding: '0 4px',
+  borderRadius: radii.pill,
+  backgroundColor: colors.gold,
+  color: colors.onGold,
+  fontFamily: typography.bodyFontFamily,
+  fontSize: typography.px.micro,
+  fontWeight: typography.weights.semibold,
+  display: 'grid',
+  placeItems: 'center',
+  lineHeight: 1,
+};
+
+/** The button the badge is pinned to has to be the positioning context. */
+const badgeHostStyle: React.CSSProperties = { position: 'relative' };
+
+/**
+ * The fan-out mark: one node branching to three.
+ *
+ * Drawn rather than borrowed from a glyph, because the rail's other marks are
+ * single characters and no character in the fonts we ship says "one agent, many
+ * hands". `currentColor` keeps it in step with the button's active/inactive state.
+ */
+function FanOutMark() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={20}
+      height={20}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <circle cx="5" cy="12" r="2.4" />
+      <circle cx="19" cy="5" r="2.2" />
+      <circle cx="19" cy="12" r="2.2" />
+      <circle cx="19" cy="19" r="2.2" />
+      <path d="M7.4 12h9.4M7.2 11.2 16.9 5.6M7.2 12.8l9.7 5.6" />
+    </svg>
+  );
+}
 
 const popoverWrapperStyle: React.CSSProperties = {
   position: 'relative',
@@ -243,6 +334,8 @@ export function IconRail({
   isDossierActive = false,
   onToggleDossier,
   dossierToggleRef,
+  onOpenIntegrations,
+  isIntegrationsOpen = false,
 }: IconRailProps) {
   /*
    * The same condition `UserChip` guards itself with, asked again here.
@@ -317,6 +410,16 @@ export function IconRail({
   const isChatActive = !isDossierActive && activeView === 'chat';
   const hasSurfaceState = isDossierActive || activeView !== null;
 
+  const { connectedCount } = useIntegrations();
+  const isColumn = orientation === 'column';
+  /** A band label, or nothing at all on the mobile strip. */
+  const band = (label: string) =>
+    isColumn ? (
+      <span style={bandLabelStyle} aria-hidden="true">
+        {label}
+      </span>
+    ) : null;
+
   return (
     <nav
       style={getRailStyle(orientation)}
@@ -340,6 +443,8 @@ export function IconRail({
         <img src="/logo.png" alt="Valentin logo" style={crestImageStyle} />
       </button>
 
+      {band('talk')}
+
       <button
         type="button"
         style={getIconButtonStyle(isChatActive)}
@@ -351,24 +456,16 @@ export function IconRail({
         &#9670;
       </button>
 
-      <button
-        ref={dossierToggleRef}
-        type="button"
-        style={getIconButtonStyle(isProfileActive)}
-        aria-label="Her profile"
-        aria-pressed={hasSurfaceState ? isProfileActive : undefined}
-        onClick={() => (onToggleDossier ? onToggleDossier() : onViewChange?.('profile'))}
-        data-testid="rail-profile-button"
-      >
-        &#9829;
-      </button>
-
       {/*
         A two-way toggle wherever the caller treats it as one, and it says so.
         "Open session history" would be a lie half the time on desktop, where the
         list is a column that this button hides and restores; but it stays the
         name on mobile, where the ☰ only opens an overlay and where the e2e specs
         and `IconRail.test.tsx` query that exact string.
+
+        It sits under "talk" rather than in its old slot below the ♥: the bands
+        group by what the button is for, and the conversation list is part of
+        talking to him, not part of knowing her.
       */}
       <button
         type="button"
@@ -385,6 +482,44 @@ export function IconRail({
         data-testid="sidebar-menu-button"
       >
         &#9776;
+      </button>
+
+      {band('know')}
+
+      <button
+        ref={dossierToggleRef}
+        type="button"
+        style={getIconButtonStyle(isProfileActive)}
+        aria-label="Her profile"
+        aria-pressed={hasSurfaceState ? isProfileActive : undefined}
+        onClick={() => (onToggleDossier ? onToggleDossier() : onViewChange?.('profile'))}
+        data-testid="rail-profile-button"
+      >
+        &#9829;
+      </button>
+
+      {band('act')}
+
+      {/* The badge is the advertisement: a rail icon with "3" on it is the only
+          thing on the chat surface that says the agent has hands at all. */}
+      <button
+        type="button"
+        style={{ ...getIconButtonStyle(isIntegrationsOpen), ...badgeHostStyle }}
+        aria-label={
+          connectedCount > 0
+            ? `Integrations, ${connectedCount} connected`
+            : 'Integrations'
+        }
+        aria-expanded={isIntegrationsOpen}
+        onClick={onOpenIntegrations}
+        data-testid="rail-integrations-button"
+      >
+        <FanOutMark />
+        {connectedCount > 0 && (
+          <span style={badgeStyle} aria-hidden="true" data-testid="rail-integrations-badge">
+            {connectedCount}
+          </span>
+        )}
       </button>
 
       <div style={spacerStyle} />

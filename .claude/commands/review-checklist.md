@@ -17,10 +17,15 @@ checklist is partly stale and some boxes cannot honestly pass as written:
 - **Cross-browser (Chromium/Firefox/WebKit) is not achievable** — the config is
   chromium-only. Skip that box rather than failing it.
 - **The CI command is `npm test`**, not `npm test -- --run`.
-- **There are seven gating CI jobs**, not three: `Lint (tsc --noEmit)`,
-  `Unit Tests (vitest)`, `Infra Tests (cdk assertions)`, `Smoke Test (server boot)`,
-  `Workflow Automation Regression (unit tier)`, `Build (vite)`,
-  `E2E Tests (playwright)`. Path-skipped jobs count as satisfied.
+- **Check all seven `ci.yml` jobs, but only four are ruleset-required**: `Lint
+  (tsc --noEmit)`, `Unit Tests (vitest)`, `Build (vite)`, `E2E Tests (playwright)`.
+  The steering file's "four required checks" is *correct* — don't flag it. The other
+  three (`Infra Tests (cdk assertions)`, `Smoke Test (server boot)`, `Workflow
+  Automation Regression (unit tier)`) are not ruleset-required but must still be
+  green. `Build`/`E2E` go green via a no-op step when no app code changed; that
+  counts as satisfied. A *pending* required check means wait, not skip.
+  `Workflow Automation Regression` is mandatory if the diff touches
+  `.kiro/skills/` or `.kiro/hooks/` — it guards the merge-gate machinery.
 - **"Branch name follows convention"** fails automatically for worktree-generated
   names like `agent-<hash>`. Flag it as a rename-before-merge, not a blocker.
 - **File-ownership boundaries** are in `CLAUDE.md`; use that table, not the stale

@@ -35,10 +35,14 @@ follow-up; until then, do not trust the paths or command lines in them.)
 - **E2E is chromium-only.** `playwright.config.ts` defines one project
   (`chromium`) and CI installs only chromium. Ignore any Firefox/WebKit
   requirement — it cannot pass.
-- **CI has seven gating jobs**, not four: `Lint (tsc --noEmit)`,
-  `Unit Tests (vitest)`, `Infra Tests (cdk assertions)`, `Smoke Test (server boot)`,
-  `Workflow Automation Regression (unit tier)`, `Build (vite)`, `E2E Tests (playwright)`.
-  Path-skipped jobs count as satisfied.
+- **Four checks are ruleset-*required*** — `Lint (tsc --noEmit)`,
+  `Unit Tests (vitest)`, `Build (vite)`, `E2E Tests (playwright)` — and the steering
+  file is correct to say so. `ci.yml` runs seven jobs; the other three
+  (`Infra Tests`, `Smoke Test`, `Workflow Automation Regression`) are informative but
+  still must be green before you merge. Note *why* `Build`/`E2E` always run: this
+  repo's ruleset treats a **skipped** required check as unsatisfied, so those jobs run
+  unconditionally with step-level path guards and report green via a no-op step (see
+  `ci.yml` lines 18–36). A required check that is *pending* means wait, not skip.
 - **Import aliases already exist** in `tsconfig.json`: `@shared/*`, `@client/*`,
   `@server/*`. Use them; don't invent new ones.
 - **`invokeSubAgent` does not exist** in Claude Code — use the Agent tool. Likewise
@@ -102,3 +106,11 @@ Kiro ran as `master-agent` is the **main session's** job here — see the
 - Worktree branches are auto-named `agent-<hash>`, which violates the
   `feat/<domain>-<feature>` grammar. Rename before opening a PR:
   `git branch -m feat/<domain>-<feature>`.
+- **MCP comes from `.mcp.json`, a symlink to `.kiro/settings/mcp.json`** — servers
+  `github` and `playwright`. Editing either edits both. `.claude/settings.json`
+  pre-approves them via `enabledMcpjsonServers` so sessions don't start with MCP
+  silently absent pending an interactive trust prompt. The file's Kiro-only
+  `disabled` and `autoApprove` keys are tolerated but **`autoApprove` is not
+  honored by Claude Code** — expect permission prompts where Kiro auto-approved.
+  The `github` server reads `GITHUB_PERSONAL_ACCESS_TOKEN`; if that is unset it
+  registers but fails to authenticate, so prefer the `gh` CLI, which works today.

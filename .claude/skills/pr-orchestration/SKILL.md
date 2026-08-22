@@ -55,8 +55,10 @@ node .kiro/skills/pr-monitoring/approval-gate-skill.js '<state-json>'
 - Never merge to `main` casually: `.github/workflows/deploy.yml` fires on push to
   `main`, and `scripts/deploy.sh` does `aws s3 sync … --delete`. Every merge
   redeploys and clobbers whatever else is live.
-- Verify **all seven** CI jobs, not the four the steering file lists. Path-skipped
-  jobs count as satisfied.
+- Verify all seven `ci.yml` jobs, but note only **four are ruleset-required**
+  (`Lint`, `Unit Tests`, `Build`, `E2E`) — the steering file is right about that.
+  `Build`/`E2E` always run and report green via a no-op step when no app code
+  changed; that counts as satisfied. A *pending* required check means wait.
 - Branch grammar `feat|fix|refactor|docs|chore/<domain>-<scope>`. Worktree branches
   are auto-named `agent-<hash>`; rename before opening the PR.
 - `@agent-name` tags notify nobody here. They are routing labels, not mentions —

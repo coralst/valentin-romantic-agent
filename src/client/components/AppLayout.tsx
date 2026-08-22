@@ -37,39 +37,28 @@ const liveRegionStyle: React.CSSProperties = {
 };
 
 /**
- * The positioning context the architecture drawer anchors to, and the region
- * that gives up the space the drawer occupies.
+ * The region the chat shell's two panels share, wrapped so they can span a
+ * contiguous pair of window columns.
  *
- * Two things are load-bearing here.
+ * The architecture drawer used to anchor here and reserve its space with this
+ * region's `paddingBottom`. It no longer does: the drawer is a full-width strip at
+ * the foot of `AppWindow`, and the window reserves the space for it on every
+ * column at once (`bottomInset`), the icon rail and the conversation list
+ * included. Anchoring it here made the bar start in the middle of the frame.
  *
- * `position: relative`, because the drawer is `position: absolute` and this is
- * what makes it span exactly the region below. It must NOT be `position: fixed`
- * and must not portal to `document.body`: the app window sets `overflow: hidden`
- * to keep its 34px radius crisp, so the window's own clip is what keeps the
- * drawer's bottom corners inside the frame instead of running past it. (The old
- * inspector portalled out to escape the deleted header's `backdrop-filter`; that
- * reason is gone, and the replacement reason points the other way — stay inside.)
- *
- * `paddingBottom`, because the drawer is a 424px overlay pinned to the bottom of
- * this region — which is exactly where the composer sits. Reserving the space
- * rather than covering it is the drawer's whole contract ("not a dialog, no focus
- * trap, composer stays typable"); occlusion breaks it just as effectively as a
- * modal would. `boxSizing: border-box` is what makes the padding shrink the
- * children's height rather than growing the region past its grid track.
- *
- * The amount comes from `reservedDrawerSpace()`, which lives next to the heights
- * it derives from so the layout cannot drift out of agreement with the drawer.
+ * `overflow: hidden` stays, and stays load-bearing for the same reason it always
+ * was: a `translateY` does not affect layout but it does extend the scrollable
+ * overflow area, so an unclipped region can be scrolled taller than its grid
+ * track — and the first thing to scroll it (sending a message, which scrolls the
+ * transcript to the bottom) slides the whole window grid up, dragging the icon
+ * rail with it and shearing the crest off the top of the frame. Found by driving a
+ * real turn; no unit test sees it, because jsdom performs no layout.
  */
-function drawerHostStyle(
-  gridColumn: string,
-  reserved: number,
-  isChatShell: boolean,
-): React.CSSProperties {
+function panelHostStyle(gridColumn: string, isChatShell: boolean): React.CSSProperties {
   return {
     gridColumn,
     position: 'relative',
     boxSizing: 'border-box',
-    paddingBottom: reserved,
     display: 'grid',
     // Chat + brief keep their own tracks inside the host, so wrapping them does
     // not change the window's column template.
@@ -79,15 +68,6 @@ function drawerHostStyle(
     gridTemplateRows: '100%',
     minWidth: 0,
     minHeight: 0,
-    // The reopen bar parks itself at `translateY(100%)` while the drawer is up,
-    // i.e. 34px *below* this host's bottom edge. A transform does not affect
-    // layout but it does extend the scrollable overflow area, so without this
-    // clip the host is 34px taller than its grid track — and the first thing to
-    // scroll it (sending a message, which scrolls the transcript to the bottom)
-    // slides the whole window grid up by 34px, dragging the icon rail and the
-    // sidebar to `top: -20` and shearing the crest off the top of the frame.
-    // Found by driving a real turn with the drawer open; no unit test sees it,
-    // because jsdom performs no layout and so has no overflow to scroll.
     overflow: 'hidden',
   };
 }
@@ -266,7 +246,14 @@ function AppLayoutContent() {
       <DiscoveryProvider value={discovery}>
         <ViewProvider value={view}>
           <div data-testid="app-layout" data-layout="mobile" data-surface={view.surface}>
-            <AppWindow variant="mobile">
+            <AppWindow
+              variant="mobile"
+              bottomInset={reserved}
+              /* On mobile the composer is nearly the whole screen, so the drawer
+                 occluding it matters more here, not less — hence the same
+                 reserved strip as on desktop. */
+              footer={<LiveArchitectureDrawer />}
+            >
               <IconRail
                 orientation="row"
                 activeView={activePanel}
@@ -284,20 +271,11 @@ function AppLayoutContent() {
                   isDossierActive={isDossier}
                   onOpenDossier={view.openDossier}
                 />
-                {/* On mobile the composer is nearly the whole screen, so the
-                    drawer occluding it matters more here, not less — hence the
-                    same reserved space as on desktop. `flex: 1` alongside
-                    `minHeight: 0` keeps this region filling the cell rather than
-                    sizing to its content, which would float the composer
-                    mid-screen. */}
+                {/* `flex: 1` alongside `minHeight: 0` keeps this region filling
+                    the cell rather than sizing to its content, which would float
+                    the composer mid-screen. */}
                 <div
-                  style={{
-                    ...windowCellGrowStyle,
-                    position: 'relative',
-                    boxSizing: 'border-box',
-                    paddingBottom: reserved,
-                  }}
-                  data-drawer-reserved={reserved}
+                  style={{ ...windowCellGrowStyle, position: 'relative' }}
                 >
                   {/* The dossier replaces both panels full-bleed rather than
                       sitting inside one of them. */}
@@ -308,11 +286,6 @@ function AppLayoutContent() {
                   ) : (
                     profilePanel
                   )}
-                  {/* The diagram is 916px wide, so on a phone it scrolls
-                      horizontally rather than being withheld — a presenter may
-                      well be on a laptop in a narrow window, and hiding the
-                      drawer there is worse. */}
-                  <LiveArchitectureDrawer />
                 </div>
               </div>
             </AppWindow>
@@ -333,6 +306,12 @@ function AppLayoutContent() {
               three, so it does not shift under the cursor. */}
           <AppWindow
             variant="desktop"
+            bottomInset={reserved}
+            /* The drawer follows both surfaces rather than unmounting with the
+               chat shell: closing it on a surface switch would drop the
+               presenter's place in the walkthrough mid-sentence. Rendered by the
+               window, so its bar is one line across the whole bottom edge. */
+            footer={<LiveArchitectureDrawer />}
             columns={
               isDossier
                 ? DOSSIER_COLUMNS
@@ -364,32 +343,24 @@ function AppLayoutContent() {
               dossierToggleRef={view.dossierToggleRef}
             />
             {isDossier ? (
-              /* The drawer follows the dossier rather than unmounting with the
-                 chat shell: closing it on a surface switch would drop the
-                 presenter's place in the walkthrough mid-sentence. */
               <div
-                style={drawerHostStyle(DOSSIER_COLUMN_SPAN, reserved, false)}
-                data-drawer-reserved={reserved}
+                style={panelHostStyle(DOSSIER_COLUMN_SPAN, false)}
               >
                 <DossierView />
-                <LiveArchitectureDrawer />
               </div>
             ) : (
               <>
                 {hasListColumn && <SessionSidebar isMobile={false} />}
                 <div
-                  style={drawerHostStyle(
+                  style={panelHostStyle(
                     hasListColumn ? CHAT_COLUMNS_SPAN : CHAT_COLUMNS_SPAN_NO_LIST,
-                    reserved,
                     true,
                   )}
-                  data-drawer-reserved={reserved}
                 >
                   <div style={windowCellStyle}>
                     <ChatPanel />
                   </div>
                   <div style={windowCellStyle}>{profilePanel}</div>
-                  <LiveArchitectureDrawer />
                 </div>
               </>
             )}

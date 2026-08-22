@@ -14,6 +14,23 @@ interface AppWindowProps {
    * always a single 100% column.
    */
   columns?: string;
+  /**
+   * A full-width strip pinned to the foot of the frame — the architecture drawer.
+   *
+   * Rendered by the window rather than by one of the columns because it has to be
+   * one unbroken line across the whole bottom edge, and no single grid track can
+   * be that. It is laid out on top of the frame's own padding box, so pair it with
+   * `bottomInset` to keep it from covering the columns.
+   */
+  footer?: React.ReactNode;
+  /**
+   * Height the frame gives up at the bottom, for `footer` to occupy.
+   *
+   * Padding on the frame rather than on each column: the strip spans every track,
+   * so every track has to make room for it, and one number on the frame cannot
+   * drift out of agreement with itself the way four could.
+   */
+  bottomInset?: number;
   children?: React.ReactNode;
 }
 
@@ -68,7 +85,11 @@ function getPageStyle(variant: AppWindowVariant): React.CSSProperties {
   };
 }
 
-function getFrameStyle(variant: AppWindowVariant, columns?: string): React.CSSProperties {
+function getFrameStyle(
+  variant: AppWindowVariant,
+  columns?: string,
+  bottomInset = 0,
+): React.CSSProperties {
   const isMobile = variant === 'mobile';
   return {
     height: '100%',
@@ -76,10 +97,18 @@ function getFrameStyle(variant: AppWindowVariant, columns?: string): React.CSSPr
     // See `layout.windowMaxWidth`: past this width extra screen buys nothing but
     // empty cream, so the surplus goes to the linen margin instead.
     maxWidth: isMobile ? undefined : layout.windowMaxWidth,
+    boxSizing: 'border-box',
     backgroundColor: colors.porcelain,
     borderRadius: isMobile ? 0 : radii.window,
     overflow: 'hidden',
     boxShadow: isMobile ? 'none' : WINDOW_SHADOW,
+    // The containing block for the footer strip. Absolute rather than a grid row
+    // so the strip can slide (the drawer animates on `transform`) without the
+    // window's tracks resizing under it mid-transition.
+    position: 'relative',
+    // `border-box` is what makes this shrink the tracks rather than growing the
+    // frame past the viewport.
+    paddingBottom: bottomInset,
     display: 'grid',
     // Mobile stacks: claret top strip, then whatever the caller puts below it.
     gridTemplateColumns: isMobile ? '100%' : (columns ?? DESKTOP_COLUMNS),
@@ -93,15 +122,44 @@ function getFrameStyle(variant: AppWindowVariant, columns?: string): React.CSSPr
  * Children are laid out directly as grid items, so each child is responsible
  * for its own `minWidth: 0` / `minHeight: 0` (see `windowCellStyle`).
  */
-export function AppWindow({ variant, columns, children }: AppWindowProps) {
+export function AppWindow({
+  variant,
+  columns,
+  footer,
+  bottomInset,
+  children,
+}: AppWindowProps) {
   return (
     <div style={getPageStyle(variant)} data-testid="app-window-page">
-      <div style={getFrameStyle(variant, columns)} data-testid="app-window">
+      <div
+        style={getFrameStyle(variant, columns, bottomInset)}
+        data-testid="app-window"
+        // The reservation is the frame's, so the assertion about it belongs here
+        // too — on the element whose padding is doing the work.
+        data-bottom-inset={bottomInset ?? 0}
+      >
         {children}
+        {footer !== undefined && (
+          // Zero height, so the strip's own children size it upward from the
+          // frame's bottom edge. `left/right: 0` on the *padding* box is what
+          // takes it across the icon rail as well as the panels.
+          <div style={footerHostStyle} data-testid="app-window-footer">
+            {footer}
+          </div>
+        )}
       </div>
     </div>
   );
 }
+
+const footerHostStyle: React.CSSProperties = {
+  position: 'absolute',
+  left: 0,
+  right: 0,
+  bottom: 0,
+  height: 0,
+  zIndex: 20,
+};
 
 /**
  * Shared style for a scrollable grid child of the window.

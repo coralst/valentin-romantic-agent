@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Concept 4 — Orbit / constellation</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+  .drawer { position: absolute; top: 56px; left: var(--rail); right: 0; bottom: 0; background:
+    radial-gradient(120% 90% at 45% 45%, #FFF9F5 0%, #F7EDE2 55%, #F0E2DC 100%); display: flex; flex-direction: column; z-index: 2; }
+  .drawer-head { padding: 16px 24px 0; display: flex; justify-content: space-between; align-items: flex-start; }
+  .drawer-head h2 { font-family: var(--serif); font-size: 22px; margin: 0 0 3px; color: var(--deep-plum); }
+  .drawer-head p { margin: 0; font-size: 12.5px; color: var(--text-secondary); }
+  .play { background: var(--accent-gradient); color: #fff; border: 0; border-radius: 999px; padding: 9px 18px; font: 600 12.5px var(--sans); cursor: pointer; }
+
+  .sky { flex: 1; position: relative; }
+  .ring { position: absolute; left: 50%; top: 50%; border-radius: 50%; border: 1px dashed rgba(155,58,82,.16); transform: translate(-50%,-50%); }
+  .r1 { width: 300px; height: 300px; }
+  .r2 { width: 452px; height: 452px; border-style: dotted; }
+
+  .heart {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+    width: 116px; height: 116px; border-radius: 50%; background: var(--accent-gradient);
+    display: grid; place-items: center; color: #fff; text-align: center;
+    box-shadow: 0 0 0 10px rgba(212,160,168,.22), 0 18px 40px rgba(155,58,82,.35); z-index: 3;
+  }
+  .heart b { font-family: var(--serif); font-size: 17px; display: block; }
+  .heart small { font-size: 10px; opacity: .85; letter-spacing: .07em; }
+
+  .spinner { position: absolute; left: 50%; top: 50%; width: 0; height: 0; animation: spin 60s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .sat { position: absolute; animation: spin 60s linear infinite reverse; }
+  .chip {
+    transform: translate(-50%,-50%); position: absolute;
+    background: #fff; border: 1px solid var(--border); border-radius: 999px;
+    padding: 7px 13px 7px 8px; display: flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer;
+    box-shadow: 0 4px 14px rgba(92,36,52,.10); transition: transform .2s, box-shadow .2s, border-color .2s;
+  }
+  .chip:hover { box-shadow: 0 10px 24px rgba(92,36,52,.18); }
+  .chip .ic { width: 24px; height: 24px; border-radius: 50%; background: var(--blush); display: grid; place-items: center; font-size: 12px; }
+  .chip.lit { border-color: var(--burgundy); background: #fff; box-shadow: 0 0 0 4px rgba(212,160,168,.35), 0 10px 26px rgba(155,58,82,.25); }
+  .beam { position: absolute; left: 50%; top: 50%; height: 2px; transform-origin: 0 50%; background: linear-gradient(90deg, rgba(155,58,82,.75), rgba(212,160,168,0)); opacity: 0; transition: opacity .3s; }
+  .beam.lit { opacity: 1; }
+
+  .caption {
+    position: absolute; left: 50%; bottom: 88px; transform: translateX(-50%);
+    background: var(--deep-plum); color: #fff; font-size: 12.5px; padding: 9px 16px;
+    border-radius: 999px; opacity: 0; transition: opacity .3s; white-space: nowrap;
+  }
+  .caption.show { opacity: .95; }
+
+  .tray {
+    border-top: 1px solid rgba(155,58,82,.12); background: rgba(255,255,255,.72); backdrop-filter: blur(4px);
+    padding: 12px 24px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  .tray .lbl { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--warm-taupe); font-weight: 700; margin-right: 4px; }
+  .tray .chip { position: static; transform: none; font-weight: 500; color: var(--text-secondary); box-shadow: none; }
+  .tray .chip .ic { background: var(--champagne); }
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <a href="index.html">← all concepts</a>
+  <a href="concept-1-fanout.html">1 · Fan-out canvas</a>
+  <a href="concept-2-capability-rail.html">2 · Capability rail</a>
+  <a href="concept-3-wiring-board.html">3 · Wiring board</a>
+  <a class="here" href="concept-4-orbit.html">4 · Orbit / constellation</a>
+</div>
+
+<div class="concept-header">
+  <span class="tag">Concept 4</span>
+  <h1>Orbit — the demo-friendly one</h1>
+  <p>Valentin at the centre, connected services in slow orbit, unconnected ones waiting in the tray below (click one to launch it into orbit). Hit <b>Play the plan</b> and the ring lights up in sequence with captions — that single animation explains multi-tool orchestration better than a paragraph. Highest wow, least utility: pair it with Concept 3 for the actual settings.</p>
+</div>
+
+<div class="frame">
+  <nav class="rail">
+    <div class="avatar">🌹</div>
+    <button class="rail-btn"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span class="tip">New chat</span></button>
+    <button class="rail-btn"><svg viewBox="0 0 24 24"><path d="M20.8 8.6a5 5 0 0 0-8.8-2.6A5 5 0 0 0 3.2 8.6c0 4.3 8.8 10 8.8 10s8.8-5.7 8.8-10Z"/></svg><span class="tip">Her profile</span></button>
+    <div class="rail-sep"></div>
+    <button class="rail-btn active"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><ellipse cx="12" cy="12" rx="10" ry="4.4" transform="rotate(-24 12 12)"/><circle cx="20.2" cy="8.6" r="1.6" fill="currentColor" stroke="none"/></svg><span class="badge">5</span><span class="tip">Valentin's world</span></button>
+    <button class="rail-btn"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M17.5 14v7M14 17.5h7"/></svg><span class="dot-live"></span><span class="tip">Live architecture</span></button>
+    <div class="rail-spacer"></div>
+    <button class="rail-btn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg><span class="tip">Settings</span></button>
+  </nav>
+
+  <div class="stage"><div class="topbar"><div><div class="title">Valentin's world</div><div class="sub">5 services in orbit</div></div></div></div>
+
+  <section class="drawer">
+    <div class="drawer-head">
+      <div><h2>Valentin's world</h2><p>Everything he can reach on your behalf.</p></div>
+      <button class="play" id="play">▶ Play the plan</button>
+    </div>
+
+    <div class="sky" id="sky">
+      <div class="ring r1"></div>
+      <div class="ring r2"></div>
+      <div class="heart"><div><b>Valentin</b><small>REMEMBERS HER</small></div></div>
+      <div id="beams"></div>
+      <div class="spinner" id="spinner"></div>
+      <div class="caption" id="caption"></div>
+    </div>
+
+    <div class="tray">
+      <span class="lbl">Not connected</span>
+      <span class="chip" data-icon="🛒" data-name="Amazon Fresh">🛒&nbsp; Amazon Fresh <b style="color:var(--burgundy)">+</b></span>
+      <span class="chip" data-icon="✈️" data-name="Travel">✈️&nbsp; Travel <b style="color:var(--burgundy)">+</b></span>
+      <span class="chip" data-icon="🎭" data-name="Tickets">🎭&nbsp; Tickets <b style="color:var(--burgundy)">+</b></span>
+      <span class="muted" style="margin-left:auto;font-size:11.5px">Click one to put it in orbit</span>
+    </div>
+  </section>
+</div>
+
+<script>
+const orbit = [
+  { icon:'📅', name:'Calendar',  r:150, step:'Checks you are free Friday' },
+  { icon:'🍣', name:'OpenTable', r:150, step:'Holds a quiet table at 8pm' },
+  { icon:'🚗', name:'Ride',      r:226, step:'Books the car for 7:40' },
+  { icon:'💐', name:'Flowers',   r:226, step:'Tulips waiting at the table' },
+  { icon:'🎵', name:'Spotify',   r:226, step:'Playlist for the drive' },
+];
+
+const spinner = document.getElementById('spinner');
+const beams   = document.getElementById('beams');
+const caption = document.getElementById('caption');
+
+function render() {
+  spinner.innerHTML = ''; beams.innerHTML = '';
+  const inner = orbit.filter(o => o.r === 150), outer = orbit.filter(o => o.r !== 150);
+  [inner, outer].forEach((set, ring) => set.forEach((o, i) => {
+    const a = (i / set.length) * Math.PI * 2 + (ring ? 0.5 : 0);
+    const x = Math.cos(a) * o.r, y = Math.sin(a) * o.r;
+
+    const sat = document.createElement('div');
+    sat.className = 'sat';
+    sat.style.left = x + 'px'; sat.style.top = y + 'px';
+    sat.innerHTML = `<span class="chip"><span class="ic">${o.icon}</span>${o.name}</span>`;
+    spinner.appendChild(sat);
+    o.el = sat.firstChild;
+
+    const beam = document.createElement('div');
+    beam.className = 'beam';
+    beam.style.width = o.r + 'px';
+    beam.style.transform = `rotate(${a}rad)`;
+    beams.appendChild(beam);
+    o.beam = beam;
+  }));
+}
+render();
+
+document.querySelectorAll('.tray .chip').forEach(c => c.addEventListener('click', () => {
+  orbit.push({ icon: c.dataset.icon, name: c.dataset.name, r: 226, step: 'Newly connected' });
+  c.remove();
+  render();
+}));
+
+document.getElementById('play').addEventListener('click', () => {
+  const seq = orbit.filter(o => o.step !== 'Newly connected');
+  seq.forEach((o, i) => {
+    setTimeout(() => {
+      seq.forEach(x => { x.el.classList.remove('lit'); x.beam.classList.remove('lit'); });
+      o.el.classList.add('lit'); o.beam.classList.add('lit');
+      caption.textContent = o.step;
+      caption.classList.add('show');
+    }, i * 1200);
+  });
+  setTimeout(() => {
+    seq.forEach(x => { x.el.classList.remove('lit'); x.beam.classList.remove('lit'); });
+    caption.textContent = 'Friday is handled. She never sees the wiring.';
+    setTimeout(() => caption.classList.remove('show'), 2600);
+  }, seq.length * 1200);
+});
+</script>
+</body>
+</html>

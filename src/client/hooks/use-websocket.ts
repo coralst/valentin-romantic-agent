@@ -121,6 +121,26 @@ export function useWebSocket({
    */
   const sessionIdRef = useRef<string | null>(sessionId);
   sessionIdRef.current = sessionId;
+  /**
+   * Whether the server has accepted this connection's `auth` frame.
+   *
+   * The gateway honours exactly one pre-auth event and *closes the connection*
+   * on any other (ws-gateway.ts), so the window between `onopen` and `auth_ok`
+   * is not merely unusable — sending into it destroys the socket and loses the
+   * turn. The window is real rather than theoretical: the auth frame waits on
+   * `getAccessToken()`, which may go to the network to refresh, and a session id
+   * minted by `/api/demo/login` is already in state before the socket opens, so
+   * nothing else was stopping a send.
+   */
+  const isAuthedRef = useRef(false);
+  /**
+   * Turns sent before `auth_ok` arrived, replayed in order once it does.
+   *
+   * Queued rather than dropped, because a dropped send is invisible: `ChatPanel`
+   * puts the user's own bubble on screen itself, so a lost turn looks exactly
+   * like an agent that chose not to answer.
+   */
+  const pendingSendsRef = useRef<ClientEvent[]>([]);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -143,7 +163,9 @@ export function useWebSocket({
 
   const startHeartbeat = useCallback(() => {
     heartbeatTimerRef.current = setInterval(() => {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
+      // Authenticated too: a ping is an ordinary event to the gateway, so one
+      // landing before `auth_ok` would close the connection it exists to keep.
+      if (isAuthedRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
         const ping: ClientEvent = {
           type: 'ping',
           payload: {},
@@ -166,8 +188,15 @@ export function useWebSocket({
     wsRef.current = ws;
 
     ws.onopen = () => {
-      setConnectionStatus('connected');
-      chatDispatch({ type: 'SET_CONNECTION', status: 'connected' });
+      /*
+       * Open is not yet usable, so it is not yet reported as `connected`.
+       *
+       * "Connected" means "a turn sent now will be answered", which is only true
+       * after `auth_ok`. Anything reading this — the connection banner, and the
+       * guided intro deciding between the live socket and its script — wants that
+       * meaning rather than the transport's.
+       */
+      isAuthedRef.current = false;
       setLastError(null);
       reconnectAttemptRef.current = 0;
       startHeartbeat();
@@ -210,6 +239,21 @@ export function useWebSocket({
         if (serverEvent.type === 'error') {
           setLastError(serverEvent.payload.message);
         }
+        if (serverEvent.type === 'auth_ok') {
+          // Only now is the connection able to carry a turn. Flush in order, so
+          // a queued turn keeps its place ahead of whatever is typed next.
+          isAuthedRef.current = true;
+          setConnectionStatus('connected');
+          chatDispatch({ type: 'SET_CONNECTION', status: 'connected' });
+
+          const queued = pendingSendsRef.current;
+          pendingSendsRef.current = [];
+          for (const frame of queued) {
+            if (ws.readyState !== WebSocket.OPEN) break;
+            ws.send(JSON.stringify(frame));
+            publishOutboundWsEvent(frame);
+          }
+        }
         dispatchServerEvent(serverEvent, chatDispatch, preferencesDispatch);
       } catch {
         // Malformed message — ignore
@@ -218,6 +262,7 @@ export function useWebSocket({
 
     ws.onclose = (event) => {
       clearTimers();
+      isAuthedRef.current = false;
       setConnectionStatus('reconnecting');
       chatDispatch({ type: 'SET_CONNECTION', status: 'reconnecting' });
 
@@ -266,14 +311,28 @@ export function useWebSocket({
 
   const sendMessage = useCallback(
     (content: string) => {
-      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN || !sessionId) {
-        return;
-      }
+      if (!sessionId) return;
+
       const event: ClientEvent = {
         type: 'send_message',
         payload: { sessionId, content },
         timestamp: new Date().toISOString(),
       };
+
+      /*
+       * Held until the connection is authenticated, and dropped only when there
+       * is no connection at all.
+       *
+       * Sending early does not merely fail — the gateway closes the socket on a
+       * pre-auth event, which loses this turn *and* forces a reconnect. Waiting
+       * costs the few hundred milliseconds the token takes.
+       */
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      if (!isAuthedRef.current) {
+        pendingSendsRef.current.push(event);
+        return;
+      }
+
       wsRef.current.send(JSON.stringify(event));
       publishOutboundWsEvent(event);
     },

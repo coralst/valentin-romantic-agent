@@ -228,11 +228,36 @@ describe('WebSocket observation seam', () => {
 
   let observed: ObservedWsEvent[];
 
-  function renderSocket(sessionId: string | null = 'sess-1') {
+  /** The frame the server sends once it has accepted the `auth` frame. */
+  function authOk() {
+    return { type: 'auth_ok', payload: {}, timestamp: new Date().toISOString() };
+  }
+
+  /**
+   * Renders the hook and drives the socket to the state a turn can be sent in.
+   *
+   * That state is `auth_ok`, not `open` — the gateway closes the connection on any
+   * pre-auth event, so the hook holds sends until it arrives. Tests that want the
+   * unauthenticated window pass `{ authenticate: false }`.
+   */
+  function renderSocket(
+    sessionId: string | null = 'sess-1',
+    { authenticate = true }: { authenticate?: boolean } = {},
+  ) {
+    /*
+     * Both dispatches are hoisted out of the render callback deliberately.
+     *
+     * They are `connect`'s dependencies, so a fresh `vi.fn()` per render makes the
+     * hook tear down and rebuild the socket on every state change — including the
+     * one `auth_ok` causes, which would then land on an abandoned socket. The real
+     * app passes `useReducer` dispatches, which are stable.
+     */
+    const chatDispatch = vi.fn();
+    const preferencesDispatch = vi.fn();
     const result = renderHook(() =>
       useWebSocket({
-        chatDispatch: vi.fn(),
-        preferencesDispatch: vi.fn(),
+        chatDispatch,
+        preferencesDispatch,
         sessionId,
         url: 'ws://localhost:3001/ws',
       }),
@@ -241,7 +266,15 @@ describe('WebSocket observation seam', () => {
     act(() => {
       socket.onopen?.();
     });
-    return { ...result, socket };
+    if (authenticate) {
+      act(() => {
+        socket.receive(authOk());
+      });
+      // Not traffic under test in most cases: drop the frame the handshake itself
+      // published so assertions can count from zero.
+      observed = observed.filter((o) => o.event.type !== 'auth_ok');
+    }
+    return { ...result, socket, chatDispatch };
   }
 
   beforeEach(() => {
@@ -388,5 +421,124 @@ describe('WebSocket observation seam', () => {
     });
 
     expect(chatDispatch).toHaveBeenCalledWith({ type: 'SET_TYPING', isTyping: true });
+  });
+
+  /**
+   * The window between `onopen` and `auth_ok`.
+   *
+   * `onopen` cannot send the `auth` frame synchronously — it awaits
+   * `getAccessToken()`, which may go to the network — and the gateway *closes the
+   * connection* on any event that arrives before auth. So a turn sent in that
+   * window is not merely refused: it is lost, and the socket is torn down with it.
+   * In production this cost roughly half of all first turns, which is what pushed
+   * the guided intro onto its scripted fallback.
+   */
+  describe('the pre-auth window', () => {
+    /** Frames the hook itself put on the wire, ignoring the auth handshake. */
+    function turns(socket: { sent: string[] }) {
+      return socket.sent
+        .map((raw) => JSON.parse(raw) as { type: string; payload?: { content?: string } })
+        .filter((f) => f.type !== 'auth');
+    }
+
+    it('does not report connected until auth_ok', () => {
+      const { result, socket, chatDispatch } = renderSocket('sess-1', {
+        authenticate: false,
+      });
+
+      expect(result.current.connectionStatus).toBe('disconnected');
+
+      act(() => {
+        socket.receive(authOk());
+      });
+
+      expect(result.current.connectionStatus).toBe('connected');
+      expect(chatDispatch).toHaveBeenCalledWith({
+        type: 'SET_CONNECTION',
+        status: 'connected',
+      });
+    });
+
+    it('holds a turn sent before auth_ok instead of putting it on the wire', () => {
+      const { result, socket } = renderSocket('sess-1', { authenticate: false });
+
+      act(() => {
+        result.current.sendMessage('She loves white peonies.');
+      });
+
+      expect(turns(socket)).toEqual([]);
+      // Nor is it published: the inspector would otherwise show a turn the server
+      // never saw.
+      expect(observed.filter((o) => o.direction === 'outbound')).toEqual([]);
+    });
+
+    it('flushes held turns in order once auth_ok arrives', () => {
+      const { result, socket } = renderSocket('sess-1', { authenticate: false });
+
+      act(() => {
+        result.current.sendMessage('first');
+        result.current.sendMessage('second');
+      });
+
+      act(() => {
+        socket.receive(authOk());
+      });
+
+      expect(turns(socket).map((f) => f.payload?.content)).toEqual(['first', 'second']);
+    });
+
+    it('flushes each held turn exactly once across two auth_ok frames', () => {
+      // A reconnect delivers a second `auth_ok`; the queue must already be empty
+      // or the presenter's turn is sent twice and answered twice.
+      const { result, socket } = renderSocket('sess-1', { authenticate: false });
+
+      act(() => {
+        result.current.sendMessage('only once');
+      });
+      act(() => {
+        socket.receive(authOk());
+      });
+      act(() => {
+        socket.receive(authOk());
+      });
+
+      expect(turns(socket)).toHaveLength(1);
+    });
+
+    it('sends straight through once authenticated', () => {
+      const { result, socket } = renderSocket();
+
+      act(() => {
+        result.current.sendMessage('She loves white peonies.');
+      });
+
+      expect(turns(socket)).toHaveLength(1);
+      expect(observed.filter((o) => o.direction === 'outbound')).toHaveLength(1);
+    });
+
+    it('suppresses the heartbeat until auth_ok', () => {
+      vi.useFakeTimers();
+      try {
+        const { socket } = renderSocket('sess-1', { authenticate: false });
+
+        act(() => {
+          vi.advanceTimersByTime(90_000);
+        });
+        // A ping is an ordinary event to the gateway, so one landing early would
+        // close the connection the heartbeat exists to keep alive.
+        expect(turns(socket)).toEqual([]);
+
+        act(() => {
+          socket.receive(authOk());
+        });
+        act(() => {
+          vi.advanceTimersByTime(30_000);
+        });
+
+        expect(turns(socket).map((f) => f.type)).toEqual(['ping']);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 });

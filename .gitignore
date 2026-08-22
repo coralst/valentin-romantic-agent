@@ -37,6 +37,18 @@ Thumbs.db
 .kiro/cache/
 .kiro/logs/
 
+# Kiro pr-monitoring runtime state (written by .kiro/skills/pr-monitoring)
+.kiro/.pr-monitoring-*.json
+.kiro/.pr-feedback-*.json
+.kiro/.pr-monitor-*.log
+
+# Claude Code
+# Agent worktrees are full checkouts — never commit them.
+.claude/worktrees/
+# Per-machine permissions and overrides. Shared config belongs in
+# .claude/settings.json, which IS committed.
+.claude/settings.local.json
+
 # Test
 coverage/
 test-results/

@@ -44,11 +44,15 @@ describe('FamilyTree', () => {
     expect(screen.getByTestId('family-row-peer')).toContainElement(her);
   });
 
-  it('still shows the peer row when only she is on it', () => {
-    renderTree([person({ id: 'miriam', name: 'Miriam', generation: 'elder' })]);
+  it('draws all three rows so an empty generation can still be started', async () => {
+    // Found by driving the real page: skipping empty rows left no way to add a
+    // first younger person once anyone else existed.
+    const props = renderTree([person({ id: 'miriam', name: 'Miriam', generation: 'elder' })]);
     expect(screen.getByTestId('family-row-peer')).toBeInTheDocument();
-    // Nothing younger has been recorded, so that row is not drawn empty.
-    expect(screen.queryByTestId('family-row-younger')).not.toBeInTheDocument();
+    expect(screen.getByTestId('family-row-younger')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId('family-add-younger'));
+    expect(props.onAddPerson).toHaveBeenCalledWith('younger');
   });
 
   it('falls back to "Her" when the name is not known yet', () => {

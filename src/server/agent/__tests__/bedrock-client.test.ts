@@ -296,4 +296,55 @@ describe('AwsBedrockClient', () => {
       expect(records[0].data).toMatchObject({ sessionId: 'unknown' });
     });
   });
+
+  /**
+   * A reply cut off mid-word is the one failure an audience spots instantly, and
+   * it shipped: the token ceiling was low enough that any question inviting
+   * detail overran it, and nothing trimmed the remains.
+   */
+  describe('a reply that runs out of tokens', () => {
+    it('ends on a sentence instead of mid-word', async () => {
+      mockSend.mockResolvedValueOnce({
+        output: {
+          message: {
+            content: [
+              { text: 'She sounds wonderful. I would start with the jazz — does she prefer live sets o' },
+            ],
+          },
+        },
+        stopReason: 'max_tokens',
+      });
+
+      const result = await client.generateResponse([sampleMessage], 'You are Valentin.');
+
+      expect(result.content).toBe('She sounds wonderful.');
+    });
+
+    it('leaves a reply that finished on its own completely alone', async () => {
+      const whole = 'She sounds wonderful. Tell me about the jazz — live sets or vinyl?';
+      mockSend.mockResolvedValueOnce({
+        output: { message: { content: [{ text: whole }] } },
+        stopReason: 'end_turn',
+      });
+
+      const result = await client.generateResponse([sampleMessage], 'You are Valentin.');
+
+      expect(result.content).toBe(whole);
+    });
+
+    /**
+     * Half a sentence still beats an empty bubble, so a reply with no boundary
+     * to cut back to is passed through rather than emptied.
+     */
+    it('passes through a reply with no sentence boundary at all', async () => {
+      mockSend.mockResolvedValueOnce({
+        output: { message: { content: [{ text: 'She sounds like someone who' }] } },
+        stopReason: 'max_tokens',
+      });
+
+      const result = await client.generateResponse([sampleMessage], 'You are Valentin.');
+
+      expect(result.content).toBe('She sounds like someone who');
+    });
+  });
 });

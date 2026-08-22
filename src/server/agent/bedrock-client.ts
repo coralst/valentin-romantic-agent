@@ -69,6 +69,37 @@ function toBedrockMessages(messages: ChatMessage[]): Message[] {
   }));
 }
 
+/**
+ * How many tokens a single reply may use.
+ *
+ * Was 512, which Sonnet routinely overran on any question inviting detail —
+ * the reply then arrived cut off mid-word ("…a quiet intimate dinner o"), on
+ * screen, with no indication anything was missing. 1024 covers the replies this
+ * agent actually writes; `trimToLastSentence` handles the rest.
+ */
+const MAX_REPLY_TOKENS = 1024;
+
+/**
+ * Cut a reply back to its last complete sentence.
+ *
+ * Only used when Bedrock reports it stopped because it ran out of tokens. A
+ * mid-word stop is the one failure the audience notices immediately, and ending
+ * a beat early reads as brevity rather than as a bug. Returns the text
+ * unchanged when no sentence boundary can be found — half a sentence still
+ * beats an empty bubble.
+ */
+export function trimToLastSentence(text: string): string {
+  const lastEnd = Math.max(
+    text.lastIndexOf('. '),
+    text.lastIndexOf('! '),
+    text.lastIndexOf('? '),
+    // Trailing terminator with no space after it: the reply ended cleanly.
+    /[.!?]$/.test(text.trimEnd()) ? text.trimEnd().length - 1 : -1,
+  );
+  if (lastEnd < 0) return text;
+  return text.slice(0, lastEnd + 1).trimEnd();
+}
+
 /** Extract text content from Bedrock response content blocks */
 function extractTextFromBlocks(blocks: ContentBlock[] | undefined): string {
   if (!blocks) return '';
@@ -172,7 +203,7 @@ export class AwsBedrockClient implements BedrockClient {
         system,
         messages: bedrockMessages,
         inferenceConfig: {
-          maxTokens: 512,
+          maxTokens: MAX_REPLY_TOKENS,
           // Claude Sonnet 4.5 rejects temperature and topP together — use temperature only.
           temperature: 0.8,
         },
@@ -191,14 +222,19 @@ export class AwsBedrockClient implements BedrockClient {
         return { content: blockedContent || 'I can only help with learning about your partner. Could you tell me more about their preferences?' };
       }
 
-      const content = extractTextFromBlocks(response.output?.message?.content);
+      const raw = extractTextFromBlocks(response.output?.message?.content);
 
-      if (!content) {
+      if (!raw) {
         throw new LlmError('Bedrock returned empty response', {
           modelId: this.modelId,
           stopReason: response.stopReason,
         });
       }
+
+      // `max_tokens` means the model was still writing. Ending on a sentence is
+      // the difference between "he was concise" and "the app is broken".
+      const content =
+        response.stopReason === 'max_tokens' ? trimToLastSentence(raw) : raw;
 
       return { content };
     } catch (err) {

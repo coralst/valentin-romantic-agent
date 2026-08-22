@@ -6,13 +6,24 @@
  * subscribe to a context (an event handler mid-reconnect, for instance). The
  * provider in context/auth-context.tsx owns the lifecycle and writes here.
  *
- * The access token is held in memory only. The refresh token goes in
+ * A real login's access token is held in memory only. The refresh token goes in
  * `sessionStorage`, not `localStorage`, so closing the tab ends the session and a
  * shared browser is not left holding a thirty-day credential.
+ *
+ * A demo session is the one exception, and it stores the *access* token. It has
+ * to: the demo refresh token belongs to a server-only Cognito client, so it is
+ * deliberately thrown away, which left a reload with nothing to resume from — the
+ * visitor was dropped back on the login screen and their conversation looked
+ * lost. What is kept is narrower than it sounds: a short-lived access token for a
+ * shared synthetic account that holds nothing but fixture data, in
+ * `sessionStorage` like everything else here, so it dies with the tab and a
+ * shared browser is not left holding it. That trade is what makes refreshing the
+ * page a non-event instead of a data loss.
  */
 
 const REFRESH_KEY = 'valentin.auth.refresh';
 const VISITOR_KEY = 'valentin.auth.visitor';
+const DEMO_KEY = 'valentin.auth.demo';
 
 /** Refresh this long before expiry, so a request never rides an expiring token */
 const REFRESH_MARGIN_MS = 60_000;
@@ -22,6 +33,22 @@ export interface TokenSession {
   refreshToken: string | null;
   /** Epoch milliseconds */
   expiresAt: number;
+  /**
+   * A demo sign-in, whose access token is worth surviving a reload.
+   *
+   * `demoLabel` rides along because the token cannot name the persona — every
+   * persona shares one account — and the header chip has to after a reload too.
+   */
+  demo?: boolean;
+  demoLabel?: string;
+}
+
+/** What a previous page load in this tab left of a demo session */
+export interface StoredDemoSession {
+  accessToken: string;
+  /** Epoch milliseconds */
+  expiresAt: number;
+  label?: string;
 }
 
 type Refresher = (refreshToken: string) => Promise<TokenSession>;
@@ -66,6 +93,14 @@ export function setTokenSession(next: TokenSession): void {
   if (next.refreshToken) {
     sessionStorage.setItem(REFRESH_KEY, next.refreshToken);
   }
+  if (next.demo) {
+    const stored: StoredDemoSession = {
+      accessToken: next.accessToken,
+      expiresAt: next.expiresAt,
+      ...(next.demoLabel ? { label: next.demoLabel } : {}),
+    };
+    sessionStorage.setItem(DEMO_KEY, JSON.stringify(stored));
+  }
 }
 
 export function clearTokenSession(): void {
@@ -74,6 +109,8 @@ export function clearTokenSession(): void {
   visitorId = null;
   sessionStorage.removeItem(REFRESH_KEY);
   sessionStorage.removeItem(VISITOR_KEY);
+  // Signing out must not leave a token a reload could pick back up.
+  sessionStorage.removeItem(DEMO_KEY);
 }
 
 /** Remember which demo visitor this browser is, as the server just assigned it */
@@ -90,6 +127,36 @@ export function peekVisitorId(): string | null {
 /** The stored refresh token, if a previous page load left one */
 export function storedRefreshToken(): string | null {
   return sessionStorage.getItem(REFRESH_KEY);
+}
+
+/**
+ * The demo session a previous load in this tab left behind, if any.
+ *
+ * Expiry is the caller's to judge: the boot sequence wants to distinguish
+ * "resume this" from "this is stale, forget it and show the login screen".
+ * Unparseable content is treated as absent — a half-written key is not worth
+ * failing a page load over.
+ */
+export function storedDemoSession(): StoredDemoSession | null {
+  const raw = sessionStorage.getItem(DEMO_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<StoredDemoSession>;
+    if (typeof parsed.accessToken !== 'string') return null;
+    if (typeof parsed.expiresAt !== 'number') return null;
+    return {
+      accessToken: parsed.accessToken,
+      expiresAt: parsed.expiresAt,
+      ...(typeof parsed.label === 'string' ? { label: parsed.label } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Forget a stored demo session without disturbing the live one */
+export function clearStoredDemoSession(): void {
+  sessionStorage.removeItem(DEMO_KEY);
 }
 
 /** The current access token without refreshing — for a synchronous read */

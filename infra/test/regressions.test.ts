@@ -137,6 +137,18 @@ describe('guardrail enforcement', () => {
       deniedTopics()['system-prompt-extraction'].OutputEnabled,
     ).not.toBe(false);
   });
+
+  // ADDRESS matches place names, not just home addresses, and this agent plans
+  // dates and holidays. On the output side it blocked replies for naming a city.
+  it('does not judge the model output for ADDRESS', () => {
+    const guardrails = safetyTemplate.findResources('AWS::Bedrock::Guardrail');
+    const pii = Object.values<any>(guardrails)[0].Properties
+      .SensitiveInformationPolicyConfig.PiiEntitiesConfig;
+    const address = pii.find((e: any) => e.Type === 'ADDRESS');
+
+    expect(address.Action).toBe('BLOCK');
+    expect(address.OutputEnabled).toBe(false);
+  });
 });
 
 describe('ALB is reachable only through CloudFront', () => {

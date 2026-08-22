@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { AwsBedrockClient } from '../bedrock-client';
+import { AwsBedrockClient, guardrailPoliciesFrom } from '../bedrock-client';
+import { config } from '../../config';
 import { LlmError } from '../../../shared/errors/llm-error';
 import type { ChatMessage } from '../../../shared/interfaces/message';
 import {
@@ -346,5 +347,196 @@ describe('AwsBedrockClient', () => {
 
       expect(result.content).toBe('She sounds like someone who');
     });
+  });
+
+  /**
+   * What the guardrail reads, and what it says when it refuses.
+   *
+   * These run with a guardrail id in `config`, which the rest of the file
+   * deliberately leaves unset — local development has no guardrail, and the
+   * client must send no `guardContent` at all in that case, because Bedrock
+   * rejects it without an accompanying `guardrailConfig`.
+   */
+  describe('with a guardrail configured', () => {
+    beforeEach(() => {
+      config.bedrockGuardrailId = 'gr-test';
+    });
+
+    afterEach(() => {
+      config.bedrockGuardrailId = undefined;
+      resetServerLogSubscribers();
+    });
+
+    it('guards the newest user turn and nothing else', async () => {
+      // The system prompt now carries her whole profile — her birthday, her
+      // sizes, "Kyoto during cherry blossom season". Guarded, every turn would
+      // be scored as sensitive information and blocked before the model saw it.
+      mockSend.mockResolvedValueOnce({
+        output: { message: { content: [{ text: 'Lovely.' }] } },
+        stopReason: 'end_turn',
+      });
+
+      await client.generateResponse(
+        [
+          { ...sampleMessage, id: 'msg-a', sender: 'user', content: 'Go on.' },
+          sampleMessage,
+        ],
+        'You are Valentin. Her birthday is 1994-06-12.',
+      );
+
+      const cmd = mockSend.mock.calls[0][0];
+      expect(cmd.system).toEqual([
+        { text: 'You are Valentin. Her birthday is 1994-06-12.' },
+      ]);
+      expect(cmd.messages[0].content).toEqual([{ text: 'Go on.' }]);
+      expect(cmd.messages[1].content).toEqual([
+        { guardContent: { text: { text: 'My partner loves Italian food' } } },
+      ]);
+    });
+
+    it('guards the newest user turn on the extraction call too', async () => {
+      mockSend.mockResolvedValueOnce({
+        output: {
+          message: { content: [{ toolUse: { name: 'extract', input: { preferences: [] } } }] },
+        },
+        stopReason: 'tool_use',
+      });
+
+      await client.extractWithTool(sampleMessage, sampleHistory, {
+        name: 'extract',
+        description: 'extract',
+        input_schema: {},
+      });
+
+      const cmd = mockSend.mock.calls[0][0];
+      const last = cmd.messages[cmd.messages.length - 1];
+      expect(last.content).toEqual([
+        { guardContent: { text: { text: 'My partner loves Italian food' } } },
+      ]);
+    });
+
+    it('logs which policies fired when the guardrail intervenes', async () => {
+      // `trace: 'enabled'` was always set and nothing ever read the trace back,
+      // so a refusal left no record of its cause anywhere. Finding out why he
+      // declined an anniversary question meant reconstructing the call by hand
+      // against the live guardrail.
+      const records: ServerLogRecord[] = [];
+      subscribeToServerLogs((record) => records.push(record));
+
+      mockSend.mockResolvedValueOnce({
+        output: { message: { content: [{ text: 'Blocked.' }] } },
+        stopReason: 'guardrail_intervened',
+        trace: {
+          guardrail: {
+            inputAssessment: {
+              'gr-test': {
+                sensitiveInformationPolicy: {
+                  piiEntities: [{ type: 'ADDRESS', match: 'Kyoto', action: 'BLOCKED' }],
+                },
+              },
+            },
+            outputAssessments: {
+              'gr-test': [
+                { topicPolicy: { topics: [{ name: 'off-topic', type: 'DENY', action: 'BLOCKED' }] } },
+              ],
+            },
+          },
+        },
+      });
+
+      await client.generateResponse([sampleMessage], 'prompt');
+
+      const intervened = records.find((r) => r.event === 'bedrock.guardrail_intervened');
+      expect(intervened?.level).toBe('warn');
+      expect(intervened?.data?.policies).toEqual(['pii:ADDRESS', 'topic:off-topic']);
+      expect(intervened?.data?.sessionId).toBe('session-1');
+    });
+
+    it('logs an intervention it cannot explain rather than throwing', async () => {
+      // A guardrail can block with no trace attached. An empty policy list is a
+      // worse log line than a full one and a much better one than a crash.
+      const records: ServerLogRecord[] = [];
+      subscribeToServerLogs((record) => records.push(record));
+
+      mockSend.mockResolvedValueOnce({
+        output: { message: { content: [] } },
+        stopReason: 'guardrail_intervened',
+      });
+
+      const result = await client.generateResponse([sampleMessage], 'prompt');
+
+      expect(result.content).toBeTruthy();
+      expect(
+        records.find((r) => r.event === 'bedrock.guardrail_intervened')?.data?.policies,
+      ).toEqual([]);
+    });
+  });
+
+  it('sends no guardContent when no guardrail is configured', async () => {
+    // `guardContent` is only legal alongside a `guardrailConfig`; sending it
+    // without one makes Bedrock reject the request, which would break every
+    // local run.
+    mockSend.mockResolvedValueOnce({
+      output: { message: { content: [{ text: 'Lovely.' }] } },
+      stopReason: 'end_turn',
+    });
+
+    await client.generateResponse([sampleMessage], 'prompt');
+
+    const cmd = mockSend.mock.calls[0][0];
+    expect(cmd.guardrailConfig).toBeUndefined();
+    expect(cmd.messages[0].content).toEqual([{ text: 'My partner loves Italian food' }]);
+  });
+});
+
+describe('guardrailPoliciesFrom', () => {
+  it('is empty when there is no guardrail trace at all', () => {
+    expect(guardrailPoliciesFrom(undefined)).toEqual([]);
+    expect(guardrailPoliciesFrom({})).toEqual([]);
+  });
+
+  it('reads content filters and custom words', () => {
+    expect(
+      guardrailPoliciesFrom({
+        guardrail: {
+          inputAssessment: {
+            g: {
+              contentPolicy: { filters: [{ type: 'PROMPT_ATTACK', action: 'BLOCKED' }] },
+              wordPolicy: { customWords: [{ match: 'nope', action: 'BLOCKED' }] },
+            },
+          },
+        },
+      }),
+    ).toEqual(['content:PROMPT_ATTACK', 'word:nope']);
+  });
+
+  it('ignores a policy that detected something and let it through', () => {
+    expect(
+      guardrailPoliciesFrom({
+        guardrail: {
+          inputAssessment: {
+            g: { topicPolicy: { topics: [{ name: 'off-topic', action: 'NONE' }] } },
+          },
+        },
+      }),
+    ).toEqual([]);
+  });
+
+  it('reports an anonymised entity, which is a rewrite the audience can see', () => {
+    expect(
+      guardrailPoliciesFrom({
+        guardrail: {
+          outputAssessments: {
+            g: [
+              {
+                sensitiveInformationPolicy: {
+                  piiEntities: [{ type: 'NAME', action: 'ANONYMIZED' }],
+                },
+              },
+            ],
+          },
+        },
+      }),
+    ).toEqual(['pii:NAME']);
   });
 });

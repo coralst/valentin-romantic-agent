@@ -10,11 +10,12 @@ export interface SafetyStackProps extends cdk.StackProps {
 /**
  * Bumped whenever the guardrail's policy below changes.
  *
+ * 4 — ADDRESS no longer judges Valentin's own replies.
  * 3 — the off-topic topic no longer judges Valentin's own replies.
  * 2 — NAME and AGE no longer anonymised.
  * 1 — initial policy.
  */
-const POLICY_REVISION = 3;
+const POLICY_REVISION = 4;
 
 export class SafetyStack extends cdk.Stack {
   public readonly guardrailId: string;
@@ -74,7 +75,21 @@ export class SafetyStack extends cdk.Stack {
           { type: 'US_SOCIAL_SECURITY_NUMBER', action: 'BLOCK' },
           { type: 'PHONE', action: 'BLOCK' },
           { type: 'EMAIL', action: 'BLOCK' },
-          { type: 'ADDRESS', action: 'BLOCK' },
+          /*
+           * ADDRESS is BLOCKed on the prompt and ignored on the reply.
+           *
+           * The entity is not "a home address" — it matches place names, and
+           * this agent plans dates and holidays. Samantha's profile says "Kyoto
+           * during cherry blossom season"; a reply suggesting a cottage, a
+           * restaurant or a city therefore scores as ADDRESS, and BLOCK on the
+           * output side replaces the whole answer with the blocked-output
+           * message. Naming a place is the product working.
+           *
+           * Kept on the prompt, where the risk actually lives: if a visitor
+           * types her home address, that should not go to the model or into the
+           * table. He cannot leak on the way out what never came in.
+           */
+          { type: 'ADDRESS', action: 'BLOCK', outputEnabled: false },
           { type: 'AWS_ACCESS_KEY', action: 'BLOCK' },
           { type: 'AWS_SECRET_KEY', action: 'BLOCK' },
         ],

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useLayoutEffect, useState } from 'react';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { DossierView } from '../DossierView';
 import { ChatProvider } from '../../context/chat-context';
 import { PreferencesProvider } from '../../context/preferences-context';
@@ -69,29 +70,70 @@ beforeEach(() => {
  * to catch dead space in a zero-state is to drive a partial profile.
  */
 describe('DossierView board layout', () => {
-  it('drops the two-column span while "What’s coming" is empty', () => {
+  it('narrows "What’s coming" to a third while it is empty', () => {
     // A grid row is as tall as its tallest member however the items align inside
-    // it, so a one-line empty state spanning two columns leaves a void beside the
-    // short cards. Empty, it takes one column like everything else.
+    // it, so a one-line empty state spanning two-thirds of the row leaves a void
+    // beside the short cards. Empty, it takes a third like everything else.
     renderDossier();
     expect(screen.getByTestId('dossier-whats-coming-empty')).toBeInTheDocument();
-    expect(screen.getByTestId('dossier-whats-coming-slot').style.gridColumn).toBe('');
+    expect(screen.getByTestId('dossier-whats-coming-slot').style.gridColumn).toBe('span 4');
   });
 
-  it('takes the span back once there are dates to lay out on the spine', () => {
+  it('takes the width back once there are dates to lay out on the spine', () => {
     renderDossier([{ fieldId: 'birthday', value: '1994-06-12' }]);
     expect(screen.queryByTestId('dossier-whats-coming-empty')).not.toBeInTheDocument();
-    expect(screen.getByTestId('dossier-whats-coming-slot').style.gridColumn).toBe('span 2');
+    // Two-thirds of twelve: the spine is the hero figure of the overview, and it
+    // needs the room to read as one.
+    expect(screen.getByTestId('dossier-whats-coming-slot').style.gridColumn).toBe('span 8');
   });
 
-  it('shows the zero-state copy for the cards a partial profile leaves empty', () => {
+  it('shows the zero-state copy for the cards a partial profile leaves empty', async () => {
     renderDossier([{ fieldId: 'partner_name', value: 'Samantha' }]);
-    // "Also mentioned" has an empty state rather than vanishing, because its
+    // "Also mentioned" lives on the Memories tab now, so reach it the way a user
+    // would. It still has an empty state rather than vanishing, because its
     // absence would otherwise be indistinguishable from dropped extractions.
+    await userEvent.click(screen.getByTestId('dossier-tab-memories'));
     expect(screen.getByTestId('dossier-also-mentioned-empty')).toBeInTheDocument();
     // "Confirm my guesses" and "Keep in mind" render nothing at all: a prompt
     // with no question in it, and a warning with nothing to warn about.
+    await userEvent.click(screen.getByTestId('dossier-tab-overview'));
     expect(screen.queryByTestId('dossier-guesses')).not.toBeInTheDocument();
     expect(screen.queryByTestId('dossier-keep-in-mind')).not.toBeInTheDocument();
+  });
+
+  it('leads with figures about the relationship, not only about the form', () => {
+    // The old header's only number was "5 of 21". How long you have been together
+    // and how soon the next occasion is were nowhere on the page.
+    renderDossier([
+      { fieldId: 'anniversary', value: '2020-06-12' },
+      { fieldId: 'birthday', value: '1994-06-12' },
+    ]);
+    const bar = screen.getByTestId('dossier-stat-bar');
+    expect(bar).toHaveTextContent('Days together');
+    expect(bar).toHaveTextContent('Next occasion');
+    expect(bar).toHaveTextContent('How well I know her');
+  });
+
+  it('shows no figure at all rather than a placeholder for one it cannot compute', () => {
+    // A "—" in a 22px slot reads as a rendering fault, and "about five years?"
+    // would defeat the point of a number whose value is that it is exact.
+    renderDossier();
+    const bar = screen.getByTestId('dossier-stat-bar');
+    expect(bar).not.toHaveTextContent('Days together');
+    // Nobody has been added, so "Her people" is not a figure yet either.
+    expect(bar).not.toHaveTextContent('Her people');
+    expect(bar).toHaveTextContent('How well I know her');
+  });
+
+  it('filters the board by tab rather than showing everything at once', async () => {
+    renderDossier([{ fieldId: 'partner_name', value: 'Samantha' }]);
+    expect(screen.getByTestId('dossier-family-tree')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId('dossier-tab-known'));
+    expect(screen.getByTestId('dossier-tab-known')).toHaveAttribute('aria-selected', 'true');
+    // Her people is a different tab, so its cards are gone — that is the point of
+    // the overview staying short.
+    expect(screen.queryByTestId('dossier-family-tree')).not.toBeInTheDocument();
+    expect(screen.getByTestId('dossier-everything')).toBeInTheDocument();
   });
 });

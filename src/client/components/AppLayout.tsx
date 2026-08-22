@@ -4,6 +4,7 @@ import { BriefRail } from './BriefRail';
 import { DossierView } from './DossierView';
 import { MobileNav } from './MobileNav';
 import { ProfileStoreProvider } from '../context/profile-store-context';
+import { PeopleProvider } from '../context/people-context';
 import { DiscoveryProvider } from '../context/discovery-context';
 import { ViewProvider, useViewState } from '../context/view-context';
 import { usePreferenceIngestion } from '../hooks/use-preference-ingestion';
@@ -120,11 +121,16 @@ export function AppLayout() {
   const { state: chatState } = useChatContext();
   return (
     <ProfileStoreProvider sessionId={chatState.sessionId}>
-      {/* Above the layout because the magnifier lives in the sidebar and the
-          drawer is mounted beside the chat — sibling subtrees. */}
-      <ArchitectureDrawerProvider>
-        <AppLayoutContent />
-      </ArchitectureDrawerProvider>
+      {/* Her family sits beside the profile rather than inside it: same session
+          key, separate store, because a family is a list of records and the
+          profile is a fixed set of fields. See `use-people-store`. */}
+      <PeopleProvider sessionId={chatState.sessionId}>
+        {/* Above the layout because the magnifier lives in the sidebar and the
+            drawer is mounted beside the chat — sibling subtrees. */}
+        <ArchitectureDrawerProvider>
+          <AppLayoutContent />
+        </ArchitectureDrawerProvider>
+      </PeopleProvider>
     </ProfileStoreProvider>
   );
 }

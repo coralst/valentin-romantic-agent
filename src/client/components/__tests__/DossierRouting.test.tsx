@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ChatProvider } from '../../context/chat-context';
 import { PreferencesProvider } from '../../context/preferences-context';
@@ -126,6 +126,105 @@ describe('dossier surface routing', () => {
     await user.click(heart);
     await user.click(screen.getByRole('button', { name: 'Her profile' }));
     expect(screen.queryByTestId('dossier-view')).not.toBeInTheDocument();
+  });
+
+  /*
+   * Three ways out of the dossier, all of which a user tried and one of which —
+   * the browser's own Back button — really did nothing, because the surface swap
+   * is not a route and pushed no history entry to pop.
+   */
+  it('closes when the browser goes back, rather than leaving the app', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await user.click(screen.getByRole('button', { name: 'Her profile' }));
+    expect(screen.getByTestId('app-layout')).toHaveAttribute('data-surface', 'dossier');
+
+    window.history.back();
+
+    await waitFor(() =>
+      expect(screen.getByTestId('app-layout')).toHaveAttribute('data-surface', 'chat'),
+    );
+    expect(screen.getByRole('button', { name: 'Her profile' })).toHaveFocus();
+  });
+
+  it('closes from the crest, which is home from every surface', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await user.click(screen.getByRole('button', { name: 'Her profile' }));
+
+    await user.click(screen.getByTestId('rail-home-button'));
+    expect(screen.getByTestId('app-layout')).toHaveAttribute('data-surface', 'chat');
+  });
+
+  it('does nothing but stay put when the crest is pressed on the chat shell', async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(screen.getByTestId('rail-home-button'));
+    expect(screen.getByTestId('app-layout')).toHaveAttribute('data-surface', 'chat');
+    expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+  });
+
+  /*
+   * The ◆ and the ☰ were both inert on desktop: the desktop rail was rendered
+   * without `onViewChange`, so the ◆ called an undefined prop, and the ☰ opened a
+   * sidebar that was already permanently open.
+   */
+  describe('the desktop rail’s ◆ and ☰', () => {
+    it('◆ leaves the dossier and puts the caret in the composer', async () => {
+      const user = userEvent.setup();
+      renderApp();
+      await user.click(screen.getByRole('button', { name: 'Her profile' }));
+
+      await user.click(screen.getByTestId('rail-chat-button'));
+
+      expect(screen.getByTestId('app-layout')).toHaveAttribute('data-surface', 'chat');
+      await waitFor(() =>
+        expect(screen.getByLabelText('Type a message')).toHaveFocus(),
+      );
+    });
+
+    it('◆ is still observable on the chat shell, where the surface cannot change', async () => {
+      // Both surfaces are already on screen here, so the caret *is* the effect.
+      const user = userEvent.setup();
+      renderApp();
+
+      await user.click(screen.getByTestId('rail-chat-button'));
+
+      await waitFor(() =>
+        expect(screen.getByLabelText('Type a message')).toHaveFocus(),
+      );
+    });
+
+    it('☰ hands the conversation list’s column to the chat, and gives it back', async () => {
+      const user = userEvent.setup();
+      renderApp();
+      expect(screen.getByTestId('session-sidebar')).toBeInTheDocument();
+
+      await user.click(screen.getByTestId('sidebar-menu-button'));
+
+      // Not merely hidden: the 226px track goes too, or the chat would gain a
+      // hole rather than the room.
+      expect(screen.queryByTestId('session-sidebar')).not.toBeInTheDocument();
+      expect(screen.getByTestId('app-window').style.gridTemplateColumns).toBe(
+        '76px minmax(0, 1fr) 306px',
+      );
+
+      await user.click(screen.getByTestId('sidebar-menu-button'));
+      expect(screen.getByTestId('session-sidebar')).toBeInTheDocument();
+      expect(screen.getByTestId('app-window').style.gridTemplateColumns).toBe(
+        '76px 226px minmax(0, 1fr) 306px',
+      );
+    });
+
+    it('keeps the chat and brief on screen with the list collapsed', async () => {
+      const user = userEvent.setup();
+      renderApp();
+      await user.click(screen.getByTestId('sidebar-menu-button'));
+
+      expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+      expect(screen.getByTestId('brief-rail')).toBeInTheDocument();
+    });
   });
 
   it('replaces both panels full-bleed on mobile, keeping Chat and Profile verbatim', async () => {

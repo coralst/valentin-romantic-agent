@@ -1,45 +1,57 @@
 import React from 'react';
 import { useOptionalAuthContext } from '../context/auth-context';
-import {
-  borderRadius,
-  colors,
-  spacing,
-  typography,
-} from '../design-system/tokens';
+import { colors, insets, layout, radii, typography } from '../design-system/tokens';
 
+/*
+ * This renders inside the rail's ⚙ menu and nowhere else, so it matches that
+ * menu: one column, `alignItems: stretch`, and the same control height as the
+ * demo buttons. The previous horizontal pill pair was sized for the deleted app
+ * header and wrapped inside the 268px popover.
+ */
 const wrapperStyle: React.CSSProperties = {
   display: 'flex',
-  alignItems: 'center',
-  gap: spacing.xs,
-  // No `marginLeft: auto` — DemoToolbar already claims the free space to its
-  // left, and a second auto margin would split it and pull the toolbar inwards.
+  flexDirection: 'column',
+  alignItems: 'stretch',
+  gap: 8,
+  minWidth: 0,
 };
 
+/**
+ * The identity row is a tile, not a button.
+ *
+ * Same height and radius as the controls below it so the group lines up, but no
+ * border and no pointer: it is a statement of fact, and giving it a control's
+ * outline is what made the old menu read as four buttons in a ragged grid.
+ */
 const labelStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
-  gap: 6,
-  padding: `4px ${spacing.xs + 2}px`,
-  borderRadius: borderRadius.full,
-  backgroundColor: colors.blush,
-  color: colors.deepPlum,
+  gap: 8,
+  height: layout.menuControlHeight,
+  padding: `0 ${insets.tight}px`,
+  borderRadius: radii.chip,
+  backgroundColor: colors.sand,
+  color: colors.ink,
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.sizes.xs,
+  fontSize: typography.px.small,
   fontWeight: typography.weights.medium,
-  maxWidth: 200,
+  minWidth: 0,
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
 };
 
+/** The quietest control in the menu — a way out, not something to invite. */
 const signOutStyle: React.CSSProperties = {
-  padding: '4px 10px',
-  border: `1px solid ${colors.border}`,
-  borderRadius: borderRadius.full,
+  height: layout.menuControlHeight,
+  padding: `0 ${insets.tight}px`,
+  border: `1px solid ${colors.linenShade}`,
+  borderRadius: radii.chip,
   backgroundColor: 'transparent',
-  color: colors.textSecondary,
+  color: colors.inkMuted,
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.sizes.xs,
+  fontSize: typography.px.small,
+  fontWeight: typography.weights.medium,
   cursor: 'pointer',
 };
 
@@ -60,6 +72,7 @@ export function UserChip() {
         {auth.isDemo ? '✨' : '·'} {auth.userLabel}
       </span>
       <button
+        type="button"
         style={signOutStyle}
         onClick={auth.signOut}
         data-testid="sign-out-button"

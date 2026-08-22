@@ -196,6 +196,18 @@ describe('vitrine design tokens', () => {
     expect(layout.crestSize).toBe(46);
     expect(layout.cameoSize).toBe(56);
     expect(layout.chatColumnMaxWidth).toBe(620);
+    expect(layout.menuWidth).toBe(268);
+    expect(layout.menuControlHeight).toBe(38);
+  });
+
+  /**
+   * The ⚙ menu's controls share one height, which is what stops them reading as
+   * four unrelated buttons. Pinned as a relationship rather than as two numbers
+   * so a future taller control cannot quietly outgrow the row it sits in.
+   */
+  it('the menu control fits inside a menu-width column with room to spare', () => {
+    expect(layout.menuControlHeight).toBeLessThan(layout.iconButtonSize);
+    expect(layout.menuWidth).toBeGreaterThan(layout.iconRailWidth);
   });
 
   it('insets, radii and layout are all positive integers', () => {

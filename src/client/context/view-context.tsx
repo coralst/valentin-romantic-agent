@@ -1,4 +1,11 @@
-import React, { createContext, useCallback, useContext, useRef, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 
 /**
  * Which of the app's two top-level surfaces is on screen.
@@ -25,6 +32,15 @@ export interface ViewContextValue {
   /** What the icon rail's ♥ does. */
   toggleDossier: () => void;
   /**
+   * What the icon rail's ◆ does: leave the dossier if it is up, and put the
+   * caret in the composer either way.
+   *
+   * Distinct from `closeDossier` because it is not "undo the dossier" — it is
+   * "take me to the conversation", which is a thing to ask for from the chat
+   * shell too, and there the observable result is the caret.
+   */
+  returnToChat: () => void;
+  /**
    * Attach to the rail's ♥ button. `closeDossier` focuses it, so the ref has to
    * live with the state rather than with either component.
    */
@@ -46,29 +62,103 @@ export interface ViewContextValue {
  * shares the icon rail and the window's 34px radius, so portalling it would
  * duplicate the rail and fight the window's `overflow: hidden`.
  */
+/**
+ * The composer's accessible name, which is also how the ◆ finds it.
+ *
+ * Queried rather than held as a ref on purpose: the composer is two components
+ * below the chat column (`ChatPanel` → `MessageInput`), and threading a ref from
+ * the icon rail through both of them — for a focus nicety, not for behaviour —
+ * would give the layout a second, competing notion of "the composer". The name
+ * is pinned by `MessageInput`'s own tests and by the test for ◆ below, so it
+ * cannot drift silently.
+ */
+const COMPOSER_SELECTOR = 'textarea[aria-label="Type a message"]';
+
 export function useViewState(): ViewContextValue {
   const [surface, setSurface] = useState<Surface>('chat');
   const dossierToggleRef = useRef<HTMLButtonElement>(null);
 
-  const openDossier = useCallback(() => setSurface('dossier'), []);
+  /**
+   * True while the browser's history holds the entry `openDossier` pushed.
+   *
+   * A ref rather than state: nothing renders from it, and it has to be correct
+   * inside a `popstate` handler that fires after the render that closed the
+   * dossier.
+   */
+  const ownsHistoryEntry = useRef(false);
 
-  const closeDossier = useCallback(() => {
+  /** Hide the dossier and bring focus home. The single place `surface` clears. */
+  const applyClose = useCallback(() => {
     setSurface('chat');
     dossierToggleRef.current?.focus();
   }, []);
 
-  const toggleDossier = useCallback(() => {
-    setSurface((current) => {
-      if (current === 'dossier') {
-        // Focus goes back to the ♥ on the way out, exactly as `.back` does.
-        dossierToggleRef.current?.focus();
-        return 'chat';
-      }
-      return 'dossier';
-    });
-  }, []);
+  /*
+   * Opening pushes a history entry, so the browser's Back button (and the
+   * trackpad's back swipe) closes the dossier instead of leaving the app —
+   * which is the one route out that genuinely did not work, and the one a
+   * presenter reaches for first.
+   *
+   * This is *not* the router the note above rules out: the URL never changes and
+   * nothing is read back from history on mount, so a reload still lands on the
+   * chat shell and the Playwright specs' `goto('/')` stays deterministic. All
+   * that is added is one entry whose only job is to be popped.
+   */
+  const openDossier = useCallback(() => {
+    if (surface === 'dossier') return;
+    if (!ownsHistoryEntry.current) {
+      window.history.pushState({ valentinDossier: true }, '');
+      ownsHistoryEntry.current = true;
+    }
+    setSurface('dossier');
+  }, [surface]);
 
-  return { surface, setSurface, openDossier, closeDossier, toggleDossier, dossierToggleRef };
+  const closeDossier = useCallback(() => {
+    // Close first and synchronously: `popstate` is a task, and the ← must not
+    // wait a turn of the event loop to do anything visible.
+    applyClose();
+    if (ownsHistoryEntry.current) {
+      ownsHistoryEntry.current = false;
+      // Drop the entry we pushed, so Back does not step *into* a dossier the
+      // user has already left. The `popstate` this provokes finds `surface`
+      // already on chat and does nothing.
+      window.history.back();
+    }
+  }, [applyClose]);
+
+  const toggleDossier = useCallback(() => {
+    if (surface === 'dossier') closeDossier();
+    else openDossier();
+  }, [surface, closeDossier, openDossier]);
+
+  const returnToChat = useCallback(() => {
+    if (surface === 'dossier') closeDossier();
+    // After a frame, because on the way out of the dossier the chat column does
+    // not exist yet at this point — the surface swap has only been queued.
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLTextAreaElement>(COMPOSER_SELECTOR)?.focus();
+    });
+  }, [surface, closeDossier]);
+
+  useEffect(() => {
+    if (surface !== 'dossier') return;
+    const handlePop = () => {
+      ownsHistoryEntry.current = false;
+      applyClose();
+    };
+    window.addEventListener('popstate', handlePop);
+    return () => window.removeEventListener('popstate', handlePop);
+  }, [surface, applyClose]);
+
+  return {
+    surface,
+    setSurface,
+    openDossier,
+    closeDossier,
+    toggleDossier,
+    returnToChat,
+    dossierToggleRef,
+  };
 }
 
 const ViewContext = createContext<ViewContextValue | null>(null);

@@ -4,7 +4,7 @@ import { useChatContext } from '../context/chat-context';
 import { usePreferencesContext } from '../context/preferences-context';
 import { useProfileStoreContext } from '../context/profile-store-context';
 import { seedDemoSession, fetchSessionPreferences, resetSession } from '../utils/demo-session-api';
-import { colors, spacing, typography, borderRadius, animation } from '../design-system/tokens';
+import { colors, typography, radii, insets, layout, animation } from '../design-system/tokens';
 import type { StoredSession } from '../hooks/use-session-store';
 import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
 
@@ -19,58 +19,85 @@ interface DemoToolbarStatus {
   tone: StatusTone;
 }
 
+/*
+ * These controls live in one place only: the icon rail's ⚙ menu, a single 268px
+ * column (`IconRail.getPopoverStyle`). So this is a stacked list of full-width
+ * controls, not a horizontal toolbar — the old `display: flex` row with
+ * `marginLeft: auto` was written for the deleted app header, and inside a narrow
+ * popover it wrapped into a ragged 2×2 grid of mismatched pills.
+ *
+ * `alignItems: stretch` is what gives every control the same width; the shared
+ * `layout.menuControlHeight` gives them the same height. Both are load-bearing
+ * for the menu reading as one menu.
+ */
 const toolbarStyle: React.CSSProperties = {
   display: 'flex',
-  alignItems: 'center',
-  gap: spacing.xs,
-  marginLeft: 'auto',
+  flexDirection: 'column',
+  alignItems: 'stretch',
+  gap: 8,
+  minWidth: 0,
 };
 
 const buttonBaseStyle: React.CSSProperties = {
-  padding: `6px ${spacing.sm}px`,
-  borderRadius: borderRadius.full,
+  height: layout.menuControlHeight,
+  padding: `0 ${insets.tight}px`,
+  borderRadius: radii.chip,
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.sizes.xs,
-  fontWeight: typography.weights.semibold,
+  fontSize: typography.px.small,
+  fontWeight: typography.weights.medium,
   cursor: 'pointer',
   whiteSpace: 'nowrap',
   transition: `opacity ${animation.durations.fast}ms ${animation.easing.easeInOut}`,
 };
 
+/** The one thing a presenter came here to do, so it carries the claret fill. */
 const primaryButtonStyle: React.CSSProperties = {
   ...buttonBaseStyle,
-  background: colors.accentGradient,
+  backgroundColor: colors.claret,
   color: colors.textOnAccent,
   border: '1px solid transparent',
+  boxShadow: '0 6px 16px rgba(140, 47, 69, 0.22)',
 };
 
-const secondaryButtonStyle: React.CSSProperties = {
+/**
+ * Reset throws the rehearsal away, so it is claret *text* on sand rather than a
+ * second filled button: in the brand's palette claret is the only colour that
+ * says "this is consequential", and reusing the fill would make the destructive
+ * control look exactly as inviting as the constructive one.
+ */
+const destructiveButtonStyle: React.CSSProperties = {
   ...buttonBaseStyle,
-  backgroundColor: colors.surface,
-  color: colors.softBurgundy,
-  border: `1px solid ${colors.border}`,
+  backgroundColor: colors.sand,
+  color: colors.claret,
+  border: '1px solid rgba(140, 47, 69, 0.22)',
 };
 
 const disabledStyle: React.CSSProperties = {
   opacity: 0.5,
   cursor: 'not-allowed',
+  boxShadow: 'none',
 };
 
+/**
+ * The status line wraps rather than stretching the menu: a network error is a
+ * whole sentence, and `whiteSpace: nowrap` here would push the popover off the
+ * side of the viewport.
+ */
 const statusBaseStyle: React.CSSProperties = {
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.sizes.xs,
-  maxWidth: 260,
-  lineHeight: typography.lineHeights.normal,
+  fontSize: typography.px.caption,
+  lineHeight: 1.45,
+  minWidth: 0,
 };
 
 const infoStatusStyle: React.CSSProperties = {
   ...statusBaseStyle,
-  color: colors.textSecondary,
+  color: colors.inkMuted,
 };
 
 const errorStatusStyle: React.CSSProperties = {
   ...statusBaseStyle,
-  color: colors.error,
+  color: colors.claret,
 };
 
 const liveRegionStyle: React.CSSProperties = {
@@ -180,15 +207,6 @@ export function DemoToolbar({ children }: DemoToolbarProps) {
 
   return (
     <div style={toolbarStyle} data-testid="demo-toolbar" role="group" aria-label="Demo controls">
-      {status && (
-        <span
-          style={status.tone === 'error' ? errorStatusStyle : infoStatusStyle}
-          data-testid="demo-toolbar-status"
-        >
-          {status.message}
-        </span>
-      )}
-
       <button
         type="button"
         style={isBusy ? { ...primaryButtonStyle, ...disabledStyle } : primaryButtonStyle}
@@ -201,7 +219,7 @@ export function DemoToolbar({ children }: DemoToolbarProps) {
 
       <button
         type="button"
-        style={isBusy ? { ...secondaryButtonStyle, ...disabledStyle } : secondaryButtonStyle}
+        style={isBusy ? { ...destructiveButtonStyle, ...disabledStyle } : destructiveButtonStyle}
         onClick={handleReset}
         disabled={isBusy}
         data-testid="reset-session-button"
@@ -210,6 +228,17 @@ export function DemoToolbar({ children }: DemoToolbarProps) {
       </button>
 
       {children}
+
+      {/* Under the controls, not above them: a message that appeared above would
+          push both buttons down under the cursor that just pressed one. */}
+      {status && (
+        <span
+          style={status.tone === 'error' ? errorStatusStyle : infoStatusStyle}
+          data-testid="demo-toolbar-status"
+        >
+          {status.message}
+        </span>
+      )}
 
       <div aria-live="polite" aria-atomic="true" style={liveRegionStyle} data-testid="demo-toolbar-live-region">
         {liveAnnouncement}

@@ -204,6 +204,18 @@ export const layout = {
   messageAvatarSize: 32,
   sendButtonSize: 40,
   backButtonSize: 36,
+  /**
+   * The rail's ⚙ menu: one column of full-width controls.
+   *
+   * A width and a control height rather than "whatever the buttons need": the
+   * menu is portalled out of the 76px rail, so nothing constrains it, and left
+   * to shrink-wrap its contents the four controls wrapped into a ragged 2×2 of
+   * differing heights — which is the whole complaint the menu was restyled for.
+   * 268 is the measure that holds "Load demo profile" and a two-line status on
+   * one column without the status re-flowing the buttons.
+   */
+  menuWidth: 268,
+  menuControlHeight: 38,
   /** Max measure of the chat column's text content. */
   chatColumnMaxWidth: 620,
 } as const;

@@ -39,11 +39,21 @@ export async function apiGetJson<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-/** POST with no body, returning the parsed response */
-export async function apiPostJson<T>(path: string): Promise<T> {
+/**
+ * POST, returning the parsed response.
+ *
+ * `body` is omitted from the request entirely when absent rather than sent as
+ * `{}` — the routes that take no arguments read `req.body?.x`, and an empty
+ * object is indistinguishable from a caller who asked for nothing anyway.
+ */
+export async function apiPostJson<T>(
+  path: string,
+  body?: unknown,
+): Promise<T> {
   const response = await apiFetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   if (!response.ok) throw new Error(describeFailure(response.status));
   return (await response.json()) as T;

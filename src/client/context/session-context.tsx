@@ -426,3 +426,16 @@ export function useSessionContext(): SessionContextValue {
   }
   return ctx;
 }
+
+/**
+ * The same value, or null outside a provider.
+ *
+ * For surfaces that live inside the chat column but only need sessions for one
+ * optional affordance — the guided intro's "load the full profile", which has a
+ * working path that does not touch the session list. `ChatPanel` renders without
+ * a SessionProvider in its own tests, and degrading is the honest answer there.
+ * Same reasoning as `useOptionalViewContext`.
+ */
+export function useOptionalSessionContext(): SessionContextValue | null {
+  return useContext(SessionContext);
+}

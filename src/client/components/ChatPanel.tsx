@@ -6,6 +6,7 @@ import { MessageHistory } from './MessageHistory';
 import { MessageInput } from './MessageInput';
 import { TypingIndicator } from './TypingIndicator';
 import { ConnectionBanner } from './ConnectionBanner';
+import { GuidedIntro } from './GuidedIntro';
 import { colors, insets, typography } from '../design-system/tokens';
 import type { ChatMessage } from '../../shared/interfaces/message';
 
@@ -102,6 +103,10 @@ export function ChatPanel() {
         </div>
       </div>
       <div style={separatorStyle} />
+      {/* Renders nothing once there is a conversation or a profile — see its own
+          note. It sits above the transcript rather than inside it so the messages
+          it produces are ordinary messages. */}
+      <GuidedIntro />
       <MessageHistory messages={state.messages} />
       <TypingIndicator isVisible={state.isTyping} />
       <MessageInput

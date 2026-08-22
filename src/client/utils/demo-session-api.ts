@@ -12,9 +12,18 @@ interface PreferencesResponse {
   preferences: PreferenceWithHistory[];
 }
 
-/** Ask the server to build a fully populated demo session */
-export async function seedDemoSession(): Promise<SeedResponse> {
-  return apiPostJson<SeedResponse>('/api/session/seed');
+/**
+ * Ask the server to build a demo session from one of its personas.
+ *
+ * The body is sent only when a persona is named, so the no-argument call stays
+ * byte-identical to what it was before personas existed — the server's own
+ * default then applies, and there is no second copy of that default here.
+ */
+export async function seedDemoSession(persona?: string): Promise<SeedResponse> {
+  return apiPostJson<SeedResponse>(
+    '/api/session/seed',
+    persona ? { persona } : undefined,
+  );
 }
 
 /** Read back the preferences the seed created, so the profile panel can render them */

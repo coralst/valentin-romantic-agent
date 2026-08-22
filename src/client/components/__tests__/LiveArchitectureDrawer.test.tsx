@@ -103,6 +103,17 @@ describe('LiveArchitectureDrawer', () => {
       expect(closedBackground).not.toBe('');
     });
 
+    /** The hard 1px rule across the window is what the feather replaces. */
+    it('feathers its top edge instead of ruling a hairline', () => {
+      renderDrawer();
+      const bar = screen.getByTestId('architecture-reopen-bar');
+      const feather = screen.getByTestId('architecture-bar-feather');
+
+      expect(bar.style.borderTop).toBe('');
+      expect(feather.style.background).toContain('gradient');
+      expect(feather.style.pointerEvents).toBe('none');
+    });
+
     /** The lens carries the state, since nothing else about the bar changes. */
     it('shows a ⊕ lens when closed and a ⊖ lens when open', async () => {
       const user = userEvent.setup();
@@ -113,6 +124,45 @@ describe('LiveArchitectureDrawer', () => {
       await user.click(screen.getByTestId('architecture-reopen-bar'));
 
       expect(screen.getByTestId('architecture-bar-sign')).toHaveAttribute('data-sign', 'minus');
+    });
+
+    /**
+     * The lens is the drawer's handle, so it travels with the panel instead of
+     * flipping in place: up to the panel heading on open, back down to the bar on
+     * close, on the panel's own easing.
+     */
+    it('rides up with the panel and slides back down', async () => {
+      const user = userEvent.setup();
+      renderDrawer();
+      const lens = screen.getByTestId('architecture-bar-lens');
+
+      expect(lens.style.transform).toBe('translateY(0)');
+
+      await user.click(screen.getByTestId('architecture-reopen-bar'));
+      expect(lens.style.transform).toMatch(/^translateY\(-\d+px\)$/);
+
+      await user.click(screen.getByTestId('architecture-reopen-bar'));
+      expect(lens.style.transform).toBe('translateY(0)');
+    });
+
+    it('closes the drawer when the risen lens is clicked', async () => {
+      const user = userEvent.setup();
+      renderDrawer();
+
+      await user.click(screen.getByTestId('architecture-reopen-bar'));
+      await user.click(screen.getByTestId('architecture-bar-lens'));
+
+      expect(screen.getByTestId('architecture-drawer')).toHaveAttribute('data-open', 'false');
+    });
+
+    /**
+     * One action, one accessible name. The lens sits on top of the bar and would
+     * otherwise double every `getByRole('button')` query for the same control.
+     */
+    it('hides the travelling lens from assistive tech', () => {
+      renderDrawer();
+
+      expect(screen.getByTestId('architecture-bar-lens')).toHaveAttribute('aria-hidden', 'true');
     });
 
     /**

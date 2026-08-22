@@ -95,10 +95,10 @@ describe('AppLayout', () => {
   });
 
   /**
-   * The drawer is a 424px absolute overlay pinned to the bottom of the content
-   * area — which is exactly where the composer is. Opening it used to make the
-   * composer unclickable, breaking the drawer's whole contract ("not a dialog, no
-   * focus trap, composer stays typable") just as effectively as a modal would.
+   * The drawer is a 424px absolute strip pinned to the bottom of the window —
+   * which is exactly where the composer is. Opening it used to make the composer
+   * unclickable, breaking the drawer's whole contract ("not a dialog, no focus
+   * trap, composer stays typable") just as effectively as a modal would.
    *
    * jsdom performs no layout, so `toBeVisible()` and a focus assertion both pass
    * whether or not something is painted on top. Only running the real app caught
@@ -106,14 +106,17 @@ describe('AppLayout', () => {
    * element intercepting pointer events. What is assertable here is the contract
    * that fixed it: the layout reserves the space rather than letting the drawer
    * cover it. The geometry itself is checked by the rehearsal script.
+   *
+   * The reservation is the *window frame's* padding, because the strip spans every
+   * column — so the assertion reads it there rather than off one column's wrapper.
    */
   describe('AppLayout — space reserved for the architecture drawer', () => {
     function reservedSpace(): number {
-      const area = document.querySelector('[data-drawer-reserved]');
-      return Number(area?.getAttribute('data-drawer-reserved'));
+      const frame = screen.getByTestId('app-window');
+      return Number(frame.getAttribute('data-bottom-inset'));
     }
 
-    it('reserves only the reopen bar while the drawer is closed', () => {
+    it('reserves only the bar while the drawer is closed', () => {
       renderWithProviders(<AppLayout />);
       expect(reservedSpace()).toBe(REOPEN_BAR_HEIGHT);
     });
@@ -164,6 +167,21 @@ describe('AppLayout', () => {
     it('derives the reserved amount from the drawer itself', () => {
       expect(reservedDrawerSpace(true)).toBe(DRAWER_HEIGHT);
       expect(reservedDrawerSpace(false)).toBe(REOPEN_BAR_HEIGHT);
+    });
+
+    /**
+     * The bar has to be one unbroken line across the whole bottom edge, which
+     * means it cannot live inside a column: anchored to the chat/brief tracks it
+     * began somewhere in the middle of the frame, stopping short of the icon rail
+     * and the conversation list. The assertable form of "full width" in a
+     * layout-free DOM is *where it is mounted* — the window's footer strip, which
+     * spans the frame rather than a track.
+     */
+    it('mounts the drawer in the window footer, not inside a column', () => {
+      renderWithProviders(<AppLayout />);
+
+      const footer = screen.getByTestId('app-window-footer');
+      expect(footer).toContainElement(screen.getByTestId('architecture-reopen-bar'));
     });
   });
 });

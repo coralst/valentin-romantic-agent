@@ -52,6 +52,22 @@ export const colors = {
   olive: '#7C8464',
   petal: '#F6DEE2',
 
+  // Ink-moss — the ground of the architecture rail across the foot of the window.
+  //
+  // Deliberately *not* another red. The icon rail, the user's bubbles, every CTA
+  // and the brief's meter already carry the claret; a third saturated red band
+  // along the bottom flattened the frame into a single hue. Moss is a warm
+  // green-grey rather than a cool slate, so it still belongs to a linen-and-gold
+  // room, and it sits with `gold` instead of competing with `claret`.
+  moss: '#333A2E',
+  mossGradient: 'linear-gradient(180deg, #3E4636 0%, #2F3629 100%)',
+  /** Copy and hairlines used *on* the moss rail. */
+  onMoss: '#EAE7D6',
+  onMossMuted: 'rgba(234, 231, 214, 0.62)',
+  onMossHairline: 'rgba(234, 231, 214, 0.16)',
+  /** The rail's "live" pip: readable on moss, where a saturated teal muddied. */
+  jade: '#7FC9A6',
+
   // Neutrals: porcelain (panel white) → linen (app ground) → linenShade (hairline).
   porcelain: '#FFFDFB',
   linen: '#EFE7E1',

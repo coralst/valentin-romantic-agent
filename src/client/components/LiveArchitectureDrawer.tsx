@@ -29,10 +29,23 @@ import { colors, typography } from '../design-system/tokens';
  * point is to send a message and watch it travel.
  */
 
-/** Drawer height. Leaves roughly three messages of chat visible above it. */
+/** Total height the drawer occupies when open, bar included. */
 export const DRAWER_HEIGHT = 424;
-/** The collapsed bar's height, which stays on screen as the way back in. */
+/**
+ * The bar's height.
+ *
+ * It is not a *reopen* bar any more: it is on screen in both states, spanning the
+ * full width of the window, and the panel rises above it rather than in place of
+ * it. Two reasons, both from watching it on stage. The bar used to slide out and
+ * hand its 34px strip to a cream panel, so the foot of the window changed colour
+ * every time the drawer moved — a flicker exactly where the eye was already
+ * heading. And with the bar gone while open, the only way back down was the small
+ * `Hide ▾` in the panel's top-right corner, on the opposite side of the screen
+ * from the control that opened it.
+ */
 export const REOPEN_BAR_HEIGHT = 34;
+/** The panel's own height: whatever the drawer occupies, less the bar below it. */
+export const DRAWER_PANEL_HEIGHT = DRAWER_HEIGHT - REOPEN_BAR_HEIGHT;
 
 /**
  * Vertical space the layout must reserve so the drawer does not cover the
@@ -48,11 +61,17 @@ export function reservedDrawerSpace(isOpen: boolean): number {
 
 /**
  * The drawer positions itself absolutely against its nearest positioned
- * ancestor, and `AppLayout` gives it a wrapper spanning exactly the grid tracks
- * it should cover — columns 3-4 in the chat shell, column 2 on the dossier. That
- * is why there is no left inset constant: the wrapper's own position supplies it,
- * so a change to the window's column template cannot leave a hardcoded number
- * behind.
+ * ancestor, and `AppWindow` renders it into a full-width strip pinned to the foot
+ * of the window frame. That is why there is no left inset constant: the strip's
+ * own position supplies it, so a change to the window's column template cannot
+ * leave a hardcoded number behind.
+ *
+ * Window-level rather than per-column, because the bar has to be one unbroken
+ * line across the whole bottom edge. Anchored inside the chat/brief tracks it
+ * started somewhere in the middle of the frame, stopping short of the icon rail
+ * and the conversation list, and read as a panel that had lost its left end. The
+ * window makes room for the whole strip (`bottomInset`), so nothing above it is
+ * covered — the rail's ⚙ and the foot of the conversation list included.
  *
  * It must NOT be `position: fixed`, and it must not portal to `document.body`.
  * The old inspector portalled out to escape the app header's `backdrop-filter`,
@@ -68,6 +87,14 @@ export const DRAWER_COPY = {
   subtitle: 'Real AWS resources · us-east-1 · measured per request',
   hide: 'Hide the architecture drawer',
   reopen: 'Show the architecture drawer',
+  /**
+   * The bar's name while the panel is up.
+   *
+   * Distinct from `hide` on purpose: the panel keeps its own `Hide ▾`, and two
+   * buttons with one accessible name is an ambiguous query for a screen reader
+   * user and for `getByRole` alike.
+   */
+  collapse: 'Collapse the architecture drawer',
   liveMode: 'Live',
   demoMode: 'Demo',
   next: 'Next step',
@@ -84,8 +111,9 @@ const drawerStyle: React.CSSProperties = {
   position: 'absolute',
   left: 0,
   right: 0,
-  bottom: 0,
-  height: DRAWER_HEIGHT,
+  // Above the bar, not over it: the bar stays put in both states.
+  bottom: REOPEN_BAR_HEIGHT,
+  height: DRAWER_PANEL_HEIGHT,
   background: '#FAF4F0',
   borderTop: '1px solid #E5D9D2',
   boxShadow: '0 -14px 34px rgba(42, 34, 38, 0.11)',
@@ -121,6 +149,38 @@ const ghostButtonStyle: React.CSSProperties = {
   borderColor: 'transparent',
   color: '#756A70',
 };
+
+/**
+ * The bar's state, as a zoom-in / zoom-out lens.
+ *
+ * A magnifier with a ⊕ in it reads as "there is more to look at here" in a way a
+ * bare chevron does not, and the sign is the whole of the open/closed signal —
+ * nothing else about the bar changes between states. Drawn rather than a glyph so
+ * the stroke weight matches the label beside it at any size, and it matches the
+ * magnifier on the sidebar's `ArchitectureToggle`, which opens the same drawer.
+ */
+function ZoomIcon({ sign }: { sign: 'plus' | 'minus' }) {
+  return (
+    <svg
+      width={14}
+      height={14}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      aria-hidden="true"
+      data-testid="architecture-bar-sign"
+      data-sign={sign}
+      style={{ flexShrink: 0 }}
+    >
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="m15.6 15.6 4.4 4.4" />
+      <path d="M7.5 10.5h6" />
+      {sign === 'plus' && <path d="M10.5 7.5v6" />}
+    </svg>
+  );
+}
 
 function ModeSwitch({
   mode,
@@ -165,7 +225,7 @@ function ModeSwitch({
 }
 
 export function LiveArchitectureDrawer() {
-  const { isOpen, isMounted, open, close } = useArchitectureDrawer();
+  const { isOpen, isMounted, toggle, close } = useArchitectureDrawer();
   const { mode, setMode } = useArchitectureMode();
   const live = useLiveArchitecture();
 
@@ -360,12 +420,14 @@ export function LiveArchitectureDrawer() {
         </section>
       )}
 
-      {/* The bar left behind when the drawer is down: the affordance that says it
-          can come back, and a reminder of which step it is holding. */}
+      {/* The one fixture of the drawer: on screen in both states, the same colour
+          in both states, and the control that opens and closes the panel. Also a
+          reminder of which step it is holding. */}
       <button
         type="button"
-        onClick={open}
-        aria-label={DRAWER_COPY.reopen}
+        onClick={toggle}
+        aria-label={isOpen ? DRAWER_COPY.collapse : DRAWER_COPY.reopen}
+        aria-expanded={isOpen}
         data-testid="architecture-reopen-bar"
         style={{
           position: 'absolute',
@@ -373,31 +435,38 @@ export function LiveArchitectureDrawer() {
           right: 0,
           bottom: 0,
           height: REOPEN_BAR_HEIGHT,
-          background: '#2A2226',
-          color: colors.textOnAccent,
+          // One flat moss ground, unconditionally. Nothing here reads `isOpen`:
+          // the bar changing colour under the cursor as the panel moved was the
+          // flicker this replaces, so open, closed and hovered all look the same
+          // and the ⊕/⊖ carries the state instead.
+          background: colors.mossGradient,
+          color: colors.onMoss,
+          borderTop: `1px solid ${colors.onMossHairline}`,
           display: 'flex',
           alignItems: 'center',
           gap: 9,
           padding: '0 20px',
-          fontSize: 11,
+          fontSize: typography.px.label,
           cursor: 'pointer',
           zIndex: 6,
           border: 'none',
           textAlign: 'left',
           fontFamily: typography.bodyFontFamily,
-          transform: isOpen ? 'translateY(100%)' : 'translateY(0)',
-          transition: `transform ${PANEL_SLIDE_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`,
         }}
       >
+        <ZoomIcon sign={isOpen ? 'minus' : 'plus'} />
         <span
           aria-hidden="true"
-          style={{ width: 7, height: 7, borderRadius: '50%', background: '#0E9B84', flexShrink: 0 }}
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: '50%',
+            background: colors.jade,
+            flexShrink: 0,
+          }}
         />
         {DRAWER_COPY.title}
         <b style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{stepReadout}</b>
-        <span aria-hidden="true" style={{ marginLeft: 'auto', fontSize: 13 }}>
-          ▴
-        </span>
       </button>
     </>
   );

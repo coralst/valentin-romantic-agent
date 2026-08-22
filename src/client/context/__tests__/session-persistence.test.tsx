@@ -334,6 +334,93 @@ describe('session message persistence', () => {
     ]);
   });
 
+  /**
+   * The socket connects before the conversation list arrives, so it authenticates
+   * with no session id and the gateway mints one, announcing it in `session_init`.
+   * That event only ever reached the chat reducer, so the sidebar said "No
+   * conversations yet" beside a live transcript — and the persistence hook, whose
+   * owner was still null, silently threw every write away.
+   */
+  describe('a session minted by the server over the socket', () => {
+    /** The `session_init` frame, as `dispatchServerEvent` delivers it. */
+    function sessionInit(view: ReturnType<typeof renderApp>, sessionId: string) {
+      act(() => {
+        view.result.current.chat.dispatch({
+          type: 'SESSION_INIT',
+          sessionId,
+          welcomeMessage: makeMessage("Hello — I'm Valentin.", {
+            id: 'welcome',
+            sender: 'agent',
+          }),
+        });
+      });
+      act(() => {
+        vi.advanceTimersByTime(0);
+      });
+    }
+
+    it('gets a row in the sidebar, keeping the transcript on screen', async () => {
+      const view = await bootApp();
+      sessionInit(view, 'ws-minted');
+
+      expect(view.result.current.session.state.sessions.map((s) => s.id)).toEqual(['ws-minted']);
+      expect(view.result.current.session.state.activeSessionId).toBe('ws-minted');
+      // The welcome message has to survive adoption: SessionSyncer re-dispatches
+      // SWITCH_SESSION from the adopted record, so adopting an empty one would
+      // clear the greeting that had just appeared.
+      expect(view.result.current.chat.state.messages.map((m) => m.content)).toEqual([
+        "Hello — I'm Valentin.",
+      ]);
+    });
+
+    it('persists the conversation that follows, which had no owner before', async () => {
+      const view = await bootApp();
+      sessionInit(view, 'ws-minted');
+
+      view.sendMessage('What should I get her?');
+      view.settle();
+
+      expect(view.storedSession('ws-minted')?.messages.map((m) => m.content)).toEqual([
+        "Hello — I'm Valentin.",
+        'What should I get her?',
+      ]);
+    });
+
+    it('does not resurrect a conversation the user has deleted', async () => {
+      const view = await bootApp();
+      const a = await view.newConversation();
+      view.sendMessage('goodbye');
+      view.settle();
+
+      await act(async () => {
+        await view.result.current.session.removeSession(a);
+      });
+      act(() => {
+        vi.advanceTimersByTime(0);
+      });
+
+      // Deleting the active conversation leaves chat state naming it for a render,
+      // which is indistinguishable from a freshly minted id unless adoption
+      // remembers what it has already seen.
+      expect(view.result.current.session.state.sessions).toEqual([]);
+    });
+
+    it('leaves a stray minted session alone while a conversation is active', async () => {
+      const view = await bootApp();
+      const a = await view.newConversation();
+      view.sendMessage('mid-conversation');
+      view.settle();
+
+      // The pre-load race can mint a session after the list has already opened
+      // one. Its transcript belongs to `a`, not to the minted id, so adopting it
+      // would stamp one conversation's messages onto another's record.
+      sessionInit(view, 'stray');
+
+      expect(view.result.current.session.state.sessions.map((s) => s.id)).toEqual([a]);
+      expect(view.storedSession(a)?.messages.map((m) => m.content)).toEqual(['mid-conversation']);
+    });
+  });
+
   describe('reload persistence', () => {
     it('survives a server round-trip', async () => {
       const view = await bootApp();

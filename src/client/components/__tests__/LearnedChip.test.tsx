@@ -48,6 +48,50 @@ describe('LearnedChip', () => {
     ).toBeInTheDocument();
   });
 
+  describe('several discoveries on one card', () => {
+    const items = [
+      { id: 'p1', value: 'Late-night jazz', confidence: 1 },
+      { id: 'p2', value: 'Hiking at sunrise', confidence: 0.62 },
+    ];
+
+    it('lists each discovery as its own row under a single eyebrow', () => {
+      render(<LearnedChip items={items} onDismiss={() => {}} />);
+
+      expect(screen.getAllByTestId('learned-chip')).toHaveLength(1);
+      // One "Noted" for the group, not one per discovery — the whole point of
+      // grouping is that two cards saying the same thing read as a bug.
+      expect(screen.getAllByText('Noted')).toHaveLength(1);
+      expect(screen.getAllByTestId('learned-chip-item')).toHaveLength(2);
+    });
+
+    it('gives each row its own confidence word', () => {
+      // A shared pill would claim the group is as certain as its most certain
+      // member, which is a stronger statement than the agent actually made.
+      render(<LearnedChip items={items} onDismiss={() => {}} />);
+
+      const rows = screen.getAllByTestId('learned-chip-item');
+      expect(rows.map((r) => r.getAttribute('data-confidence'))).toEqual(['certain', 'likely']);
+    });
+
+    it('dismisses one discovery at a time, by id', async () => {
+      const user = userEvent.setup();
+      const onDismiss = vi.fn();
+      render(<LearnedChip items={items} onDismiss={onDismiss} />);
+
+      await user.click(screen.getByRole('button', { name: 'Dismiss Hiking at sunrise' }));
+
+      expect(onDismiss).toHaveBeenCalledTimes(1);
+      expect(onDismiss).toHaveBeenCalledWith('p2');
+    });
+
+    it('renders nothing at all when the group is empty', () => {
+      // Every discovery having been dismissed must take the card with it, rather
+      // than leaving a bare "Noted" behind.
+      render(<LearnedChip items={[]} onDismiss={() => {}} />);
+      expect(screen.queryByTestId('learned-chip')).not.toBeInTheDocument();
+    });
+  });
+
   it('always reports one of the three confidence words for any score', () => {
     fc.assert(
       fc.property(fc.double({ min: 0, max: 1, noNaN: true }), (confidence) => {

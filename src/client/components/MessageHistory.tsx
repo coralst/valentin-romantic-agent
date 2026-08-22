@@ -96,23 +96,36 @@ export function MessageHistory({ messages }: MessageHistoryProps) {
   return (
     <div role="log" style={containerStyle} aria-label="Message history">
       <div style={innerStyle}>
-        {messages.map((msg) => (
-          <div key={msg.id}>
-            <MessageBubble
-              message={msg}
-              // Only the newest message animates; earlier ones render fully.
-              animate={msg.id === lastMessage?.id && msg.sender === 'agent'}
-            />
-            {chipsByMessageId.get(msg.id)?.map((pref) => (
-              <LearnedChip
-                key={pref.id}
-                value={pref.value}
-                confidence={pref.confidence}
-                onDismiss={() => handleDismiss(pref.id)}
+        {messages.map((msg) => {
+          const discoveries = chipsByMessageId.get(msg.id);
+          return (
+            <div key={msg.id}>
+              <MessageBubble
+                message={msg}
+                // Only the newest message animates; earlier ones render fully.
+                animate={msg.id === lastMessage?.id && msg.sender === 'agent'}
               />
-            ))}
-          </div>
-        ))}
+              {/*
+                One card for the whole group, not one per discovery. A single
+                sentence often teaches two unrelated things, and the server is
+                right to report them separately — but two stacked NOTED cards
+                saying almost the same thing reads as a bug. The card keeps a
+                row, a confidence pill and a ✕ per discovery, so dismissal is
+                still per-fact.
+              */}
+              {discoveries && (
+                <LearnedChip
+                  items={discoveries.map((pref) => ({
+                    id: pref.id,
+                    value: pref.value,
+                    confidence: pref.confidence,
+                  }))}
+                  onDismiss={handleDismiss}
+                />
+              )}
+            </div>
+          );
+        })}
         <div ref={bottomRef} />
       </div>
     </div>

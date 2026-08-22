@@ -86,15 +86,45 @@ describe('MessageHistory', () => {
     expect(bubbles[bubbles.length - 1].parentElement).toBe(chip.parentElement);
   });
 
-  it('renders one chip per discovery', () => {
+  /**
+   * One sentence routinely teaches Valentin two unrelated things, and the server
+   * is right to report them as two `preference_update` events — merging them
+   * would corrupt the dossier. Two near-identical NOTED cards stacked under one
+   * message read as a bug, so the transcript groups them onto one card. This
+   * used to expect one card per discovery.
+   */
+  it('groups the discoveries from one exchange onto a single card', () => {
     renderHistory([message('m1', 'user', 'She surfs and dances')], [
       preference({ id: 'p1', value: 'surfing' }),
       preference({ id: 'p2', value: 'salsa dancing' }),
     ]);
-    expect(screen.getAllByTestId('learned-chip')).toHaveLength(2);
+
+    expect(screen.getAllByTestId('learned-chip')).toHaveLength(1);
+    const rows = screen.getAllByTestId('learned-chip-item');
+    expect(rows.map((r) => r.textContent)).toEqual([
+      expect.stringContaining('surfing'),
+      expect.stringContaining('salsa dancing'),
+    ]);
   });
 
-  it('hides a dismissed chip without dropping the others', async () => {
+  it('hides a dismissed discovery without dropping the others', async () => {
+    const user = userEvent.setup();
+    renderHistory([message('m1', 'user', 'She surfs and dances')], [
+      preference({ id: 'p1', value: 'surfing' }),
+      preference({ id: 'p2', value: 'salsa dancing' }),
+    ]);
+
+    // Grouped onto one card, dismissal still has to be per discovery: waving off
+    // the hobby must not also wave off the dance note that arrived with it.
+    await user.click(screen.getByRole('button', { name: 'Dismiss surfing' }));
+
+    const remaining = screen.getAllByTestId('learned-chip-item');
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].textContent).toContain('salsa dancing');
+    expect(screen.getAllByTestId('learned-chip')).toHaveLength(1);
+  });
+
+  it('drops the card once its last discovery is dismissed', async () => {
     const user = userEvent.setup();
     renderHistory([message('m1', 'user', 'She surfs and dances')], [
       preference({ id: 'p1', value: 'surfing' }),
@@ -102,10 +132,9 @@ describe('MessageHistory', () => {
     ]);
 
     await user.click(screen.getByRole('button', { name: 'Dismiss surfing' }));
+    await user.click(screen.getByRole('button', { name: 'Dismiss salsa dancing' }));
 
-    const remaining = screen.getAllByTestId('learned-chip');
-    expect(remaining).toHaveLength(1);
-    expect(remaining[0].textContent).toContain('salsa dancing');
+    expect(screen.queryByTestId('learned-chip')).not.toBeInTheDocument();
   });
 
   it('renders no chips when nothing has been discovered', () => {

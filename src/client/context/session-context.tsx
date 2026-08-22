@@ -64,6 +64,18 @@ const initialState: SessionState = {
   notice: null,
 };
 
+/**
+ * Whether anyone has actually said anything in this transcript.
+ *
+ * The agent's welcome message does not count: it is sent on every connect, so a
+ * conversation nobody has typed into still holds one message. "Has the user
+ * spoken?" is the only reading that separates a conversation worth keeping from
+ * a blank one.
+ */
+function hasUserTurn(messages: ChatMessage[]): boolean {
+  return messages.some((m) => m.sender === 'user');
+}
+
 /** Newest conversation first — the order the sidebar renders */
 function byRecency(a: StoredSession, b: StoredSession): number {
   return new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime();
@@ -183,6 +195,10 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
 interface SessionContextValue {
   state: SessionState;
   activeSession: StoredSession | null;
+  /**
+   * Start a conversation — or hand back the one already on screen if nobody has
+   * said anything in it yet. See the note on the implementation.
+   */
   createSession: () => Promise<StoredSession>;
   /**
    * Insert an already-built session (e.g. one created server-side) into the
@@ -190,6 +206,17 @@ interface SessionContextValue {
    */
   adoptSession: (session: StoredSession) => void;
   switchSession: (id: string) => Promise<void>;
+  /**
+   * Tell the store what the *live* transcript currently holds, and for which
+   * session. Called by `SessionSyncer`, which is the only place that sees chat
+   * state and session state at once.
+   *
+   * `createSession` needs it. The stored record lags the screen by up to the
+   * persistence debounce, so a conversation that has just been typed into still
+   * looks empty in `sessions` — and reusing it would drop the turn in flight
+   * into a conversation the user believes they left.
+   */
+  reportLiveTranscript: (sessionId: string | null, messages: ChatMessage[]) => void;
   removeSession: (id: string) => Promise<void>;
   renameSession: (id: string, title: string) => Promise<void>;
   /**
@@ -302,7 +329,51 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const activeSession = state.sessions.find((s) => s.id === state.activeSessionId) ?? null;
 
+  /*
+   * Latest values for `createSession` to consult, held in refs so the callback
+   * keeps a stable identity — it is passed into the sidebar, and a new function
+   * on every keystroke would churn every consumer of this context.
+   */
+  const activeSessionRef = useRef<StoredSession | null>(activeSession);
+  activeSessionRef.current = activeSession;
+  const liveTranscriptRef = useRef<{ id: string | null; hasUserTurn: boolean }>({
+    id: null,
+    hasUserTurn: false,
+  });
+
+  const reportLiveTranscript = useCallback((sessionId: string | null, messages: ChatMessage[]) => {
+    liveTranscriptRef.current = { id: sessionId, hasUserTurn: hasUserTurn(messages) };
+  }, []);
+
   const createSession = useCallback(async (): Promise<StoredSession> => {
+    /*
+     * Idempotent while the conversation on screen is still untouched.
+     *
+     * "+ New conversation" used to POST unconditionally, so every click on it
+     * from a blank conversation left the previous blank one behind as a
+     * permanent 0-message row. Nothing distinguishes the two — they have the
+     * same empty transcript and the same "New conversation" label — so the
+     * honest answer to "give me a new conversation" is the empty one they are
+     * already looking at.
+     *
+     * Untouched has to be judged against the live transcript as well as the
+     * stored record: the record is written on a debounce, so a conversation
+     * typed into a moment ago still reads as empty here.
+     */
+    const current = activeSessionRef.current;
+    const live = liveTranscriptRef.current;
+    const liveIsUntouched = live.id !== current?.id || !live.hasUserTurn;
+    const storedIsUntouched =
+      current !== null &&
+      (current.messages.length > 0 ? !hasUserTurn(current.messages) : current.messageCount === 0);
+
+    if (current !== null && storedIsUntouched && liveIsUntouched) {
+      // SET_ACTIVE rather than a no-op: on mobile this is what closes the
+      // overlay, which is the only feedback the tap gets.
+      dispatch({ type: 'SET_ACTIVE', id: current.id });
+      return current;
+    }
+
     const session = await createRemoteSession();
     // Brand new, so there is nothing to fetch.
     hydrated.current.add(session.id);
@@ -405,6 +476,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         createSession,
         adoptSession,
         switchSession,
+        reportLiveTranscript,
         removeSession,
         renameSession,
         persistSession,

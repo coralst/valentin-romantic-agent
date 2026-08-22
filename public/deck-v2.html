@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Valentin — what I built, who really built it, what I learned</title>
+<link href="https://fonts.googleapis.com/css2?family=Gloock&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --ink: #2A2226; --ink-2: #756A70; --ink-3: #A3959C;
+    --claret: #8C2F45; --claret-2: #B14A62; --blush: #F6DEE2;
+    --olive: #7C8464; --cream: #FFFDFB; --bg: #EFE7E1;
+    --r: 26px; --r-sm: 16px;
+    --master: #7B68EE; --arch: #FF8C00; --front: #1E90FF;
+    --back: #32CD32; --design: #FF69B4; --qa: #FF4500;
+  }
+  html { scroll-behavior: smooth; }
+  body { font-family: Outfit, sans-serif; color: var(--ink); background: var(--bg);
+         scroll-snap-type: y mandatory; overflow-y: scroll; height: 100vh; }
+
+  section { min-height: 100vh; scroll-snap-align: start; display: grid; place-items: center;
+            padding: 60px 40px; position: relative; }
+  .wrap { width: 100%; max-width: 1180px; }
+  .wide { max-width: 1440px; }
+  h1 { font-family: Gloock, serif; font-weight: 400; font-size: clamp(44px, 7vw, 92px); line-height: 1.02; }
+  h2 { font-family: Gloock, serif; font-weight: 400; font-size: clamp(28px, 3.6vw, 46px); line-height: 1.1; }
+  .kicker { font: 500 10.5px Outfit; letter-spacing: .26em; text-transform: uppercase;
+            color: var(--claret); margin-bottom: 15px; }
+  .act { font: 500 10.5px Outfit; letter-spacing: .26em; text-transform: uppercase;
+         color: var(--ink-3); margin-bottom: 15px; }
+  .act b { color: var(--claret); font-weight: 500; }
+  .lede { font-size: clamp(15px, 1.4vw, 19px); line-height: 1.6; color: var(--ink-2);
+          max-width: 700px; margin-top: 16px; }
+  p.note { font-size: 13px; color: var(--ink-3); margin-top: 14px; max-width: 940px; }
+  p.cta { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 14px; }
+  p.cta a { display: inline-block; padding: 7px 17px; border-radius: 999px;
+            background: var(--claret); color: var(--cream); text-decoration: none;
+            font: 500 13px Outfit; letter-spacing: .01em; }
+  p.cta a:hover { background: var(--claret-2); }
+  p.cta span { font-size: 12.5px; color: var(--ink-3); }
+  code { font-family: ui-monospace, SFMono-Regular, monospace; font-size: .88em; color: var(--claret); }
+
+  /* ---- claret + dark variants ---- */
+  .cover, .demo { background: var(--claret); color: var(--cream); }
+  .cover h1, .demo h2 { color: #fff; }
+  .cover .lede, .demo .lede { color: rgba(255,253,251,.8); }
+  .cover .kicker, .demo .kicker { color: rgba(255,253,251,.62); }
+  .demo p.note { color: rgba(255,253,251,.6); }
+  .dark { background: var(--ink); color: var(--cream); }
+  .dark h2 { color: #fff; }
+  .dark .lede { color: rgba(255,253,251,.74); }
+  .dark .kicker { color: var(--blush); }
+  .dark .act { color: rgba(255,253,251,.45); }
+  .dark .act b { color: var(--blush); }
+  .dark p.note { color: rgba(255,253,251,.45); }
+  .dark code { color: var(--blush); }
+
+  .crest { width: 136px; height: 136px; border-radius: 999px; overflow: hidden; background: var(--cream);
+           display: grid; place-items: center; margin-bottom: 26px; box-shadow: 0 14px 40px rgba(0,0,0,.28); }
+  .crest img { width: 118%; height: 118%; object-fit: cover; }
+  .thesis { margin-top: 24px; font-family: Gloock, serif; font-size: clamp(19px, 2.1vw, 28px);
+            color: #fff; line-height: 1.3; }
+  .thesis em { font-style: normal; color: var(--blush); }
+  .byline { margin-top: 38px; font-size: 12.5px; color: rgba(255,253,251,.62);
+            display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .byline i { width: 4px; height: 4px; border-radius: 999px; background: rgba(255,253,251,.45); }
+
+  /* ---- three-act contents on the cover ---- */
+  .acts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 34px; }
+  .actcard { background: rgba(255,253,251,.1); border-radius: var(--r-sm); padding: 18px 20px; }
+  .actcard .n { font-family: Gloock, serif; font-size: 22px; color: var(--blush); line-height: 1; }
+  .actcard b { display: block; font: 500 15px Outfit; color: #fff; margin: 10px 0 5px; }
+  .actcard p { font-size: 12.5px; line-height: 1.5; color: rgba(255,253,251,.66); }
+
+  /* ---- cards / roster / stats ---- */
+  .card { background: var(--cream); border-radius: var(--r-sm); padding: 20px 22px;
+          box-shadow: 0 1px 3px rgba(42,34,38,.05), 0 12px 30px rgba(42,34,38,.06); }
+  .roster { display: grid; gap: 9px; margin-top: 26px; }
+  .who { background: var(--cream); border-radius: var(--r-sm); padding: 14px 20px;
+         display: grid; grid-template-columns: 12px 190px 1fr 200px; gap: 18px; align-items: center;
+         box-shadow: 0 1px 3px rgba(42,34,38,.05), 0 8px 22px rgba(42,34,38,.05); }
+  .who .swatch { width: 12px; height: 12px; border-radius: 999px; }
+  .who b { font: 500 15px Outfit; }
+  .who p { font-size: 13px; color: var(--ink-2); }
+  .who .owns { font-family: ui-monospace, monospace; font-size: 12px; color: var(--claret);
+               background: var(--blush); border-radius: 999px; padding: 5px 12px; justify-self: start; }
+
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 22px; }
+  .stat { background: var(--cream); border-radius: var(--r-sm); padding: 18px 20px;
+          box-shadow: 0 1px 3px rgba(42,34,38,.05), 0 10px 26px rgba(42,34,38,.06); }
+  .stat .v { font-family: Gloock, serif; font-size: clamp(28px, 3vw, 40px); color: var(--claret); line-height: 1; }
+  .stat b { display: block; font: 500 13px Outfit; margin: 9px 0 5px; }
+  .stat p { font-size: 12px; line-height: 1.45; color: var(--ink-2); }
+
+  /* ---- diagram stage ---- */
+  .stage { margin-top: 20px; background: var(--cream); border-radius: var(--r);
+           padding: 18px; display: grid; place-items: center; overflow: hidden;
+           box-shadow: 0 2px 6px rgba(42,34,38,.06), 0 18px 44px rgba(42,34,38,.08); }
+  .stage svg, .stage img { max-width: 100%; max-height: 60vh; height: auto; display: block; }
+  .stage.narrow { max-width: 720px; margin-left: auto; margin-right: auto; }
+  .stage.narrow svg { max-height: 66vh; }
+  /* The sequence diagram is tall and portrait, so height is what limits label size —
+     buy it back from the title and the caption on this slide only. */
+  #workflow h2 { font-size: clamp(24px, 2.5vw, 33px); }
+  #workflow .stage { margin-top: 12px; padding: 10px; }
+  #workflow .stage svg { max-height: 74vh; }
+  #workflow p.note { margin-top: 10px; }
+  .mermaid-host { width: 100%; display: grid; place-items: center; }
+
+  /* ---- flow strip ---- */
+  .flow { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 26px;
+          background: var(--cream); border-radius: var(--r); overflow: hidden;
+          box-shadow: 0 2px 6px rgba(42,34,38,.06), 0 18px 44px rgba(42,34,38,.08); }
+  .step { padding: 20px 20px; border-right: 1px solid #F2E9E4; }
+  .step:last-child { border-right: none; }
+  .step .num { width: 26px; height: 26px; border-radius: 999px; background: var(--blush);
+               color: var(--claret); display: grid; place-items: center; font: 500 11.5px Outfit;
+               margin-bottom: 11px; }
+  .step b { display: block; font: 500 13.5px Outfit; margin-bottom: 6px; }
+  .step p { font-size: 12.2px; line-height: 1.5; color: var(--ink-2); }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+  .chip { background: var(--cream); border-radius: 999px; padding: 9px 17px; font: 500 13px Outfit;
+          box-shadow: 0 1px 3px rgba(42,34,38,.05); }
+
+  /* ---- split ---- */
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: center; margin-top: 22px; }
+  .split.lean { grid-template-columns: 1.15fr 1fr; }
+  .shotbox { border-radius: var(--r-sm); overflow: hidden; background: var(--cream);
+             box-shadow: 0 2px 6px rgba(42,34,38,.07), 0 18px 44px rgba(42,34,38,.1); }
+  .shotbox img { width: 100%; display: block; }
+  .bullets { list-style: none; }
+  .bullets li { font-size: 14.5px; line-height: 1.5; padding: 10px 0 10px 22px; position: relative;
+                border-top: 1px solid rgba(42,34,38,.1); }
+  .bullets li:first-child { border-top: none; }
+  .bullets li::before { content: '·'; position: absolute; left: 5px; top: 8px;
+                        color: var(--claret-2); font-size: 20px; }
+  .dark .bullets li { border-color: rgba(255,253,251,.14); }
+
+  /* ---- PR thread beats ---- */
+  .beats { display: grid; gap: 10px; margin-top: 4px; }
+  .beat { display: grid; grid-template-columns: 26px 1fr; gap: 14px; align-items: start; }
+  .beat .dot { width: 26px; height: 26px; border-radius: 999px; display: grid; place-items: center;
+               font: 500 11px Outfit; color: #fff; margin-top: 2px; }
+  .beat b { display: block; font: 500 14.5px Outfit; margin-bottom: 3px; }
+  .beat p { font-size: 13px; line-height: 1.5; color: var(--ink-2); }
+  .quote { margin-top: 18px; background: var(--cream); border-left: 3px solid var(--olive);
+           border-radius: 0 var(--r-sm) var(--r-sm) 0; padding: 16px 20px;
+           font-family: Gloock, serif; font-size: clamp(16px,1.7vw,21px); line-height: 1.35; }
+  .quote s { display: block; text-decoration: none; font: 500 11px Outfit; letter-spacing: .14em;
+             text-transform: uppercase; color: var(--ink-3); margin-top: 9px; }
+
+  /* ---- lessons ---- */
+  .lessons { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 26px; }
+  .lesson { background: rgba(255,253,251,.06); border-radius: var(--r-sm); padding: 20px 22px; }
+  .lesson .n { font-family: Gloock, serif; font-size: 20px; color: var(--blush); line-height: 1; }
+  .lesson b { display: block; font: 500 16px Outfit; color: #fff; margin: 10px 0 6px; }
+  .lesson p { font-size: 13px; line-height: 1.55; color: rgba(255,253,251,.68); }
+
+  /* ---- honest scope + close ---- */
+  .verdicts { display: grid; gap: 8px; margin-top: 22px; }
+  .v-row { border-radius: var(--r-sm); padding: 13px 18px; display: grid;
+           grid-template-columns: 104px 1fr; gap: 16px; align-items: center;
+           background: rgba(255,253,251,.06); }
+  .tag { font: 500 9.5px Outfit; letter-spacing: .16em; text-transform: uppercase;
+         border-radius: 999px; padding: 5px 10px; text-align: center; }
+  .tag.real { background: #EEF3E9; color: var(--olive); }
+  .tag.conv { background: #FBEFD9; color: #9A6B15; }
+  .v-row p { font-size: 13.5px; line-height: 1.45; }
+  .v-row p s { text-decoration: none; color: rgba(255,253,251,.5); display: block;
+               font-size: 12.5px; margin-top: 2px; }
+
+  .cta { display: inline-flex; align-items: center; gap: 9px; margin-top: 20px; text-decoration: none;
+         background: var(--blush); color: var(--claret); border-radius: 999px;
+         padding: 13px 25px; font: 500 14px Outfit; box-shadow: 0 10px 26px rgba(0,0,0,.25); }
+  .term { margin-top: 22px; background: #241A1E; border-radius: var(--r-sm); padding: 18px 22px;
+          font-family: ui-monospace, monospace; font-size: 12.5px; line-height: 1.8;
+          color: #E9DDE1; box-shadow: 0 18px 44px rgba(0,0,0,.28); }
+  .term .c { color: #E8A0B0; }
+  .term .d { color: rgba(233,221,225,.5); }
+  a.src { color: var(--claret); text-decoration: none; border-bottom: 1px solid rgba(140,47,69,.35); }
+  .dark a.src, .demo a.src { color: var(--blush); border-color: rgba(246,222,226,.4); }
+
+  /* ---- chrome ---- */
+  .dots { position: fixed; right: 20px; top: 50%; transform: translateY(-50%); z-index: 50;
+          display: flex; flex-direction: column; gap: 10px; }
+  .dots a { width: 8px; height: 8px; border-radius: 999px; background: rgba(42,34,38,.22); transition: all .18s; }
+  .dots a:hover { background: var(--claret); transform: scale(1.5); }
+  .dots a.on { background: var(--claret); }
+  .counter { position: fixed; bottom: 20px; right: 22px; z-index: 50; font: 500 10px Outfit;
+             letter-spacing: .18em; color: rgba(42,34,38,.35); transition: color .25s; }
+  body.on-dark .counter { color: rgba(255,253,251,.45); }
+  body.on-dark .dots a { background: rgba(255,253,251,.3); }
+  body.on-dark .dots a.on { background: var(--blush); }
+  /* The cover carries the big crest; every slide after it keeps a small corner mark. */
+  .mark { position: fixed; left: 40px; bottom: 17px; z-index: 50; display: flex; gap: 9px;
+          align-items: center; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  .mark img { width: 30px; height: 30px; border-radius: 999px; object-fit: cover;
+              background: var(--cream); box-shadow: 0 2px 8px rgba(42,34,38,.14); }
+  .mark span { font: 500 9.5px Outfit; letter-spacing: .24em; text-transform: uppercase;
+               color: var(--ink-3); }
+  body.past-cover .mark { opacity: 1; }
+  body.on-dark .mark span { color: rgba(255,253,251,.5); }
+
+  /* Edit mode — type straight onto the slides, then download the edited file. */
+  .editbadge { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 90;
+               display: none; gap: 10px; align-items: center; padding: 7px 14px; border-radius: 999px;
+               background: var(--claret); color: #fff; font: 500 10.5px Outfit; letter-spacing: .12em;
+               text-transform: uppercase; box-shadow: 0 8px 24px rgba(0,0,0,.22); }
+  body.editing .editbadge { display: flex; }
+  body.editing section { outline: 1px dashed rgba(140,29,64,.35); outline-offset: -6px; }
+
+  .hint { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 50;
+          font: 500 10px Outfit; letter-spacing: .2em; text-transform: uppercase;
+          color: rgba(255,253,251,.55); animation: bob 2.4s ease-in-out infinite; transition: opacity .3s; }
+  body.past-cover .hint { opacity: 0; pointer-events: none; }
+  @keyframes bob { 0%,100% { transform: translate(-50%,0); } 50% { transform: translate(-50%,6px); } }
+
+  @media (max-width: 1000px) {
+    section { padding: 48px 20px; }
+    .acts, .flow, .split, .split.lean, .stats, .lessons { grid-template-columns: 1fr; }
+    .who { grid-template-columns: 12px 1fr; }
+    .who .owns, .who p { grid-column: 2; }
+    .step { border-right: none; border-bottom: 1px solid #F2E9E4; }
+    .dots, .hint, .counter, .mark { display: none; }
+    .stage svg, .stage img { max-height: none; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="dots" id="dots"></nav>
+<div class="counter" id="counter">01 / 09</div>
+<div class="mark"><img src="logo.png" alt=""><span>Valentin</span></div>
+<div class="editbadge">Editing · Esc to stop · ⌘S downloads the edited deck</div>
+
+<!-- ═══ 1 · COVER ═══════════════════════════════════════════════ -->
+<section class="cover" id="cover" data-title="Cover">
+  <div class="wrap">
+    <div class="crest"><img src="logo.png" alt="Valentin"></div>
+    <div class="kicker">An experiment in agentic development</div>
+    <h1>Valentin</h1>
+    <p class="thesis">The product is the artifact. <em>The workflow is the point.</em></p>
+    <div class="acts">
+      <div class="actcard"><div class="n">01</div><b>What I built</b>
+        <p>A romantic concierge that listens and remembers. Two minutes, live.</p></div>
+      <div class="actcard"><div class="n">02</div><b>Who really built it</b>
+        <p>Six AI agents, a real GitHub workflow, and a human who mostly said yes or no.</p></div>
+      <div class="actcard"><div class="n">03</div><b>What I learned</b>
+        <p>Where this works, where it broke, and what I'd tell you to do differently.</p></div>
+    </div>
+    <div class="byline"><span>Coral Steinberg</span><i></i>
+      <span>57 pull requests · 176 commits · 93 review comments</span></div>
+  </div>
+  <div class="hint">scroll</div>
+</section>
+
+<!-- ═══ 2 · DEMO ════════════════════════════════════════════════ -->
+<section class="demo" id="demo" data-title="Demo">
+  <div class="wrap wide">
+    <div class="act"><b>Act I</b> · What I built</div>
+    <h2>Let's just look at it.</h2>
+    <div class="split lean">
+      <div class="shotbox"><img src="deck-assets/app-live.png" alt="Valentin mid-conversation, profile filling in"></div>
+      <div>
+        <p class="lede">Tell him about someone you love. He asks like a person, not a form —
+          and the panel on the right fills itself in as you talk.</p>
+        <div class="term">
+          <div><span class="d">$</span> npm run dev:server <span class="d"># terminal 1</span></div>
+          <div class="c">[server] Valentin backend listening on http://localhost:3001</div>
+          <div>&nbsp;</div>
+          <div><span class="d">$</span> npm run dev <span class="d"># terminal 2</span></div>
+          <div class="c">➜  Local:   http://localhost:5180/</div>
+        </div>
+        <a class="cta" href="http://localhost:5180" target="_blank">Open the app ↗</a>
+        <p class="note">Real capture, four messages in. Name and birthday land at 100%
+          confidence; the richer categories were still landing when I took it.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 3 · WHAT IT IS ══════════════════════════════════════════ -->
+<section id="what" data-title="What it is">
+  <div class="wrap wide">
+    <div class="act"><b>Act I</b> · What I built</div>
+    <h2>Conversation in. Structured profile out.</h2>
+    <p class="lede">Nobody fills in an eighteen-field questionnaire about their partner, and the
+      details worth keeping aren't fields anyway. So the interview is the interface.</p>
+    <div class="flow">
+      <div class="step"><div class="num">1</div><b>You type</b>
+        <p>Session-scoped WebSocket to the Express gateway, routed to the orchestrator.</p></div>
+      <div class="step"><div class="num">2</div><b>He replies</b>
+        <p>Claude Sonnet 4.5 on Bedrock, in character, context window kept trimmed.</p></div>
+      <div class="step"><div class="num">3</div><b>Extraction runs</b>
+        <p>A <em>second</em> Bedrock call uses tool-use to pull structured preferences — off the
+          reply's critical path, so chat never waits.</p></div>
+      <div class="step"><div class="num">4</div><b>Profile updates</b>
+        <p>Persisted, pushed back over the same socket, highlighted as it lands.</p></div>
+    </div>
+    <div class="chips">
+      <span class="chip">Food</span><span class="chip">Hobbies</span><span class="chip">Music</span>
+      <span class="chip">Travel</span><span class="chip">Gifts</span><span class="chip">Love language</span>
+      <span class="chip">Important dates</span><span class="chip">Personality</span>
+    </div>
+    <p class="note">Eight categories, every entry carrying a confidence score. React 19 + TS strict ·
+      Express 5 + <code>ws</code> · Bedrock Converse · DynamoDB behind a storage interface · CDK on
+      ECS Fargate · Vitest + Playwright.</p>
+  </div>
+</section>
+
+<!-- ═══ 4 · THE TEAM ════════════════════════════════════════════ -->
+<section id="team" data-title="The team">
+  <div class="wrap wide">
+    <div class="act"><b>Act II</b> · Who really built it</div>
+    <h2>I didn't write it. They did.</h2>
+    <div class="roster">
+      <div class="who"><span class="swatch" style="background:var(--master)"></span>
+        <b>Master Agent</b><p>Decomposes, delegates, reviews, merges — and posts the last word.</p>
+        <span class="owns">feat/master-*</span></div>
+      <div class="who"><span class="swatch" style="background:var(--arch)"></span>
+        <b>System Architect</b><p>Contracts and shared types. Writes the spec before anyone branches.</p>
+        <span class="owns">src/shared/</span></div>
+      <div class="who"><span class="swatch" style="background:var(--front)"></span>
+        <b>Frontend Dev</b><p>Components, hooks, state. Cannot touch shared types.</p>
+        <span class="owns">src/client/</span></div>
+      <div class="who"><span class="swatch" style="background:var(--back)"></span>
+        <b>Backend Dev</b><p>API, Bedrock extraction, persistence. Cannot touch the client.</p>
+        <span class="owns">src/server/</span></div>
+      <div class="who"><span class="swatch" style="background:var(--design)"></span>
+        <b>UI Designer</b><p>Tokens, accessibility, and eight real mockups to choose from.</p>
+        <span class="owns">design-system/</span></div>
+      <div class="who"><span class="swatch" style="background:var(--qa)"></span>
+        <b>QA Agent</b><p>Playwright E2E and regression coverage. Cannot touch <code>src</code> at all.</p>
+        <span class="owns">e2e/</span></div>
+    </div>
+    <p class="note">Each is a prompt file in <code>.kiro/agents/</code> with a voice exemplar and an
+      explicit do-not-modify list. My job was product intent, final say, and veto — the second half of
+      each line is the load-bearing part, because disjoint ownership is what makes five agents editing
+      at once something other than a merge-conflict generator.</p>
+  </div>
+</section>
+
+<!-- ═══ 5 · THE WORKFLOW ════════════════════════════════════════ -->
+<section id="workflow" data-title="The workflow">
+  <div class="wrap wide">
+    <div class="act"><b>Act II</b> · Who really built it</div>
+    <h2>Control advances by a call, never by hope.</h2>
+    <div class="stage narrow">
+      <div class="mermaid-host" data-fallback="deck-assets/diagram-sequence.png">
+        <script type="text/plain" class="mmd">sequenceDiagram
+    autonumber
+    participant M as Master
+    participant B as Backend Dev
+    participant Q as QA Agent
+    participant G as Merge Gate
+    Note over M: reviews the diff + CI
+    M->>M: posts review comment<br/>tagging @backend-dev @qa-agent
+    par genuine multi-agent fan-out
+        M->>+B: invokeSubAgent(prNumber, reviewBody)
+        B->>B: pushes fix commits
+        B->>B: replies, tagging @master-agent
+        B-->>-M: returns
+    and
+        M->>+Q: invokeSubAgent(prNumber, reviewBody)
+        Q->>Q: runs E2E suite, adds coverage
+        Q->>Q: replies, tagging @master-agent
+        Q-->>-M: returns
+    end
+    Note over M: reads every return, then decides
+    alt blocking issues remain
+        M->>B: another round — tag + invoke again
+    else resolved
+        M->>M: posts APPROVED-BY-MASTER-AGENT
+        M->>+G: merge_pull_request
+        G->>G: lastWordIsMaster? / allTaggedResponded? / ciGreen?
+        G-->>-M: merge permitted
+    end</script>
+      </div>
+    </div>
+    <p class="note">The master drives every turn by calling the next actor and waiting. The
+      <code>par</code> block is real fan-out — two agents invoked from one comment, both replies
+      collected before deciding. At-mentions are a readable transcript and a parseable routing
+      signal, not the trigger. The gate at the bottom is four pure, unit-tested functions:
+      <code>parseTurn</code>, <code>lastWordIsMaster</code>, <code>allTaggedResponded</code>,
+      <code>evaluateConversationGate</code>.</p>
+  </div>
+</section>
+
+<!-- ═══ 6 · THE WORK, VISUALIZED ════════════════════════════════ -->
+<section id="graph" data-title="The work">
+  <div class="wrap wide">
+    <div class="act"><b>Act II</b> · Who really built it</div>
+    <h2>Every node is a real pull request.</h2>
+    <div class="stage">
+      <a href="graph.html" target="_blank" title="Open the interactive graph — filter by agent, session, or PR">
+        <img src="deck-assets/agent-contribution-graph.svg" alt="Agent contribution graph: 57 pull requests across seven lanes, grouped into four working sessions, each connected up to the point on main where it merged.">
+      </a>
+    </div>
+    <p class="cta">
+      <a href="graph.html" target="_blank">Open the interactive graph&nbsp;↗</a>
+      <span>filter by agent, isolate a session, search a PR, click any node to open it on GitHub</span>
+    </p>
+    <div class="stats">
+      <div class="stat"><div class="v">57</div><b>pull requests</b>
+        <p>49 merged, 6 closed without merging, across four sessions.</p></div>
+      <div class="stat"><div class="v">176</div><b>commits</b>
+        <p>+34,549 lines across 436 file changes.</p></div>
+      <div class="stat"><div class="v">93</div><b>review comments</b>
+        <p>The two longest threads run dozens deep.</p></div>
+      <div class="stat"><div class="v">32</div><b>workflow PRs</b>
+        <p>The biggest lane is the methodology itself.</p></div>
+    </div>
+    <p class="note">Generated from the repo's PR history by a script, so it can't drift. Node size is
+      files changed; rings mean a genuine multi-agent review thread; hollow dashed nodes were reviewed
+      and closed <em>without</em> merging. Five lanes open at once inside a single session.</p>
+  </div>
+</section>
+
+<!-- ═══ 7 · AGENTS ARGUING ══════════════════════════════════════ -->
+<section id="thread" data-title="Agents arguing">
+  <div class="wrap wide">
+    <div class="act"><b>Act II</b> · Who really built it</div>
+    <h2>They actually argue. And sometimes I'm wrong.</h2>
+    <div class="split lean">
+      <div class="shotbox"><img src="deck-assets/pr58-pushback.png" alt="Frontend Dev's reply on PR 58, answering each review point with reasoning"></div>
+      <div>
+        <div class="beats">
+          <div class="beat"><span class="dot" style="background:var(--master)">M</span>
+            <div><b>Master reviews</b><p>Names three concrete issues on a 27-file PR: a redundant
+              preference mapping, a suspicious <code>useEffect</code> dependency, missing button types.</p></div></div>
+          <div class="beat"><span class="dot" style="background:var(--front)">F</span>
+            <div><b>Frontend pushes back</b><p>Doesn't just comply. Argues the omitted dependency is
+              deliberate, and that the mapping cost is negligible at ~50 preferences.</p></div></div>
+          <div class="beat"><span class="dot" style="background:var(--design)">D</span>
+            <div><b>Designer reviews independently</b><p>Separate pass on tokens, the 8px grid, and
+              contrast — catching a badge that failed it.</p></div></div>
+          <div class="beat"><span class="dot" style="background:var(--master)">M</span>
+            <div><b>Master concedes, then merges</b><p>Accepts the reasoning, holds the line on the
+              real defects, waits for CI, posts the token.</p></div></div>
+        </div>
+        <div class="quote">“Accept your reasoning — at current scale this is not a performance
+          concern. Non-blocking.”<s>Master Agent → Frontend Dev · PR #58</s></div>
+      </div>
+    </div>
+    <p class="note">Full thread at
+      <a class="src" href="https://github.com/coralst/valentin-romantic-agent/pull/58" target="_blank">github.com/coralst/valentin-romantic-agent/pull/58</a>
+      — closing with <code>APPROVED-BY-MASTER-AGENT</code> after 376 tests pass.</p>
+  </div>
+</section>
+
+<!-- ═══ 8 · WHAT I LEARNED ══════════════════════════════════════ -->
+<section class="dark" id="learned" data-title="What I learned">
+  <div class="wrap wide">
+    <div class="act"><b>Act III</b> · What I learned</div>
+    <h2>Four things I didn't know going in.</h2>
+    <div class="lessons">
+      <div class="lesson"><div class="n">01</div>
+        <b>Event-led orchestration doesn't work</b>
+        <p>My first design had agents post “Ready for Review” and wait for a hook to wake the next
+          one. Kiro hooks aren't GitHub webhooks, there's no webhook back in, and the poller's
+          dispatch was a no-op. Agents finished and the conversation just stopped. The loop had no
+          engine — control has to advance by a call.</p></div>
+      <div class="lesson"><div class="n">02</div>
+        <b>Put guardrails where judgement is weakest</b>
+        <p>Models are good at writing code and bad at deciding whose turn it is. So routing and
+          merges aren't model output — they're four pure, offline, unit-tested functions. A refused
+          merge is a feature: 6 of 57 PRs were closed unmerged.</p></div>
+      <div class="lesson"><div class="n">03</div>
+        <b>Disjoint ownership is the whole unlock</b>
+        <p>Parallel agents are only safe if no two can write the same file. Every prompt carries an
+          explicit do-not-modify list. That single constraint is what turns five simultaneous agents
+          from a conflict generator into a team.</p></div>
+      <div class="lesson"><div class="n">04</div>
+        <b>The workflow costs more than the product</b>
+        <p>32 of 57 PRs and +12,443 lines went into the agents, hooks, router and gate — more than
+          the app itself. If you try this, budget for building the process, not just the thing the
+          process makes.</p></div>
+    </div>
+    <p class="note">Bonus, learned the hard way: GitHub returns 422 if you approve your own PR, and
+      every agent here shares one account — so the approval had to become a token in a comment,
+      enforced by a pre-merge hook, with the branch ruleset requiring green CI.</p>
+  </div>
+</section>
+
+<!-- ═══ 9 · HONEST SCOPE + THANKS ═══════════════════════════════ -->
+<section class="dark" id="thanks" data-title="Honest scope · thanks">
+  <div class="wrap wide">
+    <div class="act"><b>Act III</b> · What I learned</div>
+    <h2>What's wired up, and what's only convention.</h2>
+    <div class="verdicts">
+      <div class="v-row"><span class="tag real">Real</span>
+        <p>The orchestrator-led loop, turn router, 8 hooks, and merge gate
+          <s>Implemented, unit-tested, and exercised across the whole PR history</s></p></div>
+      <div class="v-row"><span class="tag conv">Convention</span>
+        <p>Agent labels exist on every agent-owned PR — but were applied as a batch
+          <s>The auto-label script is a proposal, not a wired-up hook. Branch prefixes drifted too:
+            <code>feat/arch-</code>, not <code>feat/architect-</code></s></p></div>
+      <div class="v-row"><span class="tag conv">Limited</span>
+        <p><code>invokeSubAgent</code> is unavailable in supervised mode, and infra needed a seventh
+          lane nobody planned
+          <s>The master drives turns manually; hooks still apply, so the guardrails hold — the
+            automation doesn't</s></p></div>
+    </div>
+    <p class="lede" style="margin-top:26px">Thank you. Every claim here is checkable: the methodology
+      writeup is in <code>docs/METHODOLOGY.md</code>, the graph is generated from
+      <code>pr-history.json</code>, and all 57 PR conversations are public.</p>
+    <div class="byline" style="margin-top:20px;color:rgba(255,253,251,.55)">
+      <span>Coral Steinberg</span><i></i>
+      <span>Happy to open any PR, walk the turn router, or run the demo on someone you love</span></div>
+  </div>
+</section>
+
+<script type="module">
+  // Mermaid renders client-side so the diagram stays sharp at any projector resolution.
+  // Falls back to the pre-rendered PNG if the CDN is unreachable.
+  const hosts = [...document.querySelectorAll('.mermaid-host')];
+  // Kept so edit mode can export a file with the definitions intact instead of baked SVG.
+  window.__mmdSource = hosts.map((h) => h.innerHTML);
+  try {
+    const mermaid = (await import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs')).default;
+    mermaid.initialize({ startOnLoad: false, theme: 'default' });
+    for (const [i, host] of hosts.entries()) {
+      // The definition lives in a text/plain script so the browser doesn't parse its
+      // <br/> markup away before mermaid ever sees the string.
+      const { svg } = await mermaid.render(`d${i}`, host.querySelector('script.mmd').textContent.trim());
+      host.innerHTML = svg;
+      const el = host.querySelector('svg');
+      el.removeAttribute('width');
+      el.removeAttribute('height');
+      el.style.maxWidth = 'none';
+      el.style.width = '100%';
+      el.style.height = 'auto';
+      // Mermaid's viewBox carries generous dead margins, which on a projector reads as
+      // a tiny diagram floating in a big box. Retighten it to the drawn content.
+      try {
+        const bb = el.getBBox();
+        const pad = 6;
+        el.setAttribute('viewBox', `${bb.x - pad} ${bb.y - pad} ${bb.width + pad * 2} ${bb.height + pad * 2}`);
+        el.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+      } catch { /* getBBox throws if the host is display:none; leave mermaid's own box */ }
+    }
+  } catch (err) {
+    console.warn('mermaid unavailable, using pre-rendered PNG', err);
+    for (const host of hosts) host.innerHTML = `<img src="${host.dataset.fallback}" alt="diagram">`;
+  }
+</script>
+
+<script>
+  // Nav dots, slide counter, keyboard paging, and light/dark chrome inversion.
+  const slides = [...document.querySelectorAll('section')];
+  const dots = document.getElementById('dots');
+  const counter = document.getElementById('counter');
+  const pad = (n) => String(n).padStart(2, '0');
+
+  slides.forEach((s) => {
+    const a = document.createElement('a');
+    a.href = `#${s.id}`;
+    a.title = s.dataset.title ?? s.id;
+    dots.append(a);
+  });
+
+  const links = [...dots.children];
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      const i = slides.indexOf(e.target);
+      links.forEach((l, j) => l.classList.toggle('on', j === i));
+      counter.textContent = `${pad(i + 1)} / ${pad(slides.length)}`;
+      const cl = e.target.classList;
+      document.body.classList.toggle('on-dark', cl.contains('dark') || cl.contains('cover') || cl.contains('demo'));
+      document.body.classList.toggle('past-cover', i > 0);
+    }
+  }, { threshold: 0.55 });
+  slides.forEach((s) => io.observe(s));
+
+  const current = () => slides.findIndex((s) => s.getBoundingClientRect().top > -window.innerHeight / 2);
+  const go = (d) => slides[Math.min(slides.length - 1, Math.max(0, current() + d))]
+    .scrollIntoView({ behavior: 'smooth' });
+  // ---- edit mode ----------------------------------------------------------
+  // "e" turns the whole deck into a text field so copy can be fixed in place;
+  // Cmd/Ctrl+S downloads the edited document to save over public/deck-v2.html.
+  const setEditing = (on) => {
+    document.designMode = on ? 'on' : 'off';
+    document.body.classList.toggle('editing', on);
+  };
+  const editing = () => document.body.classList.contains('editing');
+
+  function download() {
+    const doc = document.documentElement.cloneNode(true);
+    doc.querySelector('body').className = '';
+    // Put back what runtime rendering replaced, so the saved file reloads cleanly.
+    doc.querySelectorAll('.mermaid-host').forEach((h, i) => {
+      if (window.__mmdSource?.[i]) h.innerHTML = window.__mmdSource[i];
+    });
+    doc.querySelector('#dots').innerHTML = '';
+    doc.querySelector('#counter').textContent = `01 / ${pad(slides.length)}`;
+    doc.querySelectorAll('[contenteditable]').forEach((n) => n.removeAttribute('contenteditable'));
+    const url = URL.createObjectURL(
+      new Blob([`<!DOCTYPE html>\n${doc.outerHTML}`], { type: 'text/html' }));
+    const a = Object.assign(document.createElement('a'), { href: url, download: 'deck-v2.html' });
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); download(); return; }
+    if (e.key === 'Escape') { setEditing(false); return; }
+    // While editing, the arrow keys belong to the caret, not to paging.
+    if (editing()) return;
+    if (e.key === 'e' && !e.metaKey && !e.ctrlKey) { setEditing(true); return; }
+    if (['ArrowRight', 'ArrowDown', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); go(1); }
+    if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(e.key)) { e.preventDefault(); go(-1); }
+    if (e.key === 'Home') slides[0].scrollIntoView({ behavior: 'smooth' });
+    if (e.key === 'End') slides.at(-1).scrollIntoView({ behavior: 'smooth' });
+  });
+</script>
+
+</body>
+</html>

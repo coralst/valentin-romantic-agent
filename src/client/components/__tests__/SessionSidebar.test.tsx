@@ -170,45 +170,28 @@ describe('SessionSidebar', () => {
       });
     });
 
-    it('shows collapse toggle button', () => {
+    it('carries the Valentin wordmark', () => {
       renderSidebar(false);
-      expect(screen.getByRole('button', { name: 'Collapse sidebar' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Valentin' })).toBeInTheDocument();
+      expect(screen.getByText('Romantic Agent')).toBeInTheDocument();
     });
   });
 
-  describe('Desktop — collapsed rail', () => {
-    it('renders collapsed sidebar when sidebarCollapsed is stored', async () => {
-      // Still localStorage, deliberately: it is a preference of this screen, not
-      // user data, and it should not need a round trip to render the first frame.
-      localStorage.setItem('valentin_sidebar_collapsed', 'true');
+  describe('Desktop — no collapsed state', () => {
+    // The vitrine shell has no collapse-to-rail mode: the claret icon rail in
+    // column 1 of the window now plays that role, so the sidebar is always the
+    // full 226px column.
+    it('offers no collapse or expand toggle', () => {
       renderSidebar(false);
-
-      await waitFor(() =>
-        expect(
-          screen.getByTestId('session-sidebar').getAttribute('data-collapsed'),
-        ).toBe('true'),
-      );
+      expect(screen.queryByRole('button', { name: 'Collapse sidebar' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Expand sidebar' })).not.toBeInTheDocument();
     });
 
-    it('shows expand toggle button in collapsed state', async () => {
+    it('stays expanded even when a collapsed flag is left in storage', () => {
       localStorage.setItem('valentin_sidebar_collapsed', 'true');
       renderSidebar(false);
-
-      expect(
-        await screen.findByRole('button', { name: 'Expand sidebar' }),
-      ).toBeInTheDocument();
-    });
-
-    it('toggles between expanded and collapsed on toggle click', async () => {
-      const user = userEvent.setup();
-      renderSidebar(false);
-      await screen.findByTestId('session-empty-state');
-
-      expect(screen.getByTestId('session-sidebar').getAttribute('data-collapsed')).toBe('false');
-      await user.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
-      expect(screen.getByTestId('session-sidebar').getAttribute('data-collapsed')).toBe('true');
-      await user.click(screen.getByRole('button', { name: 'Expand sidebar' }));
-      expect(screen.getByTestId('session-sidebar').getAttribute('data-collapsed')).toBe('false');
+      expect(screen.getByTestId('session-list')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'New chat' })).toBeInTheDocument();
     });
   });
 

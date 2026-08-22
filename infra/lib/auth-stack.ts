@@ -2,13 +2,10 @@ import * as cdk from 'aws-cdk-lib';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
+import { EnvironmentConfig } from '../config/environments';
 
 export interface AuthStackProps extends cdk.StackProps {
-  /** Environment name (dev, staging, prod) */
-  environment: string;
-  /** Hosted UI redirect targets — site roots, from config/environments.ts */
-  callbackUrls: string[];
-  logoutUrls: string[];
+  config: EnvironmentConfig;
 }
 
 /** Username of the shared, pre-seeded account behind the one-click demo button */
@@ -43,7 +40,7 @@ export class AuthStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: AuthStackProps) {
     super(scope, id, props);
 
-    const env = props.environment;
+    const env = props.config.env;
 
     // --- User Pool ---
     this.userPool = new cognito.UserPool(this, 'UserPool', {
@@ -98,8 +95,8 @@ export class AuthStack extends cdk.Stack {
           implicitCodeGrant: false,
         },
         scopes: [cognito.OAuthScope.OPENID, cognito.OAuthScope.PROFILE],
-        callbackUrls: props.callbackUrls,
-        logoutUrls: props.logoutUrls,
+        callbackUrls: props.config.appUrls.callback,
+        logoutUrls: props.config.appUrls.logout,
       },
       preventUserExistenceErrors: true,
       enableTokenRevocation: true,

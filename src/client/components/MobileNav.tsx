@@ -5,6 +5,17 @@ type Panel = 'chat' | 'profile';
 interface MobileNavProps {
   activePanel: Panel;
   onPanelChange: (panel: Panel) => void;
+  /**
+   * True when the full-page dossier has replaced both panels.
+   *
+   * Kept out of `Panel` on purpose: the dossier is a *surface*, owned by
+   * `view-context`, not a third panel in this component's two-way switch. When
+   * it is on screen neither Chat nor Profile is selected, and tapping either one
+   * closes it on the way to that panel.
+   */
+  isDossierActive?: boolean;
+  /** Shows the dossier. Absent when no view context sits above the layout. */
+  onOpenDossier?: () => void;
 }
 
 const navStyle: React.CSSProperties = {
@@ -38,25 +49,51 @@ function getTabStyle(isActive: boolean): React.CSSProperties {
   };
 }
 
-export function MobileNav({ activePanel, onPanelChange }: MobileNavProps) {
+/**
+ * The mobile panel switch.
+ *
+ * The first two accessible names are "Chat" and "Profile" **verbatim** and must
+ * stay that way: `responsive-layout.spec.ts:29-30` and `AppLayout.test.tsx:83,88`
+ * both query by them, and `e2e/` is not this component's lane to edit.
+ */
+export function MobileNav({
+  activePanel,
+  onPanelChange,
+  isDossierActive = false,
+  onOpenDossier,
+}: MobileNavProps) {
+  const chatSelected = !isDossierActive && activePanel === 'chat';
+  const profileSelected = !isDossierActive && activePanel === 'profile';
+
   return (
     <nav role="tablist" style={navStyle} data-testid="mobile-nav">
       <button
         role="tab"
-        aria-selected={activePanel === 'chat'}
-        style={getTabStyle(activePanel === 'chat')}
+        aria-selected={chatSelected}
+        style={getTabStyle(chatSelected)}
         onClick={() => onPanelChange('chat')}
       >
         Chat
       </button>
       <button
         role="tab"
-        aria-selected={activePanel === 'profile'}
-        style={getTabStyle(activePanel === 'profile')}
+        aria-selected={profileSelected}
+        style={getTabStyle(profileSelected)}
         onClick={() => onPanelChange('profile')}
       >
         Profile
       </button>
+      {onOpenDossier && (
+        <button
+          role="tab"
+          aria-selected={isDossierActive}
+          style={getTabStyle(isDossierActive)}
+          onClick={onOpenDossier}
+          data-testid="mobile-nav-dossier"
+        >
+          Dossier
+        </button>
+      )}
     </nav>
   );
 }

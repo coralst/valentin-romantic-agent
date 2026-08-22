@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Valentin — Her Dossier (full profile control panel)</title>
+<link href="https://fonts.googleapis.com/css2?family=Gloock&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --ink: #2A2226; --ink-2: #756A70; --ink-3: #A3959C;
+    --claret: #8C2F45; --claret-2: #B14A62; --blush: #F6DEE2;
+    --olive: #7C8464; --gold: #B08C4F; --gold-2: #C09A5E;
+    --cream: #FFFDFB; --bg: #EFE7E1; --bg-2: #E5D9D2; --sand: #FAF4F0;
+    --r: 26px; --r-sm: 18px; --r-xs: 13px;
+  }
+  body { font-family: Outfit, sans-serif; color: var(--ink); height: 100vh; overflow: hidden;
+         background: var(--bg); padding: 14px; }
+  .window { height: 100%; background: var(--cream); border-radius: 34px; overflow: hidden;
+            display: grid; grid-template-columns: 76px minmax(0,1fr);
+            box-shadow: 0 4px 12px rgba(42,34,38,.05), 0 30px 70px rgba(42,34,38,.10); }
+
+  /* ---------- icon rail (unchanged from 5D so it's the same app) ---------- */
+  .icons { background: var(--claret); display: flex; flex-direction: column; align-items: center;
+           padding: 16px 0 18px; gap: 8px; }
+  .crest { width: 46px; height: 46px; border-radius: 999px; overflow: hidden; background: var(--cream);
+           display: grid; place-items: center; margin-bottom: 12px; flex-shrink: 0;
+           box-shadow: 0 4px 14px rgba(0,0,0,.22); }
+  .crest img { width: 120%; height: 120%; object-fit: cover; }
+  .ic { width: 42px; height: 42px; border-radius: 14px; border: none; cursor: pointer;
+        background: transparent; color: rgba(255,253,251,.6); font-size: 15px; }
+  .ic.on { background: rgba(255,253,251,.16); color: #fff; }
+  .icons .grow { flex: 1; }
+
+  /* ---------- shell: sticky header + scrolling board ---------- */
+  .shell { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+
+  /* the header carries her identity so it's never scrolled away */
+  .top { flex: none; display: flex; align-items: center; gap: 15px; padding: 15px 26px 14px;
+         border-bottom: 1px solid var(--bg-2); background: var(--cream); }
+  .back { width: 36px; height: 36px; border-radius: 999px; border: none; cursor: pointer; flex: none;
+          background: var(--sand); color: var(--ink-2); font-size: 14px; }
+  .face { width: 50px; height: 50px; border-radius: 999px; overflow: hidden; flex: none; position: relative;
+          background: var(--blush); box-shadow: 0 0 0 1px rgba(176,140,79,.4), 0 0 0 4px rgba(176,140,79,.10); }
+  .face img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 16%; }
+  .face button { position: absolute; inset: 0; border: none; cursor: pointer; opacity: 0;
+                 background: rgba(74,24,38,.6); color: #fff; font-size: 12px; transition: opacity .15s; }
+  .face:hover button { opacity: 1; }
+  .top .id { flex: 1; min-width: 0; }
+  .top .id h1 { font-family: Gloock, serif; font-size: 25px; font-weight: 400; line-height: 1.1; }
+  .top .id p { font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+  /* completion, stated as a relationship fact rather than a form metric */
+  .meter { flex: none; width: 176px; }
+  .meter .rw { display: flex; justify-content: space-between; align-items: baseline; }
+  .meter .rw span { font: 500 9px Outfit; letter-spacing: .2em; text-transform: uppercase; color: var(--ink-3); }
+  .meter .rw b { font: 500 12px Outfit; color: var(--claret); }
+  .meter .tk { display: flex; gap: 3px; margin-top: 7px; }
+  .meter .tk i { flex: 1; height: 5px; border-radius: 999px; background: var(--bg-2); }
+  .meter .tk i.on { background: linear-gradient(90deg, var(--claret-2), var(--claret)); }
+  .ask-all { flex: none; border: none; cursor: pointer; border-radius: 999px; padding: 11px 17px;
+             background: var(--claret); color: #fff; font: 500 12.5px Outfit;
+             box-shadow: 0 6px 16px rgba(140,47,69,.26); }
+
+  /* ---------- the board ---------- */
+  /* align-items:start so a short card keeps its own height instead of
+     stretching to the tallest card in its row */
+  .board { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 26px 30px;
+           display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px;
+           align-content: start; align-items: start; }
+  .w2 { grid-column: span 2; }
+  .w3 { grid-column: 1 / -1; }
+  /* the 18 fields read better as three short columns than one long ladder */
+  .cols3 { columns: 3; column-gap: 22px; }
+  .cols3 > * { break-inside: avoid; }
+  .card { background: var(--sand); border-radius: var(--r); padding: 16px 18px 18px;
+          box-shadow: 0 1px 3px rgba(42,34,38,.05); }
+  .card.pale { background: var(--cream); box-shadow: inset 0 0 0 1px var(--bg-2); }
+  .ch { display: flex; align-items: center; gap: 9px; margin-bottom: 13px; }
+  .ch h2 { font: 500 10px Outfit; letter-spacing: .24em; text-transform: uppercase;
+           color: var(--ink-3); flex: 1; }
+  .ch .n { font: 500 10.5px Outfit; color: var(--claret); background: var(--blush);
+           border-radius: 999px; padding: 3px 9px; }
+  .ch .add { border: none; background: transparent; cursor: pointer; color: var(--claret);
+             font: 500 11px Outfit; padding: 0; }
+
+  /* ===== timeline: occasions with the act-by deadline, the rail's hero ===== */
+  .tl { position: relative; padding-left: 17px; }
+  /* a hairline spine so the dates read as a sequence, not a list */
+  .tl::before { content: ''; position: absolute; left: 4px; top: 8px; bottom: 8px; width: 1px;
+                background: linear-gradient(var(--bg-2), transparent); }
+  .ev { position: relative; padding: 0 0 15px; }
+  .ev::before { content: ''; position: absolute; left: -17px; top: 6px; width: 9px; height: 9px;
+                border-radius: 999px; background: var(--bg-2); box-shadow: 0 0 0 3px var(--sand); }
+  .ev.soon::before { background: var(--gold); }
+  .ev .r1 { display: flex; align-items: baseline; gap: 9px; }
+  .ev .r1 b { font-family: Gloock, serif; font-size: 17px; font-weight: 400; }
+  .ev .r1 .dt { font-size: 12px; color: var(--ink-2); }
+  .ev .r1 .aw { margin-left: auto; font: 500 11px Outfit; color: var(--ink-3); }
+  .ev.soon .r1 .aw { color: var(--claret); }
+  /* the act-by chip — the thing a countdown can't tell you */
+  .ev .by { display: inline-flex; align-items: center; gap: 6px; margin-top: 7px;
+            background: rgba(176,140,79,.13); border-radius: 999px; padding: 5px 11px;
+            box-shadow: inset 0 0 0 1px rgba(176,140,79,.3); }
+  .ev .by i { font-style: normal; color: var(--gold); font-size: 10px; }
+  .ev .by b { font: 500 11.5px Outfit; color: #7A5C22; }
+  .ev .by em { font-style: normal; font-size: 10.5px; color: rgba(122,92,34,.65); }
+  .ev .plan { margin-top: 7px; display: flex; gap: 6px; }
+  .ev .plan span { font-size: 11px; color: var(--ink-2); background: var(--cream);
+                   border-radius: 999px; padding: 4px 10px; box-shadow: inset 0 0 0 1px var(--bg-2); }
+
+  /* ===== keep in mind: the only warning styling on the board ===== */
+  .mind { background: #FBF3E8; box-shadow: inset 0 0 0 1px rgba(176,140,79,.28); }
+  .mind .ch h2 { color: #8A6A2C; }
+  .mr { display: flex; gap: 9px; padding: 9px 0; }
+  .mr + .mr { border-top: 1px solid rgba(176,140,79,.18); }
+  .mr .dot { width: 6px; height: 6px; border-radius: 999px; background: var(--gold); flex: none; margin-top: 6px; }
+  .mr b { font: 500 13px Outfit; display: block; }
+  .mr p { font-size: 11.5px; color: var(--ink-2); line-height: 1.45; margin-top: 2px; }
+  .mr .kind { font: 500 8.5px Outfit; letter-spacing: .12em; text-transform: uppercase;
+              color: #8A6A2C; background: rgba(176,140,79,.16); border-radius: 999px;
+              padding: 3px 7px; align-self: flex-start; margin-top: 1px; }
+
+  /* ===== saved ideas: a board, grouped by the occasion they serve ===== */
+  .lane + .lane { margin-top: 13px; }
+  .lane .lh { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+  .lane .lh span { font: 500 9.5px Outfit; letter-spacing: .16em; text-transform: uppercase; color: var(--claret); }
+  .lane .lh i { flex: 1; height: 1px; background: var(--bg-2); }
+  .lane .lh em { font-style: normal; font-size: 10px; color: var(--ink-3); }
+  .idea { display: flex; align-items: flex-start; gap: 10px; background: var(--cream);
+          border-radius: var(--r-sm); padding: 11px 13px; margin-bottom: 6px;
+          box-shadow: 0 1px 2px rgba(42,34,38,.05); }
+  .idea .box { width: 19px; height: 19px; border-radius: 7px; flex: none; margin-top: 1px; cursor: pointer;
+               border: 1.5px solid var(--bg-2); background: transparent; color: transparent;
+               font-size: 10px; display: grid; place-items: center; }
+  .idea.done { background: transparent; box-shadow: none; }
+  .idea.done .box { background: var(--olive); border-color: var(--olive); color: #fff; }
+  .idea .bd { flex: 1; min-width: 0; }
+  .idea .bd b { font: 500 13px Outfit; display: block; }
+  .idea.done .bd b { color: var(--ink-3); text-decoration: line-through; }
+  .idea .bd p { font-size: 11px; color: var(--ink-2); margin-top: 2px; }
+  /* provenance — which message this came out of. builds trust in the agent. */
+  .idea .bd .src { font-size: 10px; color: var(--ink-3); margin-top: 4px; display: block; }
+  .idea .cost { flex: none; font: 500 11px Outfit; color: var(--ink-2); }
+  .addi { width: 100%; border: 1px dashed var(--bg-2); background: transparent; cursor: pointer;
+          color: var(--ink-2); border-radius: 999px; padding: 9px 0; font: 500 11.5px Outfit; margin-top: 4px; }
+
+  /* ===== given before: a year-stamped ledger ===== */
+  .gv { display: flex; align-items: baseline; gap: 12px; padding: 10px 0; }
+  .gv + .gv { border-top: 1px solid var(--bg-2); }
+  .gv .yr { font-family: Gloock, serif; font-size: 15px; font-weight: 400; color: var(--ink-3);
+            flex: none; min-width: 34px; }
+  .gv .bd { flex: 1; }
+  .gv .bd b { font: 500 12.5px Outfit; }
+  .gv .bd p { font-size: 11px; color: var(--ink-2); margin-top: 1px; }
+  .gv .rx { flex: none; font: 500 9px Outfit; letter-spacing: .1em; text-transform: uppercase;
+            color: var(--olive); background: #F0F2EA; border-radius: 999px; padding: 3px 8px; }
+  .gv .rx.meh { color: var(--ink-3); background: var(--bg-2); }
+
+  /* ===== the 18 fields, in their five real sections ===== */
+  .fs + .fs { margin-top: 15px; }
+  .fs .fh { display: flex; align-items: center; gap: 9px; padding-bottom: 7px;
+            border-bottom: 1px solid var(--bg-2); margin-bottom: 4px; }
+  .fs .fh span { font: 500 9.5px Outfit; letter-spacing: .2em; text-transform: uppercase;
+                 color: var(--ink-2); flex: 1; }
+  .fs .fh em { font-style: normal; font-size: 10.5px; color: var(--ink-3); }
+  .f { display: flex; align-items: center; gap: 10px; padding: 9px 2px; }
+  .f + .f { border-top: 1px solid rgba(229,217,210,.55); }
+  /* label/value stack inside a narrow column instead of a fixed 108px gutter */
+  .f { flex-wrap: wrap; }
+  .f .lb { font-size: 10.5px; letter-spacing: .04em; color: var(--ink-3); flex: 1 0 100%; }
+  .f .vl { flex: 1; min-width: 0; font: 500 12.5px Outfit; }
+  .f .cf { flex: none; font: 500 8.5px Outfit; letter-spacing: .1em; text-transform: uppercase;
+           color: var(--olive); }
+  .f .cf.likely { color: var(--claret-2); }
+  .f .cf.manual { color: var(--ink-3); }
+  /* unknown fields are actionable, not just blank */
+  .f.unk .vl { color: var(--ink-3); font-weight: 400; font-style: italic; }
+  .f .askb { flex: none; border: none; cursor: pointer; background: var(--blush); color: var(--claret);
+             border-radius: 999px; padding: 5px 11px; font: 500 10.5px Outfit; }
+
+  /* ===== confirm what I guessed — confidence already exists per-preference ===== */
+  .gz { background: var(--cream); border-radius: var(--r-sm); padding: 12px 14px; margin-bottom: 8px;
+        box-shadow: inset 0 0 0 1px rgba(177,74,98,.22); }
+  .gz .q { font: 500 13px Outfit; }
+  .gz .why { font-size: 11px; color: var(--ink-2); line-height: 1.45; margin-top: 3px; }
+  .gz .bts { display: flex; gap: 7px; margin-top: 10px; }
+  .gz .bts button { border: none; cursor: pointer; border-radius: 999px; padding: 7px 14px;
+                    font: 500 11px Outfit; }
+  .gz .bts .yes { background: var(--olive); color: #fff; }
+  .gz .bts .no { background: var(--bg-2); color: var(--ink-2); }
+
+  /* ===== discovery queue: ranked by payoff, not by count ===== */
+  .dq { display: flex; align-items: center; gap: 11px; padding: 10px 0; }
+  .dq + .dq { border-top: 1px solid var(--bg-2); }
+  .dq .rk { width: 24px; height: 24px; border-radius: 999px; flex: none; display: grid; place-items: center;
+            background: var(--claret); color: #fff; font: 500 11px Outfit; }
+  .dq .bd { flex: 1; min-width: 0; }
+  .dq .bd b { font: 500 12.5px Outfit; display: block; }
+  .dq .bd p { font-size: 10.5px; color: var(--ink-2); margin-top: 1px; }
+  .dq button { flex: none; border: none; cursor: pointer; background: var(--blush); color: var(--claret);
+               border-radius: 999px; padding: 6px 12px; font: 500 11px Outfit; }
+
+  /* ===== good to know — the logistics you actually reach for ===== */
+  .gtk { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 7px; }
+  .kv { background: var(--cream); border-radius: var(--r-xs); padding: 9px 12px;
+        box-shadow: inset 0 0 0 1px var(--bg-2); }
+  .kv s { text-decoration: none; display: block; font: 500 8.5px Outfit; letter-spacing: .16em;
+          text-transform: uppercase; color: var(--ink-3); }
+  .kv b { font: 500 13px Outfit; display: block; margin-top: 3px; }
+  .kv.empty { box-shadow: inset 0 0 0 1px transparent; background: transparent;
+              border: 1px dashed var(--bg-2); cursor: pointer; }
+  .kv.empty b { color: var(--ink-3); font-weight: 400; }
+
+  /* Valentin's line, in his voice, at the foot of the board */
+  .vsay { grid-column: 1 / -1; display: flex; align-items: center; gap: 13px;
+          background: linear-gradient(100deg, #FBF3E8, #FDF7F0); border-radius: var(--r);
+          padding: 15px 18px; box-shadow: inset 0 0 0 1px rgba(176,140,79,.3); }
+  .vsay .fc { width: 40px; height: 40px; border-radius: 999px; overflow: hidden; flex: none;
+              background: var(--cream); box-shadow: 0 2px 8px rgba(42,34,38,.14); }
+  .vsay .fc img { width: 120%; height: 120%; object-fit: cover; }
+  .vsay .tx { flex: 1; }
+  .vsay .tx span { font: 500 9px Outfit; letter-spacing: .22em; text-transform: uppercase; color: #8A6A2C; }
+  .vsay .tx p { font-size: 13.5px; line-height: 1.45; margin-top: 4px; }
+  .vsay button { flex: none; border: none; cursor: pointer; background: var(--claret); color: #fff;
+                 border-radius: 999px; padding: 10px 17px; font: 500 12px Outfit;
+                 box-shadow: 0 6px 16px rgba(140,47,69,.24); }
+</style>
+</head>
+<body>
+<div class="window">
+  <nav class="icons">
+    <div class="crest"><img src="../../../public/logo.png" alt="Valentin"></div>
+    <button class="ic">◆</button><button class="ic on">♥</button><button class="ic">☰</button>
+    <div class="grow"></div><button class="ic">⚙</button>
+  </nav>
+
+  <div class="shell">
+    <!-- identity stays pinned; you always know whose dossier this is -->
+    <header class="top">
+      <button class="back">←</button>
+      <div class="face"><img src="../../../public/partner-portrait.svg" alt="Coral"><button>✎</button></div>
+      <div class="id">
+        <h1>Coral</h1>
+        <p>17 June 1988 · mid-thirties · she/her · together since Sep 2021</p>
+      </div>
+      <div class="meter">
+        <div class="rw"><span>How well I know her</span><b>5 of 18</b></div>
+        <div class="tk">
+          <i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i>
+          <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        </div>
+      </div>
+      <button class="ask-all">Ask me what's missing</button>
+    </header>
+
+    <div class="board">
+
+      <!-- ===== what's coming, with deadlines ===== -->
+      <section class="card w2">
+        <div class="ch"><h2>What's coming</h2><button class="add">+ Add a date</button></div>
+        <div class="tl">
+          <div class="ev soon">
+            <div class="r1"><b>Anniversary</b><span class="dt">Wed 2 September</span><span class="aw">12 days</span></div>
+            <div class="by"><i>◷</i><b>Book by 26 Aug</b><em>· restaurants fill a week out</em></div>
+            <div class="plan"><span>1 idea saved</span><span>Budget not set</span></div>
+          </div>
+          <div class="ev">
+            <div class="r1"><b>Her birthday</b><span class="dt">Tue 17 June</span><span class="aw">300 days</span></div>
+            <div class="by"><i>◷</i><b>Start by 6 May</b><em>· 6 weeks for anything made to order</em></div>
+            <div class="plan"><span>1 idea saved</span></div>
+          </div>
+          <div class="ev">
+            <div class="r1"><b>Together since</b><span class="dt">Sep 2021</span><span class="aw">4 years</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== constraints: negative facts prevent expensive mistakes ===== -->
+      <section class="card mind">
+        <div class="ch"><h2>Keep in mind</h2><span class="n">3</span></div>
+        <div class="mr"><div class="dot"></div><div><b>Allergic to shellfish</b>
+          <p>Rules out most of the seafood places on the coast.</p></div><span class="kind">Allergy</span></div>
+        <div class="mr"><div class="dot"></div><div><b>No surprises in public</b>
+          <p>Prefers to be asked first. Never a restaurant scene.</p></div><span class="kind">Hard rule</span></div>
+        <div class="mr"><div class="dot"></div><div><b>Doesn't drink</b>
+          <p>Skip wine pairings and bar-led evenings.</p></div><span class="kind">Avoid</span></div>
+      </section>
+
+      <!-- ===== saved ideas, grouped by the occasion they serve ===== -->
+      <section class="card w2">
+        <div class="ch"><h2>Saved ideas</h2><span class="n">4</span><button class="add">+ Save an idea</button></div>
+
+        <div class="lane">
+          <div class="lh"><span>Anniversary</span><i></i><em>2 Sep · 12 days</em></div>
+          <div class="idea"><div class="box">✓</div>
+            <div class="bd"><b>Salsa night at Casa Roja</b>
+              <p>Live band on Fridays. Table for two, book by 26 Aug.</p>
+              <span class="src">From your chat, 11 Aug</span></div>
+            <span class="cost">~€60</span></div>
+          <div class="idea"><div class="box">✓</div>
+            <div class="bd"><b>Frame the Ericeira photo</b>
+              <p>The one from the 2024 trip she keeps mentioning.</p>
+              <span class="src">Valentin suggested, 14 Aug</span></div>
+            <span class="cost">~€35</span></div>
+        </div>
+
+        <div class="lane">
+          <div class="lh"><span>Her birthday</span><i></i><em>17 Jun · 300 days</em></div>
+          <div class="idea"><div class="box">✓</div>
+            <div class="bd"><b>Sunrise surf lesson, Zambujeira</b>
+              <p>Needs booking two weeks out. Check the swell forecast.</p>
+              <span class="src">From your chat, 11 Aug</span></div>
+            <span class="cost">~€90</span></div>
+        </div>
+
+        <div class="lane">
+          <div class="lh"><span>Done</span><i></i><em>1</em></div>
+          <div class="idea done"><div class="box">✓</div>
+            <div class="bd"><b>Hand-written letter</b><p>Given 4 Aug. She kept it in the book by the bed.</p></div></div>
+        </div>
+        <button class="addi">+ Save an idea</button>
+      </section>
+
+      <!-- ===== confirm the guesses: confidence exists, so make it settleable ===== -->
+      <section class="card pale">
+        <div class="ch"><h2>Confirm my guesses</h2><span class="n">2</span></div>
+        <div class="gz">
+          <div class="q">Active by nature?</div>
+          <div class="why">I inferred this because she surfs and dances salsa — but I'm not certain she'd want an active date.</div>
+          <div class="bts"><button class="yes">✓ That's right</button><button class="no">Not quite</button></div>
+        </div>
+        <div class="gz">
+          <div class="q">Prefers experiences over objects?</div>
+          <div class="why">A guess from the surf lesson landing better than the bracelet.</div>
+          <div class="bts"><button class="yes">✓ That's right</button><button class="no">Not quite</button></div>
+        </div>
+      </section>
+
+      <!-- ===== gift ledger: the anti-repeat module ===== -->
+      <section class="card">
+        <div class="ch"><h2>Given before</h2><span class="n">3</span><button class="add">+ Log a gift</button></div>
+        <div class="gv"><div class="yr">2025</div><div class="bd"><b>Silver wave bracelet</b>
+          <p>Her birthday</p></div><span class="rx">Loved it</span></div>
+        <div class="gv"><div class="yr">2024</div><div class="bd"><b>Weekend in Ericeira</b>
+          <p>Anniversary</p></div><span class="rx">Loved it</span></div>
+        <div class="gv"><div class="yr">2023</div><div class="bd"><b>Perfume set</b>
+          <p>Her birthday</p></div><span class="rx meh">Fell flat</span></div>
+      </section>
+
+      <!-- ===== logistics ===== -->
+      <section class="card">
+        <div class="ch"><h2>Good to know</h2><button class="add">Edit</button></div>
+        <div class="gtk">
+          <div class="kv"><s>Dress</s><b>M</b></div>
+          <div class="kv"><s>Shoe</s><b>38</b></div>
+          <div class="kv"><s>Coffee</s><b>Flat white</b></div>
+          <div class="kv"><s>Flowers</s><b>Peonies</b></div>
+          <div class="kv empty"><s>Ring</s><b>Add</b></div>
+          <div class="kv empty"><s>Delivery</s><b>Add</b></div>
+        </div>
+      </section>
+
+      <!-- ===== the discovery queue, ranked by payoff ===== -->
+      <section class="card">
+        <div class="ch"><h2>Worth asking next</h2><span class="n">13 unknown</span></div>
+        <div class="dq"><div class="rk">1</div><div class="bd"><b>Love language</b>
+          <p>Changes every suggestion I make.</p></div><button>Ask</button></div>
+        <div class="dq"><div class="rk">2</div><div class="bd"><b>Gift budget</b>
+          <p>Without it I guess at the wrong tier.</p></div><button>Ask</button></div>
+        <div class="dq"><div class="rk">3</div><div class="bd"><b>Favourite cuisine</b>
+          <p>The fastest route to a good dinner.</p></div><button>Ask</button></div>
+      </section>
+
+      <!-- ===== all 18 registry fields, in their five real sections ===== -->
+      <section class="card w3">
+        <div class="ch"><h2>Everything I know</h2><span class="n">5 of 18</span></div>
+
+        <div class="cols3">
+        <div class="fs" style="margin-top:0">
+          <div class="fh"><span>Basics</span><em>3 of 4</em></div>
+          <div class="f"><span class="lb">Name</span><span class="vl">Coral</span><span class="cf">certain</span></div>
+          <div class="f"><span class="lb">Birthday</span><span class="vl">17 June 1988</span><span class="cf">certain</span></div>
+          <div class="f"><span class="lb">Zodiac</span><span class="vl">Gemini</span><span class="cf manual">derived</span></div>
+          <div class="f unk"><span class="lb">Nickname</span><span class="vl">Not yet known</span><button class="askb">Ask</button></div>
+        </div>
+
+        <div class="fs">
+          <div class="fh"><span>Relationship</span><em>1 of 4</em></div>
+          <div class="f"><span class="lb">Together since</span><span class="vl">September 2021</span><span class="cf">certain</span></div>
+          <div class="f unk"><span class="lb">Love language</span><span class="vl">Not yet known</span><button class="askb">Ask</button></div>
+          <div class="f unk"><span class="lb">Anniversary</span><span class="vl">Not yet known</span><button class="askb">Ask</button></div>
+          <div class="f unk"><span class="lb">How we met</span><span class="vl">Not yet known</span><button class="askb">Ask</button></div>
+        </div>
+
+        <div class="fs">
+          <div class="fh"><span>Interests</span><em>1 of 4</em></div>
+          <div class="f"><span class="lb">Hobbies</span><span class="vl">Surfing, salsa dancing</span><span class="cf">certain</span></div>
+          <div class="f unk"><span class="lb">Favourite cuisine</span><span class="vl">Not yet known</span><button class="askb">Ask</button></div>
+          <div class="f unk"><span class="lb">Music genre</span><span class="vl">Not yet known</span><button class="askb">Ask</button></div>
+          <div class="f unk"><span class="lb">Dream destination</span><span class="vl">Not yet known</span><button class="askb">Ask</button></div>
+        </div>
+
+        <div class="fs">
+          <div class="fh"><span>Style &amp; aesthetics</span><em>0 of 3</em></div>
+          <div class="f unk"><span class="lb">Clothing style</span><span class="vl">Not yet known</span><button class="askb">Ask</button></div>
+          <div class="f unk"><span class="lb">Favourite colour</span><span class="vl">Not yet known</span><button class="askb">Ask</button></div>
+          <div class="f unk"><span class="lb">Fragrance</span><span class="vl">Not yet known</span><button class="askb">Ask</button></div>
+        </div>
+
+        <div class="fs">
+          <div class="fh"><span>Gifts &amp; celebrations</span><em>0 of 3</em></div>
+          <div class="f unk"><span class="lb">Gift budget</span><span class="vl">Not yet known</span><button class="askb">Ask</button></div>
+          <div class="f unk"><span class="lb">Wish list</span><span class="vl">Not yet known</span><button class="askb">Ask</button></div>
+          <div class="f unk"><span class="lb">Surprise preference</span><span class="vl">Not yet known</span><button class="askb">Ask</button></div>
+        </div>
+        </div>
+      </section>
+
+      <div class="vsay">
+        <div class="fc"><img src="../../../public/logo.png" alt="Valentin"></div>
+        <div class="tx"><span>Valentin suggests</span>
+          <p>The anniversary is twelve days out and I still don't know her love language — it decides whether we plan a gesture or a gift. Two minutes now and I can make the whole evening better.</p></div>
+        <button>Let's talk about it</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -6,6 +6,11 @@ import {
   getFieldById,
   getDateFields,
 } from '../profile-field-registry';
+import {
+  PROFILE_FIELD_GUIDANCE,
+  PROFILE_FIELD_IDS,
+  isProfileFieldId,
+} from '../../../shared/constants/profile-fields';
 
 describe('PROFILE_FIELD_REGISTRY', () => {
   it('defines at least 15 fields', () => {
@@ -120,5 +125,36 @@ describe('getDateFields', () => {
     const ids = dateFields.map((f) => f.id);
     expect(ids).toContain('birthday');
     expect(ids).toContain('anniversary');
+  });
+});
+
+/**
+ * The client registry and the shared field-id list must not drift.
+ *
+ * The server cannot import from `src/client/`, so the extraction tool schema is
+ * built from `src/shared/constants/profile-fields.ts` while the rail is built
+ * from `PROFILE_FIELD_REGISTRY`. Nothing in the type system connects the two: add
+ * a field to one and the other silently ignores it, which is a quieter version of
+ * the exact bug this branch fixes. These tests are that connection.
+ */
+describe('shared field-id list agrees with the client registry', () => {
+  it('has the same ids, in the same order', () => {
+    expect(PROFILE_FIELD_REGISTRY.map((f) => f.id)).toEqual([...PROFILE_FIELD_IDS]);
+  });
+
+  it('has guidance text for every field id', () => {
+    for (const id of PROFILE_FIELD_IDS) {
+      expect(PROFILE_FIELD_GUIDANCE[id], `missing guidance for "${id}"`).toBeTruthy();
+    }
+  });
+
+  it('recognises every registry id as canonical', () => {
+    for (const field of PROFILE_FIELD_REGISTRY) {
+      expect(isProfileFieldId(field.id), `"${field.id}" not canonical`).toBe(true);
+    }
+  });
+
+  it('rejects an id that is not in the registry', () => {
+    expect(isProfileFieldId('not_a_field')).toBe(false);
   });
 });

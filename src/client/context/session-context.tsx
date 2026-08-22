@@ -192,6 +192,22 @@ interface SessionContextValue {
   switchSession: (id: string) => Promise<void>;
   removeSession: (id: string) => Promise<void>;
   renameSession: (id: string, title: string) => Promise<void>;
+  /**
+   * Write a transcript into the session with the given id.
+   *
+   * Addressed by explicit id rather than "whichever session is active", because
+   * the caller may be flushing the *outgoing* session's messages during a
+   * switch. Writing those to the newly active session would corrupt it — see
+   * the note in `use-session-persistence.ts`.
+   *
+   * Passing `partnerName` as `undefined` leaves the stored value untouched.
+   */
+  persistSession: (
+    id: string,
+    messages: ChatMessage[],
+    preferences: PreferenceWithHistory[],
+    partnerName?: string | null,
+  ) => void;
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
   dismissNotice: () => void;
@@ -355,6 +371,19 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const persistSession = useCallback(
+    (
+      id: string,
+      messages: ChatMessage[],
+      preferences: PreferenceWithHistory[],
+      partnerName?: string | null,
+    ) => {
+      if (!id) return;
+      dispatch({ type: 'UPDATE_SESSION', id, messages, preferences, partnerName });
+    },
+    [],
+  );
+
   const toggleSidebar = useCallback(() => {
     dispatch({ type: 'TOGGLE_SIDEBAR' });
   }, []);
@@ -378,6 +407,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         switchSession,
         removeSession,
         renameSession,
+        persistSession,
         toggleSidebar,
         setSidebarOpen,
         dismissNotice,

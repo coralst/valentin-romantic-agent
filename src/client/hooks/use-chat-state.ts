@@ -42,11 +42,23 @@ const initialState: ChatState = {
 /** Reducer handling all chat state transitions */
 export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
+    /**
+     * The server greets on every connect, including reconnects and reloads. The
+     * welcome message therefore only belongs in an *empty* transcript.
+     *
+     * This guard became load-bearing once transcripts started persisting: an
+     * unconditional append re-greeted a restored conversation on every reload,
+     * and the greeting was then saved, so it accumulated without bound. While
+     * the stored transcript was always empty the duplication was invisible.
+     */
     case 'SESSION_INIT':
       return {
         ...state,
         sessionId: action.sessionId,
-        messages: sortByTimestamp([...state.messages, action.welcomeMessage]),
+        messages:
+          state.messages.length > 0
+            ? state.messages
+            : sortByTimestamp([action.welcomeMessage]),
       };
 
     case 'SWITCH_SESSION':

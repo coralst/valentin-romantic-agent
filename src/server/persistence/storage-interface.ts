@@ -10,6 +10,8 @@ import type { SessionData } from '../../shared/interfaces/session';
 export interface ExtractedPreference {
   category: PreferenceCategory;
   key: string;
+  /** Canonical profile field id, or null for an off-registry fact. */
+  fieldId?: string | null;
   value: string;
   confidence: number;
 }

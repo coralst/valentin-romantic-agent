@@ -11,7 +11,15 @@ PROFILE="${AWS_PROFILE:-dev-devops-agent}"
 ACCOUNT=$(aws sts get-caller-identity --profile "$PROFILE" --query Account --output text)
 ECR_URI="${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com/valentin-backend-${ENV}"
 
-echo "=== Deploying Valentin (env=$ENV, region=$REGION, account=$ACCOUNT) ==="
+# Immutable, content-addressed image tag. Using :latest made the ECS circuit
+# breaker's rollback a no-op, because the "previous" task definition pointed at
+# the same mutable tag that had just failed.
+IMAGE_TAG="$(git rev-parse --short HEAD)"
+if [[ -n "$(git status --porcelain)" ]]; then
+  IMAGE_TAG="${IMAGE_TAG}-dirty"
+fi
+
+echo "=== Deploying Valentin (env=$ENV, region=$REGION, account=$ACCOUNT, tag=$IMAGE_TAG) ==="
 
 # Validate environment
 if [[ ! "$ENV" =~ ^(dev|staging|prod)$ ]]; then
@@ -24,12 +32,12 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # --- 1. Build & push Docker image ---
 echo ""
 echo "--- [1/5] Building Docker image..."
-docker build --platform linux/amd64 -t "$ECR_URI:latest" "$REPO_ROOT"
+docker build --platform linux/amd64 -t "$ECR_URI:${IMAGE_TAG}" "$REPO_ROOT"
 
 echo "--- [2/5] Pushing to ECR..."
 aws ecr get-login-password --region "$REGION" --profile "$PROFILE" \
   | docker login --username AWS --password-stdin "${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com"
-docker push "$ECR_URI:latest"
+docker push "$ECR_URI:${IMAGE_TAG}"
 
 # --- 2. Deploy CDK stacks ---
 # Named stacks with --exclusively rather than `--all`. `--all` would also deploy
@@ -46,6 +54,7 @@ for STACK in Network Data Safety Auth Compute CDN Monitoring; do
   AWS_PROFILE="$PROFILE" npx cdk deploy "Valentin-${STACK}-${ENV}" \
     --exclusively \
     --context env="$ENV" \
+    --context imageTag="$IMAGE_TAG" \
     --require-approval never \
     --outputs-file "cdk-outputs-${ENV}.json" \
     --progress events 2>&1 | tail -5

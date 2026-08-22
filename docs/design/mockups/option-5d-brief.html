@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Option 5D — Vitrine + The Brief rail</title>
+<link href="https://fonts.googleapis.com/css2?family=Gloock&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --ink: #2A2226; --ink-2: #756A70; --ink-3: #A3959C;
+    --claret: #8C2F45; --claret-2: #B14A62; --blush: #F6DEE2;
+    --olive: #7C8464; --gold: #C09A5E; --cream: #FFFDFB; --bg: #EFE7E1; --bg-2: #E5D9D2;
+    --r: 26px; --r-sm: 16px;
+  }
+  body { font-family: Outfit, sans-serif; color: var(--ink); height: 100vh; overflow: hidden;
+         background: var(--bg); padding: 14px; }
+  .window { height: 100%; background: var(--cream); border-radius: 34px; overflow: hidden;
+            display: grid; grid-template-columns: 76px 226px minmax(0,1fr) 306px;
+            box-shadow: 0 4px 12px rgba(42,34,38,.05), 0 30px 70px rgba(42,34,38,.10); }
+  .icons { background: var(--claret); display: flex; flex-direction: column; align-items: center;
+           padding: 16px 0 18px; gap: 8px; }
+  .crest { width: 46px; height: 46px; border-radius: 999px; overflow: hidden; background: var(--cream);
+           display: grid; place-items: center; margin-bottom: 12px; flex-shrink: 0;
+           box-shadow: 0 4px 14px rgba(0,0,0,.22); }
+  .crest img { width: 120%; height: 120%; object-fit: cover; }
+  .ic { width: 42px; height: 42px; border-radius: 14px; border: none; cursor: pointer;
+        background: transparent; color: rgba(255,253,251,.6); font-size: 15px; }
+  .ic.on { background: rgba(255,253,251,.16); color: #fff; }
+  .icons .grow { flex: 1; }
+  .list { background: #FAF4F0; padding: 22px 14px 16px; overflow-y: auto; }
+  .list h3 { font-family: Gloock, serif; font-size: 20px; font-weight: 400; }
+  .list .sub { font-size: 11.5px; color: var(--ink-3); margin-bottom: 16px; }
+  .new { width: 100%; border: none; cursor: pointer; border-radius: 999px; padding: 11px 0;
+         background: var(--claret); color: #fff; font: 500 13px Outfit; margin-bottom: 16px;
+         box-shadow: 0 5px 14px rgba(140,47,69,.26); }
+  .it { padding: 11px 13px; border-radius: var(--r-sm); cursor: pointer; margin-bottom: 4px; }
+  .it.on { background: #fff; box-shadow: 0 2px 6px rgba(42,34,38,.06); }
+  .it .t { font: 500 13px Outfit; display: flex; align-items: center; gap: 6px; }
+  .it .t i { width: 6px; height: 6px; border-radius: 999px; background: var(--olive); }
+  .it .s { font-size: 10.5px; color: var(--ink-3); margin-top: 2px; }
+  /* min-height:0 — without it the grid item sizes to content and pushes the composer off-screen */
+  .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .head { display: flex; align-items: center; gap: 11px; padding: 18px 26px 13px; }
+  .head b { font-family: Gloock, serif; font-size: 19px; font-weight: 400; }
+  .head em { font-style: normal; font-size: 11.5px; color: var(--ink-2); display: block; margin-top: -2px; }
+  .sep { height: 1px; background: linear-gradient(90deg, transparent, var(--bg-2) 10%, var(--bg-2) 90%, transparent); }
+  .flow { flex: 1; min-height: 0; overflow-y: auto; padding: 20px 26px 10px; }
+  .inner { max-width: 620px; }
+  .v { display: flex; gap: 12px; margin-bottom: 18px; max-width: 90%; }
+  .v .face { width: 32px; height: 32px; border-radius: 999px; overflow: hidden; flex-shrink: 0;
+             background: var(--cream); box-shadow: 0 1px 5px rgba(42,34,38,.14); }
+  .v .face img { width: 122%; height: 122%; object-fit: cover; }
+  .said { background: #FAF2EF; border-radius: 8px var(--r) var(--r) var(--r); padding: 14px 19px; }
+  .said p { font-size: 14.5px; line-height: 1.6; }
+  .said p + p { margin-top: 9px; }
+  .me { margin: 0 0 18px auto; max-width: 70%; background: var(--claret); color: #fff;
+        border-radius: var(--r) 8px var(--r) var(--r); padding: 13px 19px;
+        font-size: 14.5px; line-height: 1.55; box-shadow: 0 8px 22px rgba(140,47,69,.20); }
+  .learned { display: flex; align-items: center; gap: 10px; margin: 0 0 20px 44px; max-width: 80%;
+             background: #fff; border-radius: var(--r-sm); padding: 11px 15px;
+             box-shadow: 0 1px 3px rgba(42,34,38,.06), 0 8px 20px rgba(42,34,38,.05); }
+  .learned .tick { width: 22px; height: 22px; border-radius: 999px; flex-shrink: 0; background: var(--olive);
+                   color: #fff; display: grid; place-items: center; font-size: 10px; }
+  .learned .k { font: 500 9px Outfit; letter-spacing: .22em; text-transform: uppercase; color: var(--ink-3); }
+  .learned .v2 { font: 500 13.5px Outfit; margin-top: 1px; }
+  .learned .txt { flex: 1; }
+  .learned .c { font: 500 9.5px Outfit; letter-spacing: .1em; text-transform: uppercase;
+                color: var(--olive); background: #F0F2EA; border-radius: 999px; padding: 4px 9px; }
+  .learned .x { border: none; background: transparent; cursor: pointer; color: var(--ink-3); font-size: 12px; }
+  .bar { padding: 6px 26px 20px; }
+  .bar .inner { max-width: 620px; display: flex; align-items: flex-end; gap: 10px;
+                background: #FAF4F0; border-radius: var(--r); padding: 9px 9px 9px 19px; }
+  .bar textarea { flex: 1; border: none; outline: none; background: transparent; resize: none;
+                  font: 400 14.5px Outfit; color: var(--ink); line-height: 1.5; height: 24px; padding-top: 3px; }
+  .go { width: 40px; height: 40px; border-radius: 999px; border: none; cursor: pointer; flex-shrink: 0;
+        background: var(--claret); color: #fff; font-size: 15px; box-shadow: 0 5px 14px rgba(140,47,69,.28); }
+
+  /* ================= RIGHT RAIL: "the brief" =================
+     Agenda-led. The portrait is demoted to a cameo in the header so the
+     headline slot belongs to the ACT-BY deadline — the rail is a to-do
+     list, not a mirror of the profile. Progress moves to the footer. */
+  .keep { background: linear-gradient(178deg, #7C2A3D 0%, #5A1E2D 100%); color: #FBEFF1;
+          display: flex; flex-direction: column; min-height: 0; }
+  .keep .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 18px 8px;
+                  /* fade the last rows out so content recedes under the pinned
+                     nudge instead of being sliced off mid-line */
+                  mask-image: linear-gradient(to bottom, #000 calc(100% - 26px), transparent 100%);
+                  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 26px), transparent 100%); }
+
+  /* --- compact header: cameo + name on one row --- */
+  .who { display: flex; align-items: center; gap: 12px; }
+  .cameo { width: 56px; height: 56px; border-radius: 999px; overflow: hidden; flex-shrink: 0;
+           position: relative; background: var(--blush);
+           box-shadow: 0 0 0 1px rgba(224,186,124,.5), 0 0 0 4px rgba(224,186,124,.12); }
+  .cameo img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 16%; }
+  .cameo .edit { position: absolute; inset: 0; border: none; cursor: pointer; opacity: 0;
+                 background: rgba(74,24,38,.62); color: #fff; font-size: 13px; transition: opacity .15s; }
+  .cameo:hover .edit { opacity: 1; }
+  .who .nm { font-family: Gloock, serif; font-size: 22px; font-weight: 400; line-height: 1.1; }
+  .who .sb { font-size: 11px; color: rgba(251,239,241,.6); margin-top: 2px; }
+
+  /* --- section head: label + optional count, hairline under --- */
+  .sh { display: flex; align-items: center; gap: 8px; margin: 20px 0 9px;
+        padding-bottom: 7px; border-bottom: 1px solid rgba(251,239,241,.13); }
+  .sh span.l { font: 500 9px Outfit; letter-spacing: .26em; text-transform: uppercase;
+               color: rgba(251,239,241,.55); flex: 1; }
+  .sh .n { flex: none; font: 500 10px Outfit; letter-spacing: .04em; color: var(--gold); }
+  .sh .warn { flex: none; color: var(--gold); font-size: 11px; }
+
+  /* --- NEXT UP: the hero. the deadline is loud, the countdown is quiet --- */
+  .up { background: rgba(224,186,124,.13); border-radius: 18px; padding: 14px 15px;
+        box-shadow: inset 0 0 0 1px rgba(224,186,124,.3); }
+  .up .top { display: flex; align-items: baseline; gap: 8px; }
+  .up .top b { font-family: Gloock, serif; font-size: 17px; font-weight: 400; }
+  .up .top .aw { margin-left: auto; font-size: 10.5px; color: rgba(251,239,241,.55); }
+  .up .when { font-size: 11.5px; color: rgba(251,239,241,.62); margin-top: 2px; }
+  /* the act-by line — the thing a countdown can't tell you */
+  .up .by { display: flex; align-items: center; gap: 7px; margin-top: 11px;
+            padding-top: 11px; border-top: 1px dashed rgba(224,186,124,.32); }
+  .up .by i { font-style: normal; color: var(--gold); font-size: 11px; }
+  .up .by b { font: 500 13px Outfit; color: var(--gold); }
+  .up .by em { font-style: normal; font-size: 10.5px; color: rgba(251,239,241,.5); margin-left: auto; }
+  .up2 { display: flex; align-items: baseline; gap: 9px; padding: 11px 3px 0; }
+  .up2 b { font: 500 12.5px Outfit; }
+  .up2 .d { font-size: 11px; color: rgba(251,239,241,.55); }
+  .up2 .aw { margin-left: auto; font-size: 10.5px; color: rgba(251,239,241,.42); }
+
+  /* --- generic tonal row --- */
+  .row { display: flex; align-items: flex-start; gap: 10px; padding: 9px 0; }
+  .row + .row { border-top: 1px solid rgba(251,239,241,.08); }
+  .row .bd { flex: 1; min-width: 0; }
+  .row .bd b { font: 500 13px Outfit; display: block; }
+  .row .bd p { font-size: 11px; color: rgba(251,239,241,.55); line-height: 1.4; margin-top: 2px; }
+
+  /* keep in mind — the only warning styling in the rail, so it can't be missed */
+  .mind { background: rgba(224,186,124,.09); border-radius: 16px; padding: 3px 14px;
+          box-shadow: inset 0 0 0 1px rgba(224,186,124,.22); }
+  .mind .row .dot { width: 6px; height: 6px; border-radius: 999px; background: var(--gold);
+                    flex: none; margin-top: 7px; }
+
+  /* --- saved ideas: the module that earns the rail. each idea is a card so it
+     reads as a thing you own, not a list row. checkbox on the left, the
+     occasion it's for on the right. --- */
+  .idea { display: flex; align-items: flex-start; gap: 10px; padding: 11px 13px; margin-bottom: 7px;
+          background: rgba(251,239,241,.08); border-radius: 15px;
+          box-shadow: inset 0 0 0 1px rgba(251,239,241,.07); }
+  .idea .box { width: 19px; height: 19px; border-radius: 7px; flex: none; margin-top: 1px;
+               cursor: pointer; background: transparent; color: transparent; font-size: 10px;
+               display: grid; place-items: center; border: 1.5px solid rgba(251,239,241,.34); }
+  .idea.done { background: rgba(251,239,241,.035); box-shadow: none; }
+  .idea.done .box { background: var(--gold); border-color: var(--gold); color: #4A1826; }
+  .idea .bd { flex: 1; min-width: 0; }
+  .idea .bd b { font: 500 13px Outfit; display: block; }
+  .idea.done .bd b { color: rgba(251,239,241,.42); text-decoration: line-through; }
+  .idea .bd span { font-size: 10.5px; color: rgba(251,239,241,.52); }
+  .idea .for { flex: none; font: 500 9px Outfit; letter-spacing: .1em; text-transform: uppercase;
+               color: var(--gold); background: rgba(224,186,124,.16); border-radius: 999px;
+               padding: 3px 8px; margin-top: 2px; }
+  .addi { width: 100%; margin-top: 2px; border: 1px dashed rgba(251,239,241,.24); cursor: pointer;
+          background: transparent; color: rgba(251,239,241,.62); border-radius: 999px;
+          padding: 9px 0; font: 500 11px Outfit; }
+
+  /* given before — a year-stamped log, so you can't repeat yourself */
+  .gv { display: flex; align-items: baseline; gap: 11px; padding: 9px 0; }
+  .gv + .gv { border-top: 1px solid rgba(251,239,241,.08); }
+  .gv .yr { font-family: Gloock, serif; font-size: 14px; font-weight: 400; flex: none;
+            color: rgba(251,239,241,.5); min-width: 32px; }
+  .gv .bd b { font: 500 12.5px Outfit; }
+  .gv .bd p { font-size: 10.5px; color: rgba(251,239,241,.5); margin-top: 1px; }
+
+  /* --- good to know: PINNED, not scrolled. sizes and the coffee order are
+     reference data you glance at — they were dying below the fold in a
+     1384px scroll, so they get a permanent compact strip instead. --- */
+  .gtk { flex: none; padding: 10px 16px 11px; margin: 0 14px;
+         border-top: 1px solid rgba(251,239,241,.13); }
+  .gtk .hd { display: flex; align-items: baseline; gap: 8px; margin-bottom: 7px; }
+  .gtk .hd span { font: 500 9px Outfit; letter-spacing: .26em; text-transform: uppercase;
+                  color: rgba(251,239,241,.55); flex: 1; }
+  .gtk .hd button { border: none; background: transparent; cursor: pointer; padding: 0;
+                    color: rgba(251,239,241,.42); font: 500 10px Outfit; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  .chip { background: rgba(251,239,241,.09); border-radius: 999px; padding: 5px 10px; font-size: 11px; }
+  .chip b { font-weight: 500; }
+  .chip s { text-decoration: none; color: rgba(251,239,241,.5); }
+  .chip.empty { background: transparent; box-shadow: inset 0 0 0 1px rgba(251,239,241,.14);
+                color: rgba(251,239,241,.45); cursor: pointer; }
+
+  /* collapsible section — for the log-type modules you consult, not monitor */
+  .fold { border: none; }
+  .fold > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px;
+                    margin: 20px 0 9px; padding-bottom: 7px;
+                    border-bottom: 1px solid rgba(251,239,241,.13); }
+  .fold > summary::-webkit-details-marker { display: none; }
+  .fold > summary .l { font: 500 9px Outfit; letter-spacing: .26em; text-transform: uppercase;
+                       color: rgba(251,239,241,.55); flex: 1; }
+  .fold > summary .n { font: 500 10px Outfit; color: var(--gold); }
+  .fold > summary .car { font-size: 8px; color: rgba(251,239,241,.4); transition: transform .15s; }
+  .fold[open] > summary .car { transform: rotate(180deg); }
+
+  /* --- Valentin suggests: PINNED above the footer, not buried at the end of
+     the scroll — it's the one prompt that should never be scrolled past.
+     Solid gold on the claret ground so it's the loudest thing in the rail. --- */
+  .nudge { flex: none; margin: 0 14px 10px; border-radius: 18px; padding: 13px 14px 14px;
+           background: linear-gradient(165deg, #DFB877 0%, var(--gold) 55%, #A8834A 100%);
+           color: #4A1826; box-shadow: 0 10px 26px rgba(0,0,0,.30), 0 0 0 1px rgba(255,246,230,.35) inset;
+           position: relative; }
+  /* his crest speaks the line, so it reads as Valentin talking, not as a system banner */
+  .nudge .hd { display: flex; align-items: center; gap: 8px; }
+  .nudge .hd .fc { width: 24px; height: 24px; border-radius: 999px; overflow: hidden; flex: none;
+                   background: var(--cream); box-shadow: 0 1px 4px rgba(74,24,38,.28); }
+  .nudge .hd .fc img { width: 122%; height: 122%; object-fit: cover; }
+  .nudge .hd .k { font: 600 9px Outfit; letter-spacing: .22em; text-transform: uppercase;
+                  color: rgba(74,24,38,.72); flex: 1; }
+  .nudge p { font-size: 12.5px; line-height: 1.45; margin-top: 8px; font-weight: 500; }
+  .nudge .act { display: flex; align-items: center; gap: 8px; margin-top: 11px; }
+  .nudge .act button { border: none; cursor: pointer; background: #6E2334; color: #FFF3DC;
+                       border-radius: 999px; padding: 8px 15px; font: 500 11.5px Outfit;
+                       box-shadow: 0 4px 12px rgba(74,24,38,.32); }
+  .nudge .act .skip { background: transparent; color: rgba(74,24,38,.62); box-shadow: none;
+                      padding: 8px 4px; }
+  /* a soft pulse ring so the eye lands here first, without any animation gimmickry */
+  .nudge::after { content: ''; position: absolute; inset: -4px; border-radius: 22px; pointer-events: none;
+                  box-shadow: 0 0 0 1px rgba(224,186,124,.28); }
+
+  /* --- footer: progress demoted out of the headline slot --- */
+  .foot { flex: none; padding: 12px 18px 15px; border-top: 1px solid rgba(251,239,241,.13);
+          background: rgba(0,0,0,.10); }
+  .foot .tk { display: flex; align-items: center; gap: 4px; }
+  .foot .tk i { flex: 1; height: 4px; border-radius: 999px; background: rgba(251,239,241,.18); }
+  .foot .tk i.on { background: var(--gold); }
+  .foot .lb { display: flex; align-items: baseline; justify-content: space-between; margin-top: 8px; }
+  .foot .lb span { font: 500 9.5px Outfit; letter-spacing: .18em; text-transform: uppercase;
+                   color: rgba(251,239,241,.5); }
+  .foot .lb a { font: 500 11px Outfit; color: var(--gold); text-decoration: none; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="window">
+  <nav class="icons">
+    <div class="crest"><img src="../../../public/logo.png" alt="Valentin"></div>
+    <button class="ic on">◆</button><button class="ic">♥</button><button class="ic">☰</button>
+    <div class="grow"></div><button class="ic">⚙</button>
+  </nav>
+
+  <aside class="list">
+    <h3>Valentin</h3><div class="sub">Romantic Agent</div>
+    <button class="new">+ New conversation</button>
+    <div class="it on"><div class="t"><i></i>Coral — surf &amp; salsa</div><div class="s">11m ago · 8 messages</div></div>
+    <div class="it"><div class="t">Anniversary dinner</div><div class="s">2h ago · 24 messages</div></div>
+    <div class="it"><div class="t">New conversation</div><div class="s">yesterday · 2 messages</div></div>
+  </aside>
+
+  <main class="main">
+    <div class="head"><div><b>Coral</b><em>Getting to know her · 8 messages</em></div></div>
+    <div class="sep"></div>
+    <div class="flow"><div class="inner">
+      <div class="v"><div class="face"><img src="../../../public/logo.png" alt=""></div>
+        <div class="said"><p>And just to round out the basics — does Coral identify as female, or would she prefer different pronouns?</p></div></div>
+      <div class="me">female</div>
+      <div class="learned"><div class="tick">✓</div>
+        <div class="txt"><div class="k">Noted</div><div class="v2">Uses she/her</div></div>
+        <div class="c">certain</div><button class="x">✕</button></div>
+      <div class="v"><div class="face"><img src="../../../public/logo.png" alt=""></div>
+        <div class="said"><p>Got it, thank you. So now I know the essentials about Coral — born June 17th, 1988, and in her mid-thirties.</p>
+        <p>Now comes the fun part. What's something about Coral that always makes you smile?</p></div></div>
+      <div class="me">She is very cool she like to surf and dance salsa</div>
+      <div class="learned"><div class="tick">✓</div>
+        <div class="txt"><div class="k">Noted</div><div class="v2">Salsa dancing &amp; surfing</div></div>
+        <div class="c">certain</div><button class="x">✕</button></div>
+      <div class="v"><div class="face"><img src="../../../public/logo.png" alt=""></div>
+        <div class="said"><p>That's such a great combination — the ocean and the dance floor. Coral sounds like someone who's really alive in her body.</p>
+        <p>Does she surf often, or is it more of a when-the-waves-are-right kind of thing?</p></div></div>
+    </div></div>
+    <div class="bar"><div class="inner">
+      <textarea rows="1" placeholder="Tell Valentin about her…"></textarea>
+      <button class="go">↑</button>
+    </div></div>
+  </main>
+
+  <!-- ============ the brief ============ -->
+  <aside class="keep">
+    <div class="scroll">
+
+      <div class="who">
+        <div class="cameo"><img src="../../../public/partner-portrait.svg" alt="Coral"><button class="edit">✎</button></div>
+        <div><div class="nm">Coral</div><div class="sb">17 June 1988 · she/her</div></div>
+      </div>
+
+      <div class="sh"><span class="l">Next up</span></div>
+      <div class="up">
+        <div class="top"><b>Anniversary</b><span class="aw">12 days</span></div>
+        <div class="when">Wednesday 2 September</div>
+        <div class="by"><i>◷</i><b>Book by 26 Aug</b><em>1 week ahead</em></div>
+      </div>
+      <div class="up2"><b>Her birthday</b><span class="d">17 Jun</span><span class="aw">300 days</span></div>
+
+      <div class="sh"><span class="l">Keep in mind</span><span class="warn">⚠</span><span class="n">2</span></div>
+      <div class="mind">
+        <div class="row"><div class="dot"></div><div class="bd"><b>Allergic to shellfish</b>
+          <p>Rules out most of the seafood places on the coast.</p></div></div>
+        <div class="row"><div class="dot"></div><div class="bd"><b>No surprises in public</b>
+          <p>Prefers to be asked first. Never a restaurant scene.</p></div></div>
+      </div>
+
+      <div class="sh"><span class="l">Saved ideas</span><span class="n">3</span></div>
+      <div class="idea"><div class="box">✓</div>
+        <div class="bd"><b>Salsa night at Casa Roja</b><span>Live band Fridays · saved 11 Aug</span></div>
+        <span class="for">Anniv</span></div>
+      <div class="idea"><div class="box">✓</div>
+        <div class="bd"><b>Sunrise surf lesson</b><span>Zambujeira · book 2 weeks out</span></div>
+        <span class="for">Birthday</span></div>
+      <div class="idea done"><div class="box">✓</div>
+        <div class="bd"><b>Hand-written letter</b><span>Done 4 Aug</span></div></div>
+      <button class="addi">+ Save an idea</button>
+
+      <details class="fold"><summary><span class="l">Given before</span><span class="n">2</span><span class="car">▾</span></summary>
+        <div class="gv"><div class="yr">2025</div><div class="bd"><b>Silver wave bracelet</b>
+          <p>Birthday · she still wears it</p></div></div>
+        <div class="gv"><div class="yr">2024</div><div class="bd"><b>Weekend in Ericeira</b>
+          <p>Anniversary</p></div></div>
+      </details>
+
+    </div>
+
+    <div class="gtk">
+      <div class="hd"><span>Good to know</span><button>Edit</button></div>
+      <div class="chips">
+        <div class="chip"><s>Dress</s> <b>M</b></div>
+        <div class="chip"><s>Shoe</s> <b>38</b></div>
+        <div class="chip"><s>Coffee</s> <b>Flat white</b></div>
+        <div class="chip"><s>Flowers</s> <b>Peonies</b></div>
+        <div class="chip empty">+ Ring size</div>
+      </div>
+    </div>
+
+    <div class="nudge">
+      <div class="hd">
+        <div class="fc"><img src="../../../public/logo.png" alt="Valentin"></div>
+        <div class="k">Valentin suggests</div>
+      </div>
+      <p>I still don't know her love language — it's the fastest way to make the anniversary land.</p>
+      <div class="act">
+        <button>Ask me about it</button>
+        <button class="skip">Later</button>
+      </div>
+    </div>
+
+    <div class="foot">
+      <div class="tk">
+        <i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i>
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+      </div>
+      <div class="lb"><span>5 of 18 known</span><a>Full profile →</a></div>
+    </div>
+  </aside>
+</div>
+</body>
+</html>

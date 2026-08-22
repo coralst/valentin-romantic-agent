@@ -1,0 +1,1023 @@
+{
+ "commits": 176,
+ "merges": 69,
+ "prs": [
+  {
+   "add": 4590,
+   "c": "2026-04-04T15:08:48Z",
+   "cf": 35,
+   "del": 13,
+   "labels": [
+    "agent: architect"
+   ],
+   "m": "2026-04-04T15:17:10Z",
+   "n": 2,
+   "nc": 2,
+   "ref": "feat/arch-valentin-shared-types",
+   "st": "MERGED",
+   "t": "feat(arch): shared types, validation, persistence, design tokens",
+   "by": {
+    "architect": 2,
+    "master": 1,
+    "design": 1
+   }
+  },
+  {
+   "add": 2029,
+   "c": "2026-04-04T15:19:24Z",
+   "cf": 29,
+   "del": 0,
+   "labels": [
+    "agent: frontend"
+   ],
+   "m": "2026-04-04T15:41:31Z",
+   "n": 3,
+   "nc": 2,
+   "ref": "feat/frontend-valentin-chat-ui",
+   "st": "MERGED",
+   "t": "feat(frontend): chat UI, profile dashboard, state management, responsive layout",
+   "by": {
+    "frontend": 2,
+    "master": 1
+   }
+  },
+  {
+   "add": 1535,
+   "c": "2026-04-04T15:19:31Z",
+   "cf": 14,
+   "del": 0,
+   "labels": [
+    "agent: backend"
+   ],
+   "m": "2026-04-04T15:41:40Z",
+   "n": 4,
+   "nc": 2,
+   "ref": "feat/backend-valentin-agent-services",
+   "st": "MERGED",
+   "t": "feat(backend): API layer, agent orchestrator, preference extractor, server wiring",
+   "by": {
+    "backend": 2,
+    "master": 1
+   }
+  },
+  {
+   "add": 2,
+   "c": "2026-04-04T15:45:12Z",
+   "cf": 1,
+   "del": 1,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-04-04T15:45:51Z",
+   "n": 5,
+   "nc": 1,
+   "ref": "chore/infra-mcp-autoapprove",
+   "st": "MERGED",
+   "t": "chore(infra): add add_issue_comment to MCP autoApprove",
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 1070,
+   "c": "2026-04-04T15:56:22Z",
+   "cf": 8,
+   "del": 17,
+   "labels": [
+    "agent: backend"
+   ],
+   "m": "2026-04-04T15:56:56Z",
+   "n": 6,
+   "nc": 1,
+   "ref": "feat/backend-valentin-dev-server",
+   "st": "MERGED",
+   "t": "feat(backend): dev server + logo integration",
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 379,
+   "c": "2026-04-04T16:07:17Z",
+   "cf": 16,
+   "del": 17,
+   "labels": [
+    "agent: qa"
+   ],
+   "m": "2026-04-04T16:29:20Z",
+   "n": 8,
+   "nc": 2,
+   "ref": "feat/qa-valentin-e2e-tests",
+   "st": "MERGED",
+   "t": "\ud83e\uddea QA: E2E Playwright tests \u2014 onboarding, responsive, connection recovery",
+   "by": {
+    "qa": 1,
+    "master": 1
+   }
+  },
+  {
+   "add": 91,
+   "c": "2026-04-04T17:31:08Z",
+   "cf": 2,
+   "del": 89,
+   "labels": [
+    "agent: architect"
+   ],
+   "m": null,
+   "n": 10,
+   "nc": 1,
+   "ref": "docs/spec-sync-with-implementation",
+   "st": "CLOSED",
+   "t": "docs(shared): sync spec with implemented codebase",
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 113,
+   "c": "2026-04-04T18:12:49Z",
+   "cf": 13,
+   "del": 116,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-04-04T18:14:29Z",
+   "n": 11,
+   "nc": 0,
+   "ref": "fix/infra-kiro-stack-fixes",
+   "st": "MERGED",
+   "t": "fix(infra): Kiro stack fixes \u2014 hooks, steering, agents, MCP, CI",
+   "by": {}
+  },
+  {
+   "add": 67,
+   "c": "2026-04-04T18:42:33Z",
+   "cf": 10,
+   "del": 16,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": null,
+   "n": 12,
+   "nc": 0,
+   "ref": "feat/infra-agentic-automation",
+   "st": "CLOSED",
+   "t": "feat(infra): agentic automation \u2014 agentStop, write guard, routing, autoApprove",
+   "by": {}
+  },
+  {
+   "add": 67,
+   "c": "2026-04-04T19:04:09Z",
+   "cf": 10,
+   "del": 16,
+   "labels": [
+    "agent: master"
+   ],
+   "m": null,
+   "n": 13,
+   "nc": 2,
+   "ref": "feat/master-agent/agentic-automation-12",
+   "st": "CLOSED",
+   "t": "feat(infra): agentic automation \u2014 hooks, merge strategy, branch naming (#13)",
+   "by": {
+    "master": 2
+   }
+  },
+  {
+   "add": 1892,
+   "c": "2026-04-04T19:22:14Z",
+   "cf": 7,
+   "del": 169,
+   "labels": [
+    "agent: backend"
+   ],
+   "m": "2026-04-04T20:35:34Z",
+   "n": 15,
+   "nc": 1,
+   "ref": "feat/backend-dev/bedrock-sdk-14",
+   "st": "MERGED",
+   "t": "feat(backend): implement real AWS Bedrock SDK integration",
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 371,
+   "c": "2026-04-04T19:23:49Z",
+   "cf": 19,
+   "del": 159,
+   "labels": [
+    "agent: design"
+   ],
+   "m": "2026-07-04T18:31:49Z",
+   "n": 16,
+   "nc": 4,
+   "ref": "feat/design-modernize-ui",
+   "st": "MERGED",
+   "t": "style(design): modernize UI \u2014 refined palette, gradient accents, polished components",
+   "by": {
+    "master": 2,
+    "backend": 2,
+    "qa": 1
+   }
+  },
+  {
+   "add": 26,
+   "c": "2026-04-04T20:46:38Z",
+   "cf": 2,
+   "del": 12,
+   "labels": [
+    "agent: backend"
+   ],
+   "m": "2026-04-04T20:51:22Z",
+   "n": 17,
+   "nc": 0,
+   "ref": "fix/backend-dev/bedrock-converse-fix-16",
+   "st": "MERGED",
+   "t": "fix(backend): skip leading assistant messages for Bedrock Converse API",
+   "by": {}
+  },
+  {
+   "add": 1,
+   "c": "2026-04-04T20:54:47Z",
+   "cf": 1,
+   "del": 0,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-04-04T20:57:37Z",
+   "n": 18,
+   "nc": 0,
+   "ref": "fix/infra/dev-full-script",
+   "st": "MERGED",
+   "t": "chore(infra): add dev:full script",
+   "by": {}
+  },
+  {
+   "add": 2985,
+   "c": "2026-07-04T14:20:10Z",
+   "cf": 24,
+   "del": 35,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-07-04T14:40:02Z",
+   "n": 19,
+   "nc": 3,
+   "ref": "fix/pr-conversation-monitoring",
+   "st": "MERGED",
+   "t": "fix(pr-monitoring): enable iterative PR conversations after Ready for Review",
+   "by": {
+    "architect": 1,
+    "backend": 1,
+    "master": 2
+   }
+  },
+  {
+   "add": 4,
+   "c": "2026-07-04T14:51:19Z",
+   "cf": 1,
+   "del": 0,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-07-04T14:54:15Z",
+   "n": 20,
+   "nc": 1,
+   "ref": "chore/approval-gate-selftest",
+   "st": "MERGED",
+   "t": "chore(infra): approval-gate self-test (throwaway)",
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 358,
+   "c": "2026-07-04T14:56:40Z",
+   "cf": 5,
+   "del": 11,
+   "labels": [],
+   "m": "2026-07-04T14:58:36Z",
+   "n": 21,
+   "nc": 1,
+   "ref": "chore/cleanup-selftest",
+   "st": "MERGED",
+   "t": "fix(infra): comment-based approval gate for single-account merges",
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 280,
+   "c": "2026-07-04T16:16:38Z",
+   "cf": 14,
+   "del": 147,
+   "labels": [
+    "agent: design"
+   ],
+   "m": "2026-07-04T18:30:34Z",
+   "n": 22,
+   "nc": 1,
+   "ref": "style/design-modernize-ui-16",
+   "st": "MERGED",
+   "t": "style(design): modernize UI \u2014 refined palette, gradient accents, polished components",
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 80,
+   "c": "2026-07-04T16:16:46Z",
+   "cf": 3,
+   "del": 1,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": null,
+   "n": 23,
+   "nc": 2,
+   "ref": "chore/infra-smoke-test-16",
+   "st": "CLOSED",
+   "t": "chore(infra): add server boot smoke test and CI smoke job",
+   "by": {
+    "master": 2
+   }
+  },
+  {
+   "add": 882,
+   "c": "2026-07-04T16:20:05Z",
+   "cf": 6,
+   "del": 1,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-07-04T16:24:40Z",
+   "n": 24,
+   "nc": 2,
+   "ref": "test/infra-workflow-regression",
+   "st": "MERGED",
+   "t": "test(infra): workflow-automation regression suite + path-filtered CI",
+   "by": {
+    "master": 2
+   }
+  },
+  {
+   "add": 0,
+   "c": "2026-07-04T16:36:04Z",
+   "cf": 0,
+   "del": 0,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-07-04T18:43:14Z",
+   "n": 25,
+   "nc": 1,
+   "ref": "chore/infra-smoke-test-16",
+   "st": "MERGED",
+   "t": "chore(infra): add server boot smoke test and CI smoke job",
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 233,
+   "c": "2026-07-04T19:27:59Z",
+   "cf": 5,
+   "del": 3,
+   "labels": [
+    "agent: frontend"
+   ],
+   "m": "2026-07-04T19:32:29Z",
+   "n": 26,
+   "nc": 1,
+   "ref": "feat/frontend-typewriter-effect",
+   "st": "MERGED",
+   "t": "feat(frontend): typewriter effect for agent messages",
+   "by": {
+    "qa": 1
+   }
+  },
+  {
+   "add": 116,
+   "c": "2026-07-04T19:28:44Z",
+   "cf": 5,
+   "del": 4,
+   "labels": [
+    "agent: backend"
+   ],
+   "m": "2026-07-04T19:35:39Z",
+   "n": 27,
+   "nc": 1,
+   "ref": "fix/backend-conversation-naturalness",
+   "st": "MERGED",
+   "t": "fix(backend): vary response length and sampling for natural conversation",
+   "by": {
+    "qa": 1
+   }
+  },
+  {
+   "add": 7,
+   "c": "2026-07-04T19:28:45Z",
+   "cf": 1,
+   "del": 1,
+   "labels": [
+    "agent: backend"
+   ],
+   "m": "2026-07-04T19:38:09Z",
+   "n": 28,
+   "nc": 1,
+   "ref": "fix/backend-sonnet-model",
+   "st": "MERGED",
+   "t": "fix(backend): switch default model from retired Haiku 3 to active Sonnet 4.5",
+   "by": {
+    "qa": 1
+   }
+  },
+  {
+   "add": 96,
+   "c": "2026-07-04T19:42:53Z",
+   "cf": 3,
+   "del": 13,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-07-04T19:56:46Z",
+   "n": 30,
+   "nc": 1,
+   "ref": "fix/infra-merge-gate-hardening",
+   "st": "MERGED",
+   "t": "fix(infra): harden merge-gate approval-token detection against spoofing",
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 165,
+   "c": "2026-07-04T19:50:10Z",
+   "cf": 2,
+   "del": 34,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-07-04T20:00:18Z",
+   "n": 31,
+   "nc": 1,
+   "ref": "fix/infra-pr-comment-posting",
+   "st": "MERGED",
+   "t": "fix(infra): post PR comments safely; drop self-approve footguns",
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 374,
+   "c": "2026-07-04T19:50:25Z",
+   "cf": 6,
+   "del": 146,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-07-04T20:06:46Z",
+   "n": 32,
+   "nc": 1,
+   "ref": "fix/infra-pr-monitor",
+   "st": "MERGED",
+   "t": "fix(infra): make PR monitor dispatch, start, and stop correctly",
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 79,
+   "c": "2026-07-04T19:50:38Z",
+   "cf": 3,
+   "del": 11,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-07-04T20:09:57Z",
+   "n": 33,
+   "nc": 1,
+   "ref": "fix/infra-review-parser",
+   "st": "MERGED",
+   "t": "fix(infra): robust severity parsing and honest response template",
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 34,
+   "c": "2026-07-04T19:50:55Z",
+   "cf": 3,
+   "del": 3,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-07-04T20:13:01Z",
+   "n": 34,
+   "nc": 1,
+   "ref": "fix/infra-ci-gating",
+   "st": "MERGED",
+   "t": "fix(infra): gate on the regression unit tier and de-duplicate CI",
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 1,
+   "c": "2026-07-04T19:52:25Z",
+   "cf": 1,
+   "del": 0,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": null,
+   "n": 35,
+   "nc": 1,
+   "ref": "test/workflow-selftest-live",
+   "st": "CLOSED",
+   "t": "test(qa): throwaway workflow self-test (do not merge)",
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 64,
+   "c": "2026-07-04T20:24:54Z",
+   "cf": 1,
+   "del": 3,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-07-04T20:30:21Z",
+   "n": 36,
+   "nc": 1,
+   "ref": "feat/infra-ci-path-aware",
+   "st": "MERGED",
+   "t": "ci(infra): path-aware CI \u2014 skip smoke/build/e2e on non-app changes",
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 185,
+   "c": "2026-07-04T20:40:27Z",
+   "cf": 7,
+   "del": 155,
+   "labels": [
+    "agent: master"
+   ],
+   "m": "2026-07-04T20:50:26Z",
+   "n": 37,
+   "nc": 1,
+   "ref": "feat/master-conversation-protocol",
+   "st": "MERGED",
+   "t": "feat(infra): orchestrator-led PR review loop with multi-agent tagging",
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 416,
+   "c": "2026-07-04T20:40:44Z",
+   "cf": 4,
+   "del": 0,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-07-04T20:48:13Z",
+   "n": 38,
+   "nc": 1,
+   "ref": "feat/infra-turn-router-hooks",
+   "st": "MERGED",
+   "t": "feat(infra): deterministic turn-router skill + hooks for the review loop",
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 1,
+   "c": "2026-07-04T20:42:22Z",
+   "cf": 1,
+   "del": 0,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": null,
+   "n": 39,
+   "nc": 4,
+   "ref": "test/workflow-selftest-loop",
+   "st": "CLOSED",
+   "t": "test(qa): throwaway \u2014 orchestrator-led multi-agent loop demo (do not merge)",
+   "by": {
+    "master": 2,
+    "backend": 1,
+    "qa": 1
+   }
+  },
+  {
+   "add": 97,
+   "c": "2026-07-04T21:03:10Z",
+   "cf": 1,
+   "del": 0,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-07-04T21:06:52Z",
+   "n": 40,
+   "nc": 6,
+   "ref": "docs/workflow-required-checks",
+   "st": "MERGED",
+   "t": "docs(infra): document the orchestrator-led PR review loop",
+   "by": {
+    "master": 4,
+    "architect": 2
+   }
+  },
+  {
+   "add": 59,
+   "c": "2026-07-04T21:11:31Z",
+   "cf": 3,
+   "del": 0,
+   "labels": [
+    "agent: architect"
+   ],
+   "m": "2026-07-04T21:14:04Z",
+   "n": 41,
+   "nc": 1,
+   "ref": "feat/shared-category-helpers",
+   "st": "MERGED",
+   "t": "feat(shared): add category lookup helpers",
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 94,
+   "c": "2026-07-04T21:26:24Z",
+   "cf": 4,
+   "del": 4,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-07-04T21:58:32Z",
+   "n": 42,
+   "nc": 3,
+   "ref": "fix/infra-rubber-stamp-gate",
+   "st": "MERGED",
+   "t": "fix(infra): block rubber-stamp merges and match Power-routed calls",
+   "by": {
+    "master": 2,
+    "architect": 1
+   }
+  },
+  {
+   "add": 47,
+   "c": "2026-07-04T21:51:48Z",
+   "cf": 1,
+   "del": 22,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-07-04T21:56:05Z",
+   "n": 43,
+   "nc": 3,
+   "ref": "fix/infra-ci-required-checks",
+   "st": "MERGED",
+   "t": "fix(infra): make Build and E2E required checks always conclude success",
+   "by": {
+    "master": 2,
+    "architect": 1
+   }
+  },
+  {
+   "add": 32,
+   "c": "2026-07-04T22:00:28Z",
+   "cf": 3,
+   "del": 0,
+   "labels": [
+    "agent: architect"
+   ],
+   "m": "2026-08-01T13:24:50Z",
+   "n": 44,
+   "nc": 3,
+   "ref": "feat/arch-preference-category-count",
+   "st": "MERGED",
+   "t": "feat(shared): add preferenceCategoryCount helper",
+   "by": {
+    "master": 2,
+    "architect": 1
+   }
+  },
+  {
+   "add": 574,
+   "c": "2026-08-01T13:17:04Z",
+   "cf": 5,
+   "del": 7,
+   "labels": [
+    "agent: backend"
+   ],
+   "m": "2026-08-01T13:20:58Z",
+   "n": 45,
+   "nc": 1,
+   "ref": "fix/backend-bedrock-inference-and-preference-broadcast",
+   "st": "MERGED",
+   "t": "fix(backend): unbreak chat replies and preference dashboard updates",
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 13,
+   "c": "2026-08-01T13:17:44Z",
+   "cf": 2,
+   "del": 8,
+   "labels": [],
+   "m": "2026-08-01T13:33:27Z",
+   "n": 46,
+   "nc": 1,
+   "ref": "docs/correct-required-checks",
+   "st": "MERGED",
+   "t": "docs(infra): correct the required-checks description (four checks, not just E2E)",
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 53,
+   "c": "2026-08-01T13:18:36Z",
+   "cf": 5,
+   "del": 8,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-08-01T13:28:18Z",
+   "n": 47,
+   "nc": 1,
+   "ref": "fix/infra-parser-hook-cleanup",
+   "st": "MERGED",
+   "t": "fix(infra): parser ordered-list support, log cleanup, hook enabled flag",
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 11,
+   "c": "2026-08-01T13:19:39Z",
+   "cf": 1,
+   "del": 2,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-08-01T13:35:55Z",
+   "n": 48,
+   "nc": 1,
+   "ref": "fix/infra-mcp-token-env-var",
+   "st": "MERGED",
+   "t": "fix(infra): point the GitHub MCP server at the live token variable",
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 1,
+   "c": "2026-08-01T14:33:45Z",
+   "cf": 1,
+   "del": 0,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": null,
+   "n": 50,
+   "nc": 3,
+   "ref": "test/workflow-selftest-verify",
+   "st": "CLOSED",
+   "t": "test: verify workflow automation capability",
+   "by": {
+    "master": 2
+   }
+  },
+  {
+   "add": 4,
+   "c": "2026-08-01T14:37:41Z",
+   "cf": 1,
+   "del": 0,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-08-01T14:39:50Z",
+   "n": 52,
+   "nc": 3,
+   "ref": "test/workflow-selftest-review-flow",
+   "st": "MERGED",
+   "t": "test: review conversation flow verification",
+   "by": {
+    "master": 2,
+    "backend": 1
+   }
+  },
+  {
+   "add": 78,
+   "c": "2026-08-01T15:05:10Z",
+   "cf": 1,
+   "del": 77,
+   "labels": [
+    "agent: architect"
+   ],
+   "m": "2026-08-01T15:06:56Z",
+   "n": 56,
+   "nc": 3,
+   "ref": "chore/arch-valentin-tasks-update",
+   "st": "MERGED",
+   "t": "chore(arch): update tasks.md to reflect implemented state",
+   "by": {
+    "master": 2,
+    "architect": 1
+   }
+  },
+  {
+   "add": 1376,
+   "c": "2026-08-01T15:12:35Z",
+   "cf": 11,
+   "del": 11,
+   "labels": [
+    "agent: frontend"
+   ],
+   "m": "2026-08-01T15:23:08Z",
+   "n": 57,
+   "nc": 3,
+   "ref": "feat/frontend-session-history-sidebar",
+   "st": "MERGED",
+   "t": "feat(frontend): add session history sidebar with localStorage persistence",
+   "by": {
+    "master": 2,
+    "frontend": 1
+   }
+  },
+  {
+   "add": 3329,
+   "c": "2026-08-01T15:12:35Z",
+   "cf": 27,
+   "del": 23,
+   "labels": [
+    "agent: frontend"
+   ],
+   "m": "2026-08-01T15:51:04Z",
+   "n": 58,
+   "nc": 5,
+   "ref": "feat/frontend-partner-profile-panel",
+   "st": "MERGED",
+   "t": "feat(frontend): implement Partner Profile Panel",
+   "by": {
+    "master": 3,
+    "frontend": 1,
+    "design": 1
+   }
+  },
+  {
+   "add": 0,
+   "c": "2026-08-01T15:56:49Z",
+   "cf": 1,
+   "del": 4,
+   "labels": [],
+   "m": "2026-08-01T15:58:38Z",
+   "n": 59,
+   "nc": 0,
+   "ref": "chore/cleanup-test-files",
+   "st": "MERGED",
+   "t": "chore: remove workflow verification test file",
+   "by": {}
+  },
+  {
+   "add": 1041,
+   "c": "2026-08-01T17:42:17Z",
+   "cf": 16,
+   "del": 1,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-08-01T17:44:57Z",
+   "n": 61,
+   "nc": 3,
+   "ref": "feat/infra-compute",
+   "st": "MERGED",
+   "t": "feat(infra): Sprint 2 - ECS Fargate compute, CDN, auth, and deploy pipeline",
+   "by": {
+    "backend": 1
+   }
+  },
+  {
+   "add": 1969,
+   "c": "2026-08-01T17:45:19Z",
+   "cf": 23,
+   "del": 384,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-08-01T17:50:44Z",
+   "n": 62,
+   "nc": 3,
+   "ref": "feat/infra-foundation",
+   "st": "MERGED",
+   "t": "feat(infra): Sprint 1 production infrastructure foundation",
+   "by": {}
+  },
+  {
+   "add": 566,
+   "c": "2026-08-21T14:48:38Z",
+   "cf": 17,
+   "del": 101,
+   "labels": [
+    "agent: frontend"
+   ],
+   "m": "2026-08-21T14:52:12Z",
+   "n": 63,
+   "nc": 1,
+   "ref": "feat/frontend-session-entry-actions",
+   "st": "MERGED",
+   "t": "feat(frontend): session rename/delete, session-switch rehydration, message formatting, and deployable infra",
+   "by": {}
+  },
+  {
+   "add": 840,
+   "c": "2026-08-21T15:00:02Z",
+   "cf": 12,
+   "del": 0,
+   "labels": [
+    "agent: backend"
+   ],
+   "m": "2026-08-21T15:09:09Z",
+   "n": 64,
+   "nc": 1,
+   "ref": "feat/backend-demo-seed",
+   "st": "MERGED",
+   "t": "feat(backend): server-side demo seeding and reset",
+   "by": {}
+  },
+  {
+   "add": 1777,
+   "c": "2026-08-21T15:10:00Z",
+   "cf": 14,
+   "del": 13,
+   "labels": [
+    "agent: frontend"
+   ],
+   "m": "2026-08-21T15:45:36Z",
+   "n": 65,
+   "nc": 1,
+   "ref": "feat/frontend-valentin-inspector",
+   "st": "MERGED",
+   "t": "feat(frontend): add Valentin Inspector \u2014 live architecture slide-over",
+   "by": {}
+  },
+  {
+   "add": 604,
+   "c": "2026-08-21T15:13:27Z",
+   "cf": 6,
+   "del": 6,
+   "labels": [],
+   "m": "2026-08-21T15:20:05Z",
+   "n": 66,
+   "nc": 1,
+   "ref": "feat/frontend-demo-controls",
+   "st": "MERGED",
+   "t": "feat(frontend): demo toolbar for one-click profile load and reset",
+   "by": {}
+  },
+  {
+   "add": 1612,
+   "c": "2026-08-21T15:30:30Z",
+   "cf": 14,
+   "del": 90,
+   "labels": [
+    "documentation",
+    "agent: infra"
+   ],
+   "m": "2026-08-21T15:32:02Z",
+   "n": 67,
+   "nc": 1,
+   "ref": "docs/infra-agent-methodology-showcase",
+   "st": "MERGED",
+   "t": "docs(infra): lead with the agentic methodology and give each agent a face",
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 1779,
+   "c": "2026-08-21T15:50:03Z",
+   "cf": 5,
+   "del": 9,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": null,
+   "n": 68,
+   "nc": 0,
+   "ref": "docs/infra-agent-contribution-graph",
+   "st": "OPEN",
+   "t": "docs(infra): visualise the agent workflow from the real PR history",
+   "by": {}
+  }
+ ]
+}

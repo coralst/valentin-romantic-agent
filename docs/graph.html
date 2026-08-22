@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Who built Valentin — agent contribution graph</title>
+<meta name="description" content="Interactive graph of every pull request in the Valentin repository, attributed to the AI agent persona that authored or reviewed it.">
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --line: #30363d;
+    --fg: #e6edf3; --muted: #8b949e;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  a { color: #58a6ff; }
+  header { padding: 26px 30px 6px; }
+  h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.2px; }
+  .sub { color: var(--muted); font-size: 13.5px; }
+  .note { color: var(--muted); font-size: 12px; margin-top: 6px; }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    padding: 16px 30px; border-bottom: 1px solid var(--line); }
+  .controls .group { display: flex; gap: 6px; align-items: center; }
+  .controls .label { color: var(--muted); font-size: 11.5px; text-transform: uppercase;
+    letter-spacing: 0.6px; margin-right: 2px; }
+  button { background: var(--panel); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 20px; padding: 5px 13px; font-size: 12.5px; cursor: pointer;
+    font-family: inherit; transition: background .12s, border-color .12s; }
+  button:hover { background: #1f2630; }
+  button[aria-pressed="true"] { border-color: currentColor; background: #1f2630; }
+  button.off { opacity: .42; }
+  input[type=search] { background: var(--panel); border: 1px solid var(--line);
+    border-radius: 20px; padding: 5px 13px; color: var(--fg); font: inherit;
+    font-size: 12.5px; width: 210px; }
+
+  .scroll { overflow-x: auto; padding: 0 30px 8px; }
+  svg { display: block; }
+  .node { cursor: pointer; }
+  .node circle { transition: opacity .12s; }
+  .dim { opacity: .1; }
+
+  #tip { position: fixed; pointer-events: none; opacity: 0; z-index: 9;
+    background: #1c2128; border: 1px solid #3d444d; border-radius: 7px;
+    padding: 9px 12px; max-width: 380px; font-size: 12.5px; line-height: 1.45;
+    box-shadow: 0 8px 26px rgba(0,0,0,.6); transition: opacity .1s; }
+  #tip .t { font-weight: 650; margin-bottom: 4px; display: block; }
+  #tip .m { color: var(--muted); font-size: 11.5px; }
+
+  .stats { display: flex; flex-wrap: wrap; gap: 30px; padding: 16px 30px 30px;
+    border-top: 1px solid var(--line); margin-top: 4px; }
+  .stat b { display: block; font-size: 19px; }
+  .stat span { color: var(--muted); font-size: 11px; }
+  footer { padding: 0 30px 34px; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Who built Valentin</h1>
+  <div class="sub" id="sub">loading the pull request history…</div>
+  <div class="note">
+    Every mark is a real pull request or a real review comment, read from this
+    repository's GitHub history. Click any node to open the PR. Click a lane to
+    isolate one agent.
+  </div>
+</header>
+
+<div class="controls">
+  <div class="group"><span class="label">Agents</span><span id="agentBtns"></span></div>
+  <div class="group"><span class="label">Sessions</span><span id="sessionBtns"></span></div>
+  <div class="group">
+    <button id="tReview" aria-pressed="true">reviews</button>
+    <button id="tMerged" aria-pressed="true">merged</button>
+    <button id="tClosed" aria-pressed="true">closed</button>
+  </div>
+  <input type="search" id="q" placeholder="filter by title or #number">
+  <button id="reset">reset</button>
+</div>
+
+<div class="scroll"><svg id="chart"></svg></div>
+<div class="stats" id="stats"></div>
+<footer>
+  Generated from <code>docs/assets/graph/pr-history.json</code>, refreshed by
+  <code>.github/workflows/agent-graph.yml</code>. Source:
+  <a href="https://github.com/coralst/valentin-romantic-agent">coralst/valentin-romantic-agent</a> ·
+  <a href="https://github.com/coralst/valentin-romantic-agent/blob/main/docs/METHODOLOGY.md">methodology</a>
+</footer>
+
+<div id="tip" role="tooltip"></div>
+
+<script>
+const REPO = 'coralst/valentin-romantic-agent';
+const AGENTS = [
+  ['master',    'Master Agent',     '#7B68EE', 'orchestrator'],
+  ['architect', 'System Architect', '#FF8C00', 'src/shared/'],
+  ['frontend',  'Frontend Dev',     '#1E90FF', 'src/client/'],
+  ['backend',   'Backend Dev',      '#32CD32', 'src/server/'],
+  ['design',    'UI Designer',      '#FF69B4', 'design-system/'],
+  ['qa',        'QA Agent',         '#FF4500', 'e2e/'],
+  ['infra',     'Infra / Workflow', '#8B949E', '.kiro/ · .github/'],
+];
+const COLOUR = Object.fromEntries(AGENTS.map(a => [a[0], a[2]]));
+const IDX = Object.fromEntries(AGENTS.map((a, i) => [a[0], i]));
+const GHOST = "M48 8 C26 8 10 25 10 46 V80 Q10 85 15 82.5 L21 79 Q24 77.5 27 79 "
+  + "L33 82.5 Q36 84 39 82.5 L45 79 Q48 77.5 51 79 L57 82.5 Q60 84 63 82.5 "
+  + "L69 79 Q72 77.5 75 79 L81 82.5 Q86 85 86 80 V46 C86 25 70 8 48 8 Z";
+
+const GUTTER = 250, SLOT = 41, GAP = 38, SPINE_Y = 96, LANE_TOP = 170, LANE_H = 70;
+const SVGNS = 'http://www.w3.org/2000/svg';
+
+// Same resolution order as the Python generator: label first, branch prefix after.
+function agentOf(pr) {
+  const l = (pr.labels || []).find(x => x.startsWith('agent: '));
+  if (l) { const k = l.slice(7).trim(); if (k in IDX) return k; }
+  const tail = pr.ref.includes('/') ? pr.ref.split('/').slice(1).join('/') : pr.ref;
+  const stem = tail.split('-')[0].split('/')[0];
+  return ({ arch: 'architect', shared: 'architect', front: 'frontend',
+    frontend: 'frontend', backend: 'backend', back: 'backend', design: 'design',
+    qa: 'qa', master: 'master' })[stem] || 'infra';
+}
+const el = (n, a = {}) => { const e = document.createElementNS(SVGNS, n);
+  for (const k in a) e.setAttribute(k, a[k]); return e; };
+const radius = cf => 6 + Math.min(9.5, Math.sqrt(Math.max(cf, 1)) * 1.75);
+
+let DATA = null, STATE = {
+  agents: new Set(AGENTS.map(a => a[0])), sessions: null,
+  reviews: true, merged: true, closed: true, q: '',
+};
+
+function passes(pr) {
+  if (!STATE.agents.has(pr.agent)) return false;
+  if (STATE.sessions && !STATE.sessions.has(pr.c.slice(0, 10))) return false;
+  if (pr.st === 'MERGED' && !STATE.merged) return false;
+  if (pr.st !== 'MERGED' && !STATE.closed) return false;
+  if (STATE.q) {
+    const q = STATE.q.toLowerCase();
+    if (!pr.t.toLowerCase().includes(q) && !String(pr.n).includes(q.replace('#', '')))
+      return false;
+  }
+  return true;
+}
+
+const tip = document.getElementById('tip');
+function showTip(ev, html) {
+  tip.innerHTML = html; tip.style.opacity = 1;
+  const r = tip.getBoundingClientRect();
+  let x = ev.clientX + 14, y = ev.clientY + 14;
+  if (x + r.width > innerWidth - 8) x = ev.clientX - r.width - 14;
+  if (y + r.height > innerHeight - 8) y = ev.clientY - r.height - 14;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+}
+const hideTip = () => { tip.style.opacity = 0; };
+
+function miniGhost(x, y, colour, s = 0.33) {
+  const g = el('g', { transform: `translate(${x},${y}) scale(${s})` });
+  g.appendChild(el('path', { d: GHOST, fill: colour, opacity: 0.95 }));
+  for (const cx of [37, 59]) {
+    g.appendChild(el('ellipse', { cx, cy: 44, rx: 8.5, ry: 10, fill: '#fff' }));
+    g.appendChild(el('circle', { cx: cx + 1.5, cy: 46, r: 4.4, fill: '#1b1b2b' }));
+    g.appendChild(el('circle', { cx: cx + 3.5, cy: 44, r: 1.5, fill: '#fff' }));
+  }
+  for (const cx of [24, 72])
+    g.appendChild(el('ellipse', { cx, cy: 57, rx: 5, ry: 3.2, fill: '#fff', opacity: 0.3 }));
+  return g;
+}
+
+function draw() {
+  const svg = document.getElementById('chart');
+  svg.textContent = '';
+  const prs = DATA.prs.slice().sort((a, b) => a.n - b.n);
+
+  // Sessions and x slots are computed over the full set so the layout is stable
+  // while filtering — filtered-out nodes fade rather than reflow.
+  const days = [...new Set(prs.map(p => p.c.slice(0, 10)))].sort();
+  const xOf = {}, bands = [];
+  let cursor = GUTTER;
+  for (const day of days) {
+    const group = prs.filter(p => p.c.slice(0, 10) === day);
+    const start = cursor;
+    for (const p of group) { xOf[p.n] = cursor + SLOT / 2; cursor += SLOT; }
+    bands.push([day, start, cursor, group.length]); cursor += GAP;
+  }
+  const width = cursor - GAP + 40;
+  const laneY = {}; AGENTS.forEach(([k], i) => laneY[k] = LANE_TOP + i * LANE_H);
+  const height = LANE_TOP + (AGENTS.length - 1) * LANE_H + 60;
+  svg.setAttribute('width', width); svg.setAttribute('height', height);
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+  const defs = el('defs');
+  for (const [k, , c] of AGENTS) {
+    const lg = el('linearGradient', { id: `lg-${k}`, x1: 0, y1: 0, x2: 1, y2: 0 });
+    lg.appendChild(el('stop', { offset: 0, 'stop-color': c, 'stop-opacity': 0.2 }));
+    lg.appendChild(el('stop', { offset: 1, 'stop-color': c, 'stop-opacity': 0.03 }));
+    defs.appendChild(lg);
+  }
+  svg.appendChild(defs);
+
+  // session bands
+  bands.forEach(([day, s, e, n], i) => {
+    svg.appendChild(el('rect', { x: s - 6, y: 54, width: e - s + 12,
+      height: height - 96, fill: '#fff', opacity: 0.022, rx: 9 }));
+    const mid = (s + e) / 2;
+    const t1 = el('text', { x: mid, y: 26, fill: 'var(--fg)', 'font-size': 12,
+      'font-weight': 650, 'text-anchor': 'middle' });
+    t1.textContent = `Session ${i + 1} · ${day}`;
+    const t2 = el('text', { x: mid, y: 40, fill: 'var(--muted)', 'font-size': 10.5,
+      'text-anchor': 'middle' });
+    t2.textContent = `${n} PRs opened`;
+    svg.append(t1, t2);
+  });
+
+  // main spine
+  svg.appendChild(el('line', { x1: GUTTER - 30, y1: SPINE_Y, x2: width - 20, y2: SPINE_Y,
+    stroke: '#f0f6fc', 'stroke-width': 3.4, 'stroke-linecap': 'round' }));
+  const ml = el('text', { x: GUTTER - 40, y: SPINE_Y + 4.5, fill: '#f0f6fc',
+    'font-size': 13, 'font-weight': 700, 'text-anchor': 'end' });
+  ml.textContent = 'main'; svg.appendChild(ml);
+
+  // lanes
+  const authored = {}, reviewed = {}, addsBy = {};
+  for (const p of prs) {
+    authored[p.agent] = (authored[p.agent] || 0) + 1;
+    addsBy[p.agent] = (addsBy[p.agent] || 0) + p.add;
+    for (const k in (p.by || {})) if (k !== p.agent) reviewed[k] = (reviewed[k] || 0) + 1;
+  }
+  for (const [k, name, colour, owns] of AGENTS) {
+    const y = laneY[k];
+    const band = el('rect', { x: GUTTER - 24, y: y - 26, width: width - GUTTER - 4,
+      height: 52, fill: `url(#lg-${k})`, rx: 8 });
+    svg.appendChild(band);
+    const hit = el('rect', { x: 0, y: y - 30, width: width, height: 60,
+      fill: 'transparent', style: 'cursor:pointer' });
+    hit.addEventListener('click', () => {
+      const only = STATE.agents.size === 1 && STATE.agents.has(k);
+      STATE.agents = only ? new Set(AGENTS.map(a => a[0])) : new Set([k]);
+      syncButtons(); draw();
+    });
+    svg.appendChild(hit);
+    svg.appendChild(miniGhost(24, y - 17, colour));
+    const t = el('text', { x: 62, y: y - 9, fill: 'var(--fg)', 'font-size': 13,
+      'font-weight': 650 }); t.textContent = name;
+    const o = el('text', { x: 62, y: y + 5, fill: colour, 'font-size': 9.5,
+      'font-family': 'ui-monospace,Menlo,monospace', opacity: 0.9 }); o.textContent = owns;
+    const s = el('text', { x: 62, y: y + 19, fill: 'var(--muted)', 'font-size': 10.5 });
+    s.textContent = `${authored[k] || 0} authored · ${reviewed[k] || 0} reviewed`
+      + (addsBy[k] ? ` · +${addsBy[k].toLocaleString()}` : '');
+    svg.append(t, o, s);
+    if (!STATE.agents.has(k)) [band, t, o, s].forEach(n => n.classList.add('dim'));
+  }
+
+  // review chevrons
+  if (STATE.reviews) for (const p of prs) {
+    if (!passes(p)) continue;
+    for (const k in (p.by || {})) {
+      if (k === p.agent || !(k in laneY) || !STATE.agents.has(k)) continue;
+      const x = xOf[p.n], y = laneY[k], n = p.by[k];
+      const g = el('g', { class: 'node' });
+      g.appendChild(el('path', { d: `M${x - 5.2} ${y - 4.4} L${x} ${y + 1.4} L${x + 5.2} ${y - 4.4}`,
+        fill: 'none', stroke: COLOUR[k], 'stroke-width': 2.1,
+        'stroke-linecap': 'round', 'stroke-linejoin': 'round', opacity: 0.88 }));
+      g.appendChild(el('line', { x1: x, y1: y - 8, x2: x, y2: y - 15,
+        stroke: COLOUR[k], 'stroke-width': 1.1, opacity: 0.3,
+        'pointer-events': 'none' }));
+      g.addEventListener('mousemove', ev => showTip(ev,
+        `<span class="t">#${p.n} reviewed by ${k}</span>`
+        + `<span class="m">${n} comment${n === 1 ? '' : 's'} · did not author this PR</span>`));
+      g.addEventListener('mouseleave', hideTip);
+      g.addEventListener('click', () => open(`https://github.com/${REPO}/pull/${p.n}`, '_blank'));
+      svg.appendChild(g);
+    }
+  }
+
+  // PR nodes
+  for (const p of prs) {
+    const k = p.agent, x = xOf[p.n], y = laneY[k], r = radius(p.cf);
+    const on = passes(p), colour = COLOUR[k], isMerged = p.st === 'MERGED';
+    const g = el('g', { class: 'node' + (on ? '' : ' dim') });
+    // Connectors are decorative: only the node itself should catch the pointer,
+    // otherwise the line up to main hijacks hover for the whole column.
+    if (isMerged) {
+      g.appendChild(el('path', { d: `M${x} ${y - r} L${x} ${SPINE_Y}`, stroke: colour,
+        'stroke-width': 2, fill: 'none', opacity: 0.62, 'pointer-events': 'none' }));
+      g.appendChild(el('circle', { cx: x, cy: SPINE_Y, r: 4.2, fill: colour,
+        stroke: '#0d1117', 'stroke-width': 1.6, 'pointer-events': 'none' }));
+      g.appendChild(el('circle', { cx: x, cy: y, r, fill: colour, stroke: '#0d1117',
+        'stroke-width': 2 }));
+    } else {
+      g.appendChild(el('path', { d: `M${x} ${y - r} L${x} ${y - (y - SPINE_Y) * 0.34}`,
+        stroke: colour, 'stroke-width': 1.8, fill: 'none', opacity: 0.4,
+        'stroke-dasharray': '3 3', 'pointer-events': 'none' }));
+      g.appendChild(el('circle', { cx: x, cy: y, r, fill: '#0d1117', stroke: colour,
+        'stroke-width': 2.4, 'stroke-dasharray': '3 2.4' }));
+    }
+    if (p.nc >= 3) {
+      g.appendChild(el('circle', { cx: x, cy: y, r: r + 4.5, fill: 'none',
+        stroke: colour, 'stroke-width': 1.5, opacity: 0.85,
+        'pointer-events': 'none' }));
+      g.appendChild(el('circle', { cx: x, cy: y, r: r + 8, fill: 'none',
+        stroke: colour, 'stroke-width': 1, opacity: 0.32,
+        'pointer-events': 'none' }));
+    }
+    const lab = el('text', { x, y: y + 3.3, fill: isMerged ? '#0d1117' : colour,
+      'font-size': 8.6, 'font-weight': 700, 'text-anchor': 'middle',
+      'font-family': 'ui-monospace,Menlo,monospace', style: 'pointer-events:none' });
+    lab.textContent = p.n; g.appendChild(lab);
+
+    const others = Object.keys(p.by || {}).filter(a => a !== k);
+    g.addEventListener('mousemove', ev => showTip(ev,
+      `<span class="t">#${p.n} ${p.t.replace(/</g, '&lt;')}</span>`
+      + `<span class="m">authored by <b style="color:${colour}">${k}</b> · `
+      + `${p.cf} files · +${p.add}/−${p.del} · ${p.nc} comment${p.nc === 1 ? '' : 's'} · `
+      + `${isMerged ? 'merged' : 'closed without merging'}`
+      + (others.length ? `<br>reviewed by ${others.join(', ')}` : '') + '</span>'));
+    g.addEventListener('mouseleave', hideTip);
+    g.addEventListener('click', () => open(`https://github.com/${REPO}/pull/${p.n}`, '_blank'));
+    svg.appendChild(g);
+  }
+
+  // stats reflect the current filter
+  const vis = prs.filter(passes);
+  const stats = [
+    ['pull requests', vis.length],
+    ['merged', vis.filter(p => p.st === 'MERGED').length],
+    ['review comments', vis.reduce((a, p) => a + p.nc, 0)],
+    ['lines added', '+' + vis.reduce((a, p) => a + p.add, 0).toLocaleString()],
+    ['lines removed', '−' + vis.reduce((a, p) => a + p.del, 0).toLocaleString()],
+    ['files touched', vis.reduce((a, p) => a + p.cf, 0)],
+  ];
+  document.getElementById('stats').innerHTML = stats.map(([l, v]) =>
+    `<div class="stat"><b>${v}</b><span>${l}</span></div>`).join('');
+  document.getElementById('sub').textContent =
+    `${DATA.prs.length} pull requests · ${prs.filter(p => p.st === 'MERGED').length} merged · `
+    + `${DATA.commits} commits · ${DATA.merges} merge commits · `
+    + `${days.length} working sessions · six agent personas, disjoint ownership`;
+}
+
+function syncButtons() {
+  document.querySelectorAll('#agentBtns button').forEach(b =>
+    b.classList.toggle('off', !STATE.agents.has(b.dataset.k)));
+  document.querySelectorAll('#sessionBtns button').forEach(b =>
+    b.classList.toggle('off', STATE.sessions && !STATE.sessions.has(b.dataset.d)));
+}
+
+function buildControls(days) {
+  const ab = document.getElementById('agentBtns');
+  for (const [k, name, colour] of AGENTS) {
+    const b = document.createElement('button');
+    b.textContent = name; b.dataset.k = k; b.style.color = colour;
+    b.addEventListener('click', () => {
+      STATE.agents.has(k) ? STATE.agents.delete(k) : STATE.agents.add(k);
+      if (!STATE.agents.size) STATE.agents = new Set(AGENTS.map(a => a[0]));
+      syncButtons(); draw();
+    });
+    ab.appendChild(b);
+  }
+  const sb = document.getElementById('sessionBtns');
+  days.forEach((d, i) => {
+    const b = document.createElement('button');
+    b.textContent = `S${i + 1}`; b.title = d; b.dataset.d = d;
+    b.addEventListener('click', () => {
+      if (!STATE.sessions) STATE.sessions = new Set(days);
+      STATE.sessions.has(d) ? STATE.sessions.delete(d) : STATE.sessions.add(d);
+      if (!STATE.sessions.size || STATE.sessions.size === days.length) STATE.sessions = null;
+      syncButtons(); draw();
+    });
+    sb.appendChild(b);
+  });
+  for (const [id, key] of [['tReview', 'reviews'], ['tMerged', 'merged'], ['tClosed', 'closed']]) {
+    const b = document.getElementById(id);
+    b.addEventListener('click', () => {
+      STATE[key] = !STATE[key];
+      b.setAttribute('aria-pressed', STATE[key]);
+      b.classList.toggle('off', !STATE[key]); draw();
+    });
+  }
+  document.getElementById('q').addEventListener('input', e => {
+    STATE.q = e.target.value.trim(); draw();
+  });
+  document.getElementById('reset').addEventListener('click', () => {
+    STATE = { agents: new Set(AGENTS.map(a => a[0])), sessions: null,
+      reviews: true, merged: true, closed: true, q: '' };
+    document.getElementById('q').value = '';
+    ['tReview', 'tMerged', 'tClosed'].forEach(i => {
+      document.getElementById(i).setAttribute('aria-pressed', 'true');
+      document.getElementById(i).classList.remove('off');
+    });
+    syncButtons(); draw();
+  });
+}
+
+fetch('assets/graph/pr-history.json')
+  .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+  .then(d => {
+    DATA = d;
+    DATA.prs.forEach(p => p.agent = agentOf(p));
+    buildControls([...new Set(DATA.prs.map(p => p.c.slice(0, 10)))].sort());
+    draw();
+  })
+  .catch(e => {
+    document.getElementById('sub').textContent =
+      'Could not load assets/graph/pr-history.json — ' + e.message;
+  });
+</script>
+</body>
+</html>

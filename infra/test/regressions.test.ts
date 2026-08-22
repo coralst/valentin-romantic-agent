@@ -23,6 +23,7 @@ const config = getConfig('dev');
 let computeTemplate: Template;
 let monitoringTemplate: Template;
 let dataTemplate: Template;
+let safetyTemplate: Template;
 
 beforeAll(() => {
   const app = new cdk.App();
@@ -63,6 +64,7 @@ beforeAll(() => {
   computeTemplate = Template.fromStack(compute);
   monitoringTemplate = Template.fromStack(monitoring);
   dataTemplate = Template.fromStack(data);
+  safetyTemplate = Template.fromStack(safety);
 });
 
 /** The container's environment block, as a name -> value map. */
@@ -108,6 +110,57 @@ describe('guardrail enforcement', () => {
 
   it('passes a pinned guardrail version', () => {
     expect(containerEnv().BEDROCK_GUARDRAIL_VERSION).toBeDefined();
+  });
+
+  /** The PII entities the guardrail is configured to act on, as type -> action. */
+  function piiActions(): Record<string, string> {
+    const guardrails = safetyTemplate.findResources('AWS::Bedrock::Guardrail');
+    const props = (Object.values(guardrails)[0] as any).Properties;
+    const entities = props.SensitiveInformationPolicyConfig.PiiEntitiesConfig as Array<{
+      Type: string;
+      Action: string;
+    }>;
+    return Object.fromEntries(entities.map((e) => [e.Type, e.Action]));
+  }
+
+  /*
+   * ADDRESS at BLOCK made the agent refuse most of its own subject matter:
+   * Bedrock reads a bare place name as an address, so "she's been saving for
+   * Kyoto" was blocked, and Paris, Rome, Seattle and "France" with it. Because
+   * the guardrail re-screened the whole transcript, one such sentence then
+   * blocked every later turn in the conversation.
+   */
+  it('does not block ADDRESS — every date has a place in it', () => {
+    expect(piiActions()).not.toHaveProperty('ADDRESS');
+  });
+
+  it('still blocks the identifiers a partner profile never needs', () => {
+    const actions = piiActions();
+    for (const type of [
+      'CREDIT_DEBIT_CARD_NUMBER',
+      'US_SOCIAL_SECURITY_NUMBER',
+      'PHONE',
+      'EMAIL',
+      'AWS_ACCESS_KEY',
+      'AWS_SECRET_KEY',
+    ]) {
+      expect(actions[type]).toBe('BLOCK');
+    }
+  });
+
+  // At HIGH, "Her ring size is 6 and she is 5 foot 4" tripped the SEXUAL filter,
+  // and her sizes are a profile field the agent asks for outright.
+  it('screens input for SEXUAL at MEDIUM while holding output to HIGH', () => {
+    const guardrails = safetyTemplate.findResources('AWS::Bedrock::Guardrail');
+    const props = (Object.values(guardrails)[0] as any).Properties;
+    const filters = props.ContentPolicyConfig.FiltersConfig as Array<{
+      Type: string;
+      InputStrength: string;
+      OutputStrength: string;
+    }>;
+    const sexual = filters.find((f) => f.Type === 'SEXUAL');
+    expect(sexual?.InputStrength).toBe('MEDIUM');
+    expect(sexual?.OutputStrength).toBe('HIGH');
   });
 });
 

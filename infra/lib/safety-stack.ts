@@ -26,13 +26,31 @@ export class SafetyStack extends cdk.Stack {
 
     const guardrail = new bedrock.CfnGuardrail(this, 'ValentinGuardrail', {
       name: config.guardrailName,
+      /*
+       * Worded as Valentin declining this one turn, and kept in step with the
+       * fallback in bedrock-client.ts. The guardrail's message wins whenever it
+       * fires — Bedrock returns it as the assistant's reply text, so the nicer
+       * line in the client is only ever reached when the guardrail sends none.
+       * The old text ("I can only help with learning about your partner…") read,
+       * mid-conversation about a partner he already knew, as though he had
+       * forgotten her.
+       */
       blockedInputMessaging:
-        'I can only help with learning about your partner. Could you tell me more about their preferences?',
+        "That one I'd rather not go into — but I'm still right here. Shall we talk about her instead?",
       blockedOutputsMessaging:
         'Let me stay focused on your partner profile. What else can I learn about them?',
       contentPolicyConfig: {
         filtersConfig: [
-          { type: 'SEXUAL', inputStrength: 'HIGH', outputStrength: 'HIGH' },
+          /*
+           * SEXUAL is MEDIUM on input, not HIGH — user-approved, 2026-08-22.
+           *
+           * At HIGH it blocked "Her ring size is 6 and she is 5 foot 4." Her
+           * sizes are a profile field this agent asks for outright, so measuring
+           * a partner is the product working, not a filter catch. MEDIUM still
+           * blocks explicit requests (verified against the live guardrail), and
+           * output stays HIGH: what Valentin writes is held to the stricter bar.
+           */
+          { type: 'SEXUAL', inputStrength: 'MEDIUM', outputStrength: 'HIGH' },
           { type: 'VIOLENCE', inputStrength: 'HIGH', outputStrength: 'HIGH' },
           { type: 'HATE', inputStrength: 'HIGH', outputStrength: 'HIGH' },
           { type: 'INSULTS', inputStrength: 'MEDIUM', outputStrength: 'HIGH' },
@@ -51,16 +69,23 @@ export class SafetyStack extends cdk.Stack {
          * remember and the first two it asks for — its subject matter rather than
          * incidental PII, and already stored under their owner's own key.
          *
+         * ADDRESS is absent for the same reason, and it was the worse offender:
+         * Bedrock reads a bare place name as an address, so "she's been saving
+         * for Kyoto" was BLOCKed, and so were Paris, Rome, Seattle, a favourite
+         * restaurant on Rue Saint-Denis, and the word "France". Date planning is
+         * half of what this agent does and every date has a place in it, so the
+         * entity can't be blocked without blocking the feature. A street address
+         * the user volunteers is stored under their own key, as her name is.
+         *
          * The genuinely dangerous identifiers below stay BLOCKed: nothing about
-         * remembering a name is a reason to carry a card number, an SSN, a home
-         * address or an AWS key.
+         * remembering a name or a city is a reason to carry a card number, an
+         * SSN, a phone number or an AWS key.
          */
         piiEntitiesConfig: [
           { type: 'CREDIT_DEBIT_CARD_NUMBER', action: 'BLOCK' },
           { type: 'US_SOCIAL_SECURITY_NUMBER', action: 'BLOCK' },
           { type: 'PHONE', action: 'BLOCK' },
           { type: 'EMAIL', action: 'BLOCK' },
-          { type: 'ADDRESS', action: 'BLOCK' },
           { type: 'AWS_ACCESS_KEY', action: 'BLOCK' },
           { type: 'AWS_SECRET_KEY', action: 'BLOCK' },
         ],

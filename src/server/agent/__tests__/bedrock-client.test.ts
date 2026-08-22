@@ -56,8 +56,13 @@ describe('AwsBedrockClient', () => {
       const cmd = mockSend.mock.calls[0][0];
       expect(cmd.modelId).toBe('test-model-id');
       expect(cmd.system).toEqual([{ text: 'You are Valentin.' }]);
+      // The newest user turn rides in a guardContent block, which is what keeps
+      // the guardrail from re-screening the whole transcript every turn.
       expect(cmd.messages).toEqual([
-        { role: 'user', content: [{ text: 'My partner loves Italian food' }] },
+        {
+          role: 'user',
+          content: [{ guardContent: { text: { text: 'My partner loves Italian food' } } }],
+        },
       ]);
     });
 
@@ -72,6 +77,113 @@ describe('AwsBedrockClient', () => {
       // Leading agent message is skipped — only user message remains
       expect(cmd.messages).toHaveLength(1);
       expect(cmd.messages[0].role).toBe('user');
+    });
+
+    /*
+     * A live run refused four turns in a row with "I can only help with learning
+     * about your partner" — to "Her shoe size is 32" and "Ask me about her love
+     * language", both of which pass the guardrail on their own. The cause was
+     * scope: with no guardContent block Bedrock screens every block in the
+     * request, so one earlier sentence ("she's been saving for Kyoto", read as a
+     * street address) was re-screened on every later turn and blocked all of them.
+     */
+    describe('guardrail scope', () => {
+      it('guards only the newest user turn, leaving history as plain text', async () => {
+        mockSend.mockResolvedValueOnce({
+          output: { message: { content: [{ text: 'Response' }] } },
+          stopReason: 'end_turn',
+        });
+
+        const history: ChatMessage[] = [
+          { ...sampleMessage, id: 'm1', content: "She's been saving for Kyoto." },
+          { ...sampleMessage, id: 'm2', sender: 'agent', content: 'A Kyoto trip is lovely.' },
+        ];
+
+        await client.generateResponse([...history, sampleMessage], 'prompt');
+
+        const cmd = mockSend.mock.calls[0][0];
+        expect(cmd.messages).toEqual([
+          { role: 'user', content: [{ text: "She's been saving for Kyoto." }] },
+          { role: 'assistant', content: [{ text: 'A Kyoto trip is lovely.' }] },
+          {
+            role: 'user',
+            content: [{ guardContent: { text: { text: 'My partner loves Italian food' } } }],
+          },
+        ]);
+      });
+
+      it('still tags a turn when the history ends on an agent message', async () => {
+        mockSend.mockResolvedValueOnce({
+          output: { message: { content: [{ text: 'Response' }] } },
+          stopReason: 'end_turn',
+        });
+
+        // An untagged request silently reverts to screening everything, so the
+        // last *user* turn is tagged rather than simply the last turn.
+        await client.generateResponse(
+          [sampleMessage, { ...sampleMessage, id: 'm2', sender: 'agent', content: 'Go on.' }],
+          'prompt',
+        );
+
+        const cmd = mockSend.mock.calls[0][0];
+        expect(cmd.messages[0].content).toEqual([
+          { guardContent: { text: { text: 'My partner loves Italian food' } } },
+        ]);
+        expect(cmd.messages[1].content).toEqual([{ text: 'Go on.' }]);
+      });
+
+      it('guards the newest user turn on the extraction call too', async () => {
+        mockSend.mockResolvedValueOnce({
+          output: {
+            message: { content: [{ toolUse: { name: 'extract', input: { preferences: [] } } }] },
+          },
+          stopReason: 'tool_use',
+        });
+
+        await client.extractWithTool(sampleMessage, sampleHistory, {
+          name: 'extract',
+          description: 'extract',
+          input_schema: {},
+        });
+
+        const cmd = mockSend.mock.calls[0][0];
+        const last = cmd.messages[cmd.messages.length - 1];
+        expect(last.content).toEqual([
+          { guardContent: { text: { text: 'My partner loves Italian food' } } },
+        ]);
+      });
+    });
+
+    it('logs which policies fired when the guardrail intervenes', async () => {
+      // trace: 'enabled' was always set, but nothing read the trace back, so a
+      // refusal left no record of its cause anywhere.
+      const records: ServerLogRecord[] = [];
+      subscribeToServerLogs((record) => records.push(record));
+
+      mockSend.mockResolvedValueOnce({
+        output: { message: { content: [{ text: 'Blocked.' }] } },
+        stopReason: 'guardrail_intervened',
+        trace: {
+          guardrail: {
+            inputAssessment: {
+              gr1: {
+                sensitiveInformationPolicy: {
+                  piiEntities: [{ type: 'ADDRESS', match: 'Kyoto', action: 'BLOCKED' }],
+                },
+                topicPolicy: { topics: [{ name: 'off-topic', type: 'DENY', action: 'BLOCKED' }] },
+              },
+            },
+          },
+        },
+      });
+
+      await client.generateResponse([sampleMessage], 'prompt');
+
+      const intervened = records.find((r) => r.event === 'bedrock.guardrail_intervened');
+      expect(intervened?.level).toBe('warn');
+      expect(intervened?.data?.policies).toEqual(['pii:ADDRESS', 'topic:off-topic']);
+
+      resetServerLogSubscribers();
     });
 
     it('throws LlmError when Bedrock returns empty response', async () => {

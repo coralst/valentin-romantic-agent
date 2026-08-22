@@ -55,18 +55,75 @@ export interface BedrockClient {
  */
 const DEFAULT_MODEL_ID = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0';
 
-/** Map ChatMessage array to Bedrock Converse API message format.
- *  Bedrock requires conversations to start with a user message,
- *  so we skip any leading agent/assistant messages. */
+/**
+ * Map ChatMessage array to Bedrock Converse API message format.
+ *
+ * Bedrock requires conversations to start with a user message, so we skip any
+ * leading agent/assistant messages.
+ *
+ * The newest user turn is wrapped in `guardContent`, which is what scopes the
+ * guardrail to it. Given no tagged block, Bedrock screens *every* block in the
+ * request — the entire transcript, re-screened on every turn — so a single
+ * sentence that tripped a policy went on tripping it for the rest of the
+ * conversation, and each reply after it was the blocked message regardless of
+ * what the user typed. Worse, the model's own replies were screened as input,
+ * so Valentin repeating a place name back poisoned the history a second time.
+ *
+ * Tagging the last *user* message rather than the last message keeps exactly
+ * one block guarded even if a caller passes history ending on an assistant
+ * turn; an untagged request would silently revert to screening everything.
+ * Tagged text still reaches the model normally — only the guarding scope
+ * changes.
+ */
 function toBedrockMessages(messages: ChatMessage[]): Message[] {
   // Drop leading assistant messages — Bedrock requires user-first
   const startIdx = messages.findIndex((m) => m.sender === 'user');
   const trimmed = startIdx >= 0 ? messages.slice(startIdx) : messages;
 
-  return trimmed.map((msg) => ({
+  let lastUserIdx = -1;
+  trimmed.forEach((msg, i) => {
+    if (msg.sender === 'user') lastUserIdx = i;
+  });
+
+  return trimmed.map((msg, i) => ({
     role: msg.sender === 'user' ? 'user' as const : 'assistant' as const,
-    content: [{ text: msg.content }],
+    content: [
+      i === lastUserIdx
+        ? { guardContent: { text: { text: msg.content } } }
+        : { text: msg.content },
+    ],
   }));
+}
+
+/**
+ * The policies a guardrail intervention actually fired on, as a flat list like
+ * `['pii:ADDRESS', 'filter:SEXUAL', 'topic:off-topic']`.
+ *
+ * `trace: 'enabled'` was set on every request from the start, but nothing ever
+ * read the trace back. An intervention therefore reached the user as a refusal
+ * with no recorded cause, and the only way to find out that Bedrock was reading
+ * "Kyoto" as a street address was to replay the transcript by hand against
+ * `ApplyGuardrail`. One log line makes the next false positive self-explaining.
+ */
+function firedPolicies(response: ConverseCommandOutput): string[] {
+  const guardrail = response.trace?.guardrail;
+  if (!guardrail) return [];
+
+  const assessments = [
+    ...Object.values(guardrail.inputAssessment ?? {}),
+    ...Object.values(guardrail.outputAssessments ?? {}).flat(),
+  ];
+
+  const fired = assessments.flatMap((assessment) => [
+    ...(assessment.sensitiveInformationPolicy?.piiEntities ?? []).map(
+      (entity) => `pii:${entity.type}`,
+    ),
+    ...(assessment.contentPolicy?.filters ?? []).map((filter) => `filter:${filter.type}`),
+    ...(assessment.topicPolicy?.topics ?? []).map((topic) => `topic:${topic.name}`),
+    ...(assessment.wordPolicy?.customWords ?? []).map((word) => `word:${word.match}`),
+  ]);
+
+  return [...new Set(fired)];
 }
 
 /**
@@ -170,6 +227,15 @@ export class AwsBedrockClient implements BedrockClient {
     const startedAt = Date.now();
     try {
       const response = await this.client.send(command);
+      // Logged here rather than at the two call sites that handle the block, so
+      // no future caller can add a third and lose the only record of the cause.
+      if (response.stopReason === 'guardrail_intervened') {
+        logger.warn('bedrock.guardrail_intervened', {
+          sessionId,
+          operation,
+          policies: firedPolicies(response),
+        });
+      }
       logger.info('bedrock.converse', {
         sessionId,
         operation,

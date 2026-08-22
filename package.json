@@ -14,8 +14,12 @@
     "test": "vitest --run",
     "test:infra": "npm --prefix infra test",
     "lint": "tsc --noEmit",
+    "verify:local": "bash scripts/verify-local.sh",
     "deploy:dev": "bash scripts/deploy.sh dev",
+    "deploy:frontend": "bash scripts/deploy.sh dev --scope=frontend",
+    "deploy:backend": "bash scripts/deploy.sh dev --scope=backend",
     "deploy:prod": "bash scripts/deploy.sh prod",
+    "rollback": "bash scripts/rollback.sh dev",
     "teardown": "bash scripts/teardown.sh"
   },
   "dependencies": {

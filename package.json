@@ -12,6 +12,7 @@
     "build": "vite build",
     "build:server": "tsc --project tsconfig.server.json",
     "test": "vitest --run",
+    "test:infra": "npm --prefix infra test",
     "lint": "tsc --noEmit",
     "deploy:dev": "bash scripts/deploy.sh dev",
     "deploy:prod": "bash scripts/deploy.sh prod",

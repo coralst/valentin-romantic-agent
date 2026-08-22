@@ -240,7 +240,7 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
    * "Ask me what's missing" — the header CTA.
    *
    * Names the top three gaps rather than saying "ask me everything", so the reply
-   * is a conversation and not an eighteen-question form.
+   * is a conversation and not a questionnaire.
    */
   const askWhatsMissing = useCallback(() => {
     const top = gaps.slice(0, 3).map((gap) => gap.label.toLowerCase());

@@ -27,6 +27,7 @@ interface UseWebSocketOptions {
   url?: string;
 }
 
+
 const INITIAL_RECONNECT_DELAY = 1000;
 const MAX_RECONNECT_DELAY = 30000;
 const HEARTBEAT_INTERVAL = 30000;
@@ -340,8 +341,34 @@ export function useWebSocket({
     };
   }, [wsUrl, chatDispatch, preferencesDispatch, clearTimers, startHeartbeat]);
 
-  // Auto-connect on mount, clean up on unmount
+  /**
+   * Whether there is a conversation to connect *about*.
+   *
+   * Load-bearing, and the whole fix for the pile of empty conversations. The
+   * gateway reads an `auth` frame with no session id as "mint me one", and this
+   * hook used to connect the instant it mounted — before `GET /api/sessions` had
+   * answered, so the frame never carried an id. Every page load therefore left a
+   * session behind: the list arrives a moment later, the app moves onto whichever
+   * conversation it names, and the minted one is orphaned — then shows up as an
+   * empty "New conversation" row on the next load. Three reloads, four rows.
+   *
+   * Remove this and that returns. The rule it encodes is that the client decides
+   * which session is live and the socket only ever *resumes* one;
+   * `SessionProvider` guarantees there is always one to resume, which is what
+   * keeps this from meaning "no socket, ever".
+   *
+   * It is deliberately a boolean rather than the id itself: a session *switch* is
+   * handled by the rebind effect below, which knows what the server actually
+   * bound to, and naming the id here would rebuild the socket twice for one
+   * switch. What this tracks is only "does the app have a conversation at all" —
+   * which also drops the socket when the last conversation is deleted, instead of
+   * leaving it bound to a session that no longer exists.
+   */
+  const hasSession = sessionId !== null;
+
+  // Connect once there is a session to resume, clean up on unmount.
   useEffect(() => {
+    if (!hasSession) return;
     connect();
 
     return () => {
@@ -353,7 +380,7 @@ export function useWebSocket({
       }
       setConnectionStatus('disconnected');
     };
-  }, [connect, clearTimers]);
+  }, [hasSession, connect, clearTimers]);
 
   /**
    * Rebind when the app moves to a session this connection is not bound to.

@@ -7,6 +7,9 @@ import type { ChatMessage } from '../../../shared/interfaces/message';
 function createMockOrchestrator(): AgentOrchestratorInterface {
   return {
     initSession: vi.fn(),
+    // Nothing in the event router greets; a session that already exists has a
+    // transcript, so the honest stub is "nothing to say".
+    greetIfEmpty: vi.fn(async () => null),
     handleMessage: vi.fn(),
   };
 }

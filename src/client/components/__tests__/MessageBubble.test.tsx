@@ -133,4 +133,74 @@ describe('MessageBubble', () => {
       'This should be fully readable by screen readers',
     );
   });
+
+  /**
+   * THE USER'S REPRO: "go to another chat and then back to the original chat it
+   * 'write again' the last messages."
+   *
+   * Nothing was duplicated — the last agent message was re-typed. `animate` is
+   * true for whichever agent message is last, which is right for a reply that has
+   * just arrived and wrong for one being restored, and a session switch unmounts
+   * and remounts the transcript. The reveal must therefore happen once per
+   * message, not once per mount.
+   */
+  describe('reveal runs once per message', () => {
+    /** The presentational span — the one the typewriter drives. */
+    function revealed(): string {
+      const bubble = screen.getByTestId('message-bubble');
+      return bubble.querySelector('[aria-hidden="true"]')?.textContent ?? '';
+    }
+
+    it('renders in full on a remount instead of typing itself out again', () => {
+      const msg: ChatMessage = {
+        id: 'reveal-once',
+        sessionId: 's1',
+        sender: 'agent',
+        content: 'A reply long enough that a re-type would be unmistakable.',
+        timestamp: new Date().toISOString(),
+      };
+
+      // First arrival: the reveal starts from nothing.
+      const first = render(<MessageBubble message={msg} animate />);
+      expect(revealed()).toBe('');
+      first.unmount();
+
+      // Coming back to the conversation. Same message, same `animate`.
+      render(<MessageBubble message={msg} animate />);
+      expect(revealed()).toBe(msg.content);
+    });
+
+    /**
+     * The registry lives in module scope, so it dies with the page — a reload would
+     * otherwise re-type the last reply, which is the same defect one refresh later.
+     */
+    it('renders a message restored from storage in full, however new the page is', () => {
+      const msg: ChatMessage = {
+        id: 'restored',
+        sessionId: 's1',
+        sender: 'agent',
+        content: 'Said an hour ago, and read long since.',
+        timestamp: new Date(Date.now() - 3_600_000).toISOString(),
+      };
+
+      render(<MessageBubble message={msg} animate />);
+
+      expect(revealed()).toBe(msg.content);
+    });
+
+    it('still animates a message it has not shown before', () => {
+      const base = {
+        sessionId: 's1',
+        sender: 'agent' as const,
+        content: 'Something new.',
+        timestamp: new Date().toISOString(),
+      };
+
+      const first = render(<MessageBubble message={{ ...base, id: 'seen' }} animate />);
+      first.unmount();
+
+      render(<MessageBubble message={{ ...base, id: 'unseen' }} animate />);
+      expect(revealed()).toBe('');
+    });
+  });
 });

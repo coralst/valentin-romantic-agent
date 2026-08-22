@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AuthProvider, useAuthContext } from '../auth-context';
 import { clearTokenSession, peekAccessToken } from '../../auth/token-store';
+import { takeSignInSession } from '../../auth/initial-session';
 import type { RuntimeAuthConfig } from '../../auth/runtime-config';
 
 /**
@@ -105,6 +106,37 @@ describe('the one-click demo', () => {
 
     expect(await screen.findByTestId(PROTECTED)).toBeTruthy();
     expect(peekAccessToken()).toBe('demo-access');
+  });
+
+  /**
+   * HALF THE "one conversation on a fresh account" FIX.
+   *
+   * The login seeds a conversation and names it in the response. That id used to be
+   * dropped, leaving the app to rediscover it through `GET /api/sessions` — a
+   * DynamoDB GSI query, eventually consistent, which routinely does not list a
+   * session created a few hundred milliseconds ago. The client then concluded the
+   * account had none and made another.
+   */
+  it('hands the seeded conversation to the session store', async () => {
+    vi.stubGlobal(
+      'fetch',
+      respondWith({
+        '/api/config': cognitoOn,
+        '/api/demo/login': {
+          accessToken: 'demo-access',
+          expiresIn: 3600,
+          sessionId: 'seeded-session',
+        },
+      }),
+    );
+    renderApp();
+
+    await userEvent.click(await screen.findByTestId('demo-login-button'));
+    await screen.findByTestId(PROTECTED);
+
+    expect(takeSignInSession()).toBe('seeded-session');
+    // Consumed on read, so a later sign-in as somebody else cannot inherit it.
+    expect(takeSignInSession()).toBeNull();
   });
 
   it("does not keep the demo client's refresh token", async () => {

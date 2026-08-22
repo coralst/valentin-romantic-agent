@@ -126,7 +126,7 @@ describe('persona history', () => {
 
   it('never mentions a fact the profile does not know', () => {
     // Flowers are the standing example: they are the obvious thing to write into
-    // a romantic transcript and there is no flower field in the 18, so a
+    // a romantic transcript and there is no flower field in the registry, so a
     // mention would be an assertion the profile panel cannot back up.
     const transcript = (samantha.history ?? [])
       .flatMap((c) => c.turns.map((t) => t.content))

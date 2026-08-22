@@ -42,24 +42,40 @@ const initialState: ChatState = {
 /** Reducer handling all chat state transitions */
 export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
-    /**
-     * The server greets on every connect, including reconnects and reloads. The
-     * welcome message therefore only belongs in an *empty* transcript.
-     *
-     * This guard became load-bearing once transcripts started persisting: an
-     * unconditional append re-greeted a restored conversation on every reload,
-     * and the greeting was then saved, so it accumulated without bound. While
-     * the stored transcript was always empty the duplication was invisible.
-     */
-    case 'SESSION_INIT':
+    case 'SESSION_INIT': {
+      /*
+       * Ignore a greeting addressed to a conversation the app has left.
+       *
+       * `session_init` arrives from whichever socket most recently authenticated,
+       * and a session switch reconnects — so a frame for the *previous* session
+       * can still be in flight when the new one is already on screen. Applying it
+       * would move `sessionId` back, which drags the socket, the persistence owner
+       * and the sidebar's idea of the active conversation along with it, and the
+       * greeting would land in a transcript it does not belong to.
+       *
+       * A null `sessionId` is the one case where adopting is right: the app has no
+       * conversation, so this is the server telling it which one it just got.
+       */
+      if (state.sessionId !== null && state.sessionId !== action.sessionId) {
+        return state;
+      }
+
       return {
         ...state,
         sessionId: action.sessionId,
+        /*
+         * The greeting only belongs in an *empty* transcript. The server greets
+         * whenever a session has no messages, and it may say so to two sockets
+         * at once; this guard became load-bearing once transcripts persisted,
+         * because an unconditional append re-greeted a restored conversation on
+         * every reload and the greeting was then saved, so it grew without bound.
+         */
         messages:
           state.messages.length > 0
             ? state.messages
             : sortByTimestamp([action.welcomeMessage]),
       };
+    }
 
     case 'SWITCH_SESSION':
       return {

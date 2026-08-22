@@ -183,7 +183,7 @@ export function createHttpRoutes(storage: StorageInterface) {
      * one, so this can never fail on what the caller asked for.
      *
      * A persona may also carry backdated conversations, which become extra rows
-     * in the sidebar — a profile with eighteen filled fields and a single
+     * in the sidebar — a profile with every field filled and a single
      * one-minute-old conversation behind it reads as a fixture, not as a
      * relationship anyone has been tracking. The returned `sessionId` is always
      * the newest conversation and always the one holding the preferences.

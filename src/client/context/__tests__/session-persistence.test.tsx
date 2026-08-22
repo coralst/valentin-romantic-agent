@@ -335,13 +335,16 @@ describe('session message persistence', () => {
   });
 
   /**
-   * The socket connects before the conversation list arrives, so it authenticates
-   * with no session id and the gateway mints one, announcing it in `session_init`.
-   * That event only ever reached the chat reducer, so the sidebar said "No
-   * conversations yet" beside a live transcript — and the persistence hook, whose
-   * owner was still null, silently threw every write away.
+   * An account with nothing in it, which is what "Create an Account" produces.
+   *
+   * This used to be where the empty conversations came from: the socket connected
+   * before the conversation list arrived, authenticated with no session id, and the
+   * gateway minted one per page load — announced in `session_init` and adopted by
+   * the client, so each reload left another orphan row behind. The socket no longer
+   * connects without a session, so the only thing that creates a conversation is
+   * the client, and it creates exactly one.
    */
-  describe('a session minted by the server over the socket', () => {
+  describe('an account with no conversations yet', () => {
     /** The `session_init` frame, as `dispatchServerEvent` delivers it. */
     function sessionInit(view: ReturnType<typeof renderApp>, sessionId: string) {
       act(() => {
@@ -359,35 +362,49 @@ describe('session message persistence', () => {
       });
     }
 
-    it('gets a row in the sidebar, keeping the transcript on screen', async () => {
+    /**
+     * THE FRESH SIGN-IN REGRESSION. A brand-new account showed four rows, three of
+     * them empty, all created within the same minute.
+     */
+    it('opens exactly one conversation, and makes it the active one', async () => {
       const view = await bootApp();
-      sessionInit(view, 'ws-minted');
+      // The ensure-a-conversation effect POSTs, so let its answer land.
+      await view.flush();
 
-      expect(view.result.current.session.state.sessions.map((s) => s.id)).toEqual(['ws-minted']);
-      expect(view.result.current.session.state.activeSessionId).toBe('ws-minted');
-      // The welcome message has to survive adoption: SessionSyncer re-dispatches
-      // SWITCH_SESSION from the adopted record, so adopting an empty one would
-      // clear the greeting that had just appeared.
-      expect(view.result.current.chat.state.messages.map((m) => m.content)).toEqual([
-        "Hello — I'm Valentin.",
-      ]);
+      const ids = view.result.current.session.state.sessions.map((s) => s.id);
+      expect(ids).toHaveLength(1);
+      expect(view.result.current.session.state.activeSessionId).toBe(ids[0]);
+      // Server-side too: no orphans, not merely none on screen.
+      expect([...remote.keys()]).toEqual(ids);
     });
 
-    it('persists the conversation that follows, which had no owner before', async () => {
+    it('shows the greeting and persists it, with the conversation that follows', async () => {
       const view = await bootApp();
-      sessionInit(view, 'ws-minted');
+      await view.flush();
+      const active = view.result.current.session.state.activeSessionId ?? '';
 
+      // The greeting arrives over the socket for the session the app is on.
+      sessionInit(view, active);
       view.sendMessage('What should I get her?');
       view.settle();
 
-      expect(view.storedSession('ws-minted')?.messages.map((m) => m.content)).toEqual([
+      expect(view.result.current.chat.state.messages.map((m) => m.content)).toEqual([
         "Hello — I'm Valentin.",
         'What should I get her?',
       ]);
+      expect(view.storedSession(active)?.messages.map((m) => m.content)).toEqual([
+        "Hello — I'm Valentin.",
+        'What should I get her?',
+      ]);
+      // Greeted, not spoken for: a greeting must never read as the visitor's turn.
+      expect(
+        view.storedSession(active)?.messages.filter((m) => m.sender === 'user'),
+      ).toHaveLength(1);
     });
 
     it('does not resurrect a conversation the user has deleted', async () => {
       const view = await bootApp();
+      await view.flush();
       const a = await view.newConversation();
       view.sendMessage('goodbye');
       view.settle();
@@ -398,25 +415,29 @@ describe('session message persistence', () => {
       act(() => {
         vi.advanceTimersByTime(0);
       });
+      await view.flush();
 
-      // Deleting the active conversation leaves chat state naming it for a render,
-      // which is indistinguishable from a freshly minted id unless adoption
-      // remembers what it has already seen.
-      expect(view.result.current.session.state.sessions).toEqual([]);
+      // The deleted conversation must not come back — but the app is never left
+      // with none either, so what is left is the other conversation, not a revival
+      // of `a`.
+      expect(view.result.current.session.state.sessions.map((s) => s.id)).not.toContain(a);
+      expect(view.result.current.session.state.sessions).toHaveLength(1);
     });
 
-    it('leaves a stray minted session alone while a conversation is active', async () => {
+    it('ignores a session_init for a conversation that is not on screen', async () => {
       const view = await bootApp();
+      await view.flush();
       const a = await view.newConversation();
       view.sendMessage('mid-conversation');
       view.settle();
 
-      // The pre-load race can mint a session after the list has already opened
-      // one. Its transcript belongs to `a`, not to the minted id, so adopting it
-      // would stamp one conversation's messages onto another's record.
+      // A switch reconnects, so a frame for the session just left can still arrive.
+      // Its greeting belongs to neither the transcript on screen nor `a`'s record,
+      // and adopting it would stamp one conversation's messages onto another's.
       sessionInit(view, 'stray');
 
-      expect(view.result.current.session.state.sessions.map((s) => s.id)).toEqual([a]);
+      expect(view.result.current.session.state.sessions.map((s) => s.id)).toContain(a);
+      expect(view.result.current.session.state.sessions.map((s) => s.id)).not.toContain('stray');
       expect(view.storedSession(a)?.messages.map((m) => m.content)).toEqual(['mid-conversation']);
     });
   });

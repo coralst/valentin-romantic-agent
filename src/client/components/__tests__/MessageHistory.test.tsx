@@ -27,18 +27,30 @@ function preference(overrides: Partial<PreferenceWithHistory> = {}): PreferenceW
   };
 }
 
-/** Seeds the preferences store, then renders the transcript against it. */
+/**
+ * Seeds the preferences store, then renders the transcript against it.
+ *
+ * `how` matters: `'live'` is a `preference_update` arriving over the socket, which
+ * is a discovery and is announced; `'hydrated'` is a session being loaded, which is
+ * the same rows carrying no news at all.
+ */
 function Harness({
   messages,
   preferences,
+  how = 'live',
 }: {
   messages: ChatMessage[];
   preferences: PreferenceWithHistory[];
+  how?: 'live' | 'hydrated';
 }) {
   const { state, dispatch } = usePreferencesContext();
   const loaded = Object.values(state.preferences).some((l) => l.length > 0);
   if (!loaded && preferences.length > 0) {
-    dispatch({ type: 'LOAD_PREFERENCES', preferences });
+    if (how === 'hydrated') {
+      dispatch({ type: 'LOAD_PREFERENCES', preferences });
+    } else {
+      for (const preference of preferences) dispatch({ type: 'ADD_PREFERENCE', preference });
+    }
   }
   const stored = Object.values(state.preferences)
     .flat()
@@ -53,10 +65,14 @@ function Harness({
   );
 }
 
-function renderHistory(messages: ChatMessage[], preferences: PreferenceWithHistory[] = []) {
+function renderHistory(
+  messages: ChatMessage[],
+  preferences: PreferenceWithHistory[] = [],
+  how: 'live' | 'hydrated' = 'live',
+) {
   return render(
     <PreferencesProvider>
-      <Harness messages={messages} preferences={preferences} />
+      <Harness messages={messages} preferences={preferences} how={how} />
     </PreferencesProvider>,
   );
 }
@@ -171,5 +187,27 @@ describe('MessageHistory', () => {
   it('announces nothing when nothing has been discovered', () => {
     renderHistory([message('m1', 'agent', 'Hello')]);
     expect(screen.queryByTestId('learned-status')).not.toBeInTheDocument();
+  });
+
+  /**
+   * REGRESSION GUARD: switching into a conversation must not re-announce its
+   * dossier.
+   *
+   * The announcement used to be decided by diffing against a ref, which resets on
+   * remount — and a session switch remounts the transcript, so returning to a
+   * conversation flashed "✓ noted" at every fact it had ever learned. The store now
+   * distinguishes a loaded row from an extracted one; this holds that line, because
+   * the ref alone cannot.
+   */
+  it('says nothing about facts that arrived with a loaded conversation', () => {
+    renderHistory(
+      [message('m1', 'user', 'She surfs'), message('m2', 'agent', 'Noted.')],
+      [preference({ id: 'p1', value: 'surfing' }), preference({ id: 'p2', value: 'salsa' })],
+      'hydrated',
+    );
+
+    expect(screen.queryByTestId('learned-status')).not.toBeInTheDocument();
+    // The facts are still there — it is the announcement that is wrong, not the data.
+    expect(screen.getByTestId('store-probe').textContent).toContain('surfing');
   });
 });

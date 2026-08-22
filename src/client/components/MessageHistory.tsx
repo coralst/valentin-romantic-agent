@@ -5,6 +5,7 @@ import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
 import { MessageBubble } from './MessageBubble';
 import { LearnedStatus, type LearnedAnnouncement } from './LearnedStatus';
 import { usePreferencesContext } from '../context/preferences-context';
+import { discoveryKey } from '../hooks/use-preferences-state';
 import { insets, layout } from '../design-system/tokens';
 
 interface MessageHistoryProps {
@@ -46,12 +47,12 @@ export function MessageHistory({ messages }: MessageHistoryProps) {
   const [announcement, setAnnouncement] = useState<LearnedAnnouncement | null>(null);
 
   /**
-   * Discoveries already announced, keyed by id *and* value.
+   * Discoveries already announced, keyed the same way the store keys them.
    *
-   * Keyed by id alone, a fact the user later corrected ("actually she's vegan")
-   * would update in place and never be announced again, so the transcript would
-   * stay silent about the correction. Including the value makes a re-worded fact
-   * a new announcement while a re-sent identical one stays quiet.
+   * This is only a within-mount dedupe — the store's `discovered` set is what
+   * decides whether a fact is announceable at all. It has to be, because this ref
+   * resets on remount and a session switch remounts the transcript: on its own it
+   * would announce a restored conversation's entire dossier all over again.
    */
   const announcedRef = useRef(new Set<string>());
 
@@ -65,10 +66,12 @@ export function MessageHistory({ messages }: MessageHistoryProps) {
 
   useEffect(() => {
     const fresh = visiblePreferences.filter(
-      (pref) => !announcedRef.current.has(`${pref.id}:${pref.value}`),
+      (pref) =>
+        preferencesState.discovered.has(discoveryKey(pref)) &&
+        !announcedRef.current.has(discoveryKey(pref)),
     );
     if (fresh.length === 0) return;
-    for (const pref of fresh) announcedRef.current.add(`${pref.id}:${pref.value}`);
+    for (const pref of fresh) announcedRef.current.add(discoveryKey(pref));
     /*
      * One line for the whole batch. A single sentence routinely teaches Valentin
      * two unrelated things and the server is right to emit them as separate
@@ -80,7 +83,7 @@ export function MessageHistory({ messages }: MessageHistoryProps) {
       id: fresh.map((pref) => pref.id).join('|'),
       values: fresh.map((pref) => pref.value),
     });
-  }, [visiblePreferences]);
+  }, [visiblePreferences, preferencesState.discovered]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });

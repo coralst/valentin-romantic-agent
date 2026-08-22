@@ -107,6 +107,52 @@ describe('AgentOrchestrator', () => {
     });
   });
 
+  /**
+   * The greeting for a session nobody minted here.
+   *
+   * `initSession` greets, but it is only one of the ways a conversation comes into
+   * being: the demo login seeds one, `POST /api/session` creates one, and the
+   * client opens one for a brand-new account. Those all arrived silent — the
+   * visitor faced an empty transcript and had to speak first — which is why the
+   * greeting is its own step, taken when a connection resumes an empty session.
+   */
+  describe('greetIfEmpty', () => {
+    it('greets a session with no history, and persists the greeting', async () => {
+      const greeting = await orchestrator.greetIfEmpty('sess-1');
+
+      expect(greeting).not.toBeNull();
+      expect(greeting?.sender).toBe('agent');
+      expect(greeting?.sessionId).toBe('sess-1');
+      expect(greeting?.content).toBeTruthy();
+      // Persisted like any other turn, or it would vanish on reload.
+      expect(memory.addMessage).toHaveBeenCalledWith('sess-1', greeting);
+    });
+
+    it('introduces Valentin and asks about the partner', async () => {
+      const greeting = await orchestrator.greetIfEmpty('sess-1');
+
+      expect(greeting?.content).toContain('Valentin');
+      expect(greeting?.content).toContain('?');
+    });
+
+    it('says nothing to a session that already has a transcript', async () => {
+      vi.mocked(memory.getHistory).mockResolvedValue([
+        {
+          id: 'msg-1',
+          sessionId: 'sess-1',
+          sender: 'user',
+          content: 'She loves peonies',
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+
+      // A reconnect must not re-greet: the greeting is persisted now, so a second
+      // one would be saved and the transcript would grow a greeting per reload.
+      expect(await orchestrator.greetIfEmpty('sess-1')).toBeNull();
+      expect(memory.addMessage).not.toHaveBeenCalled();
+    });
+  });
+
   describe('handleMessage', () => {
     it('stores user message in memory', async () => {
       await orchestrator.handleMessage('sess-1', 'She loves pasta');

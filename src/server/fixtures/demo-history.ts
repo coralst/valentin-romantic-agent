@@ -2,7 +2,7 @@
  * Backdated conversations for the demo personas.
  *
  * A seeded profile with no history reads as a profile that materialised one
- * second ago: eighteen fields filled in, one conversation in the sidebar, and
+ * second ago: every field filled in, one conversation in the sidebar, and
  * nothing that explains where any of it came from. These transcripts are the
  * missing half — the exchanges that would plausibly have produced the fixture in
  * `demo-profile.ts`, spread over the last few months.

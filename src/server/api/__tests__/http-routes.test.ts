@@ -236,7 +236,7 @@ describe('createHttpRoutes', () => {
   // The contract test: the fixture is only useful if every key it writes still
   // resolves to a registry field, and every registry field gets a value.
   describe('seeded session covers the profile field registry', () => {
-    it('resolves a value for all 18 registry fields', async () => {
+    it('resolves a value for every registry field', async () => {
       const { body } = await routes.seedSession();
       const stored = await store.getPreferencesBySession(
         (body as SeedBody).sessionId,

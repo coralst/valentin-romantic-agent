@@ -15,6 +15,7 @@ import {
   revokeRefreshToken,
 } from '../auth/cognito-oauth';
 import { demoLogin } from '../auth/demo-login';
+import { rememberSignInSession } from '../auth/initial-session';
 import { describeToken } from '../auth/identity';
 import {
   canHostedLogin,
@@ -248,6 +249,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // and the first `GET /api/sessions` must already carry this or it reads
         // the pooled account and shows a stranger's conversations.
         if (result.visitorId) setVisitorId(result.visitorId);
+        // The login already created and seeded a conversation. Naming it here is
+        // what stops `SessionProvider` from creating a second one when the
+        // eventually-consistent session list has not caught up with it yet.
+        if (result.sessionId) rememberSignInSession(result.sessionId);
         setTokenSession({
           accessToken: result.accessToken,
           // Deliberately dropped: it belongs to the server-only demo client, so

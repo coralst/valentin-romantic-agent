@@ -60,7 +60,7 @@ const FIELD_GUIDANCE_LINES = PROFILE_FIELD_IDS.map(
  * `key` survives alongside it, deliberately, and is still free-form: not every
  * useful fact has a registry field. An allergy is the load-bearing example —
  * `KeepInMind.tsx` substring-matches keys like `shellfish_allergy` to raise a
- * caution, and there is no allergy field in the 18. So `field` is optional: set
+ * caution, and there is no allergy field in the registry. So `field` is optional: set
  * it when the fact belongs to a profile field, omit it when the fact is real but
  * off-registry.
  */

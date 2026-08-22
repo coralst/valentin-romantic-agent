@@ -30,7 +30,31 @@ export interface InitSessionResult {
 /** Abstract orchestrator interface */
 export interface AgentOrchestratorInterface {
   initSession(): Promise<InitSessionResult>;
+  /**
+   * Open the conversation, unless someone already has. See the implementation.
+   */
+  greetIfEmpty(sessionId: string): Promise<ChatMessage | null>;
   handleMessage(sessionId: string, content: string): Promise<ChatMessage>;
+}
+
+/**
+ * Valentin's opening turn.
+ *
+ * One function, so every route into a new conversation greets with the same
+ * words: the socket minting a session, the socket resuming an empty one, and a
+ * session the demo login or "+ New conversation" created over HTTP. A second
+ * copy of this text somewhere else would drift, and the greeting is the first
+ * thing an audience reads.
+ */
+export function buildWelcomeMessage(sessionId: string): ChatMessage {
+  return {
+    id: crypto.randomUUID(),
+    sessionId,
+    sender: 'agent',
+    content:
+      "Hello! I'm Valentin, your romantic concierge. I'm here to help you build a thoughtful profile of your special someone. Tell me — what's something your partner absolutely loves?",
+    timestamp: new Date().toISOString(),
+  };
 }
 
 /** Maximum tokens for context window */
@@ -50,18 +74,35 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
     const sessionId = await this.storage.createSession();
     await this.agentCore.createSession(sessionId);
 
-    const welcomeMessage: ChatMessage = {
-      id: crypto.randomUUID(),
-      sessionId,
-      sender: 'agent',
-      content:
-        "Hello! I'm Valentin, your romantic concierge. I'm here to help you build a thoughtful profile of your special someone. Tell me — what's something your partner absolutely loves?",
-      timestamp: new Date().toISOString(),
-    };
-
+    const welcomeMessage = buildWelcomeMessage(sessionId);
     await this.memory.addMessage(sessionId, welcomeMessage);
 
     return { sessionId, welcomeMessage };
+  }
+
+  /**
+   * Greet a session that has nothing in it yet, and persist the greeting.
+   *
+   * Sessions do not only come from `initSession`: the demo login seeds one
+   * before the browser has loaded, "+ New conversation" POSTs one, and the
+   * client creates one when a user has none. All of those used to open on a
+   * blank transcript, because only the *minting* path greeted — so a brand-new
+   * account met an empty screen and had to speak first.
+   *
+   * Keyed on "no messages at all" rather than on "no agent messages", which is
+   * what makes it safe to call on every resume: the second call sees the
+   * greeting the first one wrote and does nothing. It is persisted like any
+   * other agent turn, so it survives a reload and a session switch, and it is
+   * `sender: 'agent'`, so nothing downstream mistakes it for the user having
+   * spoken.
+   */
+  async greetIfEmpty(sessionId: string): Promise<ChatMessage | null> {
+    const history = await this.memory.getHistory(sessionId);
+    if (history.length > 0) return null;
+
+    const welcomeMessage = buildWelcomeMessage(sessionId);
+    await this.memory.addMessage(sessionId, welcomeMessage);
+    return welcomeMessage;
   }
 
   async handleMessage(

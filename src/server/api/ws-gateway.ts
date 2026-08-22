@@ -34,7 +34,7 @@ export interface WsConnection {
  */
 export interface WsUserServices {
   store: Pick<StorageInterface, 'getSession'>;
-  orchestrator: Pick<AgentOrchestratorInterface, 'initSession'>;
+  orchestrator: Pick<AgentOrchestratorInterface, 'initSession' | 'greetIfEmpty'>;
   eventRouter: Pick<EventRouter, 'routeEvent'>;
 }
 
@@ -324,6 +324,35 @@ export class WsGateway {
           return;
         }
         conn.sessionId = payload.sessionId;
+
+        /*
+         * Open the conversation if nobody has yet.
+         *
+         * Sessions reach the browser from three places — the demo login seeds
+         * one, "+ New conversation" POSTs one, and the client creates one when
+         * the account has none — and none of them went through `initSession`,
+         * so none of them was greeted. This is the one place every one of them
+         * passes through, and it is where the greeting belongs: the visitor's
+         * socket is bound and listening, and the message is written to the
+         * session before it is announced, so a reload reads it back.
+         *
+         * Announced as `session_init` rather than `agent_message` because the
+         * client's SESSION_INIT is the idempotent one: it keeps a transcript
+         * that already has messages, so a second socket on the same session
+         * cannot double the greeting on screen.
+         */
+        const welcomeMessage = await state.services.orchestrator.greetIfEmpty(
+          payload.sessionId,
+        );
+        if (welcomeMessage) {
+          conn.send(
+            JSON.stringify({
+              type: 'session_init',
+              payload: { sessionId: payload.sessionId, welcomeMessage },
+              timestamp: new Date().toISOString(),
+            } satisfies ServerEvent),
+          );
+        }
         return;
       }
 

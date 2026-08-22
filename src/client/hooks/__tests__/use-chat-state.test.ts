@@ -125,14 +125,32 @@ describe('chatReducer — SESSION_INIT', () => {
     timestamp: '2026-08-21T10:00:00.000Z',
   };
 
+  /** The same state with an explicit session id, since SESSION_INIT now reads it. */
+  function stateFor(
+    sessionId: string | null,
+    messages: ChatMessage[] = [],
+  ): ChatState {
+    return { ...makeState(messages, ''), sessionId };
+  }
+
   it('adds the welcome message to an empty transcript', () => {
-    const next = chatReducer(makeState([], ''), {
+    const next = chatReducer(stateFor(null), {
       type: 'SESSION_INIT',
       sessionId: 'sess-1',
       welcomeMessage: welcome,
     });
 
     expect(next.sessionId).toBe('sess-1');
+    expect(next.messages).toEqual([welcome]);
+  });
+
+  it('greets the session the app is already on', () => {
+    const next = chatReducer(stateFor('sess-1'), {
+      type: 'SESSION_INIT',
+      sessionId: 'sess-1',
+      welcomeMessage: welcome,
+    });
+
     expect(next.messages).toEqual([welcome]);
   });
 
@@ -153,7 +171,7 @@ describe('chatReducer — SESSION_INIT', () => {
       },
     ];
 
-    let state = makeState(restored, '');
+    let state = stateFor('sess-1', restored);
     // Three reconnects in a row.
     for (let i = 0; i < 3; i += 1) {
       state = chatReducer(state, {
@@ -167,23 +185,46 @@ describe('chatReducer — SESSION_INIT', () => {
     expect(state.messages.filter((m) => m.id === 'welcome-1')).toHaveLength(0);
   });
 
-  it('still adopts the server session id when the transcript is restored', () => {
-    const restored: ChatMessage[] = [
-      {
-        id: 'msg-1',
-        sessionId: 'sess',
-        sender: 'user',
-        content: 'hi',
-        timestamp: '2026-08-21T10:01:00.000Z',
-      },
-    ];
+  const restored: ChatMessage[] = [
+    {
+      id: 'msg-1',
+      sessionId: 'sess',
+      sender: 'user',
+      content: 'hi',
+      timestamp: '2026-08-21T10:01:00.000Z',
+    },
+  ];
 
-    const next = chatReducer(makeState(restored, ''), {
+  it('adopts the server session id when the app has none, transcript or not', () => {
+    const next = chatReducer(stateFor(null, restored), {
       type: 'SESSION_INIT',
       sessionId: 'server-session-9',
       welcomeMessage: welcome,
     });
 
     expect(next.sessionId).toBe('server-session-9');
+    expect(next.messages).toEqual(restored);
+  });
+
+  /**
+   * REGRESSION GUARD, and half of the "one conversation on sign-in" fix.
+   *
+   * A switch reconnects, so a `session_init` for the conversation just left can
+   * still be in flight when the new one is on screen. This reducer used to adopt
+   * it unconditionally, which dragged the socket, the persistence owner and the
+   * sidebar's active row back onto the old session — and dropped a greeting into
+   * a transcript that had nothing to do with it. Remove the guard and a rapid
+   * switch starts landing messages in the wrong conversation.
+   */
+  it('ignores a greeting addressed to a conversation the app has left', () => {
+    const state = stateFor('sess-current', restored);
+
+    const next = chatReducer(state, {
+      type: 'SESSION_INIT',
+      sessionId: 'sess-previous',
+      welcomeMessage: welcome,
+    });
+
+    expect(next).toBe(state);
   });
 });

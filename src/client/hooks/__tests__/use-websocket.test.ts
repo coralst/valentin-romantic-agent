@@ -577,7 +577,10 @@ describe('WebSocket observation seam', () => {
    * session switches on purpose, so the client has to notice the drift and rebind.
    * It drifted on the first page load in production: the socket opened before
    * `/api/demo/login`'s session reached chat state, the server minted its own, and
-   * every turn after that was refused with the app looking perfectly connected.
+   * every turn after that was refused with the app looking perfectly connected —
+   * leaving the minted session behind as an empty row in the sidebar. The hook now
+   * refuses to connect until the app names a session, so the frame always carries
+   * one and the gateway only ever *resumes*; these tests hold that line.
    */
   describe('session binding', () => {
     /** Renders with a session that the test can change, as a switch does. */
@@ -597,7 +600,7 @@ describe('WebSocket observation seam', () => {
       return view;
     }
 
-    /** Drive one socket to bound-and-authenticated, the way the mint path does. */
+    /** Drive one socket to bound-and-authenticated, as a resume does. */
     function handshake(socket: FakeWebSocket, sessionId: string) {
       act(() => {
         socket.onopen?.();
@@ -608,16 +611,64 @@ describe('WebSocket observation seam', () => {
       });
     }
 
-    it('reconnects when the app moves to a session the socket is not bound to', () => {
+    /**
+     * REGRESSION GUARD for the pile of empty conversations on a fresh account.
+     *
+     * A socket that authenticates with no session id is asking the gateway to mint
+     * one, and this hook used to do exactly that on mount — before
+     * `GET /api/sessions` had answered. Every page load therefore left an orphan
+     * session behind, which showed up as an empty "New conversation" row on the
+     * next load. Remove the `hasSession` gate and this goes red.
+     */
+    it('does not open a socket before the app has a session to resume', () => {
+      renderSwitchable(null);
+
+      expect(FakeWebSocket.instances).toHaveLength(0);
+    });
+
+    it('opens one socket as soon as a session arrives, naming it', async () => {
       const view = renderSwitchable(null);
-      // The server minted 'minted-1' because the app had no session yet — exactly
-      // the production sequence.
-      handshake(FakeWebSocket.instances[0], 'minted-1');
+      view.rerender({ sessionId: 'demo-session' });
+
+      expect(FakeWebSocket.instances).toHaveLength(1);
+      const socket = FakeWebSocket.instances[0];
+      // The auth frame waits on the token, so it goes out a microtask later.
+      await act(async () => {
+        socket.onopen?.();
+      });
+
+      const frame = JSON.parse(socket.sent[0] ?? '{}') as {
+        type: string;
+        payload: { sessionId?: string | null };
+      };
+      expect(frame.type).toBe('auth');
+      // Never null: a null id is the gateway's cue to mint a session nobody asked for.
+      expect(frame.payload.sessionId).toBe('demo-session');
+    });
+
+    it('reconnects when the app moves to a session the socket is not bound to', () => {
+      const view = renderSwitchable('sess-1');
+      handshake(FakeWebSocket.instances[0], 'sess-1');
       expect(FakeWebSocket.instances).toHaveLength(1);
 
       view.rerender({ sessionId: 'demo-session' });
 
       expect(FakeWebSocket.instances).toHaveLength(2);
+    });
+
+    /**
+     * Deleting the last conversation used to leave the socket bound to a session
+     * that no longer existed, so the next turn was refused as a mismatch.
+     */
+    it('drops the socket when the app is left with no session', () => {
+      const view = renderSwitchable('sess-1');
+      handshake(FakeWebSocket.instances[0], 'sess-1');
+
+      view.rerender({ sessionId: null });
+
+      // 3 === CLOSED
+      expect(FakeWebSocket.instances[0].readyState).toBe(3);
+      expect(FakeWebSocket.instances).toHaveLength(1);
     });
 
     it('does not reconnect when the app names the session it is already bound to', () => {
@@ -630,17 +681,17 @@ describe('WebSocket observation seam', () => {
     });
 
     it('does not reconnect before the auth frame has claimed a session', () => {
-      // Nothing has been bound yet, so the frame still to go out will carry
-      // whatever the current session is — reconnecting would be pure churn.
-      const view = renderSwitchable(null);
+      // The socket is open but has not authenticated, so the frame still to go out
+      // will carry the current session — reconnecting would be pure churn.
+      const view = renderSwitchable('sess-1');
       view.rerender({ sessionId: 'demo-session' });
 
       expect(FakeWebSocket.instances).toHaveLength(1);
     });
 
     it('delivers a turn typed during the rebind to the rebound socket', () => {
-      const view = renderSwitchable(null);
-      handshake(FakeWebSocket.instances[0], 'minted-1');
+      const view = renderSwitchable('sess-1');
+      handshake(FakeWebSocket.instances[0], 'sess-1');
 
       view.rerender({ sessionId: 'demo-session' });
       const rebound = FakeWebSocket.instances[1];

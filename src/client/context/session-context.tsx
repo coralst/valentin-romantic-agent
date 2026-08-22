@@ -14,6 +14,7 @@ import {
   loadSidebarCollapsed,
   saveSidebarCollapsed,
 } from '../hooks/use-session-store';
+import { takeSignInSession } from '../auth/initial-session';
 import {
   createRemoteSession,
   deleteRemoteSession,
@@ -280,16 +281,34 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     void (async () => {
       try {
         const sessions = await fetchSessions();
-        const first = sessions[0];
+
+        /*
+         * Which conversation to open.
+         *
+         * The one the sign-in just created wins over the newest one in the list,
+         * and it wins even when the list does not mention it. `listSessions` is a
+         * GSI query and a GSI is eventually consistent, so a session seeded
+         * milliseconds ago can be missing from the answer — and then the app
+         * would decide the account is empty and create a second conversation,
+         * beside the one it was handed. Trusting the id the login returned makes
+         * a fresh sign-in land on exactly one conversation, deterministically.
+         */
+        const signedInTo = takeSignInSession();
+        const activeId = signedInTo ?? sessions[0]?.id ?? null;
 
         // Hydrate the conversation we are about to open *before* focusing it.
         // SessionSyncer reacts to the active id changing and reads whatever
         // messages are present at that moment, so filling them in afterwards
         // would leave the transcript blank until the next switch.
-        if (first) {
+        if (activeId) {
           try {
-            const detail = await fetchSessionDetail(first.id);
-            sessions[0] = detail;
+            const detail = await fetchSessionDetail(activeId);
+            const index = sessions.findIndex((s) => s.id === activeId);
+            // Appended rather than dropped when the list has not caught up: it
+            // is a real conversation, and `LOAD_SESSIONS` sorts by recency, so
+            // it lands where it belongs.
+            if (index >= 0) sessions[index] = detail;
+            else sessions.push(detail);
             hydrated.current.add(detail.id);
           } catch {
             // A list we can show beats a blank sidebar; the transcript will
@@ -301,7 +320,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         dispatch({
           type: 'LOAD_SESSIONS',
           sessions,
-          activeId: first?.id ?? null,
+          // Only if it survived hydration: focusing an id that is in no row
+          // leaves the sidebar with nothing selected beside a live transcript.
+          activeId: sessions.some((s) => s.id === activeId) ? activeId : null,
           collapsed: loadSidebarCollapsed(),
         });
         if (discarded > 0) {
@@ -380,6 +401,55 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'ADD_SESSION', session });
     return session;
   }, []);
+
+  /**
+   * Whether a conversation has already been created for an empty account.
+   *
+   * A ref, and checked before the request goes out rather than after it comes
+   * back: React can run this effect again — a re-render, a `notice` dispatch —
+   * long before a POST completes, and two of those in flight at once is two
+   * conversations. Cleared only when the account is known to have one, so a
+   * failure leaves it set and the app asks the visitor rather than hammering the
+   * endpoint.
+   */
+  const ensuringRef = useRef(false);
+
+  /**
+   * The account always has a conversation to be in.
+   *
+   * This is the other half of gating the socket on a known session. The socket
+   * only ever resumes now — it will not mint one — so somebody has to create the
+   * first conversation, and doing it here, once, from the one place that knows
+   * how many exist, is what makes it deterministic. It covers a brand-new
+   * account and the moment after the last conversation is deleted with the same
+   * code.
+   *
+   * Deliberately not `createSession()`: that one is allowed to hand back the
+   * conversation already on screen, and here there is provably none.
+   */
+  useEffect(() => {
+    if (state.loading || state.error) return;
+
+    if (state.sessions.length > 0) {
+      ensuringRef.current = false;
+      return;
+    }
+    if (ensuringRef.current) return;
+    ensuringRef.current = true;
+
+    void (async () => {
+      try {
+        const session = await createRemoteSession();
+        hydrated.current.add(session.id);
+        dispatch({ type: 'ADD_SESSION', session });
+      } catch (error) {
+        dispatch({
+          type: 'SET_ERROR',
+          error: `Couldn't start a conversation — ${describe(error)}.`,
+        });
+      }
+    })();
+  }, [state.loading, state.error, state.sessions.length]);
 
   const adoptSession = useCallback((session: StoredSession) => {
     hydrated.current.add(session.id);

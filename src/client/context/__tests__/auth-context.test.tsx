@@ -59,16 +59,20 @@ describe('when Cognito is configured', () => {
     expect(screen.queryByTestId(PROTECTED)).toBeNull();
   });
 
-  it('leads with the demo, since most visitors have no account', async () => {
+  it('offers two doors, Login first', async () => {
     vi.stubGlobal('fetch', respondWith({ '/api/config': cognitoOn }));
 
     renderApp();
 
     expect(await screen.findByTestId('demo-login-button')).toBeTruthy();
-    expect(screen.getByTestId('sign-in-button')).toBeTruthy();
+    expect(screen.getByTestId('sign-up-button')).toBeTruthy();
   });
 
-  it('hides the demo button where the demo account is not deployed', async () => {
+  /**
+   * The two doors do not come and go with the deployment's config — only where
+   * each one routes does. A visitor should always meet the same front page.
+   */
+  it('keeps both doors where the demo account is not deployed', async () => {
     vi.stubGlobal(
       'fetch',
       respondWith({ '/api/config': { ...cognitoOn, demoAvailable: false } }),
@@ -76,8 +80,8 @@ describe('when Cognito is configured', () => {
 
     renderApp();
 
-    await screen.findByTestId('sign-in-button');
-    expect(screen.queryByTestId('demo-login-button')).toBeNull();
+    expect(await screen.findByTestId('demo-login-button')).toBeTruthy();
+    expect(screen.getByTestId('sign-up-button')).toBeTruthy();
   });
 });
 
@@ -162,10 +166,16 @@ describe('the persona label', () => {
     return <span data-testid="user-label">{userLabel}</span>;
   }
 
-  /** Choose a persona on the landing page and sign in as it. */
+  /**
+   * Enter through the door that opens the given persona.
+   *
+   * The landing page no longer has a picker: Login opens the filled profile and
+   * Create an Account opens the empty one, so the persona is chosen by which
+   * button is clicked.
+   */
   async function pickPersona(id: string) {
-    await userEvent.click(await screen.findByTestId(`persona-${id}`));
-    await userEvent.click(screen.getByTestId('demo-login-button'));
+    const testId = id === 'fresh' ? 'sign-up-button' : 'demo-login-button';
+    await userEvent.click(await screen.findByTestId(testId));
   }
 
   function renderWithChip() {

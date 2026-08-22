@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { useAuthContext } from '../context/auth-context';
-import type { DemoPersonaSummary } from '../auth/runtime-config';
 import {
   breakpoints,
   colors,
@@ -13,10 +12,19 @@ import {
 /**
  * The front door.
  *
- * Rebuilt on the vitrine palette. The previous version was a 420px white card on
- * the legacy rose tokens (`softBurgundy`, `accentGradient`, `borderRadius.xxl`) —
- * it predated the window shell and read as a different product than the app it
- * opened.
+ * Two ways in and nothing else: **Login**, which opens the ready-made profile,
+ * and **Create an Account**, which opens an empty one so Valentin asks about
+ * your partner from scratch. The previous version put a persona picker in front
+ * of a single CTA, which asked the visitor to understand the demo's internals
+ * before it would let them in.
+ *
+ * **On the prefilled credentials.** The email and password sit in the form
+ * already filled, so Login is one click on stage. The password shown here is
+ * filler — the real demo credential lives in Secrets Manager and never reaches
+ * this bundle, and clicking Login calls the server-side demo-login endpoint
+ * which reads it there. So the field is honest about being a form and dishonest
+ * about being the secret, which is the only combination that is both
+ * demonstrable and safe.
  *
  * **On decoration.** Both locked mockups contain zero decorative SVG. The whole
  * vocabulary is the circular crest, Unicode glyphs, gradient hairlines,
@@ -27,10 +35,24 @@ import {
  * assets, no clip-art: the point of this screen is that it does not look like a
  * generic AI app, and imported botanical stock would undo that faster than a
  * plain page ever could.
- *
- * Two ways in, and the demo comes first: the common visitor wants to see what
- * this is, not to open an account.
  */
+
+/**
+ * The demo visitor's address, shown in the form.
+ *
+ * Cosmetic: the Cognito account this actually authenticates as is
+ * `demo@valentin.local`, held with its password in Secrets Manager. This is the
+ * name the audience reads.
+ */
+const PREFILLED_EMAIL = 'Ralf1988@gmail.com';
+
+/**
+ * Filler for the password field, not a credential.
+ *
+ * Twelve characters so the dots look like a real password rather than a hint.
+ * Never the actual secret: this string is compiled into a public JS bundle.
+ */
+const PREFILLED_PASSWORD = 'valentin1988';
 
 const pageStyle: React.CSSProperties = {
   display: 'flex',
@@ -48,7 +70,7 @@ const pageStyle: React.CSSProperties = {
 
 const columnStyle: React.CSSProperties = {
   width: '100%',
-  maxWidth: 640,
+  maxWidth: 460,
   textAlign: 'center',
 };
 
@@ -136,72 +158,48 @@ const friezeStyle: React.CSSProperties = {
   opacity: 0.5,
 };
 
-function getPersonaGridStyle(isNarrow: boolean): React.CSSProperties {
-  return {
-    display: 'grid',
-    gridTemplateColumns: isNarrow ? '1fr' : '1fr 1fr',
-    gap: insets.tight,
-    marginBottom: insets.roomy,
-    textAlign: 'left',
-  };
-}
-
-/**
- * A persona card is a radio in everything but markup — one of the pair is always
- * chosen, and choosing does not submit. Selection shows as a claret ring and a
- * lifted surface rather than a checkmark, because the pair is only two wide and a
- * tick would be the loudest thing on the page.
- */
-function getPersonaCardStyle(isSelected: boolean): React.CSSProperties {
-  return {
-    display: 'block',
-    width: '100%',
-    padding: `${insets.snug}px ${insets.snug}px`,
-    textAlign: 'left',
-    borderRadius: radii.card,
-    backgroundColor: isSelected ? colors.porcelain : 'rgba(255,253,251,0.62)',
-    boxShadow: isSelected
-      ? `0 0 0 1.5px ${colors.claret}, 0 10px 26px rgba(140,47,69,0.14)`
-      : `0 0 0 1px ${colors.linenShade}, 0 4px 14px rgba(42,34,38,0.05)`,
-    cursor: 'pointer',
-    transition: 'box-shadow 200ms ease, background-color 200ms ease',
-  };
-}
-
-const personaGlyphStyle: React.CSSProperties = {
-  fontSize: typography.px.body,
-  color: colors.claret,
-  marginRight: 8,
+/** The form sits on porcelain so the linen page reads as space around it. */
+const cardStyle: React.CSSProperties = {
+  padding: insets.roomy,
+  borderRadius: radii.card,
+  backgroundColor: colors.porcelain,
+  boxShadow: `0 0 0 1px ${colors.linenShade}, 0 18px 44px rgba(42,34,38,0.08)`,
+  textAlign: 'left',
 };
 
-const personaNameStyle: React.CSSProperties = {
-  fontFamily: typography.headingFontFamily,
-  fontWeight: typography.weights.normal,
-  fontSize: typography.px.headingSm,
-  color: colors.ink,
+const fieldStyle: React.CSSProperties = {
+  marginBottom: insets.tight,
 };
 
-const personaBlurbStyle: React.CSSProperties = {
-  margin: '6px 0 0',
-  fontSize: typography.px.smallLoose,
-  lineHeight: typography.lineHeights.normal,
-  color: colors.inkMuted,
-};
-
-const personaCountStyle: React.CSSProperties = {
+const labelStyle: React.CSSProperties = {
   display: 'block',
-  marginTop: 10,
+  marginBottom: 6,
   fontSize: typography.px.eyebrow,
   fontWeight: typography.weights.semibold,
-  letterSpacing: '0.18em',
+  letterSpacing: '0.16em',
   textTransform: 'uppercase',
   color: colors.gold,
 };
 
+const inputStyle: React.CSSProperties = {
+  display: 'block',
+  width: '100%',
+  padding: `12px ${insets.snug}px`,
+  boxSizing: 'border-box',
+  borderRadius: radii.kv,
+  border: 'none',
+  backgroundColor: colors.linen,
+  boxShadow: `inset 0 0 0 1px ${colors.linenShade}`,
+  fontFamily: typography.bodyFontFamily,
+  fontSize: typography.px.body,
+  color: colors.ink,
+};
+
 const ctaStyle: React.CSSProperties = {
-  display: 'inline-block',
-  minWidth: 260,
+  display: 'block',
+  width: '100%',
   padding: `15px ${insets.roomy}px`,
+  marginTop: insets.snug,
   borderRadius: radii.pill,
   backgroundColor: colors.claret,
   color: colors.onClaret,
@@ -209,6 +207,7 @@ const ctaStyle: React.CSSProperties = {
   fontWeight: typography.weights.semibold,
   letterSpacing: '0.01em',
   boxShadow: '0 12px 28px rgba(140,47,69,0.26)',
+  cursor: 'pointer',
 };
 
 const disabledCtaStyle: React.CSSProperties = {
@@ -217,34 +216,58 @@ const disabledCtaStyle: React.CSSProperties = {
   cursor: 'default',
 };
 
-const quietRowStyle: React.CSSProperties = {
-  marginTop: insets.roomy,
+/**
+ * The second door, weighted below the first but not hidden.
+ *
+ * A visitor creating an account is doing the more consequential thing, so it
+ * gets a real button rather than the text link the previous version used — but
+ * claret stays with Login, because on stage that is the one being clicked.
+ */
+const secondaryStyle: React.CSSProperties = {
+  display: 'block',
+  width: '100%',
+  padding: `14px ${insets.roomy}px`,
+  borderRadius: radii.pill,
+  backgroundColor: 'transparent',
+  color: colors.claret,
+  fontFamily: typography.bodyFontFamily,
+  fontSize: typography.px.control,
+  fontWeight: typography.weights.semibold,
+  boxShadow: `inset 0 0 0 1.5px rgba(140,47,69,0.28)`,
+  cursor: 'pointer',
+};
+
+const disabledSecondaryStyle: React.CSSProperties = {
+  ...secondaryStyle,
+  opacity: 0.6,
+  cursor: 'default',
+};
+
+/** A hairline with a word in it, separating the two doors. */
+const dividerStyle: React.CSSProperties = {
   display: 'flex',
-  gap: insets.tight,
   alignItems: 'center',
-  justifyContent: 'center',
-  flexWrap: 'wrap',
-};
-
-const quietLinkStyle: React.CSSProperties = {
-  padding: 0,
-  background: 'none',
-  fontSize: typography.px.smallLoose,
-  color: colors.inkMuted,
-  textDecoration: 'underline',
-  textDecorationColor: colors.linenShade,
-  textUnderlineOffset: 3,
-};
-
-const quietDotStyle: React.CSSProperties = {
-  fontSize: typography.px.small,
+  gap: insets.tight,
+  margin: `${insets.snug}px 0`,
+  fontSize: typography.px.eyebrow,
+  fontWeight: typography.weights.semibold,
+  letterSpacing: '0.18em',
+  textTransform: 'uppercase',
   color: colors.inkFaint,
+};
+
+const dividerRuleStyle: React.CSSProperties = {
+  flex: 1,
+  height: 1,
+  background: colors.hairlineGradient,
+  border: 'none',
 };
 
 const hintStyle: React.CSSProperties = {
   marginTop: insets.tight,
   fontSize: typography.px.caption,
   color: colors.inkFaint,
+  textAlign: 'center',
 };
 
 const errorStyle: React.CSSProperties = {
@@ -281,16 +304,15 @@ function useIsNarrow(): boolean {
   return isNarrow;
 }
 
-/** `♥` for a profile that is already full, `◆` for one still to be filled. */
-function personaGlyph(persona: DemoPersonaSummary): string {
-  return persona.fieldCount > 0 ? '♥' : '◆';
-}
-
-function personaCount(persona: DemoPersonaSummary): string {
-  return persona.fieldCount > 0
-    ? `${persona.fieldCount} of ${persona.fieldCount} known`
-    : "0 of 18 · he'll ask";
-}
+/**
+ * The persona each door opens.
+ *
+ * Ids rather than names, because these are the server's own persona ids from
+ * `demo-personas.ts`. Login lands in the filled profile; Create an Account lands
+ * in an empty one, which is what makes it a welcome conversation.
+ */
+const LOGIN_PERSONA = 'samantha';
+const SIGNUP_PERSONA = 'fresh';
 
 export function LoginScreen() {
   const {
@@ -298,7 +320,6 @@ export function LoginScreen() {
     error,
     busy,
     demoAvailable,
-    demoPersonas,
     hostedAvailable,
     authDisabled,
     signIn,
@@ -308,16 +329,45 @@ export function LoginScreen() {
 
   const isNarrow = useIsNarrow();
 
+  // Editable, though nobody will: a read-only field that looks like an input is
+  // worse than one that works, and a presenter who wants to type a different
+  // address should be able to.
+  const [email, setEmail] = useState(PREFILLED_EMAIL);
+  const [password, setPassword] = useState(PREFILLED_PASSWORD);
+
   /**
-   * Which persona the CTA will open.
+   * Login, by whichever route this deployment actually has.
    *
-   * `null` until the config arrives, then the first advertised persona. Not
-   * defaulted to the string `'samantha'`: the server owns that default and says
-   * so in its response, and hard-coding a second copy here is how the two drift.
+   * Production has the demo endpoint, so Login opens the seeded profile. A local
+   * run with `authDisabled` has no Cognito at all and `signIn` restores the
+   * development user instead — same button, same place, so the rehearsal driver
+   * and the presenter both find one Login control either way.
    */
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const selected =
-    demoPersonas.find((persona) => persona.id === selectedId) ?? demoPersonas[0];
+  const handleLogin = () => {
+    if (demoAvailable) {
+      signInAsDemo(LOGIN_PERSONA);
+      return;
+    }
+    signIn();
+  };
+
+  /**
+   * Create an Account.
+   *
+   * On a deployment with the demo endpoint this opens a *separate*, empty
+   * profile rather than running Cognito's hosted sign-up: hosted sign-up would
+   * bounce the visitor to an email-verification round trip, which is not a demo.
+   * The empty profile is the honest version of what a new account looks like —
+   * Valentin knows nothing and opens by asking. Falls back to real hosted
+   * sign-up where that is the only thing available.
+   */
+  const handleSignUp = () => {
+    if (demoAvailable) {
+      signInAsDemo(SIGNUP_PERSONA);
+      return;
+    }
+    signUp();
+  };
 
   const crest = (
     <div style={getCrestStyle(isNarrow)}>
@@ -357,6 +407,8 @@ export function LoginScreen() {
     );
   }
 
+  const canEnter = demoAvailable || hostedAvailable || authDisabled;
+
   return (
     <div style={pageStyle} data-testid="login-screen">
       <div style={columnStyle}>
@@ -370,102 +422,72 @@ export function LoginScreen() {
           ✿·❀·✿
         </span>
 
-        {demoAvailable && demoPersonas.length > 0 && (
-          <>
-            <div
-              style={getPersonaGridStyle(isNarrow)}
-              role="radiogroup"
-              aria-label="Choose a demo profile"
-              data-testid="persona-picker"
-            >
-              {demoPersonas.map((persona) => {
-                const isSelected = persona.id === selected?.id;
-                return (
-                  <button
-                    key={persona.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={isSelected}
-                    style={getPersonaCardStyle(isSelected)}
-                    onClick={() => setSelectedId(persona.id)}
-                    disabled={busy}
-                    data-testid={`persona-${persona.id}`}
-                  >
-                    <span>
-                      <span style={personaGlyphStyle} aria-hidden="true">
-                        {personaGlyph(persona)}
-                      </span>
-                      <span style={personaNameStyle}>{persona.name}</span>
-                    </span>
-                    <p style={personaBlurbStyle}>{persona.blurb}</p>
-                    <span style={personaCountStyle}>{personaCount(persona)}</span>
-                  </button>
-                );
-              })}
+        {canEnter && (
+          <div style={cardStyle}>
+            <div style={fieldStyle}>
+              <label style={labelStyle} htmlFor="login-email">
+                Email
+              </label>
+              <input
+                id="login-email"
+                type="email"
+                autoComplete="username"
+                style={inputStyle}
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                disabled={busy}
+                data-testid="login-email"
+              />
+            </div>
+
+            <div style={fieldStyle}>
+              <label style={labelStyle} htmlFor="login-password">
+                Password
+              </label>
+              <input
+                id="login-password"
+                type="password"
+                autoComplete="current-password"
+                style={inputStyle}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                disabled={busy}
+                data-testid="login-password"
+              />
             </div>
 
             <button
               type="button"
               style={busy ? disabledCtaStyle : ctaStyle}
-              // The persona id travels with the click. `signInAsDemo` takes it as
-              // an optional argument, so a bare handler would hand it a MouseEvent.
-              onClick={() => signInAsDemo(selected?.id)}
+              onClick={handleLogin}
               disabled={busy}
               data-testid="demo-login-button"
             >
-              {busy ? 'Opening…' : `Meet ${selected?.name ?? 'the demo'}  →`}
+              {busy ? 'Opening…' : 'Login'}
             </button>
-          </>
-        )}
 
-        {/* A deployment that predates personas advertises none. It still has a
-            working demo login, so it keeps a plain button rather than losing the
-            only way in. */}
-        {demoAvailable && demoPersonas.length === 0 && (
-          <button
-            type="button"
-            style={busy ? disabledCtaStyle : ctaStyle}
-            onClick={() => signInAsDemo()}
-            disabled={busy}
-            data-testid="demo-login-button"
-          >
-            {busy ? 'Opening the demo…' : 'Try the demo  →'}
-          </button>
-        )}
+            <div style={dividerStyle}>
+              <hr style={dividerRuleStyle} />
+              <span>or</span>
+              <hr style={dividerRuleStyle} />
+            </div>
 
-        <div style={quietRowStyle}>
-          {(hostedAvailable || authDisabled) && (
             <button
               type="button"
-              style={quietLinkStyle}
-              onClick={signIn}
+              style={busy ? disabledSecondaryStyle : secondaryStyle}
+              onClick={handleSignUp}
               disabled={busy}
-              data-testid="sign-in-button"
+              data-testid="sign-up-button"
             >
-              {authDisabled ? 'Continue' : 'Sign in with email'}
+              Create an Account
             </button>
-          )}
 
-          {/* Register is real Cognito sign-up, deliberately quiet: nobody should
-              reach for it by accident while the app is on a projector.
-              `authDisabled` means there are no accounts to create. */}
-          {hostedAvailable && !authDisabled && (
-            <>
-              <span style={quietDotStyle} aria-hidden="true">
-                ·
-              </span>
-              <button
-                type="button"
-                style={quietLinkStyle}
-                onClick={signUp}
-                disabled={busy}
-                data-testid="sign-up-button"
-              >
-                Create an account
-              </button>
-            </>
-          )}
-        </div>
+            <p style={hintStyle}>
+              A new account starts empty — Valentin opens by asking about your
+              partner.
+            </p>
+          </div>
+        )}
 
         {error && (
           <p style={errorStyle} role="alert" data-testid="login-error">
@@ -473,15 +495,9 @@ export function LoginScreen() {
           </p>
         )}
 
-        {!demoAvailable && !hostedAvailable && !authDisabled && (
+        {!canEnter && (
           <p style={errorStyle} role="alert">
             No sign-in method is configured on this deployment yet.
-          </p>
-        )}
-
-        {demoAvailable && (
-          <p style={hintStyle}>
-            The demo profile is shared and clears itself out after half an hour.
           </p>
         )}
       </div>

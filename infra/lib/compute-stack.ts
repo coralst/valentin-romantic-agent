@@ -297,6 +297,12 @@ export class ComputeStack extends cdk.Stack {
       },
       stickinessCookieDuration: cdk.Duration.hours(1),
       targetGroupName: `valentin-tg-${env}`,
+      // The ALB default is 300s, and `ecs wait services-stable` does not return
+      // until the old target has finished draining -- so the default made every
+      // deploy and every rollback drain-bound at 5+ minutes. The only
+      // long-lived connections here are `/ws` WebSockets, which the client
+      // reconnects on its own, so 30s is ample.
+      deregistrationDelay: cdk.Duration.seconds(30),
     });
 
     // --- ALB Listener ---

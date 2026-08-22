@@ -74,109 +74,96 @@ describe('the masthead', () => {
   });
 });
 
-describe('the persona picker', () => {
-  it('offers every persona the deployment advertises', () => {
+describe('the prefilled login form', () => {
+  it('arrives filled in, so Login is one click', () => {
     render(<LoginScreen />);
 
-    expect(screen.getByTestId('persona-samantha')).toBeInTheDocument();
-    expect(screen.getByTestId('persona-fresh')).toBeInTheDocument();
-    expect(screen.getByText('18 of 18 known')).toBeInTheDocument();
-    expect(screen.getByText("0 of 18 · he'll ask")).toBeInTheDocument();
-  });
-
-  it('starts on the first persona, so the button always means something', () => {
-    render(<LoginScreen />);
-
-    expect(screen.getByTestId('persona-samantha')).toHaveAttribute(
-      'aria-checked',
-      'true',
-    );
-    expect(screen.getByTestId('demo-login-button').textContent).toContain('Samantha');
-  });
-
-  it('names the chosen persona on the button', async () => {
-    render(<LoginScreen />);
-
-    await userEvent.click(screen.getByTestId('persona-fresh'));
-
-    expect(screen.getByTestId('persona-fresh')).toHaveAttribute('aria-checked', 'true');
-    expect(screen.getByTestId('persona-samantha')).toHaveAttribute(
-      'aria-checked',
-      'false',
-    );
-    expect(screen.getByTestId('demo-login-button').textContent).toContain('Start fresh');
-  });
-
-  /** The one thing here that can silently do the wrong thing. */
-  it('signs in as the persona that was chosen', async () => {
-    render(<LoginScreen />);
-
-    await userEvent.click(screen.getByTestId('persona-fresh'));
-    await userEvent.click(screen.getByTestId('demo-login-button'));
-
-    expect(signInAsDemo).toHaveBeenCalledWith('fresh');
-  });
-
-  it('is a radio group, so the pair reads as one choice', () => {
-    render(<LoginScreen />);
-
-    expect(screen.getByRole('radiogroup')).toBeInTheDocument();
-    expect(screen.getAllByRole('radio')).toHaveLength(2);
+    expect(screen.getByTestId('login-email')).toHaveValue('Ralf1988@gmail.com');
+    // Non-empty and masked. The exact string is deliberately not asserted: it is
+    // filler, and pinning it here would read as pinning a credential.
+    expect(screen.getByTestId('login-password')).toHaveAttribute('type', 'password');
+    expect((screen.getByTestId('login-password') as HTMLInputElement).value).not.toBe('');
   });
 
   /**
-   * A deployment that predates personas advertises none. Losing the demo button
-   * along with the picker would leave it with no way in at all.
+   * The presenter should be able to type a different address. A field that looks
+   * like an input and refuses to accept text is worse than no field.
    */
-  it('falls back to a plain demo button when none are advertised', async () => {
-    stubAuth({ demoPersonas: [] });
+  it('lets the fields be edited', async () => {
     render(<LoginScreen />);
 
-    expect(screen.queryByTestId('persona-picker')).toBeNull();
+    const email = screen.getByTestId('login-email');
+    await userEvent.clear(email);
+    await userEvent.type(email, 'someone@else.com');
+
+    expect(email).toHaveValue('someone@else.com');
+  });
+
+  /** The one thing here that can silently open the wrong profile. */
+  it('opens the filled profile', async () => {
+    render(<LoginScreen />);
+
     await userEvent.click(screen.getByTestId('demo-login-button'));
 
-    expect(signInAsDemo).toHaveBeenCalledWith();
+    expect(signInAsDemo).toHaveBeenCalledWith('samantha');
+    expect(signIn).not.toHaveBeenCalled();
+  });
+});
+
+describe('Create an Account', () => {
+  /**
+   * Hosted sign-up would bounce the visitor into an email-verification round
+   * trip, which is not a demo. The empty persona is the honest version of a new
+   * account: Valentin knows nothing and opens by asking.
+   */
+  it('opens a separate, empty profile rather than hosted sign-up', async () => {
+    render(<LoginScreen />);
+
+    await userEvent.click(screen.getByTestId('sign-up-button'));
+
+    expect(signInAsDemo).toHaveBeenCalledWith('fresh');
+    expect(signUp).not.toHaveBeenCalled();
+  });
+
+  it('falls back to real hosted sign-up where there is no demo endpoint', async () => {
+    stubAuth({ demoAvailable: false });
+    render(<LoginScreen />);
+
+    await userEvent.click(screen.getByTestId('sign-up-button'));
+
+    expect(signUp).toHaveBeenCalled();
+    expect(signInAsDemo).not.toHaveBeenCalled();
   });
 });
 
 describe('which ways in are offered', () => {
-  it('hides the demo where the demo account is not deployed', () => {
-    stubAuth({ demoAvailable: false });
+  /**
+   * Exactly two, always. The previous version varied between a persona picker, a
+   * plain demo button, a sign-in link and a register link depending on four
+   * config flags, so what the visitor met depended on the deployment.
+   */
+  it('offers exactly two doors', () => {
     render(<LoginScreen />);
 
-    expect(screen.queryByTestId('demo-login-button')).toBeNull();
+    expect(screen.getByTestId('demo-login-button').textContent).toBe('Login');
+    expect(screen.getByTestId('sign-up-button').textContent).toBe('Create an Account');
     expect(screen.queryByTestId('persona-picker')).toBeNull();
-    expect(screen.getByTestId('sign-in-button')).toBeInTheDocument();
-  });
-
-  it('offers sign-in and register when the Hosted UI is reachable', async () => {
-    render(<LoginScreen />);
-
-    await userEvent.click(screen.getByTestId('sign-in-button'));
-    await userEvent.click(screen.getByTestId('sign-up-button'));
-
-    expect(signIn).toHaveBeenCalled();
-    expect(signUp).toHaveBeenCalled();
-  });
-
-  it('hides both when there is no Hosted UI', () => {
-    stubAuth({ hostedAvailable: false });
-    render(<LoginScreen />);
-
     expect(screen.queryByTestId('sign-in-button')).toBeNull();
-    expect(screen.queryByTestId('sign-up-button')).toBeNull();
   });
 
   /**
-   * The dev bypass has no Hosted UI and no accounts, so "Sign in" is a local
-   * fiction and "Create an account" would be a lie.
+   * A local run has no Cognito at all, so Login restores the development user
+   * instead. Same button in the same place, so the rehearsal driver and the
+   * presenter both find one Login control either way.
    */
-  it('offers Continue and no register on the dev bypass', () => {
-    stubAuth({ authDisabled: true, hostedAvailable: false });
+  it('routes Login through the dev bypass when auth is disabled', async () => {
+    stubAuth({ authDisabled: true, demoAvailable: false, hostedAvailable: false });
     render(<LoginScreen />);
 
-    expect(screen.getByTestId('sign-in-button').textContent).toBe('Continue');
-    expect(screen.queryByTestId('sign-up-button')).toBeNull();
+    await userEvent.click(screen.getByTestId('demo-login-button'));
+
+    expect(signIn).toHaveBeenCalled();
+    expect(signInAsDemo).not.toHaveBeenCalled();
   });
 
   it('says so plainly when nothing is configured', () => {
@@ -186,6 +173,7 @@ describe('which ways in are offered', () => {
     expect(screen.getByRole('alert').textContent).toContain(
       'No sign-in method is configured',
     );
+    expect(screen.queryByTestId('demo-login-button')).toBeNull();
   });
 });
 
@@ -195,9 +183,9 @@ describe('while a sign-in is in flight', () => {
     render(<LoginScreen />);
 
     expect(screen.getByTestId('demo-login-button')).toBeDisabled();
-    expect(screen.getByTestId('persona-samantha')).toBeDisabled();
-    expect(screen.getByTestId('sign-in-button')).toBeDisabled();
     expect(screen.getByTestId('sign-up-button')).toBeDisabled();
+    expect(screen.getByTestId('login-email')).toBeDisabled();
+    expect(screen.getByTestId('login-password')).toBeDisabled();
   });
 });
 

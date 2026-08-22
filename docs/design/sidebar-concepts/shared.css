@@ -1,0 +1,172 @@
+/* Shared chrome for the sidebar concept mockups.
+   Tokens copied from src/client/design-system/tokens.ts so the mockups read
+   as the real app. Mockups only — nothing here is imported by the app. */
+
+:root {
+  --dusty-rose: #D4A0A8;
+  --champagne: #F7EDE2;
+  --burgundy: #9B3A52;
+  --burgundy-light: #C4566E;
+  --deep-plum: #5C2434;
+  --warm-ivory: #FDFAF7;
+  --warm-taupe: #B8A99A;
+  --blush: #F2D4D8;
+  --cream: #FFF9F5;
+  --bg: #F8F5F2;
+  --surface: #FFFFFF;
+  --text: #2D2024;
+  --text-secondary: #8A7A7E;
+  --border: #EDE6E0;
+  --border-subtle: #F2ECE7;
+  --success: #4A9B6A;
+  --accent-gradient: linear-gradient(135deg, #9B3A52 0%, #C4566E 100%);
+  --rail: 60px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --serif: 'Playfair Display', Georgia, serif;
+  --sans: 'Inter', -apple-system, 'Helvetica Neue', sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--sans);
+  color: var(--text);
+  background: #EDE6E0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 28px 20px 56px;
+  min-height: 100vh;
+}
+
+.concept-header { max-width: 1180px; width: 100%; }
+.concept-header h1 {
+  font-family: var(--serif);
+  font-size: 26px;
+  margin: 0 0 4px;
+  color: var(--deep-plum);
+}
+.concept-header p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #6C5D61;
+  max-width: 760px;
+}
+.concept-header .tag {
+  display: inline-block;
+  font-size: 11px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--burgundy);
+  background: var(--blush);
+  border-radius: 999px;
+  padding: 3px 10px;
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+.nav { max-width: 1180px; width: 100%; display: flex; gap: 8px; flex-wrap: wrap; font-size: 12px; }
+.nav a {
+  color: var(--burgundy); text-decoration: none; background: #fff;
+  border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px;
+}
+.nav a.here { background: var(--burgundy); color: #fff; border-color: var(--burgundy); }
+
+/* --- fake app frame --- */
+.frame {
+  width: 1180px;
+  max-width: 100%;
+  height: 720px;
+  background: var(--bg);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 24px 60px rgba(92, 36, 52, .18);
+  overflow: hidden;
+  display: flex;
+  position: relative;
+}
+
+/* --- the rail --- */
+.rail {
+  width: var(--rail);
+  background: linear-gradient(180deg, #9B3A52 0%, #85304a 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 0;
+  gap: 6px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 3;
+}
+.rail .avatar {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: var(--champagne) center/cover;
+  border: 2px solid rgba(255,255,255,.75);
+  margin-bottom: 10px; flex-shrink: 0;
+  display: grid; place-items: center; font-size: 18px;
+}
+.rail-btn {
+  width: 40px; height: 40px; border: 0; border-radius: 11px;
+  background: transparent; color: rgba(255,255,255,.72);
+  display: grid; place-items: center; cursor: pointer;
+  position: relative; transition: background .18s, color .18s, transform .18s;
+  font-size: 17px; padding: 0;
+}
+.rail-btn:hover { background: rgba(255,255,255,.14); color: #fff; }
+.rail-btn.active { background: rgba(255,255,255,.2); color: #fff; }
+.rail-btn.active::before {
+  content: ''; position: absolute; left: -12px; top: 50%; transform: translateY(-50%);
+  width: 3px; height: 20px; border-radius: 0 3px 3px 0; background: #fff;
+}
+.rail-btn svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.rail-spacer { flex: 1; }
+.rail-sep { width: 24px; height: 1px; background: rgba(255,255,255,.22); margin: 6px 0; }
+
+/* count badge on a rail icon */
+.badge {
+  position: absolute; top: 3px; right: 2px; min-width: 16px; height: 16px;
+  border-radius: 999px; background: var(--blush); color: var(--deep-plum);
+  font-size: 10px; font-weight: 700; display: grid; place-items: center;
+  padding: 0 4px; border: 1.5px solid #9B3A52;
+}
+.dot-live {
+  position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%;
+  background: #7BE0A0; box-shadow: 0 0 0 0 rgba(123,224,160,.7); animation: pulse 2s infinite;
+}
+@keyframes pulse {
+  70% { box-shadow: 0 0 0 7px rgba(123,224,160,0); }
+  100% { box-shadow: 0 0 0 0 rgba(123,224,160,0); }
+}
+
+/* rail hover tooltip / flyout */
+.tip {
+  position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%) translateX(-4px);
+  background: var(--deep-plum); color: #fff; font-size: 12px; white-space: nowrap;
+  padding: 6px 10px; border-radius: 8px; opacity: 0; pointer-events: none;
+  transition: opacity .16s, transform .16s; z-index: 9;
+}
+.rail-btn:hover .tip { opacity: 1; transform: translateY(-50%) translateX(0); }
+
+/* --- chat stand-in --- */
+.stage { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.topbar {
+  height: 56px; background: linear-gradient(180deg, rgba(255,255,255,.95), rgba(248,245,242,.9));
+  border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center;
+  padding: 0 20px; gap: 10px; flex-shrink: 0;
+}
+.topbar .title { font-family: var(--serif); font-size: 19px; color: var(--burgundy); }
+.topbar .sub { font-size: 12px; color: var(--text-secondary); }
+.chat { flex: 1; padding: 22px; display: flex; flex-direction: column; gap: 12px; overflow: hidden; }
+.bubble { max-width: 62%; padding: 12px 15px; font-size: 14px; line-height: 1.55; border-radius: 16px; }
+.bubble.agent { background: #fff; border: 1px solid var(--border-subtle); border-bottom-left-radius: 5px; box-shadow: 0 2px 8px rgba(92,36,52,.05); }
+.bubble.user { background: var(--accent-gradient); color: #fff; align-self: flex-end; border-bottom-right-radius: 5px; }
+.composer {
+  margin: 0 22px 22px; background: #fff; border: 1px solid var(--border);
+  border-radius: 999px; padding: 13px 20px; color: var(--warm-taupe); font-size: 14px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.muted { color: var(--text-secondary); }

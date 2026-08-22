@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { render, screen, act } from '@testing-library/react';
 import { MessageHistory } from '../MessageHistory';
+import { LEARNED_STATUS_DWELL_MS } from '../LearnedStatus';
 import { PreferencesProvider, usePreferencesContext } from '../../context/preferences-context';
 import type { ChatMessage } from '../../../shared/interfaces/message';
 import type { PreferenceWithHistory } from '../../../shared/interfaces/preference';
@@ -40,7 +40,17 @@ function Harness({
   if (!loaded && preferences.length > 0) {
     dispatch({ type: 'LOAD_PREFERENCES', preferences });
   }
-  return <MessageHistory messages={messages} />;
+  const stored = Object.values(state.preferences)
+    .flat()
+    .map((p) => p.value)
+    .join(',');
+  return (
+    <>
+      <MessageHistory messages={messages} />
+      {/* Stands in for the profile panel: what the store still holds. */}
+      <div data-testid="store-probe">{stored}</div>
+    </>
+  );
 }
 
 function renderHistory(messages: ChatMessage[], preferences: PreferenceWithHistory[] = []) {
@@ -52,93 +62,114 @@ function renderHistory(messages: ChatMessage[], preferences: PreferenceWithHisto
 }
 
 describe('MessageHistory', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('renders a bubble per message', () => {
     renderHistory([message('m1', 'agent', 'Hello'), message('m2', 'user', 'Hi')]);
     expect(screen.getAllByTestId('message-bubble')).toHaveLength(2);
   });
 
   /**
-   * Regression: chips were originally keyed off `Preference.sourceMessageId`,
-   * which is the *server's* id for the user's message. The transcript renders
-   * the optimistic client copy under a locally generated uuid, so the ids never
-   * matched and no chip ever appeared in the real app despite the store being
-   * correctly populated. Chips must show even when sourceMessageId is unknown.
+   * Regression: the announcement was originally keyed off
+   * `Preference.sourceMessageId`, which is the *server's* id for the user's
+   * message. The transcript renders the optimistic client copy under a locally
+   * generated uuid, so the ids never matched and nothing was ever announced in
+   * the real app despite the store being correctly populated. The status line
+   * must show even when sourceMessageId matches no rendered message.
    */
-  it('shows a chip whose sourceMessageId matches no rendered message', () => {
+  it('announces a discovery whose sourceMessageId matches no rendered message', () => {
     renderHistory([message('m1', 'agent', 'Hello'), message('m2', 'user', 'She surfs')], [
       preference(),
     ]);
 
-    const chips = screen.getAllByTestId('learned-chip');
-    expect(chips).toHaveLength(1);
-    expect(chips[0].textContent).toContain('surfing');
+    expect(screen.getByTestId('learned-status').textContent).toContain('surfing');
   });
 
-  it('pins the chip to the end of the transcript', () => {
+  /**
+   * Replaces "pins the chip to the end of the transcript". The announcement is no
+   * longer a sibling of the message that produced it: it sits at the tail of the
+   * transcript, below every bubble, so its arrival and its self-erasure four
+   * seconds later cannot displace anything the user is reading.
+   */
+  it('puts the announcement at the tail of the transcript, below every bubble', () => {
     renderHistory([message('m1', 'agent', 'Hello'), message('m2', 'user', 'She surfs')], [
       preference(),
     ]);
 
-    // The chip is a sibling of the last message's bubble, so it reads as a note
-    // on the latest exchange rather than floating at the top of the log.
-    const bubbles = screen.getAllByTestId('message-bubble');
-    const chip = screen.getByTestId('learned-chip');
-    expect(bubbles[bubbles.length - 1].parentElement).toBe(chip.parentElement);
+    const slot = screen.getByTestId('learned-status-slot');
+    for (const bubble of screen.getAllByTestId('message-bubble')) {
+      // Node.DOCUMENT_POSITION_FOLLOWING — the slot comes after every bubble.
+      expect(bubble.compareDocumentPosition(slot) & 4).toBeTruthy();
+    }
   });
 
   /**
    * One sentence routinely teaches Valentin two unrelated things, and the server
    * is right to report them as two `preference_update` events — merging them
-   * would corrupt the dossier. Two near-identical NOTED cards stacked under one
-   * message read as a bug, so the transcript groups them onto one card. This
-   * used to expect one card per discovery.
+   * would corrupt the dossier. Two near-identical announcements read as a bug, so
+   * the transcript states them on one line. This used to expect one card per
+   * discovery, then one card with a row per discovery.
    */
-  it('groups the discoveries from one exchange onto a single card', () => {
+  it('collapses the discoveries from one exchange onto a single line', () => {
     renderHistory([message('m1', 'user', 'She surfs and dances')], [
       preference({ id: 'p1', value: 'surfing' }),
       preference({ id: 'p2', value: 'salsa dancing' }),
     ]);
 
-    expect(screen.getAllByTestId('learned-chip')).toHaveLength(1);
-    const rows = screen.getAllByTestId('learned-chip-item');
-    expect(rows.map((r) => r.textContent)).toEqual([
-      expect.stringContaining('surfing'),
-      expect.stringContaining('salsa dancing'),
-    ]);
+    expect(screen.getAllByTestId('learned-status')).toHaveLength(1);
+    expect(screen.getByTestId('learned-status-values').textContent).toBe(
+      'surfing · salsa dancing',
+    );
   });
 
-  it('hides a dismissed discovery without dropping the others', async () => {
-    const user = userEvent.setup();
-    renderHistory([message('m1', 'user', 'She surfs and dances')], [
+  /**
+   * The point of the change: the transcript goes back to being nothing but the
+   * conversation. The discovery itself is untouched — it is real profile data and
+   * stays in the store for the profile panel to render.
+   */
+  it('clears the announcement without unlearning the discovery', () => {
+    renderHistory([message('m1', 'user', 'She surfs')], [
       preference({ id: 'p1', value: 'surfing' }),
-      preference({ id: 'p2', value: 'salsa dancing' }),
     ]);
 
-    // Grouped onto one card, dismissal still has to be per discovery: waving off
-    // the hobby must not also wave off the dance note that arrived with it.
-    await user.click(screen.getByRole('button', { name: 'Dismiss surfing' }));
+    act(() => {
+      vi.advanceTimersByTime(LEARNED_STATUS_DWELL_MS);
+    });
 
-    const remaining = screen.getAllByTestId('learned-chip-item');
-    expect(remaining).toHaveLength(1);
-    expect(remaining[0].textContent).toContain('salsa dancing');
-    expect(screen.getAllByTestId('learned-chip')).toHaveLength(1);
+    expect(screen.queryByTestId('learned-status')).not.toBeInTheDocument();
+    expect(screen.getByTestId('store-probe').textContent).toBe('surfing');
   });
 
-  it('drops the card once its last discovery is dismissed', async () => {
-    const user = userEvent.setup();
-    renderHistory([message('m1', 'user', 'She surfs and dances')], [
+  /**
+   * Once said, stay said. The transcript re-renders on every keystroke in the
+   * composer and on every streamed token of Valentin's reply; if any of those
+   * re-raised the announcement the line would never actually clear.
+   */
+  it('does not re-announce a discovery it has already announced', () => {
+    const { rerender } = renderHistory([message('m1', 'user', 'She surfs')], [
       preference({ id: 'p1', value: 'surfing' }),
-      preference({ id: 'p2', value: 'salsa dancing' }),
     ]);
 
-    await user.click(screen.getByRole('button', { name: 'Dismiss surfing' }));
-    await user.click(screen.getByRole('button', { name: 'Dismiss salsa dancing' }));
+    act(() => {
+      vi.advanceTimersByTime(LEARNED_STATUS_DWELL_MS);
+    });
+    rerender(
+      <PreferencesProvider>
+        <Harness messages={[message('m1', 'user', 'She surfs')]} preferences={[]} />
+      </PreferencesProvider>,
+    );
 
-    expect(screen.queryByTestId('learned-chip')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('learned-status')).not.toBeInTheDocument();
   });
 
-  it('renders no chips when nothing has been discovered', () => {
+  it('announces nothing when nothing has been discovered', () => {
     renderHistory([message('m1', 'agent', 'Hello')]);
-    expect(screen.queryByTestId('learned-chip')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('learned-status')).not.toBeInTheDocument();
   });
 });

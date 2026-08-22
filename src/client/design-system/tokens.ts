@@ -108,6 +108,15 @@ export const typography = {
     headingLg: 20,
     headingXl: 22,
     display: 25,
+    /**
+     * The landing page wordmark, and nothing else.
+     *
+     * Every other size here is a measurement of something inside the app window,
+     * where 25 is already the largest thing on screen. The landing page has no
+     * window and no competing content, so its wordmark carries the whole page —
+     * a size the in-app scale has no reason to contain.
+     */
+    hero: 46,
   },
   sizes: {
     xs: '0.75rem',

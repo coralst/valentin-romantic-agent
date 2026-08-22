@@ -152,6 +152,20 @@ describe('vitrine design tokens', () => {
     expect(typography.px.display).toBe(25);
   });
 
+  /**
+   * The landing page's wordmark. It sits outside the app window, so it is the
+   * one size with no in-app counterpart — and the reason it is a token at all is
+   * that the alternative was a magic 46 inlined in one component.
+   */
+  it('typography.px.hero is larger than anything inside the app window', () => {
+    expect(typography.px.hero).toBe(46);
+
+    const inWindow = Object.entries(typography.px).filter(([key]) => key !== 'hero');
+    for (const [key, value] of inWindow) {
+      expect(typography.px.hero, `hero must exceed px.${key}`).toBeGreaterThan(value);
+    }
+  });
+
   it('every typography.px value is a positive number', () => {
     for (const [key, value] of Object.entries(typography.px)) {
       expect(value, `typography.px.${key} must be positive`).toBeGreaterThan(0);

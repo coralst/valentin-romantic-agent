@@ -54,8 +54,22 @@ export function redirectUri(): string {
   return `${window.location.origin}/`;
 }
 
+/**
+ * Which Hosted UI page to land on.
+ *
+ * `signup` is the same authorization request, served by a different Cognito page.
+ * It matters that they share this function rather than each building their own
+ * URL: the PKCE verifier and `state` written to sessionStorage below are what
+ * `readCallback` validates against, so a second code path would be a second
+ * chance to get that wrong — and the callback cannot tell the two apart anyway.
+ */
+export type HostedEntry = 'login' | 'signup';
+
 /** Send the browser to the Hosted UI. Does not return. */
-export async function beginLogin(config: RuntimeAuthConfig): Promise<void> {
+export async function beginLogin(
+  config: RuntimeAuthConfig,
+  entry: HostedEntry = 'login',
+): Promise<void> {
   const { domain, clientId } = requireHostedConfig(config);
 
   const state = randomUrlSafeString();
@@ -76,7 +90,10 @@ export async function beginLogin(config: RuntimeAuthConfig): Promise<void> {
     code_challenge_method: 'S256',
   });
 
-  window.location.assign(`${domain}/oauth2/authorize?${params.toString()}`);
+  // `/signup` takes the identical query and returns through the identical
+  // callback; it differs only in showing the register form first.
+  const path = entry === 'signup' ? 'signup' : 'oauth2/authorize';
+  window.location.assign(`${domain}/${path}?${params.toString()}`);
 }
 
 /** A returning redirect, if this page load is one */

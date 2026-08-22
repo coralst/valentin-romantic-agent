@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { AuthProvider } from '../auth-context';
+import { AuthProvider, useAuthContext } from '../auth-context';
 import { clearTokenSession, peekAccessToken } from '../../auth/token-store';
 import type { RuntimeAuthConfig } from '../../auth/runtime-config';
 
@@ -144,6 +144,127 @@ describe('the one-click demo', () => {
       'not configured',
     );
     expect(screen.queryByTestId(PROTECTED)).toBeNull();
+  });
+});
+
+describe('the persona label', () => {
+  /**
+   * Reads `userLabel`, which no child normally renders.
+   *
+   * Only reachable once signed in — the provider shows `LoginScreen` until then —
+   * so the persona is chosen through that screen's real picker rather than a
+   * stand-in button here. That is deliberate: a synthetic
+   * `signInAsDemo('fresh')` would pass even if the landing page never wired the
+   * id through, which is the half of this that can actually break.
+   */
+  function Chip() {
+    const { userLabel } = useAuthContext();
+    return <span data-testid="user-label">{userLabel}</span>;
+  }
+
+  /** Choose a persona on the landing page and sign in as it. */
+  async function pickPersona(id: string) {
+    await userEvent.click(await screen.findByTestId(`persona-${id}`));
+    await userEvent.click(screen.getByTestId('demo-login-button'));
+  }
+
+  function renderWithChip() {
+    return render(
+      <AuthProvider>
+        <Chip />
+      </AuthProvider>,
+    );
+  }
+
+  const withPersonas: RuntimeAuthConfig = {
+    ...cognitoOn,
+    demoPersonas: [
+      { id: 'samantha', name: 'Samantha', blurb: 'Three years.', fieldCount: 18 },
+      { id: 'fresh', name: 'Start fresh', blurb: 'From scratch.', fieldCount: 0 },
+    ],
+  };
+
+  function demoResponse(persona?: string) {
+    return {
+      accessToken: 'demo-access',
+      refreshToken: 'demo-refresh',
+      expiresIn: 3600,
+      sessionId: 'seeded-session',
+      ...(persona ? { persona } : {}),
+    };
+  }
+
+  it('names the persona the server seeded', async () => {
+    vi.stubGlobal(
+      'fetch',
+      respondWith({
+        '/api/config': withPersonas,
+        '/api/demo/login': demoResponse('samantha'),
+      }),
+    );
+    renderWithChip();
+
+    await userEvent.click(await screen.findByTestId('demo-login-button'));
+
+    expect((await screen.findByTestId('user-label')).textContent).toBe(
+      'Samantha',
+    );
+  });
+
+  it('asks for the persona that was clicked', async () => {
+    const fetchMock = respondWith({
+      '/api/config': withPersonas,
+      '/api/demo/login': demoResponse('fresh'),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderWithChip();
+
+    await pickPersona('fresh');
+    await waitFor(() =>
+      expect(screen.getByTestId('user-label').textContent).toBe('Start fresh'),
+    );
+
+    // The stub only declares the url it reads, so the init argument needs
+    // spelling out here.
+    const calls = fetchMock.mock.calls as unknown as [string, RequestInit][];
+    const login = calls.find(([url]) => url.includes('/api/demo/login'));
+    expect(JSON.parse(login?.[1].body as string)).toEqual({ persona: 'fresh' });
+  });
+
+  it('trusts the server over the click, since it may have fallen back', async () => {
+    vi.stubGlobal(
+      'fetch',
+      respondWith({
+        '/api/config': withPersonas,
+        // Asked for 'fresh', told 'samantha' — an unknown id resolved to the
+        // default, and the chip must not claim otherwise.
+        '/api/demo/login': demoResponse('samantha'),
+      }),
+    );
+    renderWithChip();
+
+    await pickPersona('fresh');
+
+    expect((await screen.findByTestId('user-label')).textContent).toBe(
+      'Samantha',
+    );
+  });
+
+  it('falls back to the generic label on a deployment with no personas', async () => {
+    vi.stubGlobal(
+      'fetch',
+      respondWith({
+        '/api/config': cognitoOn,
+        '/api/demo/login': demoResponse(),
+      }),
+    );
+    renderWithChip();
+
+    await userEvent.click(await screen.findByTestId('demo-login-button'));
+
+    expect((await screen.findByTestId('user-label')).textContent).toBe(
+      'Demo profile',
+    );
   });
 });
 

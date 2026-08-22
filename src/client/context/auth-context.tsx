@@ -19,6 +19,7 @@ import { describeToken } from '../auth/identity';
 import {
   canHostedLogin,
   fetchRuntimeConfig,
+  type DemoPersonaSummary,
   type RuntimeAuthConfig,
 } from '../auth/runtime-config';
 import {
@@ -44,13 +45,18 @@ export interface AuthContextValue {
   authDisabled: boolean;
   /** POST /api/demo/login is available */
   demoAvailable: boolean;
+  /** The demo profiles this deployment offers; empty when it advertises none */
+  demoPersonas: DemoPersonaSummary[];
   /** A real Hosted UI login can be attempted */
   hostedAvailable: boolean;
   isDemo: boolean;
   /** Short label for the header chip */
   userLabel: string;
   signIn: () => void;
-  signInAsDemo: () => void;
+  /** Create an account, through the Hosted UI's sign-up page */
+  signUp: () => void;
+  /** @param persona Which demo profile to seed; the server's default if absent */
+  signInAsDemo: (persona?: string) => void;
   signOut: () => void;
 }
 
@@ -88,12 +94,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // exchange an already-consumed authorization code.
   const bootedRef = useRef(false);
 
-  const adopt = useCallback((accessToken: string, demo: boolean) => {
-    setIsDemo(demo);
-    setUserLabel(demo ? 'Demo profile' : describeToken(accessToken));
-    setError(null);
-    setStatus('signed-in');
-  }, []);
+  /**
+   * Adopt a token as the current session.
+   *
+   * `demoLabel` names the persona behind a demo token. Every demo persona shares
+   * one Cognito account, so the token cannot say which profile was seeded — only
+   * the login response can, and it is the caller who holds it.
+   */
+  const adopt = useCallback(
+    (accessToken: string, demo: boolean, demoLabel?: string) => {
+      setIsDemo(demo);
+      setUserLabel(
+        demo ? (demoLabel ?? 'Demo profile') : describeToken(accessToken),
+      );
+      setError(null);
+      setStatus('signed-in');
+    },
+    [],
+  );
 
   useEffect(() => {
     if (bootedRef.current) return;
@@ -200,12 +218,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, [adopt]);
 
-  const signInAsDemo = useCallback(() => {
+  /**
+   * Register, via the Hosted UI's own sign-up page.
+   *
+   * Not a separate flow: it is the same authorization request through the same
+   * callback, so a newly-created account is signed in when it returns. There is
+   * deliberately no bypass branch — `authDisabled` means there are no accounts to
+   * create, and the landing page hides this entirely in that case.
+   */
+  const signUp = useCallback(() => {
+    const runtime = configRef.current;
+    if (!runtime || runtime.authDisabled) return;
+
+    setBusy(true);
+    void beginLogin(runtime, 'signup').catch((err: unknown) => {
+      setBusy(false);
+      setError(err instanceof Error ? err.message : 'The sign-up failed');
+    });
+  }, []);
+
+  const signInAsDemo = useCallback((persona?: string) => {
     setBusy(true);
     setError(null);
     void (async () => {
       try {
-        const result = await demoLogin();
+        const result = await demoLogin(persona);
         setTokenSession({
           accessToken: result.accessToken,
           // Deliberately dropped: it belongs to the server-only demo client, so
@@ -214,7 +251,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           refreshToken: null,
           expiresAt: Date.now() + result.expiresIn * 1000,
         });
-        adopt(result.accessToken, true);
+        // The server's answer wins over what was asked for: it falls back to
+        // the default persona on an id it does not know, and the chip must not
+        // claim otherwise.
+        const seeded = result.persona ?? persona;
+        const named = configRef.current?.demoPersonas?.find(
+          (candidate) => candidate.id === seeded,
+        );
+        adopt(result.accessToken, true, named?.name);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'The demo is unavailable');
         setStatus('signed-out');
@@ -250,10 +294,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     busy,
     authDisabled: config?.authDisabled ?? false,
     demoAvailable: config?.demoAvailable ?? false,
+    demoPersonas: config?.demoPersonas ?? [],
     hostedAvailable: config ? canHostedLogin(config) : false,
     isDemo,
     userLabel: userLabel || (peekAccessToken() ? 'Signed in' : ''),
     signIn,
+    signUp,
     signInAsDemo,
     signOut,
   };

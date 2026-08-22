@@ -28,7 +28,13 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test-setup.ts'],
     // Preserve Vitest's built-in excludes (node_modules, dist, .idea, etc.)
-    // instead of replacing them; only add the Playwright e2e dir on top.
-    exclude: [...configDefaults.exclude, 'e2e/**'],
+    // instead of replacing them; only add ours on top.
+    //
+    // `infra/**` is a separate npm project: `aws-cdk-lib` lives in
+    // infra/package.json, and CI installs only the root manifest. Collected from
+    // here the CDK suite fails to load with ERR_MODULE_NOT_FOUND — and it passes
+    // locally only because a stray infra/node_modules happens to exist, which is
+    // the worst kind of green. Run it with `npm run test:infra`.
+    exclude: [...configDefaults.exclude, 'e2e/**', 'infra/**'],
   },
 });

@@ -4,6 +4,7 @@ import type {
 } from '../persistence/storage-interface';
 import { DEMO_SEED_SOURCE_MESSAGE_ID } from '../fixtures/demo-profile';
 import { resolvePersona } from '../fixtures/demo-personas';
+import type { DemoConversation } from '../fixtures/demo-personas';
 import { isPartnerNamePreference } from '../extraction/partner-name';
 
 /** Simple framework-agnostic request representation */
@@ -57,6 +58,52 @@ async function seedDemoProfile(
   }
 
   return written.length;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** How far apart two consecutive turns of a seeded transcript are placed */
+const TURN_SPACING_MS = 4 * 60 * 1000;
+
+/**
+ * Fill an already-created session with one backdated conversation.
+ *
+ * `createSession` always stamps `createdAt` to now and there is no way through
+ * the storage contract to move it — it is baked into the GSI's sort key. What
+ * *can* be backdated is `lastActivity`, because `saveMessage` sets it from the
+ * message's own timestamp, and `lastActivity` is what the sidebar renders
+ * ("4 months ago · 9 messages"). So the age of a seeded conversation lives
+ * entirely in its messages.
+ *
+ * Timestamps run from `daysAgo` backwards by one spacing per remaining turn, so
+ * the last turn lands just under `daysAgo` and every turn — including today's
+ * conversation — is strictly in the past and strictly after the one before it.
+ */
+async function fillConversation(
+  storage: StorageInterface,
+  sessionId: string,
+  conversation: DemoConversation,
+  now: number,
+): Promise<void> {
+  const end = now - conversation.daysAgo * DAY_MS;
+  const turnCount = conversation.turns.length;
+
+  // Sequential, not batched: each `saveMessage` moves `lastActivity` forward, so
+  // running them concurrently would leave the session showing whichever write
+  // happened to land last. A handful of fixtures is worth the round trips.
+  for (const [index, turn] of conversation.turns.entries()) {
+    await storage.saveMessage({
+      id: `${DEMO_SEED_SOURCE_MESSAGE_ID}-${sessionId}-${index}`,
+      sessionId,
+      sender: turn.sender,
+      content: turn.content,
+      timestamp: new Date(end - (turnCount - index) * TURN_SPACING_MS).toISOString(),
+    });
+  }
+
+  // Without a title every row in the sidebar reads "Samantha", since the
+  // denormalised partner name is the fallback label.
+  await storage.updateSessionMeta(sessionId, { title: conversation.title });
 }
 
 /** Creates HTTP route handlers bound to the given storage */
@@ -134,17 +181,61 @@ export function createHttpRoutes(storage: StorageInterface) {
      * Used to open a presentation on a fully populated partner profile rather
      * than an empty panel. An unknown or absent persona resolves to the default
      * one, so this can never fail on what the caller asked for.
+     *
+     * A persona may also carry backdated conversations, which become extra rows
+     * in the sidebar — a profile with eighteen filled fields and a single
+     * one-minute-old conversation behind it reads as a fixture, not as a
+     * relationship anyone has been tracking. The returned `sessionId` is always
+     * the newest conversation and always the one holding the preferences.
      */
     async seedSession(persona?: unknown): Promise<HttpResponse> {
-      const { id, preferences } = resolvePersona(persona);
-      const sessionId = await storage.createSession();
+      const { id, preferences, history } = resolvePersona(persona);
+      const now = Date.now();
+      const conversations = history ?? [];
+
+      // Created one at a time, oldest conversation first.
+      //
+      // Not cosmetic ordering: the DynamoDB store lists sessions by descending
+      // `createdAt` (that is the GSI's sort key) while the in-memory one sorts on
+      // `lastActivity`. Creating them in fixture order is what makes those two
+      // agree — the newest conversation is created last, so it is first in both,
+      // and the history below it reads oldest-last either way. Created
+      // concurrently, the backdated rows would come out of the real store in
+      // whatever order the writes landed.
+      const sessionIds: string[] = [];
+      for (const _conversation of conversations) {
+        sessionIds.push(await storage.createSession());
+      }
+
+      // The fixture's last conversation is the live one and the one that carries
+      // the preferences. A persona with no history at all (the "start fresh"
+      // one) gets a plain empty session, exactly as before.
+      const sessionId =
+        sessionIds[sessionIds.length - 1] ?? (await storage.createSession());
+
+      // Messages, on the other hand, can go up concurrently: they are in
+      // separate sessions, and the turns *within* one still go in order.
+      await Promise.all(
+        conversations.map((conversation, index) =>
+          fillConversation(storage, sessionIds[index], conversation, now),
+        ),
+      );
+
       const preferenceCount = await seedDemoProfile(
         storage,
         sessionId,
         preferences,
       );
 
-      return { status: 201, body: { sessionId, preferenceCount, persona: id } };
+      return {
+        status: 201,
+        body: {
+          sessionId,
+          preferenceCount,
+          persona: id,
+          historyCount: Math.max(sessionIds.length - 1, 0),
+        },
+      };
     },
 
     /**

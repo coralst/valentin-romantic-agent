@@ -218,6 +218,29 @@ export const layout = {
   menuControlHeight: 38,
   /** Max measure of the chat column's text content. */
   chatColumnMaxWidth: 620,
+  /**
+   * Narrowest the chat column may be before the conversation list has to give up
+   * its track (see `breakpoints.conversationList`).
+   *
+   * 520 leaves ~468px of measure once the transcript's 26px gutters are taken —
+   * about 55 characters at `typography.px.chat`, which is the low end of a
+   * readable line rather than the four-words-per-line the column collapses to
+   * when all three fixed tracks are held at once on a 1000px window.
+   */
+  chatColumnMinWidth: 520,
+  /**
+   * Widest the app window is allowed to grow.
+   *
+   * Every track but the chat column is a fixed pixel measurement, and the chat
+   * column's *content* is capped at `chatColumnMaxWidth`. So without a ceiling the
+   * only thing an extra 1000px of screen buys is 1000px of empty cream: on a
+   * 2400px display the 306px brief rail is 13% of the frame instead of 21%, the
+   * composer is a small pill adrift in a 1764px column, and the shell reads as a
+   * stretched ribbon rather than as the window the mockups describe. Capping and
+   * centring means the proportions from here up are identical, and the surplus
+   * becomes linen — a margin, which is what the design already uses at 14px.
+   */
+  windowMaxWidth: 1440,
 } as const;
 
 export const animation = {
@@ -253,4 +276,16 @@ export const shadows = {
 
 export const breakpoints = {
   mobile: 768,
+  /**
+   * Below this the conversation list stops being a column and becomes the ☰
+   * overlay it already is on mobile.
+   *
+   * It is the sum of everything the chat shell cannot compress —
+   * `2 × insets.tight` of window margin, the 76px rail, the 226px list, the 306px
+   * brief — plus `layout.chatColumnMinWidth`, rounded up to a round number. Holding
+   * all three fixed tracks below it is what squeezes the transcript to 312px on a
+   * 1000px window: the list is the one of the three that has an overlay to fall
+   * back to, so it is the one that yields.
+   */
+  conversationList: 1160,
 } as const;

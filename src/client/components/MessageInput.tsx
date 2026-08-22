@@ -1,5 +1,6 @@
 import { validateMessageContent } from '../../shared/validation/message-validator';
 import { colors, radii, insets, typography, layout } from '../design-system/tokens';
+import { chatMeasureStyle } from './chat-measure';
 
 interface MessageInputProps {
   value: string;
@@ -18,7 +19,8 @@ const containerStyle: React.CSSProperties = {
  * as the textarea grows, rather than centring it against a tall box.
  */
 const innerStyle: React.CSSProperties = {
-  maxWidth: layout.chatColumnMaxWidth,
+  // Same box as the transcript, so the pill's edges land under the bubbles'.
+  ...chatMeasureStyle,
   display: 'flex',
   alignItems: 'flex-end',
   gap: 10,

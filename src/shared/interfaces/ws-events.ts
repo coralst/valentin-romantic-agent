@@ -29,6 +29,14 @@ export type ClientEvent =
          * an error and never mints a replacement.
          */
         sessionId?: string;
+        /**
+         * Which corner of the shared demo account this visitor owns, as handed
+         * out by `POST /api/demo/login`. Ignored on a non-demo token. Without
+         * it the socket would bind to the pooled demo id while the HTTP routes
+         * used the scoped one, and the two would disagree about which
+         * conversations exist.
+         */
+        visitorId?: string;
       }
     >
   | WsEnvelope<'send_message', { sessionId: string; content: string }>

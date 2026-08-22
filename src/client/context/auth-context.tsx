@@ -28,6 +28,7 @@ import {
   peekAccessToken,
   setDevSession,
   setTokenSession,
+  setVisitorId,
   storedRefreshToken,
 } from '../auth/token-store';
 import { LoginScreen } from '../components/LoginScreen';
@@ -243,6 +244,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void (async () => {
       try {
         const result = await demoLogin(persona);
+        // Before anything can fetch: `adopt` below flips the app to signed-in,
+        // and the first `GET /api/sessions` must already carry this or it reads
+        // the pooled account and shows a stranger's conversations.
+        if (result.visitorId) setVisitorId(result.visitorId);
         setTokenSession({
           accessToken: result.accessToken,
           // Deliberately dropped: it belongs to the server-only demo client, so

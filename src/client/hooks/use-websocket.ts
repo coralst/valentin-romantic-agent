@@ -6,7 +6,11 @@ import {
   publishInboundWsEvent,
   publishOutboundWsEvent,
 } from '../utils/ws-event-observer';
-import { getAccessToken, invalidateAccessToken } from '../auth/token-store';
+import {
+  getAccessToken,
+  invalidateAccessToken,
+  peekVisitorId,
+} from '../auth/token-store';
 
 /** Return type of the useWebSocket hook */
 export interface UseWebSocketReturn {
@@ -237,6 +241,7 @@ export function useWebSocket({
        */
       void (async () => {
         const token = await getAccessToken();
+        const visitorId = peekVisitorId();
         if (ws.readyState !== WebSocket.OPEN) return;
 
         const frame: ClientEvent = {
@@ -244,6 +249,10 @@ export function useWebSocket({
           payload: {
             token: token ?? '',
             ...(sessionIdRef.current ? { sessionId: sessionIdRef.current } : {}),
+            // The socket must land in the same corner of the shared demo
+            // account as `apiFetch` does, or the sidebar and the conversation
+            // would disagree about which sessions exist.
+            ...(visitorId ? { visitorId } : {}),
           },
           timestamp: new Date().toISOString(),
         };

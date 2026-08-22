@@ -10,6 +10,13 @@ export interface DemoLoginResult {
   sessionId: string;
   /** The persona the server actually seeded — it falls back on an unknown id */
   persona?: string;
+  /**
+   * This visitor's corner of the shared demo account.
+   *
+   * Optional only for the sake of a server that predates it; without one, every
+   * demo visitor reads the same pile of conversations.
+   */
+  visitorId?: string;
 }
 
 /**

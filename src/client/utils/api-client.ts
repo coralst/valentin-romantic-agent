@@ -1,4 +1,4 @@
-import { getAccessToken } from '../auth/token-store';
+import { getAccessToken, peekVisitorId } from '../auth/token-store';
 
 /**
  * Every call to our own API goes through here, so the bearer token cannot be
@@ -12,6 +12,13 @@ export async function apiFetch(
   const token = await getAccessToken();
   const headers = new Headers(init.headers);
   if (token) headers.set('Authorization', `Bearer ${token}`);
+
+  // Every demo visitor authenticates as the same Cognito account, so the token
+  // alone cannot say which of them is calling. This can, and the server uses it
+  // to keep their conversations apart. Absent for a real account, where the
+  // token's own `sub` is already unique.
+  const visitorId = peekVisitorId();
+  if (visitorId) headers.set('x-demo-visitor', visitorId);
 
   return fetch(path, { ...init, headers });
 }

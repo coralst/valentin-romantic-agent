@@ -12,6 +12,7 @@
  */
 
 const REFRESH_KEY = 'valentin.auth.refresh';
+const VISITOR_KEY = 'valentin.auth.visitor';
 
 /** Refresh this long before expiry, so a request never rides an expiring token */
 const REFRESH_MARGIN_MS = 60_000;
@@ -24,6 +25,19 @@ export interface TokenSession {
 }
 
 type Refresher = (refreshToken: string) => Promise<TokenSession>;
+
+/**
+ * This browser's corner of the shared demo account.
+ *
+ * Lives here for the same reason the access token does: `apiFetch` and the
+ * WebSocket hook both need it, synchronously, from places that cannot read a
+ * React context. Mirrored into `sessionStorage` so a reload keeps the same
+ * conversations rather than opening onto an empty account.
+ *
+ * Not a credential — it separates rows inside an account the caller already
+ * holds a token for, and it is useless without that token.
+ */
+let visitorId: string | null = sessionStorage.getItem(VISITOR_KEY);
 
 let session: TokenSession | null = null;
 let refresher: Refresher | null = null;
@@ -57,7 +71,20 @@ export function setTokenSession(next: TokenSession): void {
 export function clearTokenSession(): void {
   session = null;
   inFlight = null;
+  visitorId = null;
   sessionStorage.removeItem(REFRESH_KEY);
+  sessionStorage.removeItem(VISITOR_KEY);
+}
+
+/** Remember which demo visitor this browser is, as the server just assigned it */
+export function setVisitorId(next: string): void {
+  visitorId = next;
+  sessionStorage.setItem(VISITOR_KEY, next);
+}
+
+/** This browser's demo visitor id, or null outside the demo */
+export function peekVisitorId(): string | null {
+  return visitorId;
 }
 
 /** The stored refresh token, if a previous page load left one */

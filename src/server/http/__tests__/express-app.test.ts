@@ -226,6 +226,128 @@ describe('per-caller scoping', () => {
   });
 });
 
+/**
+ * Every demo visitor authenticates as the *same* Cognito account, so the `sub`
+ * in their tokens is byte-identical and cannot tell them apart. This is the only
+ * thing that can, and without it a visitor clicking "Create an Account" opens
+ * onto whoever last clicked "Login".
+ *
+ * Gets its own server because the shared one's verifier reports `isDemo: false`,
+ * which is exactly the case where the header must be ignored.
+ */
+describe('separating visitors inside the shared demo account', () => {
+  const SUB = 'the-one-demo-account';
+  const ALICE = '11111111-2222-3333-4444-555555555555';
+  const BOB = '66666666-7777-8888-9999-aaaaaaaaaaaa';
+
+  const demoVerifier: TokenVerifier = {
+    async verify(token: string): Promise<AuthContext> {
+      if (!token) throw new TokenVerificationError('nope');
+      return {
+        userId: SUB,
+        isDemo: true,
+        expiresAt: Math.floor(Date.now() / 1000) + 3600,
+      };
+    },
+  };
+
+  let demoServer: Server;
+  let demoUrl: string;
+
+  /** Every request a demo browser makes: one shared token, one visitor id */
+  function asVisitor(path: string, visitorId?: string, method = 'GET') {
+    return fetch(`${demoUrl}${path}`, {
+      method,
+      headers: {
+        authorization: 'Bearer demo-token',
+        ...(visitorId ? { 'x-demo-visitor': visitorId } : {}),
+      },
+    });
+  }
+
+  async function sessionCount(visitorId?: string): Promise<number> {
+    const body = (await (await asVisitor('/api/sessions', visitorId)).json()) as {
+      sessions: unknown[];
+    };
+    return body.sessions.length;
+  }
+
+  beforeAll(async () => {
+    const { forUser, gateway } = createServer({
+      store: new InMemoryStoreFactory(),
+      verifier: demoVerifier,
+    });
+    const app = createExpressApp({
+      verifier: demoVerifier,
+      forUser,
+      connectionCount: () => gateway.connectionCount,
+      log: () => {},
+    });
+    demoServer = createHttpServer(app);
+    await new Promise<void>((resolve) => demoServer.listen(0, resolve));
+    demoUrl = `http://127.0.0.1:${(demoServer.address() as AddressInfo).port}`;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => demoServer.close(() => resolve()));
+  });
+
+  it('gives each visitor their own conversations', async () => {
+    await asVisitor('/api/session', ALICE, 'POST');
+    await asVisitor('/api/session', ALICE, 'POST');
+    await asVisitor('/api/session', BOB, 'POST');
+
+    expect(await sessionCount(ALICE)).toBe(2);
+    expect(await sessionCount(BOB)).toBe(1);
+  });
+
+  it("keeps one visitor out of another's session", async () => {
+    const { sessionId } = (await (
+      await asVisitor('/api/session', ALICE, 'POST')
+    ).json()) as { sessionId: string };
+
+    // Bob holds a valid id and a valid token for the same account. The only
+    // thing standing between him and Alice's conversation is the scoping.
+    expect((await asVisitor(`/api/session/${sessionId}`, BOB)).status).toBe(404);
+    expect((await asVisitor(`/api/session/${sessionId}`, ALICE)).status).toBe(200);
+  });
+
+  /**
+   * A crafted suffix is the one way this could be turned into a cross-tenant
+   * read: the value is concatenated into a DynamoDB partition key, so a string
+   * carrying the key grammar's own `#SESSION#` separator could address a
+   * neighbour's rows. Rejected values fall back to the unscoped id, which is
+   * the shared pile — never someone else's corner.
+   */
+  it('ignores a visitor id that is not one it minted', async () => {
+    const forged = ['${A}#SESSION#x', '${A}#', 'not-a-uuid', '../..'];
+    for (const value of forged) {
+      // Falls back to the shared, unscoped account rather than erroring, so an
+      // older client still works -- but it lands nowhere near Alice's corner.
+      expect(await sessionCount(value.replace('${A}', ALICE))).toBe(0);
+    }
+    expect(await sessionCount(ALICE)).toBeGreaterThan(0);
+  });
+
+  it('ignores the header entirely for a caller with their own account', async () => {
+    // The shared server's verifier reports isDemo: false. A real account's `sub`
+    // already separates it, so honouring the header there would let anyone
+    // partition -- or hide -- their own data by sending a different value.
+    const created = (await (await post('/api/session', 'erin')).json()) as {
+      sessionId: string;
+    };
+
+    const res = await fetch(`${baseUrl}/api/session/${created.sessionId}`, {
+      headers: {
+        authorization: 'Bearer erin',
+        'x-demo-visitor': ALICE,
+      },
+    });
+
+    expect(res.status).toBe(200);
+  });
+});
+
 describe('the session list', () => {
   it('shows a caller only their own sessions', async () => {
     await post('/api/session/seed', 'carol');

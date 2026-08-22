@@ -16,7 +16,7 @@ export interface Caution {
  * Keys whose values are constraints rather than preferences.
  *
  * Extraction is free-form, so an allergy arrives as a `food` preference keyed
- * "allergies" and lands nowhere in the 18-field registry. It is the single most
+ * "allergies" and lands nowhere in the field registry. It is the single most
  * consequential thing the app can know — a dinner suggestion that ignores it is
  * worse than no suggestion — so it is matched by substring here rather than
  * waiting for a registry field that does not exist.

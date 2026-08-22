@@ -4,7 +4,7 @@ import { PreferencesProvider, usePreferencesContext } from './context/preference
 import { WebSocketProvider } from './context/websocket-context';
 import { SessionProvider, useSessionContext } from './context/session-context';
 import { AuthProvider } from './context/auth-context';
-import { useSessionPersistence } from './hooks/use-session-persistence';
+import { flattenPreferences, useSessionPersistence } from './hooks/use-session-persistence';
 import { AppLayout } from './components/AppLayout';
 import { colors, typography, spacing } from './design-system/tokens';
 
@@ -104,10 +104,29 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
  * incoming session.
  */
 export function SessionSyncer({ children }: { children: React.ReactNode }) {
-  const { activeSession, persistSession } = useSessionContext();
+  const {
+    state: sessionState,
+    activeSession,
+    persistSession,
+    adoptSession,
+    switchSession,
+    reportLiveTranscript,
+  } = useSessionContext();
   const { state: chatState, dispatch: chatDispatch } = useChatContext();
   const { state: preferencesState, dispatch: preferencesDispatch } = usePreferencesContext();
   const prevSessionIdRef = useRef<string | null>(null);
+
+  /**
+   * Every session id this syncer has already accounted for.
+   *
+   * The adoption effect below must fire at most once per id, and "is this id in
+   * `sessions`?" is not enough on its own: deleting the active conversation
+   * drops its row while chat state still names it for one render, which is
+   * indistinguishable from a session that has just been minted. Without this the
+   * conversation the user deleted would reappear in the sidebar.
+   */
+  const knownSessionIdsRef = useRef<Set<string>>(new Set());
+  for (const session of sessionState.sessions) knownSessionIdsRef.current.add(session.id);
 
   const { flush, setOwner } = useSessionPersistence({
     messages: chatState.messages,
@@ -137,6 +156,75 @@ export function SessionSyncer({ children }: { children: React.ReactNode }) {
       preferences: activeSession?.preferences ?? [],
     });
   }, [activeSession, chatDispatch, preferencesDispatch, flush, setOwner]);
+
+  /**
+   * Adopt a session the server minted for us over the socket.
+   *
+   * The socket connects before the conversation list has arrived, so it
+   * authenticates with no session id, the gateway mints one and announces it in
+   * `session_init`. That event only ever reached the chat reducer, so the
+   * conversation on screen belonged to no session record at all: the sidebar said
+   * "No conversations yet" directly beside a live transcript, and
+   * `useSessionPersistence` sat on a null owner — `write()` bails on one — so the
+   * transcript was never written back either.
+   *
+   * Two conditions keep this narrow, and both are load-bearing:
+   *
+   * - Nothing is adopted while the list is still loading. `LOAD_SESSIONS` has the
+   *   last word on which conversation is active, and adopting ahead of it means
+   *   the switch effect above then sees the active id fall back to null and
+   *   clears the transcript that had just appeared.
+   * - Nothing is adopted while a conversation is already active. Then the minted
+   *   session is the stray from the pre-load race, the socket is about to rebind
+   *   to the active one, and — because `SESSION_INIT` keeps a non-empty
+   *   transcript — the messages in hand belong to the active conversation, not to
+   *   the minted id. Adopting them would stamp one conversation's transcript onto
+   *   another's record.
+   *
+   * The live messages are carried into the record deliberately: the switch effect
+   * re-dispatches `SWITCH_SESSION` from `activeSession.messages`, so adopting an
+   * empty record would wipe the welcome message off the screen it just landed on.
+   */
+  useEffect(() => {
+    if (sessionState.loading) return;
+    if (sessionState.activeSessionId !== null) return;
+
+    const liveId = chatState.sessionId;
+    if (!liveId) return;
+    if (knownSessionIdsRef.current.has(liveId)) return;
+    knownSessionIdsRef.current.add(liveId);
+
+    const messages = chatState.messages;
+    adoptSession({
+      id: liveId,
+      title: null,
+      partnerName: null,
+      messages,
+      preferences: flattenPreferences(preferencesState.preferences),
+      // The last message's own timestamp, so the row does not claim activity the
+      // conversation has not had. A brand new session has only the greeting.
+      lastActivity: messages[messages.length - 1]?.timestamp ?? new Date().toISOString(),
+      messageCount: messages.length,
+    });
+    // Focus it: adoption alone leaves the row unselected, and the conversation it
+    // describes is the one already on screen.
+    void switchSession(liveId).catch(() => {});
+  }, [
+    sessionState.loading,
+    sessionState.activeSessionId,
+    chatState.sessionId,
+    chatState.messages,
+    preferencesState.preferences,
+    adoptSession,
+    switchSession,
+  ]);
+
+  // Keep the store's view of the live transcript current, so `createSession` can
+  // tell a conversation nobody has typed into from one whose messages simply have
+  // not been written back yet.
+  useEffect(() => {
+    reportLiveTranscript(chatState.sessionId, chatState.messages);
+  }, [chatState.sessionId, chatState.messages, reportLiveTranscript]);
 
   return <>{children}</>;
 }

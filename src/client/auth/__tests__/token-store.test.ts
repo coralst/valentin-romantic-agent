@@ -8,6 +8,7 @@ import {
   peekAccessToken,
   setDevSession,
   setTokenSession,
+  storedDemoSession,
   storedRefreshToken,
 } from '../token-store';
 
@@ -153,6 +154,68 @@ describe('refreshing', () => {
 
   it('returns null rather than hanging when nothing can be recovered', async () => {
     expect(await getAccessToken()).toBeNull();
+  });
+});
+
+describe('the stored demo session', () => {
+  /**
+   * The demo refresh token is thrown away on purpose, so the access token is the
+   * only thing a reload could resume from. Without this the visitor landed back
+   * on the login screen and their conversation looked lost.
+   */
+  it('keeps a demo access token for the next load in this tab', () => {
+    const expiresAt = Date.now() + HOUR;
+    setTokenSession({
+      accessToken: 'demo-access',
+      refreshToken: null,
+      expiresAt,
+      demo: true,
+      demoLabel: 'Samantha',
+    });
+
+    expect(storedDemoSession()).toEqual({
+      accessToken: 'demo-access',
+      expiresAt,
+      label: 'Samantha',
+    });
+  });
+
+  it('stays out of localStorage, so closing the tab ends the demo', () => {
+    setTokenSession({
+      accessToken: 'demo-access',
+      refreshToken: null,
+      expiresAt: Date.now() + HOUR,
+      demo: true,
+    });
+
+    expect(localStorage.getItem('valentin.auth.demo')).toBeNull();
+    expect(sessionStorage.getItem('valentin.auth.demo')).toBeTruthy();
+  });
+
+  it('stores nothing for an ordinary Hosted UI login', () => {
+    freshSession();
+
+    expect(storedDemoSession()).toBeNull();
+  });
+
+  it('forgets it on sign-out, so the next boot is signed out', () => {
+    setTokenSession({
+      accessToken: 'demo-access',
+      refreshToken: null,
+      expiresAt: Date.now() + HOUR,
+      demo: true,
+    });
+
+    clearTokenSession();
+
+    expect(storedDemoSession()).toBeNull();
+    expect(sessionStorage.getItem('valentin.auth.demo')).toBeNull();
+  });
+
+  it('treats a half-written key as no session at all', () => {
+    sessionStorage.setItem('valentin.auth.demo', '{not json');
+
+    expect(storedDemoSession()).toBeNull();
   });
 });
 

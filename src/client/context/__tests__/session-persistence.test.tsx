@@ -334,6 +334,114 @@ describe('session message persistence', () => {
     ]);
   });
 
+  /**
+   * An account with nothing in it, which is what "Create an Account" produces.
+   *
+   * This used to be where the empty conversations came from: the socket connected
+   * before the conversation list arrived, authenticated with no session id, and the
+   * gateway minted one per page load — announced in `session_init` and adopted by
+   * the client, so each reload left another orphan row behind. The socket no longer
+   * connects without a session, so the only thing that creates a conversation is
+   * the client, and it creates exactly one.
+   */
+  describe('an account with no conversations yet', () => {
+    /** The `session_init` frame, as `dispatchServerEvent` delivers it. */
+    function sessionInit(view: ReturnType<typeof renderApp>, sessionId: string) {
+      act(() => {
+        view.result.current.chat.dispatch({
+          type: 'SESSION_INIT',
+          sessionId,
+          welcomeMessage: makeMessage("Hello — I'm Valentin.", {
+            id: 'welcome',
+            sender: 'agent',
+          }),
+        });
+      });
+      act(() => {
+        vi.advanceTimersByTime(0);
+      });
+    }
+
+    /**
+     * THE FRESH SIGN-IN REGRESSION. A brand-new account showed four rows, three of
+     * them empty, all created within the same minute.
+     */
+    it('opens exactly one conversation, and makes it the active one', async () => {
+      const view = await bootApp();
+      // The ensure-a-conversation effect POSTs, so let its answer land.
+      await view.flush();
+
+      const ids = view.result.current.session.state.sessions.map((s) => s.id);
+      expect(ids).toHaveLength(1);
+      expect(view.result.current.session.state.activeSessionId).toBe(ids[0]);
+      // Server-side too: no orphans, not merely none on screen.
+      expect([...remote.keys()]).toEqual(ids);
+    });
+
+    it('shows the greeting and persists it, with the conversation that follows', async () => {
+      const view = await bootApp();
+      await view.flush();
+      const active = view.result.current.session.state.activeSessionId ?? '';
+
+      // The greeting arrives over the socket for the session the app is on.
+      sessionInit(view, active);
+      view.sendMessage('What should I get her?');
+      view.settle();
+
+      expect(view.result.current.chat.state.messages.map((m) => m.content)).toEqual([
+        "Hello — I'm Valentin.",
+        'What should I get her?',
+      ]);
+      expect(view.storedSession(active)?.messages.map((m) => m.content)).toEqual([
+        "Hello — I'm Valentin.",
+        'What should I get her?',
+      ]);
+      // Greeted, not spoken for: a greeting must never read as the visitor's turn.
+      expect(
+        view.storedSession(active)?.messages.filter((m) => m.sender === 'user'),
+      ).toHaveLength(1);
+    });
+
+    it('does not resurrect a conversation the user has deleted', async () => {
+      const view = await bootApp();
+      await view.flush();
+      const a = await view.newConversation();
+      view.sendMessage('goodbye');
+      view.settle();
+
+      await act(async () => {
+        await view.result.current.session.removeSession(a);
+      });
+      act(() => {
+        vi.advanceTimersByTime(0);
+      });
+      await view.flush();
+
+      // The deleted conversation must not come back — but the app is never left
+      // with none either, so what is left is the other conversation, not a revival
+      // of `a`.
+      expect(view.result.current.session.state.sessions.map((s) => s.id)).not.toContain(a);
+      expect(view.result.current.session.state.sessions).toHaveLength(1);
+    });
+
+    it('ignores a session_init for a conversation that is not on screen', async () => {
+      const view = await bootApp();
+      await view.flush();
+      const a = await view.newConversation();
+      view.sendMessage('mid-conversation');
+      view.settle();
+
+      // A switch reconnects, so a frame for the session just left can still arrive.
+      // Its greeting belongs to neither the transcript on screen nor `a`'s record,
+      // and adopting it would stamp one conversation's messages onto another's.
+      sessionInit(view, 'stray');
+
+      expect(view.result.current.session.state.sessions.map((s) => s.id)).toContain(a);
+      expect(view.result.current.session.state.sessions.map((s) => s.id)).not.toContain('stray');
+      expect(view.storedSession(a)?.messages.map((m) => m.content)).toEqual(['mid-conversation']);
+    });
+  });
+
   describe('reload persistence', () => {
     it('survives a server round-trip', async () => {
       const view = await bootApp();

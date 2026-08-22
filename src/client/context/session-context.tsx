@@ -14,6 +14,7 @@ import {
   loadSidebarCollapsed,
   saveSidebarCollapsed,
 } from '../hooks/use-session-store';
+import { takeSignInSession } from '../auth/initial-session';
 import {
   createRemoteSession,
   deleteRemoteSession,
@@ -63,6 +64,18 @@ const initialState: SessionState = {
   error: null,
   notice: null,
 };
+
+/**
+ * Whether anyone has actually said anything in this transcript.
+ *
+ * The agent's welcome message does not count: it is sent on every connect, so a
+ * conversation nobody has typed into still holds one message. "Has the user
+ * spoken?" is the only reading that separates a conversation worth keeping from
+ * a blank one.
+ */
+function hasUserTurn(messages: ChatMessage[]): boolean {
+  return messages.some((m) => m.sender === 'user');
+}
 
 /** Newest conversation first — the order the sidebar renders */
 function byRecency(a: StoredSession, b: StoredSession): number {
@@ -183,6 +196,10 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
 interface SessionContextValue {
   state: SessionState;
   activeSession: StoredSession | null;
+  /**
+   * Start a conversation — or hand back the one already on screen if nobody has
+   * said anything in it yet. See the note on the implementation.
+   */
   createSession: () => Promise<StoredSession>;
   /**
    * Insert an already-built session (e.g. one created server-side) into the
@@ -190,6 +207,17 @@ interface SessionContextValue {
    */
   adoptSession: (session: StoredSession) => void;
   switchSession: (id: string) => Promise<void>;
+  /**
+   * Tell the store what the *live* transcript currently holds, and for which
+   * session. Called by `SessionSyncer`, which is the only place that sees chat
+   * state and session state at once.
+   *
+   * `createSession` needs it. The stored record lags the screen by up to the
+   * persistence debounce, so a conversation that has just been typed into still
+   * looks empty in `sessions` — and reusing it would drop the turn in flight
+   * into a conversation the user believes they left.
+   */
+  reportLiveTranscript: (sessionId: string | null, messages: ChatMessage[]) => void;
   removeSession: (id: string) => Promise<void>;
   renameSession: (id: string, title: string) => Promise<void>;
   /**
@@ -253,16 +281,34 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     void (async () => {
       try {
         const sessions = await fetchSessions();
-        const first = sessions[0];
+
+        /*
+         * Which conversation to open.
+         *
+         * The one the sign-in just created wins over the newest one in the list,
+         * and it wins even when the list does not mention it. `listSessions` is a
+         * GSI query and a GSI is eventually consistent, so a session seeded
+         * milliseconds ago can be missing from the answer — and then the app
+         * would decide the account is empty and create a second conversation,
+         * beside the one it was handed. Trusting the id the login returned makes
+         * a fresh sign-in land on exactly one conversation, deterministically.
+         */
+        const signedInTo = takeSignInSession();
+        const activeId = signedInTo ?? sessions[0]?.id ?? null;
 
         // Hydrate the conversation we are about to open *before* focusing it.
         // SessionSyncer reacts to the active id changing and reads whatever
         // messages are present at that moment, so filling them in afterwards
         // would leave the transcript blank until the next switch.
-        if (first) {
+        if (activeId) {
           try {
-            const detail = await fetchSessionDetail(first.id);
-            sessions[0] = detail;
+            const detail = await fetchSessionDetail(activeId);
+            const index = sessions.findIndex((s) => s.id === activeId);
+            // Appended rather than dropped when the list has not caught up: it
+            // is a real conversation, and `LOAD_SESSIONS` sorts by recency, so
+            // it lands where it belongs.
+            if (index >= 0) sessions[index] = detail;
+            else sessions.push(detail);
             hydrated.current.add(detail.id);
           } catch {
             // A list we can show beats a blank sidebar; the transcript will
@@ -274,7 +320,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         dispatch({
           type: 'LOAD_SESSIONS',
           sessions,
-          activeId: first?.id ?? null,
+          // Only if it survived hydration: focusing an id that is in no row
+          // leaves the sidebar with nothing selected beside a live transcript.
+          activeId: sessions.some((s) => s.id === activeId) ? activeId : null,
           collapsed: loadSidebarCollapsed(),
         });
         if (discarded > 0) {
@@ -302,13 +350,106 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const activeSession = state.sessions.find((s) => s.id === state.activeSessionId) ?? null;
 
+  /*
+   * Latest values for `createSession` to consult, held in refs so the callback
+   * keeps a stable identity — it is passed into the sidebar, and a new function
+   * on every keystroke would churn every consumer of this context.
+   */
+  const activeSessionRef = useRef<StoredSession | null>(activeSession);
+  activeSessionRef.current = activeSession;
+  const liveTranscriptRef = useRef<{ id: string | null; hasUserTurn: boolean }>({
+    id: null,
+    hasUserTurn: false,
+  });
+
+  const reportLiveTranscript = useCallback((sessionId: string | null, messages: ChatMessage[]) => {
+    liveTranscriptRef.current = { id: sessionId, hasUserTurn: hasUserTurn(messages) };
+  }, []);
+
   const createSession = useCallback(async (): Promise<StoredSession> => {
+    /*
+     * Idempotent while the conversation on screen is still untouched.
+     *
+     * "+ New conversation" used to POST unconditionally, so every click on it
+     * from a blank conversation left the previous blank one behind as a
+     * permanent 0-message row. Nothing distinguishes the two — they have the
+     * same empty transcript and the same "New conversation" label — so the
+     * honest answer to "give me a new conversation" is the empty one they are
+     * already looking at.
+     *
+     * Untouched has to be judged against the live transcript as well as the
+     * stored record: the record is written on a debounce, so a conversation
+     * typed into a moment ago still reads as empty here.
+     */
+    const current = activeSessionRef.current;
+    const live = liveTranscriptRef.current;
+    const liveIsUntouched = live.id !== current?.id || !live.hasUserTurn;
+    const storedIsUntouched =
+      current !== null &&
+      (current.messages.length > 0 ? !hasUserTurn(current.messages) : current.messageCount === 0);
+
+    if (current !== null && storedIsUntouched && liveIsUntouched) {
+      // SET_ACTIVE rather than a no-op: on mobile this is what closes the
+      // overlay, which is the only feedback the tap gets.
+      dispatch({ type: 'SET_ACTIVE', id: current.id });
+      return current;
+    }
+
     const session = await createRemoteSession();
     // Brand new, so there is nothing to fetch.
     hydrated.current.add(session.id);
     dispatch({ type: 'ADD_SESSION', session });
     return session;
   }, []);
+
+  /**
+   * Whether a conversation has already been created for an empty account.
+   *
+   * A ref, and checked before the request goes out rather than after it comes
+   * back: React can run this effect again — a re-render, a `notice` dispatch —
+   * long before a POST completes, and two of those in flight at once is two
+   * conversations. Cleared only when the account is known to have one, so a
+   * failure leaves it set and the app asks the visitor rather than hammering the
+   * endpoint.
+   */
+  const ensuringRef = useRef(false);
+
+  /**
+   * The account always has a conversation to be in.
+   *
+   * This is the other half of gating the socket on a known session. The socket
+   * only ever resumes now — it will not mint one — so somebody has to create the
+   * first conversation, and doing it here, once, from the one place that knows
+   * how many exist, is what makes it deterministic. It covers a brand-new
+   * account and the moment after the last conversation is deleted with the same
+   * code.
+   *
+   * Deliberately not `createSession()`: that one is allowed to hand back the
+   * conversation already on screen, and here there is provably none.
+   */
+  useEffect(() => {
+    if (state.loading || state.error) return;
+
+    if (state.sessions.length > 0) {
+      ensuringRef.current = false;
+      return;
+    }
+    if (ensuringRef.current) return;
+    ensuringRef.current = true;
+
+    void (async () => {
+      try {
+        const session = await createRemoteSession();
+        hydrated.current.add(session.id);
+        dispatch({ type: 'ADD_SESSION', session });
+      } catch (error) {
+        dispatch({
+          type: 'SET_ERROR',
+          error: `Couldn't start a conversation — ${describe(error)}.`,
+        });
+      }
+    })();
+  }, [state.loading, state.error, state.sessions.length]);
 
   const adoptSession = useCallback((session: StoredSession) => {
     hydrated.current.add(session.id);
@@ -405,6 +546,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         createSession,
         adoptSession,
         switchSession,
+        reportLiveTranscript,
         removeSession,
         renameSession,
         persistSession,

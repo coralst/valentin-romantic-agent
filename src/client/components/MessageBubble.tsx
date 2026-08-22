@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import type { ChatMessage } from '../../shared/interfaces/message';
 import { colors, radii, typography, layout } from '../design-system/tokens';
 import { useTypewriter } from '../hooks/use-typewriter';
@@ -127,10 +128,66 @@ const userBubbleStyle: React.CSSProperties = {
   boxShadow: '0 8px 22px rgba(140, 47, 69, 0.20)',
 };
 
+/**
+ * Every message whose reveal has already played, for the lifetime of the page.
+ *
+ * THE FIX FOR "GOING BACK TO A CHAT WRITES THE LAST MESSAGES AGAIN".
+ *
+ * `animate` is true for whichever agent message is last in the transcript, which
+ * is the right question to ask about a *newly arrived* reply and the wrong one
+ * about a restored one. Leaving a conversation and coming back re-mounts the
+ * transcript, so the last reply — sitting there, minutes old — started typing
+ * itself out character by character all over again, as if Valentin had just said
+ * it. Nothing was duplicated in state; the animation was simply replayed.
+ *
+ * Module scope rather than component state, because the component is exactly
+ * what does not survive: it is unmounted by the switch. Keyed on the message id,
+ * so a genuinely new reply still animates once — and only once.
+ */
+const revealedMessageIds = new Set<string>();
+
+/**
+ * How recently a message must have been said for its arrival to be worth animating.
+ *
+ * The id registry above cannot help across a page load — module state dies with the
+ * page — so a reload would type the last reply out again, which is the same
+ * complaint one refresh later. Age is the signal that survives: a reply the socket
+ * has just delivered is seconds old, and anything restored from storage is not.
+ * Generous on purpose, because this compares a server timestamp against the
+ * browser's clock and the two need not agree.
+ */
+const FRESH_MESSAGE_MS = 60_000;
+
+function saidJustNow(timestamp: string): boolean {
+  const at = new Date(timestamp).getTime();
+  // An unparseable timestamp is treated as fresh: the reveal is the nicer failure.
+  if (Number.isNaN(at)) return true;
+  return Date.now() - at < FRESH_MESSAGE_MS;
+}
+
 export function MessageBubble({ message, animate = false }: MessageBubbleProps) {
   const isAgent = message.sender === 'agent';
+
+  /*
+   * Read once per mount, before the effect below records this message. Reading it
+   * on every render instead would cut the animation off mid-word: the message is
+   * marked as revealed as soon as it starts, so the next render would decide it
+   * had already been seen.
+   */
+  const seenBeforeRef = useRef<boolean | null>(null);
+  if (seenBeforeRef.current === null) {
+    seenBeforeRef.current = revealedMessageIds.has(message.id);
+  }
+
+  const reveal =
+    isAgent && animate && !seenBeforeRef.current && saidJustNow(message.timestamp);
+
+  useEffect(() => {
+    if (reveal) revealedMessageIds.add(message.id);
+  }, [reveal, message.id]);
+
   const { displayedText } = useTypewriter(message.content, {
-    enabled: isAgent && animate,
+    enabled: reveal,
   });
 
   if (isAgent) {
@@ -144,7 +201,7 @@ export function MessageBubble({ message, animate = false }: MessageBubbleProps) 
           <span style={visuallyHidden}>{message.content}</span>
           {/* Presentational animated text */}
           <span aria-hidden="true">
-            {animate ? renderContent(displayedText) : renderContent(message.content)}
+            {reveal ? renderContent(displayedText) : renderContent(message.content)}
           </span>
         </div>
       </div>

@@ -194,6 +194,40 @@ describe('SessionSidebar', () => {
       });
     });
 
+    /**
+     * Empty "New conversation" rows used to pile up: the button POSTed on every
+     * click, and an abandoned blank conversation stayed in the list forever with
+     * nothing to distinguish it from the next one. Two blank conversations are
+     * indistinguishable by definition, so the second click hands back the first.
+     */
+    it('reuses the conversation on screen when it is still blank', async () => {
+      const user = userEvent.setup();
+      renderSidebar(false);
+      await screen.findByTestId('session-empty-state');
+
+      await user.click(screen.getByRole('button', { name: 'New chat' }));
+      await screen.findByTestId('session-entry');
+      await user.click(screen.getByRole('button', { name: 'New chat' }));
+      await user.click(screen.getByRole('button', { name: 'New chat' }));
+
+      expect(screen.getAllByTestId('session-entry')).toHaveLength(1);
+      expect(calls.filter((c) => c.method === 'POST' && c.url === '/api/session')).toHaveLength(1);
+    });
+
+    it('still starts a new conversation once the current one has been used', async () => {
+      const user = userEvent.setup();
+      // messageCount 1, and its transcript holds a message the user sent — so
+      // this is a conversation, not a blank waiting to be reused.
+      stubServer([serverSession()]);
+      renderSidebar(false);
+
+      await screen.findByText('Alice');
+      await user.click(screen.getByRole('button', { name: 'New chat' }));
+
+      await waitFor(() => expect(screen.getAllByTestId('session-entry')).toHaveLength(2));
+      expect(calls.filter((c) => c.method === 'POST' && c.url === '/api/session')).toHaveLength(1);
+    });
+
     it('carries the Valentin wordmark', () => {
       renderSidebar(false);
       expect(screen.getByRole('heading', { name: 'Valentin' })).toBeInTheDocument();

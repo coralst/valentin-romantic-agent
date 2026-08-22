@@ -137,6 +137,38 @@ describe('BriefRail — zero state', () => {
     renderRail();
     expect(screen.getByText('Her brief')).toBeInTheDocument();
   });
+
+  /**
+   * The zero state shows the *shape* of the brief.
+   *
+   * A fresh account used to get one paragraph in a 306px claret column and
+   * nothing else. You cannot watch a panel fill in if you have never seen what
+   * it is going to fill in with.
+   */
+  it('shows the labelled placeholder rows instead of an empty column', () => {
+    renderRail();
+    expect(screen.getByTestId('brief-skeleton')).toBeInTheDocument();
+    expect(screen.getAllByTestId('brief-skeleton-row').length).toBeGreaterThan(5);
+  });
+
+  it('counts none of the placeholders as known', () => {
+    renderRail();
+    const rows = screen.getAllByTestId('brief-skeleton-row');
+    expect(rows.length).toBeGreaterThan(0);
+    // The whole risk of a skeleton: rows on screen that the tally believes in.
+    expect(screen.getByTestId('brief-tally').textContent).toContain(
+      `0 of ${PROFILE_FIELD_REGISTRY.length} known`,
+    );
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
+  });
+
+  it('hands over to the real modules as soon as one fact lands', () => {
+    // Otherwise the skeleton would be a third list saying what the chip strip
+    // and "Worth asking next" already say.
+    renderRail([{ fieldId: 'partner_name', value: 'Coral' }]);
+    expect(screen.queryByTestId('brief-skeleton')).not.toBeInTheDocument();
+    expect(screen.getByTestId('brief-good-to-know')).toBeInTheDocument();
+  });
 });
 
 describe('BriefRail — the who header', () => {
@@ -155,6 +187,19 @@ describe('BriefRail — the who header', () => {
   it('renders her initial when there is no photo', () => {
     renderRail([{ fieldId: 'partner_name', value: 'Coral' }]);
     expect(screen.getByTestId('brief-cameo').textContent).toBe('C');
+  });
+
+  it('shows the shipped portrait for a partner the app has drawn', () => {
+    renderRail([{ fieldId: 'partner_name', value: 'Samantha' }]);
+    const image = screen.getByRole('img', { name: 'Illustrated portrait of Samantha' });
+    expect(image).toHaveAttribute('src', '/samantha-portrait.svg');
+  });
+
+  it('calls the drawing a drawing, and never offers to change a file that does not exist', () => {
+    renderRail([{ fieldId: 'partner_name', value: 'Samantha' }]);
+    // "Change her photo" would be a lie: there is no uploaded file to replace,
+    // and the click opens an *add* picker.
+    expect(screen.getByTestId('brief-cameo')).toHaveAttribute('aria-label', 'Add her photo');
   });
 });
 

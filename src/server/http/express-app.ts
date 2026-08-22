@@ -6,6 +6,7 @@ import type { AuthContext, TokenVerifier } from '../auth/token-verifier';
 import { isAuthDisabled } from '../auth/token-verifier';
 import { config } from '../config';
 import type { DemoLoginService } from '../auth/demo-login';
+import { storageUserId } from '../auth/demo-login';
 import { describePersonas } from '../fixtures/demo-personas';
 
 /** Structured log sink, so the two entry points keep their own formats */
@@ -82,7 +83,10 @@ function requireAuth(deps: ExpressAppDeps) {
       return;
     }
 
-    const context: RequestContext = { auth, services: deps.forUser(auth.userId) };
+    const context: RequestContext = {
+      auth,
+      services: deps.forUser(storageUserId(auth, req.headers['x-demo-visitor'])),
+    };
     Object.assign(res.locals, context);
     next();
   };

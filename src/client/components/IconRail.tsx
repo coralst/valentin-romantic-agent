@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { colors, radii, layout, typography, insets, spacing, animation } from '../design-system/tokens';
 import { DemoToolbar } from './DemoToolbar';
 import { UserChip } from './UserChip';
+import { useOptionalAuthContext } from '../context/auth-context';
 
 /** Which of the rail's view buttons is currently the active surface. */
 export type RailView = 'chat' | 'profile';
@@ -17,8 +18,28 @@ interface IconRailProps {
    */
   activeView: RailView | null;
   onViewChange?: (view: RailView) => void;
-  /** Opens the conversation history — the ☰ button. Mobile only in practice. */
+  /**
+   * What the crest does: land on the conversation, from any surface.
+   *
+   * Optional only so the rail can still be rendered on its own in unit tests; it
+   * must be passed by *both* the mobile strip and the desktop rail — passing it
+   * to one of the two is precisely how the ◆ came to be inert on desktop.
+   */
+  onGoHome?: () => void;
+  /**
+   * What the ☰ does. On mobile it raises the history overlay; on desktop, where
+   * the list is a permanent column, it collapses and restores that column.
+   */
   onOpenSessions: () => void;
+  /**
+   * Whether the conversation list is currently showing, when the caller treats
+   * the ☰ as a two-way toggle.
+   *
+   * Left `undefined` by the mobile strip, where the ☰ only ever opens the
+   * overlay — and where the accessible name is therefore still the one-way
+   * "Open session history" that `IconRail.test.tsx` and the e2e specs query.
+   */
+  isSessionsOpen?: boolean;
   /**
    * True when the full-page dossier is the surface on screen.
    *
@@ -55,6 +76,14 @@ function getRailStyle(orientation: 'column' | 'row'): React.CSSProperties {
   };
 }
 
+/**
+ * The crest is a button, not decoration: people click a logo expecting to be
+ * taken home, and this one is the only mark in the rail.
+ *
+ * Visually unchanged from the div it replaced — `border: none`, `padding: 0` and
+ * an explicit background are what stop the user agent's button styling from
+ * squaring the circle and greying the art.
+ */
 function getCrestStyle(orientation: 'column' | 'row'): React.CSSProperties {
   const size = orientation === 'row' ? 34 : layout.crestSize;
   return {
@@ -63,9 +92,18 @@ function getCrestStyle(orientation: 'column' | 'row'): React.CSSProperties {
     borderRadius: radii.pill,
     overflow: 'hidden',
     backgroundColor: colors.porcelain,
+    border: 'none',
+    padding: 0,
+    cursor: 'pointer',
     display: 'grid',
     placeItems: 'center',
     flexShrink: 0,
+    // A default focus ring is drawn on the *border box*, which on a circular
+    // control reads as a square around the crest. Offset it and it follows the
+    // pill instead; gold because that is the app's other accent and it survives
+    // against both the claret rail and the porcelain disc.
+    outlineOffset: 3,
+    outlineColor: colors.gold,
     boxShadow: '0 4px 14px rgba(0, 0, 0, 0.22)',
     // The crest sits apart from the button cluster on the vertical rail; on the
     // horizontal strip the shared 8px gap is already enough.
@@ -123,15 +161,69 @@ function getPopoverStyle(
     zIndex: 200,
     backgroundColor: colors.porcelain,
     borderRadius: radii.panel,
-    padding: insets.tight,
-    boxShadow: '0 4px 12px rgba(42, 34, 38, 0.08), 0 24px 56px rgba(42, 34, 38, 0.18)',
+    padding: insets.snug,
+    // The inset hairline is the first layer: on porcelain over porcelain the drop
+    // shadows alone leave the menu's own edge undefined.
+    boxShadow:
+      'inset 0 0 0 1px rgba(229, 217, 210, 0.9), 0 4px 12px rgba(42, 34, 38, 0.08), 0 24px 56px rgba(42, 34, 38, 0.18)',
     ...(orientation === 'column'
-      ? // Beside the gear, bottom-aligned to it.
-        { left: anchor.right + 10, bottom: window.innerHeight - anchor.bottom }
+      ? {
+          // Beside the gear, bottom-aligned to it — but never so tall that it
+          // runs off the top of the viewport. The gear sits at the foot of the
+          // rail, so the menu grows upwards; on a short window that is the only
+          // edge it can escape through.
+          left: anchor.right + 10,
+          bottom: Math.min(
+            window.innerHeight - anchor.bottom,
+            Math.max(insets.tight, window.innerHeight - POPOVER_MAX_HEIGHT),
+          ),
+          maxHeight: POPOVER_MAX_HEIGHT,
+        }
       : // Below the strip, right-aligned to the gear.
         { top: anchor.bottom + 10, right: window.innerWidth - anchor.right }),
   };
 }
+
+/**
+ * Roughly what the menu needs: two labelled groups, four controls and a status
+ * line. Used only to keep the bottom-anchored menu from growing off the top of a
+ * short viewport, so an approximation is the right kind of value here.
+ */
+const POPOVER_MAX_HEIGHT = 320;
+
+/** One column, so every control is the same width. */
+const menuStyle: React.CSSProperties = {
+  width: layout.menuWidth,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: insets.tight,
+  minWidth: 0,
+};
+
+const menuGroupStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 8,
+  minWidth: 0,
+};
+
+/** "Who you are" / "what the demo can do" — the same eyebrow the cards use. */
+const menuGroupLabelStyle: React.CSSProperties = {
+  fontFamily: typography.bodyFontFamily,
+  fontSize: typography.px.eyebrow,
+  fontWeight: typography.weights.semibold,
+  letterSpacing: '0.22em',
+  textTransform: 'uppercase',
+  color: colors.inkFaint,
+};
+
+/** The gradient hairline, so the rule fades out rather than butting the padding. */
+const menuDividerStyle: React.CSSProperties = {
+  height: 1,
+  border: 'none',
+  margin: 0,
+  background: colors.hairlineGradient,
+};
 
 /**
  * Column 1 of the window: Valentin's crest, the view switches, and the demo
@@ -145,11 +237,25 @@ export function IconRail({
   orientation,
   activeView,
   onViewChange,
+  onGoHome,
   onOpenSessions,
+  isSessionsOpen,
   isDossierActive = false,
   onToggleDossier,
   dossierToggleRef,
 }: IconRailProps) {
+  /*
+   * The same condition `UserChip` guards itself with, asked again here.
+   *
+   * Not a duplication to remove: the "Signed in as" heading and the divider
+   * belong to the *menu*, not to the chip, so a chip that renders nothing (no
+   * AuthProvider, as in the component tests) must not leave them stranded above
+   * an empty group. The chip keeps its own guard because it is also the thing
+   * that knows what "signed in" means.
+   */
+  const auth = useOptionalAuthContext();
+  const hasIdentity = auth?.status === 'signed-in';
+
   const [isDemoOpen, setDemoOpen] = useState(false);
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -218,9 +324,21 @@ export function IconRail({
       data-orientation={orientation}
       aria-label="Valentin"
     >
-      <div style={getCrestStyle(orientation)}>
+      {/* The name is "Valentin home" rather than "Back to the conversation"
+          because the dossier's ← already owns the latter, and two controls
+          answering to one name in the same view is exactly the ambiguity a
+          screen reader cannot resolve. */}
+      <button
+        type="button"
+        style={getCrestStyle(orientation)}
+        onClick={onGoHome}
+        aria-label="Valentin home"
+        data-testid="rail-home-button"
+      >
+        {/* The alt text is queried by the onboarding e2e spec, so it stays on the
+            image even though the button now carries the accessible name. */}
         <img src="/logo.png" alt="Valentin logo" style={crestImageStyle} />
-      </div>
+      </button>
 
       <button
         type="button"
@@ -245,10 +363,24 @@ export function IconRail({
         &#9829;
       </button>
 
+      {/*
+        A two-way toggle wherever the caller treats it as one, and it says so.
+        "Open session history" would be a lie half the time on desktop, where the
+        list is a column that this button hides and restores; but it stays the
+        name on mobile, where the ☰ only opens an overlay and where the e2e specs
+        and `IconRail.test.tsx` query that exact string.
+      */}
       <button
         type="button"
-        style={getIconButtonStyle(false)}
-        aria-label="Open session history"
+        style={getIconButtonStyle(isSessionsOpen === false)}
+        aria-label={
+          isSessionsOpen === undefined
+            ? 'Open session history'
+            : isSessionsOpen
+              ? 'Hide the conversation list'
+              : 'Show the conversation list'
+        }
+        aria-expanded={isSessionsOpen}
         onClick={onOpenSessions}
         data-testid="sidebar-menu-button"
       >
@@ -280,10 +412,24 @@ export function IconRail({
             >
               {/* Who you are sits above the demo controls: the rail has no
                   header to hang it off, and "account" and "demo" belong to the
-                  same cluster from the audience's point of view. Renders
-                  nothing when there is no AuthProvider. */}
-              <UserChip />
-              <DemoToolbar />
+                  same cluster from the audience's point of view. Two labelled
+                  groups rather than one flat stack, because "sign out" and
+                  "reset the rehearsal" are very different mistakes to make. */}
+              <div style={menuStyle}>
+                {hasIdentity && (
+                  <>
+                    <div style={menuGroupStyle}>
+                      <span style={menuGroupLabelStyle}>Signed in as</span>
+                      <UserChip />
+                    </div>
+                    <hr style={menuDividerStyle} />
+                  </>
+                )}
+                <div style={menuGroupStyle}>
+                  <span style={menuGroupLabelStyle}>Demo controls</span>
+                  <DemoToolbar />
+                </div>
+              </div>
             </div>,
             document.body,
           )}

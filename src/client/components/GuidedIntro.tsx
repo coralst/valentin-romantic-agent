@@ -21,7 +21,7 @@ import type { StoredSession } from '../hooks/use-session-store';
  * **The whole point is that it is not a second rendering path.** `useGuidedIntro`
  * either sends the three prompts over the live socket or synthesises the events
  * the server would have sent; either way the transcript, the typing indicator,
- * the `LearnedChip`, the profile highlight flash and the architecture drawer are
+ * the `LearnedStatus`, the profile highlight flash and the architecture drawer are
  * reached through the code they always use. So there is nothing here but a
  * button, a counter, and the payoff — no scripted chat bubbles, no fake profile.
  */

@@ -13,6 +13,10 @@
 
 import type { ExtractedPreference } from '../persistence/storage-interface';
 import { DEMO_PROFILE_PREFERENCES } from './demo-profile';
+import { SAMANTHA_HISTORY } from './demo-history';
+import type { DemoConversation } from './demo-history';
+
+export type { DemoConversation, DemoTranscriptTurn } from './demo-history';
 
 /**
  * Spelled out rather than derived from the list below.
@@ -33,6 +37,18 @@ export interface DemoPersona {
   blurb: string;
   /** Seeded into the session the demo login creates */
   preferences: readonly ExtractedPreference[];
+  /**
+   * Backdated conversations to seed alongside the preferences, oldest first.
+   *
+   * Absent — not empty — for a persona with no past, so "this persona has no
+   * history" and "this persona has an empty history" cannot drift apart.
+   *
+   * The *last* entry is the conversation the seed returns and the one that
+   * carries `preferences`; everything before it becomes a read-only row in the
+   * sidebar. Ordering is the fixture's job rather than the seeder's, so the file
+   * reads in the order a presenter would scroll it.
+   */
+  history?: readonly DemoConversation[];
 }
 
 export const DEMO_PERSONAS: readonly DemoPersona[] = [
@@ -41,6 +57,7 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
     name: 'Samantha',
     blurb: 'Three years together. He remembers all of it.',
     preferences: DEMO_PROFILE_PREFERENCES,
+    history: SAMANTHA_HISTORY,
   },
   {
     id: 'fresh',

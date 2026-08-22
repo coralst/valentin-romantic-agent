@@ -60,7 +60,11 @@ const liveRegionStyle: React.CSSProperties = {
  * The amount comes from `reservedDrawerSpace()`, which lives next to the heights
  * it derives from so the layout cannot drift out of agreement with the drawer.
  */
-function drawerHostStyle(gridColumn: string, reserved: number): React.CSSProperties {
+function drawerHostStyle(
+  gridColumn: string,
+  reserved: number,
+  isChatShell: boolean,
+): React.CSSProperties {
   return {
     gridColumn,
     position: 'relative',
@@ -68,11 +72,10 @@ function drawerHostStyle(gridColumn: string, reserved: number): React.CSSPropert
     paddingBottom: reserved,
     display: 'grid',
     // Chat + brief keep their own tracks inside the host, so wrapping them does
-    // not change the window's four-column template.
-    gridTemplateColumns:
-      gridColumn === CHAT_COLUMNS_SPAN
-        ? `minmax(0, 1fr) ${layout.briefRailWidth}px`
-        : 'minmax(0, 1fr)',
+    // not change the window's column template.
+    gridTemplateColumns: isChatShell
+      ? `minmax(0, 1fr) ${layout.briefRailWidth}px`
+      : 'minmax(0, 1fr)',
     gridTemplateRows: '100%',
     minWidth: 0,
     minHeight: 0,
@@ -91,8 +94,23 @@ function drawerHostStyle(gridColumn: string, reserved: number): React.CSSPropert
 
 /** The chat shell's host covers the chat and brief tracks (columns 3 and 4). */
 const CHAT_COLUMNS_SPAN = '3 / 5';
+/** With the conversation list collapsed those are columns 2 and 3 instead. */
+const CHAT_COLUMNS_SPAN_NO_LIST = '2 / 4';
 /** The dossier's host covers the single board track (column 2). */
 const DOSSIER_COLUMN_SPAN = '2 / 3';
+
+/**
+ * The chat shell with the conversation list hidden: rail | chat | brief.
+ *
+ * `DESKTOP_COLUMNS` minus the list track, rather than keeping the track and
+ * hiding its occupant — the point of the ☰ on a wide screen is to give the
+ * conversation the 226px, and an empty track would leave a hole instead.
+ */
+const COLLAPSED_CHAT_COLUMNS = [
+  `${layout.iconRailWidth}px`,
+  'minmax(0, 1fr)',
+  `${layout.briefRailWidth}px`,
+].join(' ');
 
 /**
  * Owns the profile store for the whole layout, so surfaces outside the
@@ -115,6 +133,16 @@ function AppLayoutContent() {
   const [isMobile, setIsMobile] = useState(false);
   const [activePanel, setActivePanel] = useState<'chat' | 'profile'>('chat');
   const { setSidebarOpen } = useSessionContext();
+
+  /*
+   * Whether the desktop conversation list is showing.
+   *
+   * Local to the layout rather than `session-context`'s `sidebarOpen`: that flag
+   * is the *mobile* overlay's, it starts closed, and reusing it would open the
+   * desktop shell with its list column already collapsed. Here the column is a
+   * permanent part of the shell that the ☰ takes away, so the default is shown.
+   */
+  const [isListOpen, setListOpen] = useState(true);
 
   // Read here rather than inside the drawer: the *layout* is what has to give up
   // the space, and only the layout owns the regions whose height it takes from.
@@ -166,7 +194,35 @@ function AppLayoutContent() {
    */
   const changePanel = (panel: 'chat' | 'profile') => {
     setActivePanel(panel);
-    view.setSurface('chat');
+    // `closeDossier` rather than `setSurface('chat')`, so the history entry the
+    // dossier pushed is dropped on this route out too — otherwise the browser's
+    // Back button would have a spent entry to consume before it did anything.
+    if (isDossier) view.closeDossier();
+  };
+
+  /**
+   * What the rail's ◆ and ♥ do on desktop.
+   *
+   * The desktop rail used to be rendered without `onViewChange` at all, which
+   * made the ◆ call an undefined prop — it looked like a button and did nothing.
+   * Both surfaces are on screen there, so "switch to chat" means "leave the
+   * dossier if it is up, and put the caret in the composer"; see `returnToChat`.
+   */
+  const changeDesktopView = (panel: 'chat' | 'profile') => {
+    if (panel === 'chat') view.returnToChat();
+    else view.openDossier();
+  };
+
+  /**
+   * The crest is "home": it lands on the conversation from wherever you are.
+   *
+   * A no-op on desktop chat — that is the honest answer there, because home is
+   * already what you are looking at — and never an error. `closeDossier` is
+   * guarded rather than called blind so a click on the chat shell does not yank
+   * focus to the ♥ for no reason.
+   */
+  const goHome = () => {
+    if (isDossier) view.closeDossier();
   };
 
   if (isMobile) {
@@ -179,6 +235,7 @@ function AppLayoutContent() {
                 orientation="row"
                 activeView={activePanel}
                 onViewChange={changePanel}
+                onGoHome={() => changePanel('chat')}
                 onOpenSessions={() => setSidebarOpen(true)}
                 isDossierActive={isDossier}
                 onToggleDossier={view.toggleDossier}
@@ -235,16 +292,31 @@ function AppLayoutContent() {
     <DiscoveryProvider value={discovery}>
       <ViewProvider value={view}>
         <div data-testid="app-layout" data-layout="desktop" data-surface={view.surface}>
-          {/* Two columns for the dossier, four for the chat shell. The rail keeps
-              its 76px across both, so it does not shift under the cursor. */}
-          <AppWindow variant="desktop" columns={isDossier ? DOSSIER_COLUMNS : undefined}>
+          {/* Two columns for the dossier, four for the chat shell — three with
+              the conversation list collapsed. The rail keeps its 76px across all
+              three, so it does not shift under the cursor. */}
+          <AppWindow
+            variant="desktop"
+            columns={
+              isDossier
+                ? DOSSIER_COLUMNS
+                : isListOpen
+                  ? undefined
+                  : COLLAPSED_CHAT_COLUMNS
+            }
+          >
             {/* In the chat shell both surfaces are on screen at once, so no rail
                 button claims to be the active view. The dossier is a single
                 surface, so there the ♥ does. */}
             <IconRail
               orientation="column"
               activeView={null}
-              onOpenSessions={() => setSidebarOpen(true)}
+              onViewChange={changeDesktopView}
+              onGoHome={goHome}
+              // The list is a permanent column here, so the ☰ is a two-way
+              // toggle: hiding it hands the 226px to the conversation.
+              onOpenSessions={() => setListOpen((open) => !open)}
+              isSessionsOpen={isListOpen}
               isDossierActive={isDossier}
               onToggleDossier={view.toggleDossier}
               dossierToggleRef={view.dossierToggleRef}
@@ -254,7 +326,7 @@ function AppLayoutContent() {
                  chat shell: closing it on a surface switch would drop the
                  presenter's place in the walkthrough mid-sentence. */
               <div
-                style={drawerHostStyle(DOSSIER_COLUMN_SPAN, reserved)}
+                style={drawerHostStyle(DOSSIER_COLUMN_SPAN, reserved, false)}
                 data-drawer-reserved={reserved}
               >
                 <DossierView />
@@ -262,9 +334,13 @@ function AppLayoutContent() {
               </div>
             ) : (
               <>
-                <SessionSidebar isMobile={false} />
+                {isListOpen && <SessionSidebar isMobile={false} />}
                 <div
-                  style={drawerHostStyle(CHAT_COLUMNS_SPAN, reserved)}
+                  style={drawerHostStyle(
+                    isListOpen ? CHAT_COLUMNS_SPAN : CHAT_COLUMNS_SPAN_NO_LIST,
+                    reserved,
+                    true,
+                  )}
                   data-drawer-reserved={reserved}
                 >
                   <div style={windowCellStyle}>

@@ -166,7 +166,8 @@ const dividedFilledRowStyle: React.CSSProperties = {
 };
 
 /**
- * All 18 registry fields, in their five real sections, across three columns.
+ * Every registry field, in its real section, across three columns. The count is
+ * not written down here: the registry has grown twice already.
  *
  * Every section is expanded. This is why `FieldSection` is deleted rather than
  * reused: its collapse-with-a-count-chip pattern makes sense in a 306px rail

@@ -1,5 +1,6 @@
 import type { ClientEvent, ServerEvent } from '../../shared/interfaces/ws-events';
 import type { AuthContext, TokenVerifier } from '../auth/token-verifier';
+import { storageUserId } from '../auth/demo-login';
 import type { AgentOrchestratorInterface } from '../agent/agent-orchestrator';
 import type {
   ScopedStorageOptions,
@@ -33,7 +34,7 @@ export interface WsConnection {
  */
 export interface WsUserServices {
   store: Pick<StorageInterface, 'getSession'>;
-  orchestrator: Pick<AgentOrchestratorInterface, 'initSession'>;
+  orchestrator: Pick<AgentOrchestratorInterface, 'initSession' | 'greetIfEmpty'>;
   eventRouter: Pick<EventRouter, 'routeEvent'>;
 }
 
@@ -58,6 +59,17 @@ const DEFAULT_AUTH_TIMEOUT_MS = 5_000;
 interface ConnectionState {
   conn: WsConnection;
   auth: AuthContext | null;
+  /**
+   * The id this connection's data is stored under — `auth.userId` for a real
+   * account, and a visitor-scoped variant of it for the shared demo account.
+   *
+   * Held separately because it is what `broadcastToSession` matches on and what
+   * the ambient log scope is stamped with. Matching on `auth.userId` instead
+   * would silently drop every event for a demo visitor: the store, and so the
+   * span bridge and `emitFor`, speak the scoped id, and the two would never
+   * meet.
+   */
+  storageId: string | null;
   services: WsUserServices | null;
   authTimer: ReturnType<typeof setTimeout> | null;
   /** Guards against two `auth` frames racing each other */
@@ -96,6 +108,7 @@ export class WsGateway {
     const state: ConnectionState = {
       conn,
       auth: null,
+      storageId: null,
       services: null,
       authTimer: null,
       authInFlight: false,
@@ -139,7 +152,7 @@ export class WsGateway {
   ): void {
     const payload = JSON.stringify(event);
     for (const state of this.connections.values()) {
-      if (state.auth?.userId === userId && state.conn.sessionId === sessionId) {
+      if (state.storageId === userId && state.conn.sessionId === sessionId) {
         state.conn.send(payload);
       }
     }
@@ -193,8 +206,11 @@ export class WsGateway {
     }
 
     if (parsed.type === 'auth') {
-      await this.authenticate(state, (parsed.payload ?? {}) as
-        | { token?: string; sessionId?: string });
+      await this.authenticate(state, (parsed.payload ?? {}) as {
+        token?: string;
+        sessionId?: string;
+        visitorId?: string;
+      });
       return;
     }
 
@@ -233,7 +249,7 @@ export class WsGateway {
       // shared Bedrock client — logs under this user, which is what lets the
       // single process-wide span bridge route `aws_span` events back to the
       // connection that caused them instead of guessing from a session id.
-      await withUserScope(state.auth.userId, () =>
+      await withUserScope(state.storageId ?? state.auth.userId, () =>
         eventRouter.routeEvent(
           parsed.type,
           (parsed.payload ?? {}) as Record<string, unknown>,
@@ -253,7 +269,7 @@ export class WsGateway {
    */
   private async authenticate(
     state: ConnectionState,
-    payload: { token?: string; sessionId?: string },
+    payload: { token?: string; sessionId?: string; visitorId?: string },
   ): Promise<void> {
     const { conn } = state;
 
@@ -280,7 +296,8 @@ export class WsGateway {
     }
 
     state.auth = auth;
-    state.services = this.forUser(auth.userId);
+    state.storageId = storageUserId(auth, payload.visitorId);
+    state.services = this.forUser(state.storageId);
     state.authInFlight = false;
 
     conn.send(
@@ -307,6 +324,35 @@ export class WsGateway {
           return;
         }
         conn.sessionId = payload.sessionId;
+
+        /*
+         * Open the conversation if nobody has yet.
+         *
+         * Sessions reach the browser from three places — the demo login seeds
+         * one, "+ New conversation" POSTs one, and the client creates one when
+         * the account has none — and none of them went through `initSession`,
+         * so none of them was greeted. This is the one place every one of them
+         * passes through, and it is where the greeting belongs: the visitor's
+         * socket is bound and listening, and the message is written to the
+         * session before it is announced, so a reload reads it back.
+         *
+         * Announced as `session_init` rather than `agent_message` because the
+         * client's SESSION_INIT is the idempotent one: it keeps a transcript
+         * that already has messages, so a second socket on the same session
+         * cannot double the greeting on screen.
+         */
+        const welcomeMessage = await state.services.orchestrator.greetIfEmpty(
+          payload.sessionId,
+        );
+        if (welcomeMessage) {
+          conn.send(
+            JSON.stringify({
+              type: 'session_init',
+              payload: { sessionId: payload.sessionId, welcomeMessage },
+              timestamp: new Date().toISOString(),
+            } satisfies ServerEvent),
+          );
+        }
         return;
       }
 

@@ -6,6 +6,7 @@ import {
   GetSecretValueCommand,
   SecretsManagerClient,
 } from '@aws-sdk/client-secrets-manager';
+import { randomUUID } from 'node:crypto';
 import { config } from '../config';
 import { resolvePersona, type DemoPersonaId } from '../fixtures/demo-personas';
 import type { HttpResponse } from '../api/http-routes';
@@ -61,6 +62,66 @@ export interface DemoLoginBody {
   sessionId: string;
   /** The persona actually seeded — the fallback makes this differ from the ask */
   persona: string;
+  /**
+   * This visitor's private corner of the shared demo account.
+   *
+   * Every demo visitor authenticates as the same Cognito user, so the `sub` in
+   * the token is identical for all of them and cannot separate their data. This
+   * id can: the browser echoes it back on every request, and the server appends
+   * it to the storage user id, which puts each visitor on their own DynamoDB
+   * partition prefix. Two people clicking Login and Create an Account at the
+   * same time then see their own conversations and nobody else's.
+   *
+   * Not a secret and not an authorisation boundary — it only separates rows
+   * inside an account the caller already proved they hold a token for.
+   */
+  visitorId: string;
+}
+
+/**
+ * Scope a storage user id to one demo visitor.
+ *
+ * `#` because the DynamoDB key builders already use it as their separator, so a
+ * scoped id composes into `USER#<sub>#<visitor>#SESSION#<sid>` and needs no
+ * change to `keys.ts`.
+ */
+export function scopeToVisitor(userId: string, visitorId: string): string {
+  return `${userId}#${visitorId}`;
+}
+
+/**
+ * A visitor id the server minted, and not something else.
+ *
+ * The value arrives from a request header, and it is concatenated into a
+ * DynamoDB partition key -- so it is validated rather than trusted. A UUID
+ * shape means a caller cannot craft a suffix that collides with the key
+ * grammar's `#SESSION#` / `#MSG#` segments and read across the separator.
+ */
+export function isValidVisitorId(value: unknown): value is string {
+  return typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
+}
+
+/**
+ * Which storage id a caller's data lives under.
+ *
+ * For anyone with their own Cognito account this is just their `sub`. Demo
+ * visitors all share one account, so the `sub` alone pools every visitor's
+ * conversations into one sidebar and someone clicking "Create an Account" opens
+ * onto a stranger's partner. `POST /api/demo/login` hands each visitor a
+ * `visitorId` for exactly this; the browser echoes it back on every request and
+ * in the WebSocket `auth` frame, and both entry points come through here.
+ *
+ * Honoured only for demo tokens, and only in the server-minted UUID shape.
+ * Anything else falls back to the unscoped id rather than erroring, so a client
+ * that predates the field still works — it just sees the shared pile.
+ */
+export function storageUserId(auth: { userId: string; isDemo: boolean }, claimed: unknown): string {
+  if (!auth.isDemo) return auth.userId;
+  const visitorId = Array.isArray(claimed) ? claimed[0] : claimed;
+  return isValidVisitorId(visitorId)
+    ? scopeToVisitor(auth.userId, visitorId)
+    : auth.userId;
 }
 
 /** Injectable collaborators, so tests never reach a real AWS account */
@@ -170,7 +231,16 @@ export class DemoLoginService {
     // the one that was actually seeded.
     const resolved = resolvePersona(persona);
 
-    const storage = this.deps.storeFor(userId);
+    // A fresh corner of the shared account per login. This is what makes Login
+    // and Create an Account two separate users rather than two views of one
+    // pile: without it `listSessions` returns every demo visitor's
+    // conversations, so a brand-new account opens with a stranger's partner in
+    // the sidebar.
+    const visitorId = randomUUID();
+
+    const storage = this.deps.storeFor(scopeToVisitor(userId, visitorId));
+    // Only ever this visitor's own store, which is now always empty — kept
+    // because a returning visitor may reuse an id, and it costs one query.
     await this.reapStaleSessions(storage);
     const sessionId = await this.deps.seedSession(storage, resolved.id);
 
@@ -182,6 +252,7 @@ export class DemoLoginService {
         expiresIn: result.ExpiresIn ?? 3600,
         sessionId,
         persona: resolved.id,
+        visitorId,
       } satisfies DemoLoginBody,
     };
   }

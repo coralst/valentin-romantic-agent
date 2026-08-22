@@ -3,8 +3,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChatMessage } from '../../shared/interfaces/message';
 import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
 import { MessageBubble } from './MessageBubble';
-import { LearnedChip } from './LearnedChip';
+import { LearnedStatus, type LearnedAnnouncement } from './LearnedStatus';
 import { usePreferencesContext } from '../context/preferences-context';
+import { discoveryKey } from '../hooks/use-preferences-state';
 import { insets, layout } from '../design-system/tokens';
 
 interface MessageHistoryProps {
@@ -29,28 +30,31 @@ const innerStyle: React.CSSProperties = {
 
 export function MessageHistory({ messages }: MessageHistoryProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
-  const { state: preferencesState, dispatch: preferencesDispatch } = usePreferencesContext();
+  const { state: preferencesState } = usePreferencesContext();
 
   /**
-   * Chips the user has waved off. Visibility is tracked here rather than read
-   * back off the preferences store because a discovery stays in the store
-   * forever (it is real profile data) — dismissing the chip only hides the
-   * note in the transcript, it must never unlearn the preference.
-   */
-  const [dismissedIds, setDismissedIds] = useState<ReadonlySet<string>>(new Set());
-
-  /**
-   * Which message each discovery is pinned beneath, by preference id.
+   * The batch announced most recently, handed to `LearnedStatus` which decides
+   * how long it stays on screen.
    *
-   * `Preference.sourceMessageId` cannot be used for this. It is the *server's*
-   * id for the user's message, whereas the transcript renders the optimistic
-   * copy `ChatPanel` created with a locally generated uuid, so the two ids never
-   * match and every lookup misses. Instead each preference is pinned, once, to
-   * whatever message was last in the transcript when it arrived — which is the
-   * exchange that produced it. Reconciling the ids properly is a server-side
-   * concern.
+   * The transcript does not try to pin discoveries to the message that produced
+   * them any more. It used to, and it could only ever guess: `sourceMessageId` is
+   * the *server's* id for the user's message whereas the transcript renders the
+   * optimistic copy under a locally generated uuid, so the anchor was "whatever
+   * was last in the transcript when the fact arrived". A status line that lives
+   * for four seconds needs no anchor at all — it belongs to the moment, not to a
+   * message — which removes the guess rather than improving it.
    */
-  const anchorsRef = useRef(new Map<string, string>());
+  const [announcement, setAnnouncement] = useState<LearnedAnnouncement | null>(null);
+
+  /**
+   * Discoveries already announced, keyed the same way the store keys them.
+   *
+   * This is only a within-mount dedupe — the store's `discovered` set is what
+   * decides whether a fact is announceable at all. It has to be, because this ref
+   * resets on remount and a session switch remounts the transcript: on its own it
+   * would announce a restored conversation's entire dossier all over again.
+   */
+  const announcedRef = useRef(new Set<string>());
 
   const visiblePreferences = useMemo(() => {
     const all: PreferenceWithHistory[] = [];
@@ -60,38 +64,30 @@ export function MessageHistory({ messages }: MessageHistoryProps) {
 
   const lastMessage = messages[messages.length - 1];
 
-  // Pin any newly-arrived preference to the current end of the transcript. This
-  // must happen before paint, or a chip flashes at the wrong anchor first.
-  const anchors = anchorsRef.current;
-  if (lastMessage) {
-    for (const pref of visiblePreferences) {
-      if (!anchors.has(pref.id)) anchors.set(pref.id, lastMessage.id);
-    }
-  }
-
-  const chipsByMessageId = useMemo(() => {
-    const grouped = new Map<string, PreferenceWithHistory[]>();
-    for (const pref of visiblePreferences) {
-      if (dismissedIds.has(pref.id)) continue;
-      const anchorId = anchors.get(pref.id);
-      if (!anchorId) continue;
-      const existing = grouped.get(anchorId);
-      if (existing) existing.push(pref);
-      else grouped.set(anchorId, [pref]);
-    }
-    return grouped;
-  }, [visiblePreferences, dismissedIds, anchors, lastMessage?.id]);
+  useEffect(() => {
+    const fresh = visiblePreferences.filter(
+      (pref) =>
+        preferencesState.discovered.has(discoveryKey(pref)) &&
+        !announcedRef.current.has(discoveryKey(pref)),
+    );
+    if (fresh.length === 0) return;
+    for (const pref of fresh) announcedRef.current.add(discoveryKey(pref));
+    /*
+     * One line for the whole batch. A single sentence routinely teaches Valentin
+     * two unrelated things and the server is right to emit them as separate
+     * events — merging them in the store would corrupt the dossier — but two
+     * status lines saying almost the same thing is the stacked-card bug again in
+     * a quieter font.
+     */
+    setAnnouncement({
+      id: fresh.map((pref) => pref.id).join('|'),
+      values: fresh.map((pref) => pref.value),
+    });
+  }, [visiblePreferences, preferencesState.discovered]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
-
-  const handleDismiss = (preferenceId: string) => {
-    setDismissedIds((prev) => new Set(prev).add(preferenceId));
-    // Keep the shared highlight state in step, so a dismissed discovery stops
-    // pulsing on the other surfaces that render it too.
-    preferencesDispatch({ type: 'CLEAR_HIGHLIGHT', preferenceId });
-  };
 
   return (
     <div role="log" style={containerStyle} aria-label="Message history">
@@ -103,16 +99,14 @@ export function MessageHistory({ messages }: MessageHistoryProps) {
               // Only the newest message animates; earlier ones render fully.
               animate={msg.id === lastMessage?.id && msg.sender === 'agent'}
             />
-            {chipsByMessageId.get(msg.id)?.map((pref) => (
-              <LearnedChip
-                key={pref.id}
-                value={pref.value}
-                confidence={pref.confidence}
-                onDismiss={() => handleDismiss(pref.id)}
-              />
-            ))}
           </div>
         ))}
+        {/*
+          At the tail of the transcript rather than beside the message that
+          produced it: nothing is ever rendered below the line, so its arrival
+          and departure cannot displace anything the user is reading.
+        */}
+        <LearnedStatus announcement={announcement} />
         <div ref={bottomRef} />
       </div>
     </div>

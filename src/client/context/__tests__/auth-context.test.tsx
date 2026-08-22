@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AuthProvider, useAuthContext } from '../auth-context';
 import { clearTokenSession, peekAccessToken } from '../../auth/token-store';
+import { takeSignInSession } from '../../auth/initial-session';
 import type { RuntimeAuthConfig } from '../../auth/runtime-config';
 
 /**
@@ -59,16 +60,20 @@ describe('when Cognito is configured', () => {
     expect(screen.queryByTestId(PROTECTED)).toBeNull();
   });
 
-  it('leads with the demo, since most visitors have no account', async () => {
+  it('offers two doors, Login first', async () => {
     vi.stubGlobal('fetch', respondWith({ '/api/config': cognitoOn }));
 
     renderApp();
 
     expect(await screen.findByTestId('demo-login-button')).toBeTruthy();
-    expect(screen.getByTestId('sign-in-button')).toBeTruthy();
+    expect(screen.getByTestId('sign-up-button')).toBeTruthy();
   });
 
-  it('hides the demo button where the demo account is not deployed', async () => {
+  /**
+   * The two doors do not come and go with the deployment's config — only where
+   * each one routes does. A visitor should always meet the same front page.
+   */
+  it('keeps both doors where the demo account is not deployed', async () => {
     vi.stubGlobal(
       'fetch',
       respondWith({ '/api/config': { ...cognitoOn, demoAvailable: false } }),
@@ -76,8 +81,8 @@ describe('when Cognito is configured', () => {
 
     renderApp();
 
-    await screen.findByTestId('sign-in-button');
-    expect(screen.queryByTestId('demo-login-button')).toBeNull();
+    expect(await screen.findByTestId('demo-login-button')).toBeTruthy();
+    expect(screen.getByTestId('sign-up-button')).toBeTruthy();
   });
 });
 
@@ -101,6 +106,37 @@ describe('the one-click demo', () => {
 
     expect(await screen.findByTestId(PROTECTED)).toBeTruthy();
     expect(peekAccessToken()).toBe('demo-access');
+  });
+
+  /**
+   * HALF THE "one conversation on a fresh account" FIX.
+   *
+   * The login seeds a conversation and names it in the response. That id used to be
+   * dropped, leaving the app to rediscover it through `GET /api/sessions` — a
+   * DynamoDB GSI query, eventually consistent, which routinely does not list a
+   * session created a few hundred milliseconds ago. The client then concluded the
+   * account had none and made another.
+   */
+  it('hands the seeded conversation to the session store', async () => {
+    vi.stubGlobal(
+      'fetch',
+      respondWith({
+        '/api/config': cognitoOn,
+        '/api/demo/login': {
+          accessToken: 'demo-access',
+          expiresIn: 3600,
+          sessionId: 'seeded-session',
+        },
+      }),
+    );
+    renderApp();
+
+    await userEvent.click(await screen.findByTestId('demo-login-button'));
+    await screen.findByTestId(PROTECTED);
+
+    expect(takeSignInSession()).toBe('seeded-session');
+    // Consumed on read, so a later sign-in as somebody else cannot inherit it.
+    expect(takeSignInSession()).toBeNull();
   });
 
   it("does not keep the demo client's refresh token", async () => {
@@ -162,10 +198,16 @@ describe('the persona label', () => {
     return <span data-testid="user-label">{userLabel}</span>;
   }
 
-  /** Choose a persona on the landing page and sign in as it. */
+  /**
+   * Enter through the door that opens the given persona.
+   *
+   * The landing page no longer has a picker: Login opens the filled profile and
+   * Create an Account opens the empty one, so the persona is chosen by which
+   * button is clicked.
+   */
   async function pickPersona(id: string) {
-    await userEvent.click(await screen.findByTestId(`persona-${id}`));
-    await userEvent.click(screen.getByTestId('demo-login-button'));
+    const testId = id === 'fresh' ? 'sign-up-button' : 'demo-login-button';
+    await userEvent.click(await screen.findByTestId(testId));
   }
 
   function renderWithChip() {
@@ -265,6 +307,95 @@ describe('the persona label', () => {
     expect((await screen.findByTestId('user-label')).textContent).toBe(
       'Demo profile',
     );
+  });
+});
+
+/**
+ * Reloading the page used to throw a demo visitor back to the login screen with
+ * their conversation apparently gone: the access token lived in memory, the demo
+ * refresh token is dropped on purpose, so boot found nothing to resume.
+ */
+describe('reloading a demo session', () => {
+  function storeDemo(session: {
+    accessToken: string;
+    expiresAt: number;
+    label?: string;
+  }) {
+    sessionStorage.setItem('valentin.auth.demo', JSON.stringify(session));
+  }
+
+  function Chip() {
+    const { userLabel, isDemo } = useAuthContext();
+    return (
+      <span data-testid="user-label">{`${userLabel}|${String(isDemo)}`}</span>
+    );
+  }
+
+  it('resumes straight into the app without logging in again', async () => {
+    // Only /api/config is declared: a second POST /api/demo/login would mint a
+    // new visitorId and strand the conversations this visitor already has, so
+    // the stub throwing on it is the assertion.
+    const fetchMock = respondWith({ '/api/config': cognitoOn });
+    vi.stubGlobal('fetch', fetchMock);
+    storeDemo({
+      accessToken: 'demo-access',
+      expiresAt: Date.now() + 3_600_000,
+      label: 'Samantha',
+    });
+
+    render(
+      <AuthProvider>
+        <Chip />
+      </AuthProvider>,
+    );
+
+    expect((await screen.findByTestId('user-label')).textContent).toBe(
+      'Samantha|true',
+    );
+    expect(peekAccessToken()).toBe('demo-access');
+    const urls = fetchMock.mock.calls.map(([url]) => String(url));
+    expect(urls.some((url) => url.includes('/api/demo/login'))).toBe(false);
+  });
+
+  it('shows the login screen again once the stored token has expired', async () => {
+    vi.stubGlobal('fetch', respondWith({ '/api/config': cognitoOn }));
+    storeDemo({ accessToken: 'stale', expiresAt: Date.now() - 1_000 });
+
+    renderApp();
+
+    expect(await screen.findByTestId('login-screen')).toBeTruthy();
+    expect(screen.queryByTestId(PROTECTED)).toBeNull();
+    expect(peekAccessToken()).toBeNull();
+    // And it is gone, so the next load does not weigh it up all over again.
+    expect(sessionStorage.getItem('valentin.auth.demo')).toBeNull();
+  });
+
+  it('does not resume after a sign-out', async () => {
+    vi.stubGlobal(
+      'fetch',
+      respondWith({
+        '/api/config': cognitoOn,
+        '/api/demo/login': {
+          accessToken: 'demo-access',
+          expiresIn: 3600,
+          sessionId: 'seeded-session',
+        },
+      }),
+    );
+
+    const first = renderApp();
+    await userEvent.click(await screen.findByTestId('demo-login-button'));
+    await screen.findByTestId(PROTECTED);
+    expect(sessionStorage.getItem('valentin.auth.demo')).toBeTruthy();
+
+    // What the header's sign-out button does.
+    clearTokenSession();
+    first.unmount();
+
+    renderApp();
+
+    expect(await screen.findByTestId('login-screen')).toBeTruthy();
+    expect(screen.queryByTestId(PROTECTED)).toBeNull();
   });
 });
 

@@ -11,7 +11,7 @@ import type { ServerEvent } from '../../shared/interfaces/ws-events';
  *
  * Why this exists: the intro's real path sends these same three prompts over the
  * live socket, and everything downstream — the typing indicator, the transcript,
- * the `LearnedChip`, the profile highlight flash, the architecture drawer — is
+ * the `LearnedStatus`, the profile highlight flash, the architecture drawer — is
  * driven by `ServerEvent`s. So a backup that survives a dead backend does not
  * need a second rendering path; it needs the same events from a different
  * source. `dispatchServerEvent` in `use-websocket.ts` is an exported pure

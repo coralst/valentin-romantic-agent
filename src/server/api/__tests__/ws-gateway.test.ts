@@ -95,6 +95,7 @@ interface Harness {
   /** Sessions that exist, per user */
   sessions: Map<string, Set<string>>;
   initSession: ReturnType<typeof vi.fn>;
+  greetIfEmpty: ReturnType<typeof vi.fn>;
   routeEvent: ReturnType<typeof vi.fn>;
   connect(id: string): FakeConnection;
 }
@@ -107,6 +108,9 @@ function harness(
   let sessionCounter = 0;
   const routeEvent = vi.fn().mockResolvedValue(undefined);
   const initSession = vi.fn();
+  // Default: resumed sessions already have a transcript, so no greeting. Tests
+  // that care about the greeting override the implementation.
+  const greetIfEmpty = vi.fn(async () => null);
 
   const forUser = vi.fn((userId: string): WsUserServices => {
     const owned = sessions.get(userId) ?? new Set<string>();
@@ -137,6 +141,7 @@ function harness(
             },
           };
         }),
+        greetIfEmpty,
       },
       eventRouter: { routeEvent },
     };
@@ -153,6 +158,7 @@ function harness(
     forUser,
     sessions,
     initSession,
+    greetIfEmpty,
     routeEvent,
     connect(id: string) {
       const conn = new FakeConnection(id);
@@ -284,6 +290,44 @@ describe('WsGateway session resume', () => {
     expect(reconnect.sessionId).toBe(sessionId);
     expect(reconnect.types()).toEqual(['auth_ok']);
     // A reconnect that mints a session orphans the conversation it resumed from.
+    expect(h.initSession).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * A resumed session that has never been spoken in still deserves a greeting.
+   *
+   * A conversation created anywhere other than `initSession` — demo login seeding,
+   * `POST /api/session`, the client opening the first one for a new account —
+   * arrived with an empty transcript, so the visitor met a blank screen and had to
+   * open the conversation themselves.
+   */
+  it('greets a resumed session that has no messages yet', async () => {
+    const h = harness();
+    const first = h.connect('c1');
+    await first.receive(authFrame('alice'));
+    const sessionId = first.sessionId!;
+
+    h.greetIfEmpty.mockImplementationOnce(async () => ({
+      id: 'greeting',
+      sessionId,
+      sender: 'agent' as const,
+      content: "Hello! I'm Valentin.",
+      timestamp: new Date().toISOString(),
+    }));
+
+    const conn = h.connect('c2');
+    await conn.receive(authFrame('alice', sessionId));
+
+    expect(h.greetIfEmpty).toHaveBeenCalledWith(sessionId);
+    // `session_init` rather than `agent_message`: the client's SESSION_INIT is the
+    // idempotent one, so a second socket saying the same thing cannot double the
+    // greeting in the transcript.
+    expect(conn.types()).toEqual(['auth_ok', 'session_init']);
+    expect(conn.last()).toMatchObject({
+      type: 'session_init',
+      payload: { sessionId, welcomeMessage: { sender: 'agent' } },
+    });
+    // Still a resume, not a mint.
     expect(h.initSession).toHaveBeenCalledTimes(1);
   });
 

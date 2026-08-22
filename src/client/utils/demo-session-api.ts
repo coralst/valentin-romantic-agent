@@ -5,6 +5,14 @@ import { apiGetJson, apiPostJson, apiFetch, describeFailure } from './api-client
 export interface SeedResponse {
   sessionId: string;
   preferenceCount: number;
+  /**
+   * How many *additional* backdated conversations the seed created.
+   *
+   * Optional because nothing here depends on it — the sidebar reloads its own
+   * list from `GET /api/sessions` either way — but it is in the response, and a
+   * silently-dropped field is worse than a documented one.
+   */
+  historyCount?: number;
 }
 
 /** Shape returned by GET /api/session/:id/preferences */

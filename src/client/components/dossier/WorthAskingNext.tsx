@@ -20,7 +20,7 @@ interface WorthAskingNextProps {
  * How many gaps the board lists.
  *
  * More than the rail's three, because the board has the room — but not all
- * eighteen, or the ranking stops meaning anything and the card becomes the field
+ * every field, or the ranking stops meaning anything and the card becomes the field
  * ladder that "Everything I know" already is, one card down.
  */
 const VISIBLE_GAPS = 4;
@@ -100,8 +100,8 @@ export function WorthAskingNext({ gaps, onAsk }: WorthAskingNextProps) {
 
       {visible.length === 0 ? (
         <p style={cardEmptyStyle} data-testid="dossier-worth-asking-empty">
-          Nothing left on my list — you have told me everything the eighteen
-          fields ask for.
+          Nothing left on my list — you have told me everything her profile
+          asks for.
         </p>
       ) : (
         visible.map((gap, index) => (

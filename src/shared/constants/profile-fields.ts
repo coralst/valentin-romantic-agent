@@ -37,6 +37,10 @@ export const PROFILE_FIELD_IDS = [
   'clothing_style',
   'favorite_color',
   'fragrance_preference',
+  // Sizes
+  'clothing_size',
+  'shoe_size',
+  'ring_size',
   // Gifts
   'gift_budget',
   'wish_list',
@@ -73,6 +77,13 @@ export const PROFILE_FIELD_GUIDANCE: Readonly<Record<ProfileFieldId, string>> = 
   clothing_style: 'How she dresses, or the aesthetic she favours.',
   favorite_color: 'A colour she loves.',
   fragrance_preference: 'A perfume or scent family she wears or likes.',
+  // Sizes are recorded verbatim, in whatever scale the user says them in — a
+  // model that "helpfully" converts UK 6 to EU 39 has invented a fact.
+  clothing_size:
+    'Her clothing or dress size, exactly as stated, including the scale (UK, EU, US, S/M/L).',
+  shoe_size: 'Her shoe size, exactly as stated, including the scale (UK, EU, US).',
+  ring_size:
+    'Her ring size, exactly as stated. Use this only for a ring — never for a clothing or shoe size.',
   gift_budget: 'What the user is comfortable spending on a gift.',
   wish_list: 'Something specific she has said she wants.',
   surprise_preference: 'Whether she enjoys surprises or prefers to choose for herself.',

@@ -23,6 +23,7 @@ const config = getConfig('dev');
 let computeTemplate: Template;
 let monitoringTemplate: Template;
 let dataTemplate: Template;
+let safetyTemplate: Template;
 
 beforeAll(() => {
   const app = new cdk.App();
@@ -63,7 +64,17 @@ beforeAll(() => {
   computeTemplate = Template.fromStack(compute);
   monitoringTemplate = Template.fromStack(monitoring);
   dataTemplate = Template.fromStack(data);
+  safetyTemplate = Template.fromStack(safety);
 });
+
+/** The guardrail's denied-topic list, keyed by topic name. */
+function deniedTopics(): Record<string, any> {
+  const guardrails = safetyTemplate.findResources('AWS::Bedrock::Guardrail');
+  const props = Object.values<any>(guardrails)[0].Properties;
+  return Object.fromEntries(
+    props.TopicPolicyConfig.TopicsConfig.map((t: any) => [t.Name, t]),
+  );
+}
 
 /** The container's environment block, as a name -> value map. */
 function containerEnv(): Record<string, unknown> {
@@ -108,6 +119,93 @@ describe('guardrail enforcement', () => {
 
   it('passes a pinned guardrail version', () => {
     expect(containerEnv().BEDROCK_GUARDRAIL_VERSION).toBeDefined();
+  });
+
+  // The off-topic topic judged Valentin's own replies and got the most important
+  // one wrong: asked what to get her for their anniversary, he wrote four
+  // specific gift ideas from her profile and the classifier replaced the whole
+  // answer with the blocked-output message. Confirmed against the live guardrail
+  // — the prompt scored `action: NONE`, the reply scored `BLOCKED`.
+  it('does not judge the model output for the off-topic topic', () => {
+    expect(deniedTopics()['off-topic'].OutputEnabled).toBe(false);
+  });
+
+  // Leaking the system prompt is an output-side risk by definition, so this one
+  // must keep judging replies.
+  it('still judges the model output for prompt extraction', () => {
+    expect(
+      deniedTopics()['system-prompt-extraction'].OutputEnabled,
+    ).not.toBe(false);
+  });
+
+  /** The guardrail's sensitive-information policy. */
+  function sensitiveInfo(): any {
+    const guardrails = safetyTemplate.findResources('AWS::Bedrock::Guardrail');
+    return Object.values<any>(guardrails)[0].Properties.SensitiveInformationPolicyConfig;
+  }
+
+  /*
+   * ADDRESS matches place names, not just home addresses, and this agent plans
+   * dates and holidays. Exempting the reply fixed half of it; the entity was
+   * still BLOCKing the prompt, where the visitor types "she's been saving for
+   * Kyoto" and "take her to Rome" — both measured as blocked against the live
+   * guardrail, along with Paris, Seattle and the bare word "France".
+   */
+  it('does not use the ADDRESS entity in either direction', () => {
+    const types = sensitiveInfo().PiiEntitiesConfig.map((e: any) => e.Type);
+    expect(types).not.toContain('ADDRESS');
+  });
+
+  // The risk the entity was there for is a residence, which has a shape.
+  it('blocks a residence by pattern instead', () => {
+    const regexes = sensitiveInfo().RegexesConfig ?? [];
+    const names = regexes.map((r: any) => r.Name);
+    expect(names).toContain('street-address');
+    for (const regex of regexes) {
+      expect(regex.Action).toBe('BLOCK');
+    }
+  });
+
+  // "42 Maple Street" is a residence; "Rome" is a date. The pattern has to tell
+  // them apart, since that distinction is the whole reason it replaced ADDRESS.
+  it('has a street-address pattern that matches a residence but not a city', () => {
+    const regexes = sensitiveInfo().RegexesConfig ?? [];
+    const street = new RegExp(
+      regexes.find((r: any) => r.Name === 'street-address').Pattern,
+    );
+
+    expect(street.test('She lives at 42 Maple Street')).toBe(true);
+    expect(street.test('Send the flowers to 221B Baker Street')).toBe(true);
+    expect(street.test('I want to take her to Rome for our anniversary')).toBe(false);
+    expect(street.test("She's been saving for Kyoto")).toBe(false);
+  });
+
+  // At HIGH, "Her ring size is 6 and she is 5 foot 4" tripped the SEXUAL filter,
+  // and her sizes are among the profile fields the agent asks for outright.
+  it('screens the prompt for SEXUAL at MEDIUM while holding the reply to HIGH', () => {
+    const guardrails = safetyTemplate.findResources('AWS::Bedrock::Guardrail');
+    const filters = Object.values<any>(guardrails)[0].Properties.ContentPolicyConfig
+      .FiltersConfig as Array<any>;
+    const sexual = filters.find((f) => f.Type === 'SEXUAL');
+
+    expect(sexual.InputStrength).toBe('MEDIUM');
+    expect(sexual.OutputStrength).toBe('HIGH');
+  });
+
+  it('still blocks the identifiers a partner profile never needs', () => {
+    const actions = Object.fromEntries(
+      sensitiveInfo().PiiEntitiesConfig.map((e: any) => [e.Type, e.Action]),
+    );
+    for (const type of [
+      'CREDIT_DEBIT_CARD_NUMBER',
+      'US_SOCIAL_SECURITY_NUMBER',
+      'PHONE',
+      'EMAIL',
+      'AWS_ACCESS_KEY',
+      'AWS_SECRET_KEY',
+    ]) {
+      expect(actions[type]).toBe('BLOCK');
+    }
   });
 });
 

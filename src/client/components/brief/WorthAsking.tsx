@@ -13,8 +13,8 @@ interface WorthAskingProps {
 /**
  * How many gaps to list.
  *
- * The pinned nudge takes the top one, so this shows the next three. Listing all
- * eighteen would turn the module into the field list this rail exists to replace.
+ * The pinned nudge takes the top one, so this shows the next three. Listing every
+ * field would turn the module into the field list this rail exists to replace.
  */
 const VISIBLE_GAPS = 3;
 

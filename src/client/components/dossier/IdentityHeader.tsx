@@ -52,7 +52,15 @@ const backStyle: React.CSSProperties = {
   display: 'grid',
   placeItems: 'center',
   background: colors.sand,
-  color: colors.inkMuted,
+  // Claret on sand, with a ring, rather than `inkMuted` on sand.
+  //
+  // The arrow was legible enough to pass review on the mockup and not legible
+  // enough in the room: a pale glyph on a near-white disc with no edge reads as
+  // ornament, and the reported "the back button doesn't work" was a user who
+  // could not find it. The ring is what makes it a control; the claret is what
+  // makes it the same kind of control as every other action on the board.
+  boxShadow: 'inset 0 0 0 1px rgba(140, 47, 69, 0.22)',
+  color: colors.claret,
   fontFamily: typography.bodyFontFamily,
   fontSize: typography.px.bodyLarge,
   lineHeight: 1,
@@ -102,7 +110,7 @@ const meterRowStyle: React.CSSProperties = {
  *
  * Stated as a fact about the relationship rather than as a form metric — the
  * mockup calls this out at `full-profile.html:51`. Same reasoning as the rail's
- * `TallyFooter`, and the same discrete ticks, so "5 of 18" reads as five things
+ * `TallyFooter`, and the same discrete ticks, so "5 of 21" reads as five things
  * known rather than as 28% of a chore.
  */
 const meterLabelStyle: React.CSSProperties = {

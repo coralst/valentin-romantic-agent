@@ -2,7 +2,10 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { EverythingIKnow } from '../EverythingIKnow';
-import { PROFILE_FIELD_REGISTRY } from '../../../utils/profile-field-registry';
+import {
+  PROFILE_FIELD_REGISTRY,
+  PROFILE_FIELD_SECTIONS,
+} from '../../../utils/profile-field-registry';
 import type { ProfileFieldValue } from '../../../hooks/use-profile-store';
 
 function manual(value: string): ProfileFieldValue {
@@ -24,9 +27,10 @@ function renderCard(
 }
 
 describe('EverythingIKnow', () => {
-  it('uses CSS multi-column so five sections fill three columns', () => {
-    // A 3-column *grid* tiles five sections as 3 + 2 and leaves the sixth cell
-    // dead. Multi-column balances by content height instead of item count.
+  it('uses CSS multi-column so the sections fill three columns', () => {
+    // A 3-column *grid* tiles an odd number of sections and leaves a dead cell.
+    // Multi-column balances by content height instead of item count, which is
+    // why adding the sixth section (Sizes) needed no layout change here.
     renderCard();
     const columns = screen.getByTestId('dossier-everything-columns');
     expect(columns.style.columns).toBe('3');
@@ -41,7 +45,12 @@ describe('EverythingIKnow', () => {
   it('renders every registry field, expanded, with no collapse control', () => {
     renderCard();
     expect(screen.getAllByTestId('dossier-field')).toHaveLength(PROFILE_FIELD_REGISTRY.length);
-    expect(screen.getAllByTestId('dossier-field-section')).toHaveLength(5);
+    // Counted from the registry, not written down: the section list has grown
+    // once already (Sizes), and a literal here fails for the right reason but
+    // tells the next reader the wrong thing.
+    expect(screen.getAllByTestId('dossier-field-section')).toHaveLength(
+      PROFILE_FIELD_SECTIONS.length,
+    );
   });
 
   it('avoids breaking a section heading away from its fields', () => {

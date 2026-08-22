@@ -69,6 +69,37 @@ function toBedrockMessages(messages: ChatMessage[]): Message[] {
   }));
 }
 
+/**
+ * How many tokens a single reply may use.
+ *
+ * Was 512, which Sonnet routinely overran on any question inviting detail —
+ * the reply then arrived cut off mid-word ("…a quiet intimate dinner o"), on
+ * screen, with no indication anything was missing. 1024 covers the replies this
+ * agent actually writes; `trimToLastSentence` handles the rest.
+ */
+const MAX_REPLY_TOKENS = 1024;
+
+/**
+ * Cut a reply back to its last complete sentence.
+ *
+ * Only used when Bedrock reports it stopped because it ran out of tokens. A
+ * mid-word stop is the one failure the audience notices immediately, and ending
+ * a beat early reads as brevity rather than as a bug. Returns the text
+ * unchanged when no sentence boundary can be found — half a sentence still
+ * beats an empty bubble.
+ */
+export function trimToLastSentence(text: string): string {
+  const lastEnd = Math.max(
+    text.lastIndexOf('. '),
+    text.lastIndexOf('! '),
+    text.lastIndexOf('? '),
+    // Trailing terminator with no space after it: the reply ended cleanly.
+    /[.!?]$/.test(text.trimEnd()) ? text.trimEnd().length - 1 : -1,
+  );
+  if (lastEnd < 0) return text;
+  return text.slice(0, lastEnd + 1).trimEnd();
+}
+
 /** Extract text content from Bedrock response content blocks */
 function extractTextFromBlocks(blocks: ContentBlock[] | undefined): string {
   if (!blocks) return '';
@@ -99,6 +130,93 @@ function buildGuardrailConfig(): GuardrailConfiguration | undefined {
     guardrailVersion: config.bedrockGuardrailVersion ?? 'DRAFT',
     trace: 'enabled' as const,
   };
+}
+
+/**
+ * Mark the newest user turn as the part of the request the guardrail should read.
+ *
+ * Bedrock's default, with no `guardContent` anywhere, is to guard only the last
+ * message — a live trace showed `guarded: 42` of `total: 3752` characters, the 42
+ * being the user's question. That default is doing the right thing, and this
+ * makes it explicit rather than inherited, because what the other 3710 characters
+ * now contain is Samantha's entire profile. Guard that and her birthday, her
+ * sizes and "Kyoto during cherry blossom season" all get scored as sensitive
+ * information on every single turn, and the request the visitor typed never
+ * reaches the model.
+ *
+ * A no-op when no guardrail is configured: `guardContent` is only legal alongside
+ * a `guardrailConfig`, and local development runs without one.
+ */
+function guardNewestUserTurn(
+  messages: Message[],
+  guardrail: GuardrailConfiguration | undefined,
+): Message[] {
+  if (!guardrail || messages.length === 0) return messages;
+
+  const last = messages[messages.length - 1];
+  if (last.role !== 'user') return messages;
+
+  return [
+    ...messages.slice(0, -1),
+    {
+      ...last,
+      content: (last.content ?? []).map((block) =>
+        'text' in block && typeof block.text === 'string'
+          ? { guardContent: { text: { text: block.text } } }
+          : block,
+      ),
+    },
+  ];
+}
+
+/**
+ * Which guardrail policies fired, as `kind:name` labels.
+ *
+ * `trace: 'enabled'` was always set and nothing ever read the trace back, so a
+ * refusal left no record of its cause anywhere — the only way to find out why
+ * Valentin had declined to answer a question about an anniversary gift was to
+ * reconstruct the call by hand against the live guardrail. That is not something
+ * anyone can do from a CloudWatch log at the time it matters, so the assessment
+ * is flattened into labels and logged.
+ *
+ * Both directions are read. Which side blocked is the first thing worth knowing:
+ * an input block is usually the visitor, an output block is usually the policy
+ * being wrong about the model.
+ */
+export function guardrailPoliciesFrom(trace: unknown): string[] {
+  const guardrail = (trace as { guardrail?: Record<string, unknown> } | undefined)
+    ?.guardrail;
+  if (!guardrail) return [];
+
+  const labels = new Set<string>();
+
+  const readAssessment = (assessment: any): void => {
+    for (const pii of assessment?.sensitiveInformationPolicy?.piiEntities ?? []) {
+      if (pii?.action === 'BLOCKED' || pii?.action === 'ANONYMIZED') {
+        labels.add(`pii:${pii.type}`);
+      }
+    }
+    for (const topic of assessment?.topicPolicy?.topics ?? []) {
+      if (topic?.action === 'BLOCKED') labels.add(`topic:${topic.name}`);
+    }
+    for (const filter of assessment?.contentPolicy?.filters ?? []) {
+      if (filter?.action === 'BLOCKED') labels.add(`content:${filter.type}`);
+    }
+    for (const word of assessment?.wordPolicy?.customWords ?? []) {
+      if (word?.action === 'BLOCKED') labels.add(`word:${word.match}`);
+    }
+  };
+
+  // `inputAssessment` is one assessment per guardrail; `outputAssessments` is a
+  // list per guardrail, one entry per chunk the model produced.
+  for (const assessment of Object.values<any>((guardrail as any).inputAssessment ?? {})) {
+    readAssessment(assessment);
+  }
+  for (const list of Object.values<any>((guardrail as any).outputAssessments ?? {})) {
+    for (const assessment of list ?? []) readAssessment(assessment);
+  }
+
+  return [...labels].sort();
 }
 
 /** Real AWS Bedrock client using the Converse API */
@@ -165,18 +283,22 @@ export class AwsBedrockClient implements BedrockClient {
   ): Promise<LlmResponse> {
     try {
       const system: SystemContentBlock[] = [{ text: systemPrompt }];
-      const bedrockMessages = toBedrockMessages(messages);
+      const guardrailConfig = buildGuardrailConfig();
+      const bedrockMessages = guardNewestUserTurn(
+        toBedrockMessages(messages),
+        guardrailConfig,
+      );
 
       const command = new ConverseCommand({
         modelId: this.modelId,
         system,
         messages: bedrockMessages,
         inferenceConfig: {
-          maxTokens: 512,
+          maxTokens: MAX_REPLY_TOKENS,
           // Claude Sonnet 4.5 rejects temperature and topP together — use temperature only.
           temperature: 0.8,
         },
-        guardrailConfig: buildGuardrailConfig(),
+        guardrailConfig,
       });
 
       const response = await this.sendTimed(
@@ -187,18 +309,37 @@ export class AwsBedrockClient implements BedrockClient {
 
       // Handle guardrail intervention — return the blocked message instead of throwing
       if (response.stopReason === 'guardrail_intervened') {
+        logger.warn('bedrock.guardrail_intervened', {
+          sessionId: sessionIdOf(messages),
+          operation: 'chat-reply',
+          policies: guardrailPoliciesFrom(response.trace),
+        });
         const blockedContent = extractTextFromBlocks(response.output?.message?.content);
-        return { content: blockedContent || 'I can only help with learning about your partner. Could you tell me more about their preferences?' };
+        // Worded as Valentin declining *this* turn, not as him announcing the
+        // limits of his job. The old line ("I can only help with learning about
+        // your partner. Could you tell me more about their preferences?") landed
+        // on people mid-conversation about a partner he already knew, and read as
+        // though he had forgotten her and could do nothing else.
+        return {
+          content:
+            blockedContent ||
+            "That one I'd rather not go into — but I'm still right here. Shall we talk about her instead?",
+        };
       }
 
-      const content = extractTextFromBlocks(response.output?.message?.content);
+      const raw = extractTextFromBlocks(response.output?.message?.content);
 
-      if (!content) {
+      if (!raw) {
         throw new LlmError('Bedrock returned empty response', {
           modelId: this.modelId,
           stopReason: response.stopReason,
         });
       }
+
+      // `max_tokens` means the model was still writing. Ending on a sentence is
+      // the difference between "he was concise" and "the app is broken".
+      const content =
+        response.stopReason === 'max_tokens' ? trimToLastSentence(raw) : raw;
 
       return { content };
     } catch (err) {
@@ -221,7 +362,11 @@ export class AwsBedrockClient implements BedrockClient {
   ): Promise<ToolUseResponse> {
     try {
       const allMessages = [...history, message];
-      const bedrockMessages = toBedrockMessages(allMessages);
+      const guardrailConfig = buildGuardrailConfig();
+      const bedrockMessages = guardNewestUserTurn(
+        toBedrockMessages(allMessages),
+        guardrailConfig,
+      );
 
       const tool: Tool = {
         toolSpec: {
@@ -247,7 +392,7 @@ export class AwsBedrockClient implements BedrockClient {
           tools: [tool],
           toolChoice: { tool: { name: toolSchema.name } },
         },
-        guardrailConfig: buildGuardrailConfig(),
+        guardrailConfig,
       });
 
       const response = await this.sendTimed(
@@ -258,6 +403,11 @@ export class AwsBedrockClient implements BedrockClient {
 
       // Handle guardrail intervention — return empty extraction
       if (response.stopReason === 'guardrail_intervened') {
+        logger.warn('bedrock.guardrail_intervened', {
+          sessionId: message.sessionId,
+          operation: 'extract-preferences',
+          policies: guardrailPoliciesFrom(response.trace),
+        });
         return {
           toolName: toolSchema.name,
           input: { preferences: [] },

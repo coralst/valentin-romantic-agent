@@ -107,6 +107,78 @@ describe('AgentOrchestrator', () => {
     });
   });
 
+  /**
+   * The greeting for a session nobody minted here.
+   *
+   * `initSession` greets, but it is only one of the ways a conversation comes into
+   * being: the demo login seeds one, `POST /api/session` creates one, and the
+   * client opens one for a brand-new account. Those all arrived silent — the
+   * visitor faced an empty transcript and had to speak first — which is why the
+   * greeting is its own step, taken when a connection resumes an empty session.
+   */
+  describe('greetIfEmpty', () => {
+    it('greets a session with no history, and persists the greeting', async () => {
+      const greeting = await orchestrator.greetIfEmpty('sess-1');
+
+      expect(greeting).not.toBeNull();
+      expect(greeting?.sender).toBe('agent');
+      expect(greeting?.sessionId).toBe('sess-1');
+      expect(greeting?.content).toBeTruthy();
+      // Persisted like any other turn, or it would vanish on reload.
+      expect(memory.addMessage).toHaveBeenCalledWith('sess-1', greeting);
+    });
+
+    it('introduces Valentin and asks about the partner', async () => {
+      const greeting = await orchestrator.greetIfEmpty('sess-1');
+
+      expect(greeting?.content).toContain('Valentin');
+      expect(greeting?.content).toContain('?');
+    });
+
+    it('says nothing to a session that already has a transcript', async () => {
+      vi.mocked(memory.getHistory).mockResolvedValue([
+        {
+          id: 'msg-1',
+          sessionId: 'sess-1',
+          sender: 'user',
+          content: 'She loves peonies',
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+
+      // A reconnect must not re-greet: the greeting is persisted now, so a second
+      // one would be saved and the transcript would grow a greeting per reload.
+      expect(await orchestrator.greetIfEmpty('sess-1')).toBeNull();
+      expect(memory.addMessage).not.toHaveBeenCalled();
+    });
+
+    it('welcomes back by name when the session already carries a profile', async () => {
+      // The demo login seeds a complete partner before the browser loads, so the
+      // transcript is empty while the profile is full. Introducing himself here
+      // reads as though he had forgotten her.
+      vi.mocked(storage.getPreferencesBySession).mockResolvedValue([
+        {
+          id: 'pref-1',
+          sessionId: 'sess-1',
+          category: 'personality_traits',
+          key: 'partner_name',
+          fieldId: 'partner_name',
+          value: 'Samantha',
+          confidence: 1,
+          sourceMessageId: 'seed',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          history: [],
+        },
+      ]);
+
+      const greeting = await orchestrator.greetIfEmpty('sess-1');
+
+      expect(greeting?.content).toContain('Samantha');
+      expect(greeting?.content).not.toMatch(/what's something your partner absolutely loves/i);
+    });
+  });
+
   describe('handleMessage', () => {
     it('stores user message in memory', async () => {
       await orchestrator.handleMessage('sess-1', 'She loves pasta');
@@ -131,6 +203,123 @@ describe('AgentOrchestrator', () => {
       expect(bedrock.generateResponse).toHaveBeenCalled();
       expect(result.sender).toBe('agent');
       expect(result.content).toBe('Pasta is wonderful!');
+    });
+
+    it('sends the stored profile to Bedrock in the system prompt', async () => {
+      // The whole product is the profile, and it used to be invisible to the one
+      // component that most needed it: only the recent messages and a static
+      // prompt were sent, so a complete profile still got a stranger's reply.
+      vi.mocked(storage.getPreferencesBySession).mockResolvedValue([
+        {
+          id: 'pref-1',
+          sessionId: 'sess-1',
+          category: 'food',
+          key: 'favorite_cuisine',
+          fieldId: 'favorite_cuisine',
+          value: 'Northern Italian',
+          confidence: 1,
+          sourceMessageId: 'seed',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          history: [],
+        },
+      ]);
+
+      await orchestrator.handleMessage('sess-1', 'Where should we eat?');
+
+      const systemPrompt = vi.mocked(bedrock.generateResponse).mock.calls[0][1];
+      expect(systemPrompt).toContain('Northern Italian');
+      expect(systemPrompt).toMatch(/GOAL 2 is live/);
+    });
+
+    it('knows her in a brand-new conversation on the same account', async () => {
+      // The screenshot case: a fresh chat inside a fully-profiled account. The
+      // partner belongs to the account, not to one conversation, so opening a
+      // second chat must not turn her into a stranger.
+      vi.mocked(storage.listSessions).mockResolvedValue([
+        { id: 'sess-new' },
+        { id: 'sess-old' },
+      ] as never);
+      vi.mocked(storage.getPreferencesBySession).mockImplementation(
+        async (id: string) =>
+          id === 'sess-old'
+            ? ([
+                {
+                  id: 'pref-1',
+                  sessionId: 'sess-old',
+                  category: 'personality_traits',
+                  key: 'partner_name',
+                  fieldId: 'partner_name',
+                  value: 'Samantha',
+                  confidence: 1,
+                  sourceMessageId: 'seed',
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                  history: [],
+                },
+              ] as never)
+            : ([] as never),
+      );
+
+      await orchestrator.handleMessage('sess-new', 'What should I plan?');
+
+      const systemPrompt = vi.mocked(bedrock.generateResponse).mock.calls[0][1];
+      expect(systemPrompt).toContain('Samantha');
+      expect(systemPrompt).toMatch(/GOAL 2 is live/);
+    });
+
+    it('lets the active conversation win when a fact was just corrected', async () => {
+      vi.mocked(storage.listSessions).mockResolvedValue([
+        { id: 'sess-1' },
+        { id: 'sess-old' },
+      ] as never);
+      const pref = (sessionId: string, value: string) => ({
+        id: `pref-${sessionId}`,
+        sessionId,
+        category: 'food',
+        key: 'favorite_cuisine',
+        fieldId: 'favorite_cuisine',
+        value,
+        confidence: 1,
+        sourceMessageId: 'msg',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        history: [],
+      });
+      vi.mocked(storage.getPreferencesBySession).mockImplementation(
+        async (id: string) =>
+          [pref(id, id === 'sess-1' ? 'Northern Italian' : 'Thai')] as never,
+      );
+
+      await orchestrator.handleMessage('sess-1', 'Where should we eat?');
+
+      const systemPrompt = vi.mocked(bedrock.generateResponse).mock.calls[0][1];
+      expect(systemPrompt).toContain('Northern Italian');
+      expect(systemPrompt).not.toContain('Thai');
+    });
+
+    it('still answers when the session list cannot be read', async () => {
+      vi.mocked(storage.listSessions).mockRejectedValue(new Error('GSI down'));
+      vi.mocked(bedrock.generateResponse).mockResolvedValue({ content: 'Certainly.' });
+
+      const result = await orchestrator.handleMessage('sess-1', 'Hello');
+
+      expect(result.content).toBe('Certainly.');
+    });
+
+    it('still answers when the profile cannot be read', async () => {
+      // A store failure should cost personalisation, not the reply.
+      vi.mocked(storage.getPreferencesBySession).mockRejectedValue(
+        new Error('table unavailable'),
+      );
+      vi.mocked(bedrock.generateResponse).mockResolvedValue({ content: 'Of course.' });
+
+      const result = await orchestrator.handleMessage('sess-1', 'Hello');
+
+      expect(result.content).toBe('Of course.');
+      expect(vi.mocked(bedrock.generateResponse).mock.calls[0][1]).toMatch(
+        /You are Valentin/,
+      );
     });
 
     it('stores agent response in memory', async () => {

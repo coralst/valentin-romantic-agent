@@ -29,7 +29,7 @@ import {
  * through `dispatchServerEvent` — the same pure function the socket's `onmessage`
  * calls — and through `publishInboundWsEvent`, which is what moves the
  * architecture drawer out of `demo` mode. Every downstream behaviour (typing
- * indicator, transcript, `LearnedChip`, the profile highlight flash, the drawer)
+ * indicator, transcript, `LearnedStatus`, the profile highlight flash, the drawer)
  * is reached by the identical code path.
  */
 

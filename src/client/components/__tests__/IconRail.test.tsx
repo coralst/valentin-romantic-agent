@@ -6,19 +6,24 @@ import { ChatProvider } from '../../context/chat-context';
 import { PreferencesProvider } from '../../context/preferences-context';
 import { ProfileStoreProvider } from '../../context/profile-store-context';
 import { IconRail, type RailView } from '../IconRail';
+import { layout, radii } from '../../design-system/tokens';
 
 interface RenderOptions {
   orientation?: 'column' | 'row';
   activeView?: RailView | null;
   onViewChange?: (view: RailView) => void;
+  onGoHome?: () => void;
   onOpenSessions?: () => void;
+  isSessionsOpen?: boolean;
 }
 
 function renderRail({
   orientation = 'column',
   activeView = null,
   onViewChange,
+  onGoHome,
   onOpenSessions = () => {},
+  isSessionsOpen,
 }: RenderOptions = {}) {
   return render(
     <SessionProvider>
@@ -29,7 +34,9 @@ function renderRail({
               orientation={orientation}
               activeView={activeView}
               onViewChange={onViewChange}
+              onGoHome={onGoHome}
               onOpenSessions={onOpenSessions}
+              isSessionsOpen={isSessionsOpen}
             />
           </ProfileStoreProvider>
         </PreferencesProvider>
@@ -59,6 +66,75 @@ describe('IconRail', () => {
 
     await user.click(screen.getByTestId('sidebar-menu-button'));
     expect(onOpenSessions).toHaveBeenCalledOnce();
+  });
+
+  /*
+   * The crest used to be a plain div, and people clicked it anyway — a logo in
+   * the only piece of chrome on screen reads as "home" whether or not it is
+   * wired up.
+   */
+  describe('the crest', () => {
+    it('is a real button with a name of its own', () => {
+      renderRail();
+      const crest = screen.getByTestId('rail-home-button');
+      expect(crest.tagName).toBe('BUTTON');
+      expect(screen.getByRole('button', { name: 'Valentin home' })).toBe(crest);
+      // The onboarding e2e spec queries the art by its alt text.
+      expect(screen.getByAltText('Valentin logo')).toBeInTheDocument();
+    });
+
+    it('goes home when pressed', async () => {
+      const onGoHome = vi.fn();
+      const user = userEvent.setup();
+      renderRail({ onGoHome });
+
+      await user.click(screen.getByTestId('rail-home-button'));
+      expect(onGoHome).toHaveBeenCalledOnce();
+    });
+
+    it('keeps its circle: no padding, still a pill, art intact', () => {
+      // A `<button>` brings a border and padding of its own, which would square
+      // the crest off and shrink the 1024px art inside it.
+      renderRail();
+      const crest = screen.getByTestId('rail-home-button');
+      expect(crest.style.padding).toBe('0px');
+      expect(crest.style.borderRadius).toBe(`${radii.pill}px`);
+      expect(crest.style.overflow).toBe('hidden');
+      // `border: none` is set on the crest too, but jsdom's cssstyle drops the
+      // `border` shorthand outright — the inline attribute comes back as
+      // "padding: 0px; border-radius: 9999px;" and both `style.border` and
+      // `style.borderStyle` read empty, while `getComputedStyle` reports jsdom's
+      // own UA default ("2px outset buttonface"). There is nothing here to
+      // assert against; the button's edge is checked in the browser instead.
+      expect(crest.querySelector('img')?.style.objectFit).toBe('cover');
+    });
+  });
+
+  /*
+   * The ☰ is one-way on mobile (it raises an overlay) and two-way on desktop
+   * (it hides and restores a column). It has to say which it is.
+   */
+  describe('the ☰', () => {
+    it('renames itself when the caller treats it as a toggle', () => {
+      renderRail({ isSessionsOpen: true });
+      const button = screen.getByTestId('sidebar-menu-button');
+      expect(button).toHaveAttribute('aria-label', 'Hide the conversation list');
+      expect(button).toHaveAttribute('aria-expanded', 'true');
+    });
+
+    it('says "show" — and reports itself collapsed — when the list is hidden', () => {
+      renderRail({ isSessionsOpen: false });
+      const button = screen.getByTestId('sidebar-menu-button');
+      expect(button).toHaveAttribute('aria-label', 'Show the conversation list');
+      expect(button).toHaveAttribute('aria-expanded', 'false');
+    });
+
+    it('stays a one-way "Open session history" when no state is passed', () => {
+      renderRail();
+      const button = screen.getByTestId('sidebar-menu-button');
+      expect(button).toHaveAttribute('aria-label', 'Open session history');
+      expect(button).not.toHaveAttribute('aria-expanded');
+    });
   });
 
   it('reports the active view via aria-pressed when one surface is shown', () => {
@@ -129,6 +205,58 @@ describe('IconRail', () => {
       await user.click(screen.getByRole('button', { name: 'Demo controls' }));
       await user.click(screen.getByTestId('reset-session-button'));
       expect(screen.getByTestId('demo-toolbar')).toBeInTheDocument();
+    });
+
+    /*
+     * The visual complaint the menu was rebuilt for was "four buttons in a
+     * ragged 2×2 with mismatched fills". jsdom does no layout, so what is
+     * assertable here is the contract that fixes it: one column, one control
+     * height, and the current radii scale rather than the legacy `borderRadius`.
+     */
+    it('gives every control the same height and the same corner', async () => {
+      const user = userEvent.setup();
+      renderRail();
+      await user.click(screen.getByRole('button', { name: 'Demo controls' }));
+
+      for (const id of ['load-demo-profile-button', 'reset-session-button']) {
+        const control = screen.getByTestId(id);
+        expect(control.style.height).toBe(`${layout.menuControlHeight}px`);
+        expect(control.style.borderRadius).toBe(`${radii.chip}px`);
+      }
+    });
+
+    it('lays the menu out as one fixed-width column', async () => {
+      const user = userEvent.setup();
+      renderRail();
+      await user.click(screen.getByRole('button', { name: 'Demo controls' }));
+
+      const toolbar = screen.getByTestId('demo-toolbar');
+      expect(toolbar.style.flexDirection).toBe('column');
+      expect(toolbar.style.alignItems).toBe('stretch');
+
+      const menu = toolbar.parentElement?.parentElement;
+      expect(menu?.style.width).toBe(`${layout.menuWidth}px`);
+    });
+
+    it('groups the demo controls under a heading', async () => {
+      const user = userEvent.setup();
+      renderRail();
+      await user.click(screen.getByRole('button', { name: 'Demo controls' }));
+      expect(screen.getByText('Demo controls')).toBeInTheDocument();
+    });
+
+    /*
+     * `UserChip` renders nothing without an AuthProvider — as in this file. The
+     * heading and the divider belong to the menu rather than to the chip, so
+     * they must not be left stranded above an empty group.
+     */
+    it('omits the identity group when there is nobody signed in', async () => {
+      const user = userEvent.setup();
+      renderRail();
+      await user.click(screen.getByRole('button', { name: 'Demo controls' }));
+
+      expect(screen.queryByText('Signed in as')).not.toBeInTheDocument();
+      expect(screen.getByTestId('rail-demo-popover').querySelector('hr')).toBeNull();
     });
 
     it('closes on an outside click', async () => {

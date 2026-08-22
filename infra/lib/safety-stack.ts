@@ -10,10 +10,13 @@ export interface SafetyStackProps extends cdk.StackProps {
 /**
  * Bumped whenever the guardrail's policy below changes.
  *
+ * 5 — a street-address regex replaces the ADDRESS entity; SEXUAL input MEDIUM.
+ * 4 — ADDRESS no longer judges Valentin's own replies.
+ * 3 — the off-topic topic no longer judges Valentin's own replies.
  * 2 — NAME and AGE no longer anonymised.
  * 1 — initial policy.
  */
-const POLICY_REVISION = 2;
+const POLICY_REVISION = 5;
 
 export class SafetyStack extends cdk.Stack {
   public readonly guardrailId: string;
@@ -26,13 +29,37 @@ export class SafetyStack extends cdk.Stack {
 
     const guardrail = new bedrock.CfnGuardrail(this, 'ValentinGuardrail', {
       name: config.guardrailName,
+      /*
+       * Both messages are worded as Valentin declining *this* turn, not as him
+       * announcing the limits of his job.
+       *
+       * The old pair ("I can only help with learning about your partner. Could
+       * you tell me more about their preferences?" / "Let me stay focused on
+       * your partner profile. What else can I learn about them?") landed on
+       * people mid-conversation about a partner he already knew twenty-one facts
+       * about, and read as though he had forgotten her and could do nothing
+       * else. They also matched the client-side fallback in `bedrock-client.ts`
+       * word for word, so there was no way to tell from a transcript which of
+       * the two had spoken.
+       */
       blockedInputMessaging:
-        'I can only help with learning about your partner. Could you tell me more about their preferences?',
+        "That one I'd rather not go into — but I'm still right here. Shall we talk about her instead?",
       blockedOutputsMessaging:
-        'Let me stay focused on your partner profile. What else can I learn about them?',
+        "I started to answer that and thought better of it. Ask me again another way and I'll try.",
       contentPolicyConfig: {
         filtersConfig: [
-          { type: 'SEXUAL', inputStrength: 'HIGH', outputStrength: 'HIGH' },
+          /*
+           * SEXUAL is MEDIUM on the prompt, not HIGH.
+           *
+           * At HIGH it blocked "Her ring size is 6 and she is 5 foot 4" —
+           * measured against the live guardrail. Her sizes are one of the
+           * twenty-one profile fields this agent asks for outright, so a visitor
+           * reciting them is the product working. MEDIUM still blocks explicit
+           * requests about her, checked the same way. Output stays HIGH: what
+           * Valentin writes is held to the stricter bar, since a reply is the
+           * thing that would be read aloud on stage.
+           */
+          { type: 'SEXUAL', inputStrength: 'MEDIUM', outputStrength: 'HIGH' },
           { type: 'VIOLENCE', inputStrength: 'HIGH', outputStrength: 'HIGH' },
           { type: 'HATE', inputStrength: 'HIGH', outputStrength: 'HIGH' },
           { type: 'INSULTS', inputStrength: 'MEDIUM', outputStrength: 'HIGH' },
@@ -60,9 +87,53 @@ export class SafetyStack extends cdk.Stack {
           { type: 'US_SOCIAL_SECURITY_NUMBER', action: 'BLOCK' },
           { type: 'PHONE', action: 'BLOCK' },
           { type: 'EMAIL', action: 'BLOCK' },
-          { type: 'ADDRESS', action: 'BLOCK' },
           { type: 'AWS_ACCESS_KEY', action: 'BLOCK' },
           { type: 'AWS_SECRET_KEY', action: 'BLOCK' },
+        ],
+        /*
+         * The ADDRESS entity is gone; these three patterns take over the job it
+         * was there to do.
+         *
+         * Disabling ADDRESS on the reply fixed the output half of this, but the
+         * entity was still BLOCKing the prompt, and the prompt is where a visitor
+         * types the thing the agent is for. Measured against the live guardrail,
+         * ADDRESS on input blocked "she's been saving for Kyoto", "I want to take
+         * her to Rome for our anniversary", "we met in Paris", "she grew up in
+         * Seattle", a restaurant on Rue Saint-Denis, and the bare word "France".
+         * Half of what this agent does is plan dates, and every date has a place
+         * in it, so the entity could not stay without the feature going with it.
+         *
+         * The intent behind keeping it was right, though: a visitor typing her
+         * home address should not reach the model or the table. That risk is a
+         * *residence*, which has a shape — a building number and a street type,
+         * or a postcode — and a regex can say so where the entity could not tell
+         * "42 Maple Street" from "Rome". Verified both directions on a throwaway
+         * guardrail: nine place-name sentences pass, and 1600 Pennsylvania
+         * Avenue, 42 Maple Street, 221B Baker Street, "Seattle WA 98101" and
+         * "SW1A 1AA" are all still blocked.
+         */
+        regexesConfig: [
+          {
+            name: 'street-address',
+            description:
+              'A building number followed by a street name and type, which is a residence rather than a place name.',
+            pattern:
+              "\\b\\d{1,5}[A-Za-z]?\\s+([A-Za-z0-9'.-]+\\s+){0,4}(Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Court|Ct|Way|Place|Pl|Terrace|Ter|Circle|Cir|Parkway|Pkwy|Highway|Hwy)\\b\\.?",
+            action: 'BLOCK',
+          },
+          {
+            name: 'us-zip-plus-state',
+            description:
+              'A US state abbreviation followed by a ZIP code, which only appears in a postal address.',
+            pattern: '\\b[A-Z]{2}\\s+\\d{5}(-\\d{4})?\\b',
+            action: 'BLOCK',
+          },
+          {
+            name: 'uk-postcode',
+            description: 'A UK postcode, which only appears in a postal address.',
+            pattern: '\\b[A-Z]{1,2}\\d[A-Z\\d]?\\s*\\d[A-Z]{2}\\b',
+            action: 'BLOCK',
+          },
         ],
       },
       topicPolicyConfig: {
@@ -72,6 +143,26 @@ export class SafetyStack extends cdk.Stack {
             definition:
               'Requests unrelated to romantic relationships, partner preferences, gift ideas, or date planning',
             type: 'DENY',
+            /*
+             * INPUT ONLY. This topic judged Valentin's own replies too, and it
+             * was wrong about them in the single most important case: asked
+             * "What should I get her for our anniversary?", the model wrote four
+             * specific, on-topic gift ideas drawn from her profile — and the
+             * classifier marked that reply `off-topic` and replaced all of it
+             * with `blockedOutputsMessaging`. Verified against the live
+             * guardrail with `ApplyGuardrail`/Converse traces: the input scored
+             * `action: NONE`, the reply scored `BLOCKED`.
+             *
+             * The topic is defined by what it excludes, which reads as a
+             * sentence about a *request*. A long assistant answer naming
+             * cottages, trail shoes and poetry anthologies matches the surface
+             * of it however on-topic the answer actually is. Nothing is lost by
+             * scoping it to the prompt: this topic exists to stop a visitor
+             * dragging Valentin off his job, and a prompt he never sees cannot
+             * produce an off-topic answer. The content filters below, and
+             * `system-prompt-extraction`, still judge every reply.
+             */
+            outputEnabled: false,
           },
           {
             name: 'system-prompt-extraction',

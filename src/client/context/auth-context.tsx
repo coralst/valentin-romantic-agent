@@ -15,6 +15,7 @@ import {
   revokeRefreshToken,
 } from '../auth/cognito-oauth';
 import { demoLogin } from '../auth/demo-login';
+import { rememberSignInSession } from '../auth/initial-session';
 import { describeToken } from '../auth/identity';
 import {
   canHostedLogin,
@@ -23,11 +24,14 @@ import {
   type RuntimeAuthConfig,
 } from '../auth/runtime-config';
 import {
+  clearStoredDemoSession,
   clearTokenSession,
   configureTokenStore,
   peekAccessToken,
   setDevSession,
   setTokenSession,
+  setVisitorId,
+  storedDemoSession,
   storedRefreshToken,
 } from '../auth/token-store';
 import { LoginScreen } from '../components/LoginScreen';
@@ -184,7 +188,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // 3. No Cognito behind this deployment: act as a development user rather
+      // 3. A demo session this tab was holding before the page reloaded.
+      //
+      // Deliberately *not* another POST /api/demo/login: that mints a fresh
+      // visitorId and seeds a new conversation, which would strand the ones this
+      // visitor already has on the old partition. The stored token and the
+      // visitor id in sessionStorage together are the whole session, so adopting
+      // them is enough — `GET /api/sessions` then answers with the same rows.
+      const demo = storedDemoSession();
+      if (demo) {
+        if (demo.expiresAt > Date.now()) {
+          setTokenSession({
+            accessToken: demo.accessToken,
+            refreshToken: null,
+            expiresAt: demo.expiresAt,
+            demo: true,
+            demoLabel: demo.label,
+          });
+          adopt(demo.accessToken, true, demo.label);
+          return;
+        }
+        // Expired: nothing can renew a demo token, so forget it and let them in
+        // through the front door again.
+        clearStoredDemoSession();
+      }
+
+      // 4. No Cognito behind this deployment: act as a development user rather
       // than showing a login page that could not work. This is what keeps the
       // Playwright specs and rehearsal.mjs running unchanged.
       if (runtime.authDisabled) {
@@ -243,14 +272,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void (async () => {
       try {
         const result = await demoLogin(persona);
-        setTokenSession({
-          accessToken: result.accessToken,
-          // Deliberately dropped: it belongs to the server-only demo client, so
-          // refreshing it with the SPA's client id would fail. When the demo
-          // token expires the visitor simply clicks the button again.
-          refreshToken: null,
-          expiresAt: Date.now() + result.expiresIn * 1000,
-        });
+        // Before anything can fetch: `adopt` below flips the app to signed-in,
+        // and the first `GET /api/sessions` must already carry this or it reads
+        // the pooled account and shows a stranger's conversations.
+        if (result.visitorId) setVisitorId(result.visitorId);
+        // The login already created and seeded a conversation. Naming it here is
+        // what stops `SessionProvider` from creating a second one when the
+        // eventually-consistent session list has not caught up with it yet.
+        if (result.sessionId) rememberSignInSession(result.sessionId);
         // The server's answer wins over what was asked for: it falls back to
         // the default persona on an id it does not know, and the chip must not
         // claim otherwise.
@@ -258,6 +287,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const named = configRef.current?.demoPersonas?.find(
           (candidate) => candidate.id === seeded,
         );
+        setTokenSession({
+          accessToken: result.accessToken,
+          // Deliberately dropped: it belongs to the server-only demo client, so
+          // refreshing it with the SPA's client id would fail. Which is why the
+          // access token itself is what gets persisted — see token-store.ts.
+          refreshToken: null,
+          expiresAt: Date.now() + result.expiresIn * 1000,
+          demo: true,
+          demoLabel: named?.name,
+        });
         adopt(result.accessToken, true, named?.name);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'The demo is unavailable');

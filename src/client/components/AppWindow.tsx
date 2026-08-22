@@ -61,6 +61,10 @@ function getPageStyle(variant: AppWindowVariant): React.CSSProperties {
     // A floating window would eat 28px of a 375px viewport, so on mobile the
     // frame goes full-bleed and the inset collapses to nothing.
     padding: variant === 'mobile' ? 0 : insets.tight,
+    // Centres the window once it stops growing at `layout.windowMaxWidth`; below
+    // that the frame's `width: 100%` fills this box and the centring is a no-op.
+    display: 'flex',
+    justifyContent: 'center',
   };
 }
 
@@ -69,6 +73,9 @@ function getFrameStyle(variant: AppWindowVariant, columns?: string): React.CSSPr
   return {
     height: '100%',
     width: '100%',
+    // See `layout.windowMaxWidth`: past this width extra screen buys nothing but
+    // empty cream, so the surplus goes to the linen margin instead.
+    maxWidth: isMobile ? undefined : layout.windowMaxWidth,
     backgroundColor: colors.porcelain,
     borderRadius: isMobile ? 0 : radii.window,
     overflow: 'hidden',

@@ -144,6 +144,25 @@ function AppLayoutContent() {
    */
   const [isListOpen, setListOpen] = useState(true);
 
+  /*
+   * Whether the window is too narrow to afford the conversation list a column.
+   *
+   * THE OTHER HALF OF THE SCALING FIX (see `chat-measure.ts` for the first).
+   *
+   * Three of the shell's four tracks are fixed pixel measurements, so every pixel
+   * the window loses comes out of the chat column alone. Holding all three on a
+   * 1000px window leaves the transcript 312px — three or four words a line, with
+   * the composer pill narrower than its own placeholder. The list is the one of
+   * the three with somewhere to go: it already has an overlay presentation for
+   * mobile, so below the breakpoint it uses that and the ☰ raises it, exactly as
+   * it does on a phone.
+   *
+   * A media query rather than the chat column's measured width: the column's width
+   * is a *consequence* of this decision, so reading it back to make the decision
+   * is a loop that settles by oscillating.
+   */
+  const [isNarrowDesktop, setNarrowDesktop] = useState(false);
+
   // Read here rather than inside the drawer: the *layout* is what has to give up
   // the space, and only the layout owns the regions whose height it takes from.
   const { isOpen: isDrawerOpen } = useArchitectureDrawer();
@@ -173,6 +192,23 @@ function AppLayoutContent() {
     mql.addEventListener('change', handler);
     return () => mql.removeEventListener('change', handler);
   }, []);
+
+  useEffect(() => {
+    const mql = window.matchMedia(`(max-width: ${breakpoints.conversationList - 1}px)`);
+    setNarrowDesktop(mql.matches);
+
+    const handler = (e: MediaQueryListEvent) => setNarrowDesktop(e.matches);
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, []);
+
+  /*
+   * The list occupies a column only if it fits and has not been dismissed.
+   *
+   * `isListOpen` stays the user's preference rather than being overwritten when the
+   * window narrows, so widening the window back out restores the column they had.
+   */
+  const hasListColumn = !isNarrowDesktop && isListOpen;
 
   // The brief needs to know the breakpoint itself: on mobile it goes full-width
   // and drops the scroll fade, which at the foot of a full-height panel reads as
@@ -300,7 +336,7 @@ function AppLayoutContent() {
             columns={
               isDossier
                 ? DOSSIER_COLUMNS
-                : isListOpen
+                : hasListColumn
                   ? undefined
                   : COLLAPSED_CHAT_COLUMNS
             }
@@ -313,10 +349,16 @@ function AppLayoutContent() {
               activeView={null}
               onViewChange={changeDesktopView}
               onGoHome={goHome}
-              // The list is a permanent column here, so the ☰ is a two-way
-              // toggle: hiding it hands the 226px to the conversation.
-              onOpenSessions={() => setListOpen((open) => !open)}
-              isSessionsOpen={isListOpen}
+              // Wide enough for the column, the ☰ is a two-way toggle: hiding it
+              // hands the 226px to the conversation. Too narrow for it, there is
+              // no column to toggle, so the ☰ raises the overlay instead — the
+              // same thing it does on mobile.
+              onOpenSessions={
+                isNarrowDesktop
+                  ? () => setSidebarOpen(true)
+                  : () => setListOpen((open) => !open)
+              }
+              isSessionsOpen={hasListColumn}
               isDossierActive={isDossier}
               onToggleDossier={view.toggleDossier}
               dossierToggleRef={view.dossierToggleRef}
@@ -334,10 +376,10 @@ function AppLayoutContent() {
               </div>
             ) : (
               <>
-                {isListOpen && <SessionSidebar isMobile={false} />}
+                {hasListColumn && <SessionSidebar isMobile={false} />}
                 <div
                   style={drawerHostStyle(
-                    isListOpen ? CHAT_COLUMNS_SPAN : CHAT_COLUMNS_SPAN_NO_LIST,
+                    hasListColumn ? CHAT_COLUMNS_SPAN : CHAT_COLUMNS_SPAN_NO_LIST,
                     reserved,
                     true,
                   )}
@@ -352,6 +394,11 @@ function AppLayoutContent() {
               </>
             )}
           </AppWindow>
+          {/* The overlay presentation of the list, for the widths where it has no
+              column. Outside `AppWindow` because it is `position: fixed` and the
+              window sets `overflow: hidden` to keep its 34px radius crisp — inside,
+              the frame would clip it. It renders nothing until the ☰ opens it. */}
+          {isNarrowDesktop && <SessionSidebar isMobile={true} />}
           {liveRegion}
         </div>
       </ViewProvider>

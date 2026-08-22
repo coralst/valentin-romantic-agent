@@ -6,7 +6,8 @@ import { MessageBubble } from './MessageBubble';
 import { LearnedStatus, type LearnedAnnouncement } from './LearnedStatus';
 import { usePreferencesContext } from '../context/preferences-context';
 import { discoveryKey } from '../hooks/use-preferences-state';
-import { insets, layout } from '../design-system/tokens';
+import { insets } from '../design-system/tokens';
+import { chatMeasureStyle } from './chat-measure';
 
 interface MessageHistoryProps {
   messages: ChatMessage[];
@@ -24,9 +25,7 @@ const containerStyle: React.CSSProperties = {
 };
 
 /** Caps the measure of the transcript without narrowing the scroll gutter. */
-const innerStyle: React.CSSProperties = {
-  maxWidth: layout.chatColumnMaxWidth,
-};
+const innerStyle: React.CSSProperties = chatMeasureStyle;
 
 export function MessageHistory({ messages }: MessageHistoryProps) {
   const bottomRef = useRef<HTMLDivElement>(null);

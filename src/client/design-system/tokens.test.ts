@@ -53,6 +53,27 @@ describe('design tokens', () => {
     expect(breakpoints.mobile).toBe(768);
   });
 
+  it('breakpoints defines the conversation-list threshold above mobile', () => {
+    expect(breakpoints.conversationList).toBe(1160);
+    // Between the two the shell is still the desktop one, minus the list column.
+    expect(breakpoints.conversationList).toBeGreaterThan(breakpoints.mobile);
+  });
+
+  it('the conversation-list breakpoint leaves the chat column its minimum', () => {
+    // The derivation the breakpoint's value comes from: everything in the chat
+    // shell that cannot compress. If any of these tracks grows, this fails and the
+    // breakpoint has to move with it.
+    const fixedChrome =
+      2 * insets.tight +
+      layout.iconRailWidth +
+      layout.conversationListWidth +
+      layout.briefRailWidth;
+
+    expect(breakpoints.conversationList - fixedChrome).toBeGreaterThanOrEqual(
+      layout.chatColumnMinWidth,
+    );
+  });
+
   it('colors includes semantic tokens', () => {
     expect(colors.agentBubble).toBeDefined();
     expect(colors.userBubble).toBeDefined();
@@ -196,8 +217,26 @@ describe('vitrine design tokens', () => {
     expect(layout.crestSize).toBe(46);
     expect(layout.cameoSize).toBe(56);
     expect(layout.chatColumnMaxWidth).toBe(620);
+    expect(layout.chatColumnMinWidth).toBe(520);
+    expect(layout.windowMaxWidth).toBe(1440);
     expect(layout.menuWidth).toBe(268);
     expect(layout.menuControlHeight).toBe(38);
+  });
+
+  /**
+   * The chat column's two bounds, as a relationship. A minimum above the maximum
+   * would mean the column had no legal width at all, and the breakpoint derived
+   * from the minimum would be arguing with the measure derived from the maximum.
+   */
+  it('the chat column may not be floored above its own cap', () => {
+    expect(layout.chatColumnMinWidth).toBeLessThan(layout.chatColumnMaxWidth);
+    // And the window has to be able to hold the whole shell at its widest.
+    expect(layout.windowMaxWidth).toBeGreaterThan(
+      layout.iconRailWidth +
+        layout.conversationListWidth +
+        layout.briefRailWidth +
+        layout.chatColumnMaxWidth,
+    );
   });
 
   /**

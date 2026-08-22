@@ -184,6 +184,9 @@ const OWNERSHIP = [
   // Agent harness config: slash commands, hooks, and settings. Same category as
   // .kiro/ — it governs how work gets done, not what the product does.
   ['.claude/', 'infra'],
+  // Which MCP servers the agents may reach. Harness config like the two rows
+  // above, not product code.
+  ['.mcp.json', 'infra'],
   ['scripts/', 'infra'],
   ['infra/', 'infra'],
   ['public/', 'infra'],

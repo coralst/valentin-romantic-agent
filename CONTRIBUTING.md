@@ -37,7 +37,7 @@ asserts the two agree. **Change both, in the same PR** — the test fails otherw
 | 🔧 Backend Dev | `agent: backend` | `src/server/` | `src/client/`, `src/shared/` |
 | 🎨 UI Designer | `agent: design` | `src/client/design-system/`, `docs/design/` | component logic, `src/server/`, shared types |
 | 🧪 QA Agent | `agent: qa` | `e2e/`, `playwright.config.ts`, `src/test-setup.ts`, `rehearsal.mjs` | all of `src/` |
-| ⚙️ Infra / Workflow | `agent: infra` | `.github/`, `.kiro/`, `.claude/`, `scripts/`, `infra/`, `public/`, `index.html`, `package.json`, `package-lock.json`, `tsconfig.json`, `tsconfig.server.json`, `vite.config.ts`, `Dockerfile`, `.dockerignore`, `.gitignore`, `README.md`, `CONTRIBUTING.md`, `CLAUDE.md`, `docs/` | all of `src/` |
+| ⚙️ Infra / Workflow | `agent: infra` | `.github/`, `.kiro/`, `.claude/`, `.mcp.json`, `scripts/`, `infra/`, `public/`, `index.html`, `package.json`, `package-lock.json`, `tsconfig.json`, `tsconfig.server.json`, `vite.config.ts`, `Dockerfile`, `.dockerignore`, `.gitignore`, `README.md`, `CONTRIBUTING.md`, `CLAUDE.md`, `docs/` | all of `src/` |
 
 <!-- OWNERSHIP-TABLE:END -->
 

@@ -8,6 +8,13 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    # `labeled`/`unlabeled` on top of the defaults (opened, synchronize,
+    # reopened) because the Scope Check job compares changed paths against the
+    # PR's `agent: *` labels, and a workflow run reads the labels frozen into
+    # the event payload that started it. Without these types, the remedy the
+    # failure message asks for — "apply the matching label" — could not clear
+    # the check: you had to push an unrelated commit to get a fresh payload.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 concurrency:
   # Key on the PR head ref when present so the push and pull_request events for

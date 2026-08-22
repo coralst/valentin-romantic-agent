@@ -220,9 +220,24 @@ describe('the persona label', () => {
 
   const withPersonas: RuntimeAuthConfig = {
     ...cognitoOn,
+    // `name` is the partner the persona is about; `userName` is who is signed in
+    // when it loads. The chip may only ever read the second — "Signed in as
+    // Samantha" was exactly that confusion.
     demoPersonas: [
-      { id: 'samantha', name: 'Samantha', blurb: 'Three years.', fieldCount: 18 },
-      { id: 'fresh', name: 'Start fresh', blurb: 'From scratch.', fieldCount: 0 },
+      {
+        id: 'samantha',
+        name: 'Samantha',
+        userName: 'Ralf',
+        blurb: 'Three years.',
+        fieldCount: 18,
+      },
+      {
+        id: 'fresh',
+        name: 'Start fresh',
+        userName: 'Guest',
+        blurb: 'From scratch.',
+        fieldCount: 0,
+      },
     ],
   };
 
@@ -236,7 +251,7 @@ describe('the persona label', () => {
     };
   }
 
-  it('names the persona the server seeded', async () => {
+  it('names the *user* of the persona the server seeded, not the partner', async () => {
     vi.stubGlobal(
       'fetch',
       respondWith({
@@ -248,9 +263,8 @@ describe('the persona label', () => {
 
     await userEvent.click(await screen.findByTestId('demo-login-button'));
 
-    expect((await screen.findByTestId('user-label')).textContent).toBe(
-      'Samantha',
-    );
+    // Samantha is the spouse in the fixture, Ralf is the account holder.
+    expect((await screen.findByTestId('user-label')).textContent).toBe('Ralf');
   });
 
   it('asks for the persona that was clicked', async () => {
@@ -263,7 +277,7 @@ describe('the persona label', () => {
 
     await pickPersona('fresh');
     await waitFor(() =>
-      expect(screen.getByTestId('user-label').textContent).toBe('Start fresh'),
+      expect(screen.getByTestId('user-label').textContent).toBe('Guest'),
     );
 
     // The stub only declares the url it reads, so the init argument needs
@@ -287,9 +301,7 @@ describe('the persona label', () => {
 
     await pickPersona('fresh');
 
-    expect((await screen.findByTestId('user-label')).textContent).toBe(
-      'Samantha',
-    );
+    expect((await screen.findByTestId('user-label')).textContent).toBe('Ralf');
   });
 
   it('falls back to the generic label on a deployment with no personas', async () => {
@@ -340,7 +352,7 @@ describe('reloading a demo session', () => {
     storeDemo({
       accessToken: 'demo-access',
       expiresAt: Date.now() + 3_600_000,
-      label: 'Samantha',
+      label: 'Ralf',
     });
 
     render(
@@ -350,7 +362,7 @@ describe('reloading a demo session', () => {
     );
 
     expect((await screen.findByTestId('user-label')).textContent).toBe(
-      'Samantha|true',
+      'Ralf|true',
     );
     expect(peekAccessToken()).toBe('demo-access');
     const urls = fetchMock.mock.calls.map(([url]) => String(url));

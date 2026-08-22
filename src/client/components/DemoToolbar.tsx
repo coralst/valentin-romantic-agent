@@ -3,6 +3,8 @@ import { useSessionContext } from '../context/session-context';
 import { useChatContext } from '../context/chat-context';
 import { usePreferencesContext } from '../context/preferences-context';
 import { useProfileStoreContext } from '../context/profile-store-context';
+import { useOptionalAuthContext } from '../context/auth-context';
+import { PREFERENCE_CATEGORIES } from '../../shared/constants/categories';
 import { seedDemoSession, fetchSessionPreferences, resetSession } from '../utils/demo-session-api';
 import { colors, typography, radii, insets, layout, animation } from '../design-system/tokens';
 import type { StoredSession } from '../hooks/use-session-store';
@@ -148,8 +150,13 @@ interface DemoToolbarProps {
 export function DemoToolbar({ children }: DemoToolbarProps) {
   const { activeSession, adoptSession, switchSession } = useSessionContext();
   const { dispatch: chatDispatch } = useChatContext();
-  const { dispatch: preferencesDispatch } = usePreferencesContext();
+  const { state: preferencesState, dispatch: preferencesDispatch } = usePreferencesContext();
   const { dispatch: profileDispatch } = useProfileStoreContext();
+  /*
+   * Optional: these controls are also mounted in tests with no AuthProvider
+   * above them, and "there is no demo session" is the honest reading there.
+   */
+  const auth = useOptionalAuthContext();
 
   const [pending, setPending] = useState<PendingAction>(null);
   const [status, setStatus] = useState<DemoToolbarStatus | null>(null);
@@ -205,17 +212,38 @@ export function DemoToolbar({ children }: DemoToolbarProps) {
 
   const isBusy = pending !== null;
 
+  /*
+   * Whether "Load demo profile" would load a profile that is already loaded.
+   *
+   * Signing in through the demo door *is* loading the demo profile: the login
+   * seeds Samantha's session before the app has even rendered. Offering the
+   * button there says the opposite — that the populated profile on screen is
+   * something still to be fetched — and pressing it strands the seeded
+   * conversation on a second session.
+   *
+   * Keyed on the preferences actually in view rather than on `isDemo` alone, so
+   * Reset brings the button back: after a reset the session genuinely is empty
+   * and re-seeding it is the presenter's way out. Local runs without Cognito are
+   * not demo sessions at all, so nothing is hidden there.
+   */
+  const hasSeededProfile = PREFERENCE_CATEGORIES.some(
+    (category) => preferencesState.preferences[category].length > 0,
+  );
+  const isDemoProfileLoaded = auth?.isDemo === true && hasSeededProfile;
+
   return (
     <div style={toolbarStyle} data-testid="demo-toolbar" role="group" aria-label="Demo controls">
-      <button
-        type="button"
-        style={isBusy ? { ...primaryButtonStyle, ...disabledStyle } : primaryButtonStyle}
-        onClick={handleLoadDemoProfile}
-        disabled={isBusy}
-        data-testid="load-demo-profile-button"
-      >
-        {pending === 'seed' ? 'Loading…' : 'Load demo profile'}
-      </button>
+      {!isDemoProfileLoaded && (
+        <button
+          type="button"
+          style={isBusy ? { ...primaryButtonStyle, ...disabledStyle } : primaryButtonStyle}
+          onClick={handleLoadDemoProfile}
+          disabled={isBusy}
+          data-testid="load-demo-profile-button"
+        >
+          {pending === 'seed' ? 'Loading…' : 'Load demo profile'}
+        </button>
+      )}
 
       <button
         type="button"

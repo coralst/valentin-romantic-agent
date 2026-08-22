@@ -101,9 +101,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   /**
    * Adopt a token as the current session.
    *
-   * `demoLabel` names the persona behind a demo token. Every demo persona shares
-   * one Cognito account, so the token cannot say which profile was seeded — only
-   * the login response can, and it is the caller who holds it.
+   * `demoLabel` is the *person* behind a demo token — the persona's `userName`,
+   * e.g. "Ralf". Every demo persona shares one Cognito account, so the token
+   * cannot say which profile was seeded — only the login response can, and it is
+   * the caller who holds it.
    */
   const adopt = useCallback(
     (accessToken: string, demo: boolean, demoLabel?: string) => {
@@ -287,6 +288,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const named = configRef.current?.demoPersonas?.find(
           (candidate) => candidate.id === seeded,
         );
+        /*
+         * The persona's *user*, not its partner.
+         *
+         * `named.name` is "Samantha" — the person the profile is about — and
+         * putting it here is what made the menu say "Signed in as Samantha"
+         * about her husband. Undefined when the server predates `userName`, so
+         * `adopt` falls back to "Demo profile"; a wrong name is worse than a
+         * generic one.
+         */
+        const signedInAs = named?.userName;
         setTokenSession({
           accessToken: result.accessToken,
           // Deliberately dropped: it belongs to the server-only demo client, so
@@ -295,9 +306,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           refreshToken: null,
           expiresAt: Date.now() + result.expiresIn * 1000,
           demo: true,
-          demoLabel: named?.name,
+          demoLabel: signedInAs,
         });
-        adopt(result.accessToken, true, named?.name);
+        adopt(result.accessToken, true, signedInAs);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'The demo is unavailable');
         setStatus('signed-out');

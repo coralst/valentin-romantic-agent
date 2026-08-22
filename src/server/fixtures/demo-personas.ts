@@ -31,8 +31,24 @@ export type DemoPersonaId = 'samantha' | 'fresh';
 /** A selectable demo profile */
 export interface DemoPersona {
   id: DemoPersonaId;
-  /** Shown on the landing page button and in the header chip once signed in */
+  /**
+   * The *partner* this persona is about — Valentin's subject, not his user.
+   *
+   * Shown on the landing page button, and nowhere that names the signed-in
+   * person: "Signed in as Samantha" was exactly that mix-up, and it read as the
+   * app having confused the user with their spouse.
+   */
   name: string;
+  /**
+   * The person who is signed in when this persona is loaded.
+   *
+   * Separate from `name` because the demo is *his* account: he is the one
+   * talking to Valentin about her. This is the only string the account chip may
+   * use. It matches the address the login form is prefilled with
+   * (`LoginScreen.tsx`'s `PREFILLED_EMAIL`), so the audience sees one identity
+   * from the front door onwards.
+   */
+  userName: string;
   /** One line of landing-page copy explaining what this persona demonstrates */
   blurb: string;
   /** Seeded into the session the demo login creates */
@@ -55,6 +71,7 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
   {
     id: 'samantha',
     name: 'Samantha',
+    userName: 'Ralf',
     blurb: 'Three years together. He remembers all of it.',
     preferences: DEMO_PROFILE_PREFERENCES,
     history: SAMANTHA_HISTORY,
@@ -62,6 +79,9 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
   {
     id: 'fresh',
     name: 'Start fresh',
+    // Nobody in particular: this is the "Create an Account" door, so there is no
+    // backstory to borrow a first name from.
+    userName: 'Guest',
     blurb: 'An empty profile — Valentin asks about your partner from scratch.',
     preferences: [],
   },
@@ -109,12 +129,14 @@ export function resolvePersona(id: unknown): DemoPersona {
 export function describePersonas(): {
   id: DemoPersonaId;
   name: string;
+  userName: string;
   blurb: string;
   fieldCount: number;
 }[] {
-  return DEMO_PERSONAS.map(({ id, name, blurb, preferences }) => ({
+  return DEMO_PERSONAS.map(({ id, name, userName, blurb, preferences }) => ({
     id,
     name,
+    userName,
     blurb,
     fieldCount: preferences.length,
   }));

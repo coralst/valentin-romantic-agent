@@ -63,23 +63,24 @@ describe('dossier surface routing', () => {
     expect(screen.queryByTestId('dossier-view')).not.toBeInTheDocument();
   });
 
-  it('opens the dossier from the rail’s ♥ and reports it via aria-pressed', async () => {
+  it('opens the dossier from her portrait in the brief', async () => {
+    // The rail has no ♥ any more: you get to her profile by clicking *her*.
     const user = userEvent.setup();
     renderApp();
 
-    await user.click(screen.getByRole('button', { name: 'Her profile' }));
+    await user.click(screen.getByTestId('brief-cameo'));
     expect(screen.getByTestId('app-layout')).toHaveAttribute('data-surface', 'dossier');
     expect(screen.getByTestId('dossier-view')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Her profile' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
+    // The portrait went with the brief, so nothing on screen claims to be a
+    // pressed toggle — the dossier's own ← is the way back.
+    expect(screen.queryByTestId('brief-cameo')).not.toBeInTheDocument();
+    expect(screen.getByTestId('dossier-back')).toBeInTheDocument();
   });
 
   it('replaces the chat shell’s columns but keeps the icon rail', async () => {
     const user = userEvent.setup();
     renderApp();
-    await user.click(screen.getByRole('button', { name: 'Her profile' }));
+    await user.click(screen.getByTestId('brief-cameo'));
 
     // A portal would duplicate the rail and fight the window's overflow/radius.
     expect(screen.getAllByTestId('icon-rail')).toHaveLength(1);
@@ -97,35 +98,31 @@ describe('dossier surface routing', () => {
     expect(screen.getByTestId('dossier-view')).toBeInTheDocument();
   });
 
-  it('returns focus to the ♥ when the back button closes it', async () => {
+  /*
+   * Focus comes home to her portrait, which — unlike the ♥ it replaced — is part
+   * of the chat shell and so is not mounted at the moment the dossier closes.
+   * `applyClose` waits a frame for it, hence `waitFor` rather than a bare
+   * assertion; see `view-context.tsx`.
+   */
+  it('returns focus to her portrait when the back button closes it', async () => {
     const user = userEvent.setup();
     renderApp();
-    const heart = screen.getByRole('button', { name: 'Her profile' });
-    await user.click(heart);
+    await user.click(screen.getByTestId('brief-cameo'));
 
     await user.click(screen.getByTestId('dossier-back'));
     expect(screen.getByTestId('app-layout')).toHaveAttribute('data-surface', 'chat');
     // Focus must not be stranded on the removed back button.
-    expect(screen.getByRole('button', { name: 'Her profile' })).toHaveFocus();
+    await waitFor(() => expect(screen.getByTestId('brief-cameo')).toHaveFocus());
   });
 
   it('closes on Escape, and returns focus the same way', async () => {
     const user = userEvent.setup();
     renderApp();
-    await user.click(screen.getByRole('button', { name: 'Her profile' }));
+    await user.click(screen.getByTestId('brief-cameo'));
 
     await user.keyboard('{Escape}');
     expect(screen.queryByTestId('dossier-view')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Her profile' })).toHaveFocus();
-  });
-
-  it('toggles closed on a second ♥ press', async () => {
-    const user = userEvent.setup();
-    renderApp();
-    const heart = screen.getByRole('button', { name: 'Her profile' });
-    await user.click(heart);
-    await user.click(screen.getByRole('button', { name: 'Her profile' }));
-    expect(screen.queryByTestId('dossier-view')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('brief-cameo')).toHaveFocus());
   });
 
   /*
@@ -136,7 +133,7 @@ describe('dossier surface routing', () => {
   it('closes when the browser goes back, rather than leaving the app', async () => {
     const user = userEvent.setup();
     renderApp();
-    await user.click(screen.getByRole('button', { name: 'Her profile' }));
+    await user.click(screen.getByTestId('brief-cameo'));
     expect(screen.getByTestId('app-layout')).toHaveAttribute('data-surface', 'dossier');
 
     window.history.back();
@@ -144,13 +141,13 @@ describe('dossier surface routing', () => {
     await waitFor(() =>
       expect(screen.getByTestId('app-layout')).toHaveAttribute('data-surface', 'chat'),
     );
-    expect(screen.getByRole('button', { name: 'Her profile' })).toHaveFocus();
+    await waitFor(() => expect(screen.getByTestId('brief-cameo')).toHaveFocus());
   });
 
   it('closes from the crest, which is home from every surface', async () => {
     const user = userEvent.setup();
     renderApp();
-    await user.click(screen.getByRole('button', { name: 'Her profile' }));
+    await user.click(screen.getByTestId('brief-cameo'));
 
     await user.click(screen.getByTestId('rail-home-button'));
     expect(screen.getByTestId('app-layout')).toHaveAttribute('data-surface', 'chat');
@@ -174,7 +171,7 @@ describe('dossier surface routing', () => {
     it('◆ leaves the dossier and puts the caret in the composer', async () => {
       const user = userEvent.setup();
       renderApp();
-      await user.click(screen.getByRole('button', { name: 'Her profile' }));
+      await user.click(screen.getByTestId('brief-cameo'));
 
       await user.click(screen.getByTestId('rail-chat-button'));
 

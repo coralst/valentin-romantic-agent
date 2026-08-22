@@ -54,9 +54,20 @@ describe('IconRail', () => {
   it('labels its controls for screen readers', () => {
     renderRail();
     expect(screen.getByRole('button', { name: 'Conversation' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Her profile' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open session history' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Demo controls' })).toBeInTheDocument();
+  });
+
+  /*
+   * Her profile is reached by clicking *her* — the portrait at the top of the
+   * brief — not by a heart in the chrome. This is the assertion that keeps the
+   * second door from creeping back in.
+   */
+  it('has no profile button: her portrait is the way into her profile', () => {
+    renderRail();
+    expect(screen.queryByTestId('rail-profile-button')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Her profile' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('icon-rail').textContent).not.toContain('\u2665');
   });
 
   it('keeps the sidebar-menu-button test id on the hamburger', async () => {
@@ -143,7 +154,9 @@ describe('IconRail', () => {
       'aria-pressed',
       'false',
     );
-    expect(screen.getByRole('button', { name: 'Her profile' })).toHaveAttribute(
+
+    renderRail({ activeView: 'chat' });
+    expect(screen.getAllByRole('button', { name: 'Conversation' })[1]).toHaveAttribute(
       'aria-pressed',
       'true',
     );
@@ -156,13 +169,13 @@ describe('IconRail', () => {
     );
   });
 
-  it('switches view when a view button is pressed', async () => {
+  it('switches view when the \u25c6 is pressed', async () => {
     const onViewChange = vi.fn();
     const user = userEvent.setup();
-    renderRail({ activeView: 'chat', onViewChange });
+    renderRail({ activeView: 'profile', onViewChange });
 
-    await user.click(screen.getByRole('button', { name: 'Her profile' }));
-    expect(onViewChange).toHaveBeenCalledWith('profile');
+    await user.click(screen.getByRole('button', { name: 'Conversation' }));
+    expect(onViewChange).toHaveBeenCalledWith('chat');
   });
 
   describe('demo popover', () => {

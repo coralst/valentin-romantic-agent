@@ -12,9 +12,9 @@ interface IconRailProps {
   /** 'column' is the 76px desktop rail; 'row' is the 56px mobile top strip. */
   orientation: 'column' | 'row';
   /**
-   * The surface currently on screen, so the matching button can report
-   * `aria-pressed`. On desktop both surfaces are visible at once, so pass
-   * `null` and neither button claims to be pressed.
+   * The surface currently on screen, so the ◆ can report `aria-pressed`. On
+   * desktop both surfaces are visible at once, so pass `null` and it claims
+   * nothing.
    */
   activeView: RailView | null;
   onViewChange?: (view: RailView) => void;
@@ -40,21 +40,6 @@ interface IconRailProps {
    * "Open session history" that `IconRail.test.tsx` and the e2e specs query.
    */
   isSessionsOpen?: boolean;
-  /**
-   * True when the full-page dossier is the surface on screen.
-   *
-   * Separate from `activeView` on purpose: on desktop `activeView` is `null`
-   * because chat and brief are both visible, but the dossier genuinely *is* a
-   * single active surface and the ♥ has to say so.
-   */
-  isDossierActive?: boolean;
-  /** Toggles the dossier. When absent the ♥ falls back to `onViewChange`. */
-  onToggleDossier?: () => void;
-  /**
-   * Attached to the ♥. Closing the dossier — via `.back` or Escape — returns
-   * focus here rather than stranding it on a removed element.
-   */
-  dossierToggleRef?: React.RefObject<HTMLButtonElement | null>;
 }
 
 const INACTIVE_ICON_COLOR = 'rgba(255, 253, 251, 0.6)';
@@ -240,9 +225,6 @@ export function IconRail({
   onGoHome,
   onOpenSessions,
   isSessionsOpen,
-  isDossierActive = false,
-  onToggleDossier,
-  dossierToggleRef,
 }: IconRailProps) {
   /*
    * The same condition `UserChip` guards itself with, asked again here.
@@ -304,18 +286,14 @@ export function IconRail({
   }, [isDemoOpen]);
 
   /*
-   * Two independent notions of "active", collapsed into one pair of flags.
+   * `aria-pressed` is only meaningful where exactly one surface is on screen.
    *
-   * `activeView` is the mobile panel switch, where exactly one of chat/brief is
-   * on screen. `isDossierActive` is the desktop full-page surface, where
-   * `activeView` is deliberately `null` because chat and brief share the window.
-   * The ♥ lights up for either, and `aria-pressed` is only meaningful when at
-   * least one of them is actually a single-surface state — on plain desktop chat
-   * both buttons stay unpressed, which is what `IconRail.test.tsx:76` asserts.
+   * That is the mobile strip, where `activeView` names the visible panel. On
+   * desktop chat and brief share the window, `activeView` is `null`, and the ◆
+   * claims nothing — which is what `IconRail.test.tsx` asserts.
    */
-  const isProfileActive = isDossierActive || activeView === 'profile';
-  const isChatActive = !isDossierActive && activeView === 'chat';
-  const hasSurfaceState = isDossierActive || activeView !== null;
+  const isChatActive = activeView === 'chat';
+  const hasSurfaceState = activeView !== null;
 
   return (
     <nav
@@ -351,17 +329,14 @@ export function IconRail({
         &#9670;
       </button>
 
-      <button
-        ref={dossierToggleRef}
-        type="button"
-        style={getIconButtonStyle(isProfileActive)}
-        aria-label="Her profile"
-        aria-pressed={hasSurfaceState ? isProfileActive : undefined}
-        onClick={() => (onToggleDossier ? onToggleDossier() : onViewChange?.('profile'))}
-        data-testid="rail-profile-button"
-      >
-        &#9829;
-      </button>
+      {/*
+        There is deliberately no ♥ here.
+        Her profile is reached by clicking *her* — the portrait at the top of the
+        brief (`brief/WhoHeader.tsx`), and the brief's "Full profile →" link.
+        A heart in the rail was a second, abstract door to the same place, and the
+        one thing on screen that a heart could plausibly mean in this app is the
+        person, not a navigation target.
+      */}
 
       {/*
         A two-way toggle wherever the caller treats it as one, and it says so.

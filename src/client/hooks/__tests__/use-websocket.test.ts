@@ -234,6 +234,27 @@ describe('WebSocket observation seam', () => {
   }
 
   /**
+   * The frame the server sends when it minted the session itself — which is also
+   * how the client learns which session the connection is bound to.
+   */
+  function sessionInit(sessionId: string) {
+    return {
+      type: 'session_init',
+      payload: {
+        sessionId,
+        welcomeMessage: {
+          id: 'm-welcome',
+          sessionId,
+          sender: 'agent',
+          content: 'Tell me about her.',
+          timestamp: new Date().toISOString(),
+        },
+      },
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  /**
    * Renders the hook and drives the socket to the state a turn can be sent in.
    *
    * That state is `auth_ok`, not `open` — the gateway closes the connection on any
@@ -269,10 +290,16 @@ describe('WebSocket observation seam', () => {
     if (authenticate) {
       act(() => {
         socket.receive(authOk());
+        // Binds the connection to this session, as the mint path does on the wire.
+        // Without it the hook holds turns, because it will not send into a
+        // connection bound to some other session.
+        if (sessionId) socket.receive(sessionInit(sessionId));
       });
-      // Not traffic under test in most cases: drop the frame the handshake itself
+      // Not traffic under test in most cases: drop the frames the handshake itself
       // published so assertions can count from zero.
-      observed = observed.filter((o) => o.event.type !== 'auth_ok');
+      observed = observed.filter(
+        (o) => o.event.type !== 'auth_ok' && o.event.type !== 'session_init',
+      );
     }
     return { ...result, socket, chatDispatch };
   }
@@ -539,6 +566,117 @@ describe('WebSocket observation seam', () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+  });
+
+  /**
+   * Which session the connection is bound to.
+   *
+   * The gateway binds a connection to one session at auth time and answers
+   * 'SESSION_MISMATCH' to a `send_message` naming any other. The socket outlives
+   * session switches on purpose, so the client has to notice the drift and rebind.
+   * It drifted on the first page load in production: the socket opened before
+   * `/api/demo/login`'s session reached chat state, the server minted its own, and
+   * every turn after that was refused with the app looking perfectly connected.
+   */
+  describe('session binding', () => {
+    /** Renders with a session that the test can change, as a switch does. */
+    function renderSwitchable(initial: string | null) {
+      const chatDispatch = vi.fn();
+      const preferencesDispatch = vi.fn();
+      const view = renderHook(
+        ({ sessionId }: { sessionId: string | null }) =>
+          useWebSocket({
+            chatDispatch,
+            preferencesDispatch,
+            sessionId,
+            url: 'ws://localhost:3001/ws',
+          }),
+        { initialProps: { sessionId: initial } },
+      );
+      return view;
+    }
+
+    /** Drive one socket to bound-and-authenticated, the way the mint path does. */
+    function handshake(socket: FakeWebSocket, sessionId: string) {
+      act(() => {
+        socket.onopen?.();
+      });
+      act(() => {
+        socket.receive(authOk());
+        socket.receive(sessionInit(sessionId));
+      });
+    }
+
+    it('reconnects when the app moves to a session the socket is not bound to', () => {
+      const view = renderSwitchable(null);
+      // The server minted 'minted-1' because the app had no session yet — exactly
+      // the production sequence.
+      handshake(FakeWebSocket.instances[0], 'minted-1');
+      expect(FakeWebSocket.instances).toHaveLength(1);
+
+      view.rerender({ sessionId: 'demo-session' });
+
+      expect(FakeWebSocket.instances).toHaveLength(2);
+    });
+
+    it('does not reconnect when the app names the session it is already bound to', () => {
+      const view = renderSwitchable('sess-1');
+      handshake(FakeWebSocket.instances[0], 'sess-1');
+
+      view.rerender({ sessionId: 'sess-1' });
+
+      expect(FakeWebSocket.instances).toHaveLength(1);
+    });
+
+    it('does not reconnect before the auth frame has claimed a session', () => {
+      // Nothing has been bound yet, so the frame still to go out will carry
+      // whatever the current session is — reconnecting would be pure churn.
+      const view = renderSwitchable(null);
+      view.rerender({ sessionId: 'demo-session' });
+
+      expect(FakeWebSocket.instances).toHaveLength(1);
+    });
+
+    it('delivers a turn typed during the rebind to the rebound socket', () => {
+      const view = renderSwitchable(null);
+      handshake(FakeWebSocket.instances[0], 'minted-1');
+
+      view.rerender({ sessionId: 'demo-session' });
+      const rebound = FakeWebSocket.instances[1];
+
+      act(() => {
+        view.result.current.sendMessage('She loves white peonies.');
+      });
+      // Held, not sent: the new socket has not authenticated yet.
+      expect(rebound.sent).toEqual([]);
+
+      handshake(rebound, 'demo-session');
+
+      const sent = rebound.sent
+        .map((raw) => JSON.parse(raw) as { type: string; payload: { sessionId?: string } })
+        .filter((f) => f.type === 'send_message');
+      expect(sent).toHaveLength(1);
+      expect(sent[0].payload.sessionId).toBe('demo-session');
+    });
+
+    it('drops a held turn addressed to a session the rebound socket left behind', () => {
+      const view = renderSwitchable('sess-old');
+      // Never authenticated, so the turn is held with the old session on it.
+      act(() => {
+        view.result.current.sendMessage('for the old session');
+      });
+
+      view.rerender({ sessionId: 'sess-new' });
+      const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+      handshake(socket, 'sess-new');
+
+      const sent = socket.sent
+        .map((raw) => JSON.parse(raw) as { type: string })
+        .filter((f) => f.type === 'send_message');
+      // A SESSION_MISMATCH error for a turn the room has moved on from is worse
+      // than the turn quietly not being replayed.
+      expect(sent).toEqual([]);
     });
   });
 });

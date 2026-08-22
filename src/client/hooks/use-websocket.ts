@@ -141,6 +141,22 @@ export function useWebSocket({
    * like an agent that chose not to answer.
    */
   const pendingSendsRef = useRef<ClientEvent[]>([]);
+  /**
+   * The session this connection is bound to, server-side.
+   *
+   * `undefined` until the `auth` frame goes out, then the id that frame asked to
+   * resume, or `null` while waiting for the server to mint one (it answers with
+   * `session_init`).
+   *
+   * Tracked because the gateway binds a connection to exactly one session at auth
+   * time and refuses a `send_message` for any other ('SESSION_MISMATCH'). The
+   * socket outlives session switches — it deliberately does not name `sessionId`
+   * as a dependency — so without this the binding silently drifts away from the
+   * session the app is showing. In production it drifted on the very first page
+   * load: the socket opens before `/api/demo/login`'s session reaches chat state,
+   * so the server minted one, and every turn afterwards was refused.
+   */
+  const boundSessionRef = useRef<string | null | undefined>(undefined);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -178,10 +194,15 @@ export function useWebSocket({
   }, []);
 
   const connect = useCallback(() => {
-    // Clean up any existing connection
+    // Clean up any existing connection. `onclose` is dropped first: this close is
+    // intentional, and letting the old socket's handler run would schedule a
+    // second, competing reconnect behind the one being made here.
     if (wsRef.current) {
+      wsRef.current.onclose = null;
       wsRef.current.close();
     }
+    boundSessionRef.current = undefined;
+    isAuthedRef.current = false;
     clearTimers();
 
     const ws = new WebSocket(wsUrl);
@@ -226,6 +247,10 @@ export function useWebSocket({
           },
           timestamp: new Date().toISOString(),
         };
+        // Recorded before the send, because the server binds to whatever this
+        // frame asks for: an id to resume, or nothing, meaning "mint one and tell
+        // me in `session_init`".
+        boundSessionRef.current = sessionIdRef.current ?? null;
         ws.send(JSON.stringify(frame));
         // Deliberately not published to the inspector: the frame carries a
         // bearer token and the inspector panel is on screen during demos.
@@ -239,6 +264,11 @@ export function useWebSocket({
         if (serverEvent.type === 'error') {
           setLastError(serverEvent.payload.message);
         }
+        if (serverEvent.type === 'session_init') {
+          // The server only sends this when it minted the session, so this is the
+          // one way to learn which session the connection ended up bound to.
+          boundSessionRef.current = serverEvent.payload.sessionId;
+        }
         if (serverEvent.type === 'auth_ok') {
           // Only now is the connection able to carry a turn. Flush in order, so
           // a queued turn keeps its place ahead of whatever is typed next.
@@ -250,6 +280,13 @@ export function useWebSocket({
           pendingSendsRef.current = [];
           for (const frame of queued) {
             if (ws.readyState !== WebSocket.OPEN) break;
+            // A turn addressed to a session the app has since left is stale: the
+            // server would answer SESSION_MISMATCH, and showing the room an error
+            // for a turn it has moved on from is worse than not replaying it.
+            const target = (frame.payload as { sessionId?: string }).sessionId;
+            if (target && sessionIdRef.current && target !== sessionIdRef.current) {
+              continue;
+            }
             ws.send(JSON.stringify(frame));
             publishOutboundWsEvent(frame);
           }
@@ -309,6 +346,24 @@ export function useWebSocket({
     };
   }, [connect, clearTimers]);
 
+  /**
+   * Rebind when the app moves to a session this connection is not bound to.
+   *
+   * Reconnecting is the rebind: the fresh `auth` frame names the new session, and
+   * the server resumes it rather than minting one, so nothing is lost. The
+   * alternative — naming `sessionId` in `connect`'s dependencies — would rebuild
+   * the socket on every render that changes it, including the ones where it has
+   * not actually moved.
+   */
+  useEffect(() => {
+    const bound = boundSessionRef.current;
+    // `undefined`: no `auth` frame yet, so the one about to go out will carry the
+    // current id. `null`: the server is minting, and `session_init` will say what.
+    if (bound === undefined || bound === null) return;
+    if (!sessionId || sessionId === bound) return;
+    connect();
+  }, [sessionId, connect]);
+
   const sendMessage = useCallback(
     (content: string) => {
       if (!sessionId) return;
@@ -328,7 +383,10 @@ export function useWebSocket({
        * costs the few hundred milliseconds the token takes.
        */
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-      if (!isAuthedRef.current) {
+      // Also held while the connection is bound to a different session: the
+      // rebinding reconnect is already on its way, and this turn flushes once it
+      // has authenticated. Sending now would only earn a SESSION_MISMATCH.
+      if (!isAuthedRef.current || boundSessionRef.current !== sessionId) {
         pendingSendsRef.current.push(event);
         return;
       }

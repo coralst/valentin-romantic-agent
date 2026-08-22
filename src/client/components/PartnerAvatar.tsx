@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { useProfileStoreContext } from '../context/profile-store-context';
+import { portraitForPartner } from '../utils/persona-portrait';
 import { colors, spacing, borderRadius, typography, animation, shadows } from '../design-system/tokens';
 
 const ACCEPTED_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
@@ -126,6 +127,12 @@ export function PartnerAvatar({ partnerName, size = DEFAULT_AVATAR_SIZE }: Partn
   const [error, setError] = useState<string | null>(null);
 
   const hasPhoto = !!state.partnerPhoto;
+  /**
+   * The portrait shipped for a known partner, used only until a real photo
+   * exists. `hasPhoto` stays keyed on the *uploaded* file: Replace/Remove must
+   * not be offered for an asset the user never added and cannot delete.
+   */
+  const image = state.partnerPhoto ?? portraitForPartner(partnerName);
 
   const getInitials = (name: string): string => {
     return name
@@ -174,7 +181,13 @@ export function PartnerAvatar({ partnerName, size = DEFAULT_AVATAR_SIZE }: Partn
     setError(null);
   };
 
-  const altText = partnerName ? `Photo of ${partnerName}` : 'Partner photo';
+  const altText = hasPhoto
+    ? partnerName
+      ? `Photo of ${partnerName}`
+      : 'Partner photo'
+    : partnerName
+      ? `Illustrated portrait of ${partnerName}`
+      : 'Partner portrait';
 
   const isCompact = size < COMPACT_BELOW;
 
@@ -206,8 +219,8 @@ export function PartnerAvatar({ partnerName, size = DEFAULT_AVATAR_SIZE }: Partn
         tabIndex={0}
         aria-label={hasPhoto ? `Change photo. ${altText}` : 'Upload partner photo'}
       >
-        {hasPhoto ? (
-          <img src={state.partnerPhoto!} alt={altText} style={photoStyle} />
+        {image ? (
+          <img src={image} alt={altText} style={photoStyle} />
         ) : (
           renderPlaceholder()
         )}

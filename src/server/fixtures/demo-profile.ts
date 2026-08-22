@@ -28,7 +28,11 @@ import type { ExtractedPreference } from '../persistence/storage-interface';
 export const DEMO_SEED_SOURCE_MESSAGE_ID = 'demo-seed';
 
 /**
- * The 18 seeded preferences, one per profile registry field.
+ * The seeded preferences, one per profile registry field.
+ *
+ * The count is deliberately not written down here. It was "18" for three
+ * revisions after the registry grew, and a stale number in a doc comment is
+ * worse than none — `http-routes.test.ts` asserts the one-per-field contract.
  *
  * List-valued fields (`hobbies`, `wish list`) are comma-separated: that is the
  * serialization the client's list editor round-trips (see the
@@ -133,6 +137,36 @@ export const DEMO_PROFILE_PREFERENCES: readonly ExtractedPreference[] = [
     key: 'fragrance',
     value: 'Warm and woody — fig, cedar, a little vanilla',
     confidence: 0.79,
+  },
+
+  // --- Sizes ---
+  //
+  // Both scales, the way someone who has actually bought her something writes it
+  // down. Confidence is high because a size is either known or it is not — there
+  // is no "probably a 6" that is worth acting on.
+  //
+  // Deliberately absent from `demo-history.ts`: the transcripts are pinned to
+  // the profile by `__tests__/demo-personas.test.ts`, and inventing a line where
+  // she announces her ring size to make the numbers match would be a worse
+  // demo than a panel that simply knows something the visible history does not.
+  // Valentin is meant to remember more than the last five conversations.
+  {
+    category: 'gifts',
+    key: 'clothing size',
+    value: 'UK 10 / EU 38 — sizes up for knitwear',
+    confidence: 0.9,
+  },
+  {
+    category: 'gifts',
+    key: 'shoe size',
+    value: 'UK 6 / EU 39',
+    confidence: 0.94,
+  },
+  {
+    category: 'gifts',
+    key: 'ring size',
+    value: 'UK M (US 6)',
+    confidence: 0.82,
   },
 
   // --- Gifts & Celebrations ---

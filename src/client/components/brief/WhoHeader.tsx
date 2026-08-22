@@ -6,8 +6,16 @@ interface WhoHeaderProps {
   name: string | null;
   /** The line under it — birthday, age bucket, pronouns — already joined. */
   subtitle: string | null;
-  /** A data-URL portrait from the profile store, or null for the initial. */
+  /** A data-URL photo the user uploaded, or null. */
   photo: string | null;
+  /**
+   * A portrait shipped with the app for this partner, used when no photo has
+   * been uploaded. Separate from `photo` rather than pre-merged by the caller so
+   * the alt text can say "illustrated portrait" instead of claiming a drawing is
+   * a photograph, and so "Change her photo" is never offered for a file that
+   * does not exist.
+   */
+  portrait?: string | null;
   /** Opens the file picker behind the cameo. */
   onEditPhoto?: () => void;
 }
@@ -74,8 +82,16 @@ const subtitleStyle: React.CSSProperties = {
 };
 
 /** The rail's compact header: cameo and name on one row. */
-export function WhoHeader({ name, subtitle, photo, onEditPhoto }: WhoHeaderProps) {
+export function WhoHeader({ name, subtitle, photo, portrait, onEditPhoto }: WhoHeaderProps) {
   const displayName = name ?? 'Her brief';
+  const image = photo ?? portrait ?? null;
+  const alt = photo
+    ? name
+      ? `Photo of ${name}`
+      : 'Her photo'
+    : name
+      ? `Illustrated portrait of ${name}`
+      : 'Illustrated portrait';
 
   return (
     <div style={whoStyle} data-testid="brief-who">
@@ -86,8 +102,8 @@ export function WhoHeader({ name, subtitle, photo, onEditPhoto }: WhoHeaderProps
         aria-label={photo ? 'Change her photo' : 'Add her photo'}
         data-testid="brief-cameo"
       >
-        {photo ? (
-          <img src={photo} alt={name ? `Photo of ${name}` : 'Her photo'} style={photoStyle} />
+        {image ? (
+          <img src={image} alt={alt} style={photoStyle} />
         ) : (
           <span style={initialStyle} aria-hidden="true">
             {name ? name.trim().charAt(0).toUpperCase() : '♥'}

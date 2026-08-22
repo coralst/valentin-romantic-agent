@@ -96,7 +96,7 @@ const noteStyle: React.CSSProperties = {
 };
 
 /**
- * Everything Valentin picked up that the eighteen fields have no room for.
+ * Everything Valentin picked up that the registry fields have no room for.
  *
  * Grouped by preference category via `CategoryGroup`/`PreferenceCard` — the two
  * components Stage 4 kept alive for this. They carry the older component styling
@@ -122,12 +122,12 @@ export function AlsoMentioned({
       {count === 0 ? (
         <p style={cardEmptyStyle} data-testid="dossier-also-mentioned-empty">
           Nothing yet that does not already have a home above. Anything you tell me
-          that the eighteen fields have no room for will collect here.
+          that her profile fields have no room for will collect here.
         </p>
       ) : (
         <>
           <p style={noteStyle}>
-            Things I noted that do not fit one of the eighteen fields. Kept because
+            Things I noted that do not fit one of her profile fields. Kept because
             you said them.
           </p>
           {groups.map((group) => (

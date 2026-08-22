@@ -8,6 +8,7 @@ import {
   getDateFields,
 } from '../utils/profile-field-registry';
 import { deriveOccasions } from '../utils/occasion-derivation';
+import { portraitForPartner } from '../utils/persona-portrait';
 import { rankUnfilledFields, type FieldGap } from '../utils/field-payoff';
 import { getAgeBucketFromValue } from '../utils/age-bucket';
 import { formatBirthdayValue } from '../utils/birthday-display';
@@ -17,6 +18,7 @@ import { NextUp } from './brief/NextUp';
 import { KeepInMind, deriveCautions } from './brief/KeepInMind';
 import { WorthAsking } from './brief/WorthAsking';
 import { GoodToKnow, type Chip } from './brief/GoodToKnow';
+import { BriefSkeleton } from './brief/BriefSkeleton';
 import { ValentinNudge } from './brief/ValentinNudge';
 import { TallyFooter } from './brief/TallyFooter';
 import { onClaret } from './brief/rail-tones';
@@ -26,7 +28,7 @@ import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
 /*
  * The unmapped extraction output is rescued, as of Stage 6.
  *
- * Preferences that `resolveField()` cannot match onto one of the 18 registry
+ * Preferences that `resolveField()` cannot match onto one of the registry
  * fields now render in the dossier's "Also mentioned" card
  * (`dossier/AlsoMentioned.tsx`), through the `CategoryGroup`/`PreferenceCard`
  * pair that was kept alive for exactly that. The rail keeps rescuing the most
@@ -300,6 +302,7 @@ export function BriefRail({ isMobile = false }: BriefRailProps) {
             name={name}
             subtitle={subtitle}
             photo={profileState.partnerPhoto}
+            portrait={portraitForPartner(name)}
             onEditPhoto={() => photoInputRef.current?.click()}
           />
           <input
@@ -319,10 +322,16 @@ export function BriefRail({ isMobile = false }: BriefRailProps) {
           )}
 
           {isCompletelyEmpty ? (
-            <p style={emptyStyle} data-testid="empty-encouragement">
-              Keep chatting with Valentin. Her dates, the things to watch out for and
-              the next thing worth planning will fill in here as you talk.
-            </p>
+            <>
+              <p style={emptyStyle} data-testid="empty-encouragement">
+                Keep chatting with Valentin. Her dates, the things to watch out for and
+                the next thing worth planning will fill in here as you talk.
+              </p>
+              {/* The prose says the panel will fill in; the skeleton shows what
+                  with. One without the other is either a promise you cannot
+                  picture or a list of dashes with no explanation. */}
+              <BriefSkeleton />
+            </>
           ) : (
             <>
               <NextUp occasions={occasions} />

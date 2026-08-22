@@ -51,6 +51,33 @@ describe('PROFILE_FIELD_REGISTRY', () => {
     }
   });
 
+  /**
+   * The sizing facts a gift assistant is expected to hold.
+   *
+   * Pinned by id rather than left to the general shape tests above, because
+   * these three are the ones a well-meaning tidy-up would fold back into
+   * "Style" or drop as niche — and they are the ones visitors ask for first.
+   */
+  it('holds the gift-relevant sizes, grouped as sizes', () => {
+    for (const id of ['clothing_size', 'shoe_size', 'ring_size']) {
+      const field = getFieldById(id);
+      expect(field, `missing field "${id}"`).toBeDefined();
+      expect(field!.section).toBe('sizes');
+      // Free text, not an enum: real answers are "UK 6 / EU 39" and "a 10 in
+      // most things", neither of which fits a canonical scale.
+      expect(field!.valueType).toBe('text');
+    }
+  });
+
+  it('never resolves the bare key "size" to a specific size field', () => {
+    // "size" is generic enough that extraction reaches for it about a ring, a
+    // shoe or a canvas. Mapping it would file the wrong fact confidently.
+    const mappedKeys = PROFILE_FIELD_REGISTRY.flatMap((f) =>
+      f.mappings.map((m) => m.key.toLowerCase()),
+    );
+    expect(mappedKeys).not.toContain('size');
+  });
+
   it('every field has at least one mapping', () => {
     for (const field of PROFILE_FIELD_REGISTRY) {
       expect(field.mappings.length).toBeGreaterThan(0);

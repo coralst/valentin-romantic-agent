@@ -53,7 +53,7 @@ export const OLIVE_GROUND = '#F0F2EA';
 /** The board's standard 1px divider between rows inside a card. */
 export const CARD_HAIRLINE = `1px solid ${colors.linenShade}`;
 
-/** The lighter divider between the 18 registry fields (`full-profile.html:166`). */
+/** The lighter divider between the registry fields (`full-profile.html:166`). */
 export const FIELD_HAIRLINE = `1px solid ${linenWash(0.55)}`;
 
 /** An inset ring, used instead of a border so it never affects layout. */

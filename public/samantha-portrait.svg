@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 480" width="400" height="480" role="img" aria-label="Illustrated portrait of Samantha">
+  <!--
+    Samantha, the demo persona (src/server/fixtures/demo-profile.ts).
+
+    Drawn in the same hand as `partner-portrait.svg` — flat fills under a dark
+    ink contour, no gradients doing the modelling, no soft-focus render. That
+    file is the neutral placeholder every other partner gets; this one is the
+    named persona, so it is the same construction re-dressed rather than a
+    different illustrator's work sitting next to it.
+
+    Western editorial illustration on purpose, and explicitly not anime: the eyes
+    are small and set at the halfway line of the head, the nose and mouth are
+    drawn rather than implied, and there is no highlight-in-a-huge-iris.
+
+    The rose above her ear answers the rose Valentin holds in the crest, exactly
+    as the placeholder's does — it is the one motif that ties the two portraits
+    and the logo together.
+
+    Palette is the app's own (design-system/tokens.ts): claret #8C2F45 for the
+    silk scarf, gold #C09A5E for the halo and the hoop, porcelain #FFFDFB for
+    the linen, petal/blush for the ground. Her fixture says linen, one good silk
+    scarf, and deep sage green — the sage stays out of the drawing and lives in
+    the leaves, because a sage garment against claret chrome reads as a third
+    brand colour.
+  -->
+  <defs>
+    <linearGradient id="sam-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFF9F5"/>
+      <stop offset="1" stop-color="#F6DEE2"/>
+    </linearGradient>
+    <linearGradient id="sam-hair" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7A3E25"/>
+      <stop offset="1" stop-color="#3D1E12"/>
+    </linearGradient>
+    <linearGradient id="sam-linen" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFDFB"/>
+      <stop offset="1" stop-color="#EFE7E1"/>
+    </linearGradient>
+    <clipPath id="sam-frame"><rect width="400" height="480"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#sam-frame)" stroke="#3B2119" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round">
+    <rect width="400" height="480" fill="url(#sam-bg)" stroke="none"/>
+
+    <!-- Gold halo. Two rings rather than one so it reads as the gilt of a
+         framed portrait instead of a glow behind her head. -->
+    <circle cx="200" cy="196" r="150" fill="#C09A5E" opacity=".13" stroke="none"/>
+    <circle cx="200" cy="196" r="150" fill="none" stroke="#C09A5E" stroke-width="2" opacity=".45"/>
+    <circle cx="200" cy="196" r="140" fill="none" stroke="#C09A5E" stroke-width="1" opacity=".3"/>
+
+    <!-- linen blouse -->
+    <path d="M200 306c-70 0-124 42-138 104-4 18-6 40-6 70h288c0-30-2-52-6-70-14-62-68-104-138-104z" fill="url(#sam-linen)"/>
+
+    <!-- neck, drawn before the scarf so the scarf sits on it -->
+    <path d="M182 254c0 30-2 44-4 52 6 8 14 12 22 12s16-4 22-12c-2-8-4-22-4-52z" fill="#EBBB9C"/>
+
+    <!-- hair, back mass: swept to her left, so the silhouette is hers and not
+         the placeholder's symmetrical fall -->
+    <path d="M200 60c-60 0-100 42-100 104 0 46 6 82 15 114 5 18 15 28 26 28-13-42-17-82-15-118 32 15 70 21 97 12 21-7 36-19 46-35 6 46 3 96-16 158 16 4 28-6 34-26 12-40 19-79 19-119 0-62-40-118-106-118z" fill="url(#sam-hair)"/>
+
+    <!-- face -->
+    <ellipse cx="200" cy="178" rx="65" ry="79" fill="#F6D3B4"/>
+
+    <!-- fringe: a long side parting rather than a straight-across bang -->
+    <path d="M200 86c-45 0-70 30-70 68 0 7 1 14 2 20 6-33 24-55 50-61 32-8 62 5 78 29 3 5 5 10 6 16 2-8 4-16 4-24 0-33-25-48-70-48z" fill="url(#sam-hair)"/>
+
+    <g stroke-width="4.6">
+      <!-- brows -->
+      <path d="M167 164c8-6 20-7 28-3" fill="none" stroke="#4A2B1F"/>
+      <path d="M205 161c8-4 20-3 28 3" fill="none" stroke="#4A2B1F"/>
+      <!-- nose -->
+      <path d="M200 190v15c0 3-3 5-7 6" fill="none" stroke="#D79E80"/>
+      <!-- a closed, slightly-amused mouth, not a grin -->
+      <path d="M184 222c10 8 22 8 32 0" fill="none" stroke="#8C2F45"/>
+    </g>
+
+    <!-- eyes -->
+    <g stroke="none">
+      <ellipse cx="178" cy="183" rx="7.5" ry="9" fill="#3B2119"/>
+      <ellipse cx="222" cy="183" rx="7.5" ry="9" fill="#3B2119"/>
+      <circle cx="180.5" cy="180" r="2.4" fill="#fff" opacity=".85"/>
+      <circle cx="224.5" cy="180" r="2.4" fill="#fff" opacity=".85"/>
+      <ellipse cx="160" cy="203" rx="15" ry="9" fill="#D4A0A8" opacity=".45"/>
+      <ellipse cx="240" cy="203" rx="15" ry="9" fill="#D4A0A8" opacity=".45"/>
+    </g>
+
+    <!-- Gold hoop, straddling the jaw contour on purpose: hung clear of the face
+         it read as a ring floating in her hair, since there is no drawn ear for
+         it to hang from at this level of abstraction. -->
+    <circle cx="147" cy="228" r="7" fill="none" stroke="#C09A5E" stroke-width="3"/>
+
+    <!-- the silk scarf: one claret line following the neckline, knotted at the
+         chest, with two tails. It is what carries the brand red into the
+         drawing without tinting her clothes. -->
+    <g stroke="none">
+      <path d="M156 310 200 368 244 310" fill="none" stroke="#8C2F45" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M197 374c-6 18-12 34-22 48" fill="none" stroke="#8C2F45" stroke-width="8" stroke-linecap="round"/>
+      <path d="M206 374c4 16 6 30 4 44" fill="none" stroke="#8C2F45" stroke-width="8" stroke-linecap="round"/>
+      <circle cx="201" cy="371" r="10" fill="#8C2F45"/>
+      <circle cx="201" cy="371" r="10" fill="none" stroke="#3B2119" stroke-width="2.4"/>
+    </g>
+
+    <!-- the rose, above her ear — the answer to the rose in Valentin's crest -->
+    <g transform="translate(258 116)">
+      <path d="M-16 24c-11 3-22-4-24-15 11-6 24-2 28 9z" fill="#7C8464"/>
+      <path d="M14 30c9 6 20 4 25-5-9-7-21-6-26 3z" fill="#7C8464"/>
+      <path d="M-8 16c-8 6-14 16-16 24" fill="none" stroke="#5E7047"/>
+      <circle r="14" fill="#B14A62"/>
+      <circle r="8" fill="#8C2F45" stroke-width="2.6"/>
+    </g>
+  </g>
+</svg>

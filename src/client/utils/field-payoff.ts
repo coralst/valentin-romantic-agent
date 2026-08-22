@@ -6,8 +6,8 @@ import { PROFILE_FIELD_REGISTRY } from './profile-field-registry';
  *
  * The registry knows a field's shape (text, date, enum) but not its value to a
  * plan. Love language changes every suggestion Valentin makes; zodiac sign
- * changes none of them. Without a ranking the rail has to ask for the 18 fields
- * in declaration order, which means it opens by asking for a nickname while it
+ * changes none of them. Without a ranking the rail has to ask for every registry
+ * field in declaration order, which means it opens by asking for a nickname while it
  * still has no idea what she likes.
  *
  * `reason` is written to be shown verbatim, in Valentin's voice, as the second
@@ -86,6 +86,24 @@ export const FIELD_PAYOFFS: Readonly<Record<string, FieldPayoff>> = {
   clothing_style: {
     rank: 25,
     reason: 'Her style keeps me from suggesting something she would never put on.',
+  },
+  /*
+   * The three sizes sit as a cluster between style (25) and colour (20) rather
+   * than on the 5-spacing, because in practice they are one question — nobody
+   * asks for a shoe size on Tuesday and a dress size on Thursday. Keeping their
+   * ranks adjacent means the queue offers them together.
+   */
+  clothing_size: {
+    rank: 24,
+    reason: 'Her clothing size is the difference between a gift she wears and one she returns.',
+  },
+  shoe_size: {
+    rank: 23,
+    reason: 'A shoe size opens up half the gifts I would otherwise not dare suggest.',
+  },
+  ring_size: {
+    rank: 22,
+    reason: 'Her ring size is worth knowing long before the day you need it.',
   },
   favorite_color: {
     rank: 20,

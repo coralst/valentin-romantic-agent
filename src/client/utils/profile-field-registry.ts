@@ -32,7 +32,16 @@ export const PROFILE_FIELD_SECTIONS: readonly FieldSectionDefinition[] = [
   { id: 'relationship', label: 'Relationship', order: 1 },
   { id: 'interests', label: 'Interests', order: 2 },
   { id: 'style', label: 'Style & Aesthetics', order: 3 },
-  { id: 'gifts', label: 'Gifts & Celebrations', order: 4 },
+  /*
+   * Sizes are their own section rather than three more rows under Style.
+   *
+   * A dress size is not an aesthetic — it is the lookup you do standing in a
+   * shop with your phone out, and the three of them are always wanted together.
+   * Grouping them means the dossier shows one small block you can read in a
+   * glance instead of burying "Ring Size" between a fragrance and a colour.
+   */
+  { id: 'sizes', label: 'Sizes', order: 4 },
+  { id: 'gifts', label: 'Gifts & Celebrations', order: 5 },
 ] as const;
 
 /** The complete profile field registry */
@@ -206,6 +215,50 @@ export const PROFILE_FIELD_REGISTRY: readonly ProfileFieldDefinition[] = [
     mappings: [
       { category: 'gifts', key: 'fragrance' },
       { category: 'gifts', key: 'perfume' },
+    ],
+  },
+  /*
+   * Sizes
+   *
+   * All three are `text`, not `enum` or a number: sizing is regional and a
+   * person's real answer is "UK 6 / EU 39" or "a 10 in most things, an 8 in
+   * Zara". An enum would force a made-up canonical scale and make the honest
+   * answer unenterable, and a number would lose the letter sizes entirely.
+   *
+   * Mappings avoid the bare key "size" on purpose. It is generic enough that
+   * extraction reaches for it about anything — a ring, a shoe, a canvas — and
+   * resolving it to a specific field would silently file the wrong fact.
+   */
+  {
+    id: 'clothing_size',
+    label: 'Clothing Size',
+    valueType: 'text',
+    section: 'sizes',
+    mappings: [
+      { category: 'gifts', key: 'clothing size' },
+      { category: 'gifts', key: 'dress size' },
+      { category: 'gifts', key: 'clothes size' },
+    ],
+  },
+  {
+    id: 'shoe_size',
+    label: 'Shoe Size',
+    valueType: 'text',
+    section: 'sizes',
+    mappings: [
+      { category: 'gifts', key: 'shoe size' },
+      { category: 'gifts', key: 'shoes size' },
+      { category: 'gifts', key: 'boot size' },
+    ],
+  },
+  {
+    id: 'ring_size',
+    label: 'Ring Size',
+    valueType: 'text',
+    section: 'sizes',
+    mappings: [
+      { category: 'gifts', key: 'ring size' },
+      { category: 'gifts', key: 'finger size' },
     ],
   },
   // Gifts

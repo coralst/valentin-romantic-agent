@@ -4,7 +4,11 @@ import type { StorageInterface } from '../persistence/storage-interface';
 import type { ConversationMemory } from '../persistence/conversation-memory';
 import type { BedrockClient } from './bedrock-client';
 import type { AgentCoreAdapter } from './agentcore-adapter';
-import { VALENTIN_SYSTEM_PROMPT } from './prompts';
+import {
+  buildSystemPrompt,
+  partnerNameFrom,
+  type KnownFact,
+} from './prompts';
 import { LlmError } from '../../shared/errors/llm-error';
 
 /** Callback invoked when a preference is extracted */
@@ -46,19 +50,37 @@ export interface AgentOrchestratorInterface {
  * copy of this text somewhere else would drift, and the greeting is the first
  * thing an audience reads.
  */
-export function buildWelcomeMessage(sessionId: string): ChatMessage {
+export function buildWelcomeMessage(
+  sessionId: string,
+  partnerName?: string | null,
+): ChatMessage {
+  // A session that already carries a profile must not be greeted as a stranger.
+  // The demo login seeds a complete partner *before* the browser has loaded, so
+  // the transcript is empty while the profile is full — and the introduction
+  // then reads as though Valentin had forgotten her between visits.
+  const content = partnerName
+    ? `Welcome back. I've got ${partnerName} on file and I'm keeping an eye on the dates that matter. Anything you'd like to plan, or anything new I should know about her?`
+    : "Hello! I'm Valentin, your romantic concierge. I'm here to help you build a thoughtful profile of your special someone. Tell me — what's something your partner absolutely loves?";
+
   return {
     id: crypto.randomUUID(),
     sessionId,
     sender: 'agent',
-    content:
-      "Hello! I'm Valentin, your romantic concierge. I'm here to help you build a thoughtful profile of your special someone. Tell me — what's something your partner absolutely loves?",
+    content,
     timestamp: new Date().toISOString(),
   };
 }
 
 /** Maximum tokens for context window */
 const MAX_CONTEXT_TOKENS = 4096;
+
+/**
+ * How many other conversations to gather the partner's profile from.
+ *
+ * `listSessions` returns newest first, so this takes the recent ones. One query
+ * each, on every turn — see {@link AgentOrchestrator.knownFacts}.
+ */
+const MAX_PROFILE_SESSIONS = 6;
 
 /** Orchestrates conversation flow between user, Bedrock LLM, and preference extraction */
 export class AgentOrchestrator implements AgentOrchestratorInterface {
@@ -100,7 +122,10 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
     const history = await this.memory.getHistory(sessionId);
     if (history.length > 0) return null;
 
-    const welcomeMessage = buildWelcomeMessage(sessionId);
+    const welcomeMessage = buildWelcomeMessage(
+      sessionId,
+      partnerNameFrom(await this.knownFacts(sessionId)),
+    );
     await this.memory.addMessage(sessionId, welcomeMessage);
     return welcomeMessage;
   }
@@ -125,11 +150,12 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
       MAX_CONTEXT_TOKENS,
     );
 
-    // Call Bedrock with retry
+    // Call Bedrock with retry, with her profile in the system prompt
     let responseContent: string;
     try {
       const response = await this.callBedrockWithRetry(
         context.recentMessages,
+        buildSystemPrompt(await this.knownFacts(sessionId)),
       );
       responseContent = response;
     } catch (err) {
@@ -159,14 +185,81 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
     return agentMessage;
   }
 
+  /**
+   * What Valentin knows about her, for the prompt.
+   *
+   * ACCOUNT-WIDE, NOT PER-CONVERSATION. Preferences are stored under a session,
+   * but the partner they describe belongs to the account: opening a second
+   * conversation does not give someone a second partner. Reading only
+   * `sessionId` meant a brand-new chat inside a fully-profiled account was
+   * treated as a first meeting — the exact thing that made him ask a user who
+   * had twenty-one known fields to tell him about his partner.
+   *
+   * The active session is merged last so it wins on conflicts: it holds the most
+   * recent turn, and a fact just corrected there must not be overwritten by the
+   * older copy of it sitting in another conversation.
+   *
+   * Bounded to the most recent handful of conversations. This runs on every turn
+   * and each session is its own query, so it is capped rather than left to grow
+   * with the account's history; the latest conversations are where a current
+   * profile actually lives.
+   *
+   * Best-effort throughout: a store that fails here must cost a personalised
+   * reply, not the reply itself. Falling back to less knowledge degrades him to
+   * the getting-to-know-you register, which is wrong but harmless; propagating
+   * would put an apology on screen instead of an answer.
+   */
+  private async knownFacts(sessionId: string): Promise<KnownFact[]> {
+    const merged = new Map<string, KnownFact>();
+
+    for (const id of await this.recentSessionIds(sessionId)) {
+      for (const fact of await this.factsIn(id)) {
+        merged.set(fact.fieldId ?? fact.key, fact);
+      }
+    }
+
+    return [...merged.values()];
+  }
+
+  /** The sessions worth reading, oldest first, with the active one last */
+  private async recentSessionIds(activeId: string): Promise<string[]> {
+    let others: string[] = [];
+    try {
+      others = (await this.storage.listSessions())
+        .map((session) => session.id)
+        .filter((id) => id !== activeId)
+        .slice(0, MAX_PROFILE_SESSIONS)
+        .reverse();
+    } catch (err) {
+      console.warn(
+        '[orchestrator] could not list sessions for the prompt:',
+        err instanceof Error ? err.message : err,
+      );
+    }
+    return [...others, activeId];
+  }
+
+  private async factsIn(sessionId: string): Promise<KnownFact[]> {
+    try {
+      return await this.storage.getPreferencesBySession(sessionId);
+    } catch (err) {
+      console.warn(
+        '[orchestrator] could not read the profile for the prompt:',
+        err instanceof Error ? err.message : err,
+      );
+      return [];
+    }
+  }
+
   /** Call Bedrock, retry once on failure, throw on second failure */
   private async callBedrockWithRetry(
     messages: ChatMessage[],
+    systemPrompt: string,
   ): Promise<string> {
     try {
       const response = await this.bedrockClient.generateResponse(
         messages,
-        VALENTIN_SYSTEM_PROMPT,
+        systemPrompt,
       );
       return response.content;
     } catch (firstError) {
@@ -176,7 +269,7 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
       try {
         const response = await this.bedrockClient.generateResponse(
           messages,
-          VALENTIN_SYSTEM_PROMPT,
+          systemPrompt,
         );
         return response.content;
       } catch (secondError) {

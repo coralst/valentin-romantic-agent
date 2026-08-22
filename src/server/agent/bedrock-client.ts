@@ -219,7 +219,16 @@ export class AwsBedrockClient implements BedrockClient {
       // Handle guardrail intervention — return the blocked message instead of throwing
       if (response.stopReason === 'guardrail_intervened') {
         const blockedContent = extractTextFromBlocks(response.output?.message?.content);
-        return { content: blockedContent || 'I can only help with learning about your partner. Could you tell me more about their preferences?' };
+        // Worded as Valentin declining *this* turn, not as him announcing the
+        // limits of his job. The old line ("I can only help with learning about
+        // your partner. Could you tell me more about their preferences?") landed
+        // on people mid-conversation about a partner he already knew, and read as
+        // though he had forgotten her and could do nothing else.
+        return {
+          content:
+            blockedContent ||
+            "That one I'd rather not go into — but I'm still right here. Shall we talk about her instead?",
+        };
       }
 
       const raw = extractTextFromBlocks(response.output?.message?.content);

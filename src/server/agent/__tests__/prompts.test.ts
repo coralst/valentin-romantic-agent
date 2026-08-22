@@ -1,0 +1,108 @@
+import { describe, it, expect } from 'vitest';
+import { PROFILE_FIELD_IDS } from '../../../shared/constants/profile-fields';
+import {
+  buildSystemPrompt,
+  partnerNameFrom,
+  VALENTIN_SYSTEM_PROMPT,
+  type KnownFact,
+} from '../prompts';
+
+const samantha: KnownFact[] = [
+  { key: 'partner_name', fieldId: 'partner_name', value: 'Samantha' },
+  { key: 'favorite_cuisine', fieldId: 'favorite_cuisine', value: 'Northern Italian' },
+  { key: 'shellfish_allergy', fieldId: null, value: 'allergic to shellfish' },
+];
+
+describe('VALENTIN_SYSTEM_PROMPT', () => {
+  it('names both goals, so he has a job after the profile is complete', () => {
+    expect(VALENTIN_SYSTEM_PROMPT).toMatch(/GOAL 1/);
+    expect(VALENTIN_SYSTEM_PROMPT).toMatch(/GOAL 2/);
+  });
+
+  it('does not prescribe a fixed opening interview order', () => {
+    // The old prompt said "Start by asking for the partner's name, then
+    // age/birthday, then gender", which is what made him interrogate.
+    expect(VALENTIN_SYSTEM_PROMPT).not.toMatch(/Start by asking for the partner's name/);
+  });
+});
+
+describe('partnerNameFrom', () => {
+  it('finds the name by field id', () => {
+    expect(partnerNameFrom(samantha)).toBe('Samantha');
+  });
+
+  it('finds the name by key when no field id was recorded', () => {
+    expect(
+      partnerNameFrom([{ key: 'partner_name', value: 'Mira' }]),
+    ).toBe('Mira');
+  });
+
+  it('is null when the name is not known', () => {
+    expect(partnerNameFrom([{ key: 'hobbies', value: 'pottery' }])).toBeNull();
+    expect(partnerNameFrom([])).toBeNull();
+  });
+
+  it('treats a blank name as unknown rather than greeting an empty string', () => {
+    expect(
+      partnerNameFrom([{ key: 'partner_name', fieldId: 'partner_name', value: '   ' }]),
+    ).toBeNull();
+  });
+});
+
+describe('buildSystemPrompt', () => {
+  it('puts goal 1 live and asks for nothing yet when he knows nothing', () => {
+    const prompt = buildSystemPrompt([]);
+    expect(prompt).toMatch(/You know nothing about her yet/);
+    expect(prompt).toMatch(/GOAL 1 is live/);
+    expect(prompt).not.toMatch(/WHAT YOU KNOW ABOUT/);
+  });
+
+  it('puts goal 2 live once there is a profile', () => {
+    const prompt = buildSystemPrompt(samantha);
+    expect(prompt).toMatch(/GOAL 2 is live/);
+    expect(prompt).toMatch(/do not ask him to tell you about his partner/);
+  });
+
+  it('carries every known fact into the prompt', () => {
+    const prompt = buildSystemPrompt(samantha);
+    expect(prompt).toContain('Samantha');
+    expect(prompt).toContain('Northern Italian');
+    // The off-registry facts matter most — an allergy has no profile field.
+    expect(prompt).toContain('allergic to shellfish');
+  });
+
+  it('renders field ids as readable labels, not snake_case', () => {
+    expect(buildSystemPrompt(samantha)).toContain('favorite cuisine: Northern Italian');
+  });
+
+  it('lists the fields still unknown, so gaps can be filled in passing', () => {
+    const prompt = buildSystemPrompt(samantha);
+    expect(prompt).toMatch(/Still unknown:/);
+    expect(prompt).toContain('birthday');
+    expect(prompt).toMatch(/Do not interrogate/);
+  });
+
+  it('tells him to stop collecting once every field is known', () => {
+    const complete: KnownFact[] = PROFILE_FIELD_IDS.map((id) => ({
+      key: id,
+      fieldId: id,
+      value: id === 'partner_name' ? 'Samantha' : 'something',
+    }));
+    const prompt = buildSystemPrompt(complete);
+    expect(prompt).toMatch(/You know every field on her profile/);
+    expect(prompt).not.toMatch(/Still unknown:/);
+  });
+
+  it('keeps the persona in front of the state block', () => {
+    const prompt = buildSystemPrompt(samantha);
+    expect(prompt.indexOf('You are Valentin')).toBeLessThan(
+      prompt.indexOf('CURRENT STATE'),
+    );
+  });
+
+  it('addresses her generically when the profile has facts but no name', () => {
+    const prompt = buildSystemPrompt([{ key: 'hobbies', fieldId: 'hobbies', value: 'pottery' }]);
+    expect(prompt).toMatch(/GOAL 2 is live/);
+    expect(prompt).toContain('his partner');
+  });
+});

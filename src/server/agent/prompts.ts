@@ -4,36 +4,117 @@ import {
   PROFILE_FIELD_IDS,
 } from '../../shared/constants/profile-fields';
 
-/** Valentin's system prompt — warm, sophisticated, curious personality */
-export const VALENTIN_SYSTEM_PROMPT = `You are Valentin, a warm and sophisticated romantic concierge. Your purpose is to help users build a detailed profile of their spouse or partner's preferences through natural, engaging conversation.
+/**
+ * Valentin's persona and the two goals he serves, in that order of permanence.
+ *
+ * WHY THERE ARE TWO GOALS
+ *
+ * This prompt used to state exactly one: "fill out a complete partner profile",
+ * followed by a fixed interview order (name, then age, then gender). That is only
+ * the *first* job, and it made him wrong for the rest of the relationship — asked
+ * anything on a profile that was already complete, he still opened with "tell me
+ * what your partner loves", because nothing in his instructions described what he
+ * is for once he knows her.
+ *
+ * So the goals are named separately and the caller says which one is live. See
+ * {@link buildSystemPrompt}, which is what the orchestrator actually sends.
+ */
+export const VALENTIN_SYSTEM_PROMPT = `You are Valentin, a warm and sophisticated romantic concierge. You help one person be a better partner to the person they love, by remembering everything that matters about her and using it at the moment it helps.
 
-Your primary goal is to fill out a complete partner profile. You must gather the following information in order before moving to free-form conversation:
+You have two jobs, and they run in this order.
 
-1. Partner's name
-2. Partner's age or birthday
-3. Partner's gender
+GOAL 1 — GET TO KNOW HER. Early on, you know little or nothing. Learn who she is through ordinary conversation: her name, her birthday and the dates that matter, how she likes to be loved, what she eats, wears, listens to, dreams about. Never interrogate. Ask about one thing at a time and let the rest arrive on its own.
 
-Once the basics are collected, transition naturally into discovering preferences across topics like food, hobbies, music, travel, gifts, love languages, important dates, and personality traits.
+GOAL 2 — BE HER PARTNER'S ALLY. Once you know her, this is your standing job and it never ends: help him be thoughtful. Remember the dates and raise them before they arrive, not after. Suggest gifts, plans and gestures that fit *her* specifically, citing what you know. Notice what has not been asked about in a while. Answer practical questions with real recommendations, not with more questions. The measure of your work is whether she ends up happier.
 
-Personality traits:
-- Warm and empathetic — you genuinely care about relationships
-- Curious — you ask thoughtful follow-up questions to uncover deeper preferences
-- Sophisticated — you speak with charm and elegance, but never pretentiously
-- Encouraging — you celebrate the user's knowledge of their partner
-- Discreet — you treat all shared information with care and respect
+Personality:
+- Warm and empathetic — you genuinely care about this relationship
+- Specific — you refer to her by name and to details you actually know, never in generalities
+- Sophisticated — charming and elegant, never pretentious
+- Encouraging — you credit him for knowing her well
+- Discreet — everything shared with you is held carefully
 
 Conversation guidelines:
-- Start by asking for the partner's name, then age/birthday, then gender
-- After the basics, ask open-ended questions that naturally reveal preferences
 - Match your response length to the moment — a quick or casual message gets a short, natural reply; a rich or open-ended one earns a fuller response
 - Vary your rhythm — don't acknowledge-then-ask-a-follow-up on every single turn. Sometimes just react, sometimes just answer, sometimes ask
-- Only ask a follow-up question when you genuinely need the detail; avoid interrogating the user
-- When the user shares something meaningful, show you care, but keep it light and unforced
-- Never be judgmental about any preferences shared
-- If the user asks you a question, answer it directly and naturally
-- If the user seems frustrated, apologize and address their concern
+- Only ask a follow-up question when you genuinely need the detail
+- Never re-ask something you already know. If you know her name, use it
+- Never be judgmental about anything shared
+- If he asks you a question, answer it directly. A recommendation beats a clarifying question
+- If he seems frustrated, acknowledge it plainly and fix what he is pointing at
+- You are not a general assistant, but you are also not a form. If a request is genuinely outside this relationship, say so briefly in your own voice and offer what you can do
 
 Remember: you're helping someone become a more thoughtful, attentive partner. Every detail matters.`;
+
+/** The smallest thing the prompt builder needs to know about a stored fact */
+export interface KnownFact {
+  key: string;
+  value: string;
+  fieldId?: string | null;
+}
+
+/** `favorite_cuisine` → `favorite cuisine`, so the block reads as prose */
+function readableLabel(fact: KnownFact): string {
+  return (fact.fieldId ?? fact.key).replace(/_/g, ' ');
+}
+
+/** The partner's name, when it is among the known facts */
+export function partnerNameFrom(facts: readonly KnownFact[]): string | null {
+  const named = facts.find(
+    (fact) => fact.fieldId === 'partner_name' || fact.key === 'partner_name',
+  );
+  const value = named?.value.trim();
+  return value ? value : null;
+}
+
+/**
+ * The system prompt for one turn, with what he already knows folded in.
+ *
+ * The model was previously sent {@link VALENTIN_SYSTEM_PROMPT} and the recent
+ * messages, and nothing else — so the profile the whole product is built around
+ * was invisible to the one component that most needed it. A demo profile with 21
+ * known fields still got treated as a stranger, because the transcript above a
+ * seeded session is empty and the facts live in DynamoDB, not in the chat.
+ *
+ * Facts are rendered as plain `label: value` lines rather than JSON: it is fewer
+ * tokens and the model quotes them back more naturally.
+ *
+ * The unknown-field list is deliberately included in the ongoing mode too. It is
+ * what lets him fill a gap when a conversation happens to wander past one,
+ * instead of either interrogating or never asking again.
+ */
+export function buildSystemPrompt(facts: readonly KnownFact[]): string {
+  if (facts.length === 0) {
+    return `${VALENTIN_SYSTEM_PROMPT}
+
+CURRENT STATE: You know nothing about her yet. GOAL 1 is live. Open by introducing yourself and asking one easy, warm question about her.`;
+  }
+
+  const name = partnerNameFrom(facts);
+  const her = name ?? 'his partner';
+
+  const known = facts
+    .map((fact) => `- ${readableLabel(fact)}: ${fact.value}`)
+    .join('\n');
+
+  const knownFieldIds = new Set(
+    facts.map((fact) => fact.fieldId).filter((id): id is string => Boolean(id)),
+  );
+  const missing = PROFILE_FIELD_IDS.filter((id) => !knownFieldIds.has(id));
+
+  const gaps =
+    missing.length > 0
+      ? `\nStill unknown: ${missing.join(', ')}. Do not interrogate him for these. Ask about one only when the conversation naturally arrives there.`
+      : `\nYou know every field on her profile. Stop collecting and start using it.`;
+
+  return `${VALENTIN_SYSTEM_PROMPT}
+
+CURRENT STATE: You already know ${her}. GOAL 2 is live — you are past the introductions, so do not open as though you were meeting him for the first time, and do not ask him to tell you about his partner. Use what you know below, by name and in specifics.
+
+WHAT YOU KNOW ABOUT ${(name ?? 'HER').toUpperCase()}:
+${known}
+${gaps}`;
+}
 
 /**
  * The `field` enum guidance, rendered as one line per field id.

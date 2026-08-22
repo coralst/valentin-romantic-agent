@@ -1,15 +1,9 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
-  loadSessions,
-  saveSessions,
-  saveSession,
-  deleteSession,
-  renameSession,
-  createNewSession,
+  discardLegacySessions,
   loadSidebarCollapsed,
   saveSidebarCollapsed,
   formatRelativeTime,
-  type StoredSession,
 } from '../use-session-store';
 
 describe('use-session-store', () => {
@@ -17,201 +11,35 @@ describe('use-session-store', () => {
     localStorage.clear();
   });
 
-  describe('loadSessions', () => {
-    it('returns empty array when no data in localStorage', () => {
-      expect(loadSessions()).toEqual([]);
+  describe('discardLegacySessions', () => {
+    it('reports nothing to discard on a browser that never held any', () => {
+      expect(discardLegacySessions()).toBe(0);
     });
 
-    it('returns parsed sessions from localStorage', () => {
-      const sessions: StoredSession[] = [
-        {
-          id: 'test-1',
-          title: null,
-          partnerName: 'Alice',
-          messages: [],
-          preferences: [],
-          lastActivity: '2026-07-30T10:00:00.000Z',
-          messageCount: 5,
-        },
-      ];
-      localStorage.setItem('valentin_sessions', JSON.stringify(sessions));
-      const result = loadSessions();
-      expect(result).toHaveLength(1);
-      expect(result[0].id).toBe('test-1');
-      expect(result[0].partnerName).toBe('Alice');
+    it('clears the old key and reports how many were there', () => {
+      // The count is what the sidebar's one-time notice says out loud, so it has
+      // to be the real number rather than a boolean.
+      localStorage.setItem(
+        'valentin_sessions',
+        JSON.stringify([{ id: 'a' }, { id: 'b' }, { id: 'c' }]),
+      );
+
+      expect(discardLegacySessions()).toBe(3);
+      expect(localStorage.getItem('valentin_sessions')).toBeNull();
     });
 
-    it('discards corrupt data and returns empty array', () => {
+    it('discards unreadable data without throwing', () => {
       localStorage.setItem('valentin_sessions', '{not valid json!!!');
-      expect(loadSessions()).toEqual([]);
+
+      expect(discardLegacySessions()).toBe(0);
       expect(localStorage.getItem('valentin_sessions')).toBeNull();
     });
 
-    it('discards non-array data and returns empty array', () => {
-      localStorage.setItem('valentin_sessions', JSON.stringify({ foo: 'bar' }));
-      expect(loadSessions()).toEqual([]);
-      expect(localStorage.getItem('valentin_sessions')).toBeNull();
-    });
-  });
+    it('is a no-op the second time, so the notice appears once', () => {
+      localStorage.setItem('valentin_sessions', JSON.stringify([{ id: 'a' }]));
 
-  describe('saveSessions', () => {
-    it('persists sessions to localStorage', () => {
-      const sessions: StoredSession[] = [
-        {
-          id: 's1',
-          title: null,
-          partnerName: null,
-          messages: [],
-          preferences: [],
-          lastActivity: '2026-07-30T10:00:00.000Z',
-          messageCount: 0,
-        },
-      ];
-      saveSessions(sessions);
-      const stored = JSON.parse(localStorage.getItem('valentin_sessions')!);
-      expect(stored).toHaveLength(1);
-      expect(stored[0].id).toBe('s1');
-    });
-
-    it('enforces maximum of 10 sessions, keeping most recent', () => {
-      const sessions: StoredSession[] = Array.from({ length: 12 }, (_, i) => ({
-        id: `s${i}`,
-        title: null,
-        partnerName: null,
-        messages: [],
-        preferences: [],
-        lastActivity: new Date(2026, 6, 1 + i).toISOString(),
-        messageCount: 0,
-      }));
-      saveSessions(sessions);
-      const stored = JSON.parse(localStorage.getItem('valentin_sessions')!);
-      expect(stored).toHaveLength(10);
-      // Should contain the 10 most recent (indices 2-11)
-      expect(stored[0].id).toBe('s11');
-      expect(stored[9].id).toBe('s2');
-    });
-
-    it('sorts sessions by lastActivity descending', () => {
-      const sessions: StoredSession[] = [
-        { id: 'old', title: null, partnerName: null, messages: [], preferences: [], lastActivity: '2026-07-01T00:00:00.000Z', messageCount: 0 },
-        { id: 'new', title: null, partnerName: null, messages: [], preferences: [], lastActivity: '2026-07-31T00:00:00.000Z', messageCount: 0 },
-      ];
-      saveSessions(sessions);
-      const stored = JSON.parse(localStorage.getItem('valentin_sessions')!);
-      expect(stored[0].id).toBe('new');
-      expect(stored[1].id).toBe('old');
-    });
-  });
-
-  describe('saveSession', () => {
-    it('adds a new session to the store', () => {
-      const session: StoredSession = {
-        id: 'new-session',
-        title: null,
-        partnerName: 'Bob',
-        messages: [],
-        preferences: [],
-        lastActivity: '2026-07-30T12:00:00.000Z',
-        messageCount: 3,
-      };
-      saveSession(session);
-      const sessions = loadSessions();
-      expect(sessions).toHaveLength(1);
-      expect(sessions[0].id).toBe('new-session');
-    });
-
-    it('updates an existing session with the same id', () => {
-      const session: StoredSession = {
-        id: 'existing',
-        title: null,
-        partnerName: null,
-        messages: [],
-        preferences: [],
-        lastActivity: '2026-07-30T10:00:00.000Z',
-        messageCount: 0,
-      };
-      saveSession(session);
-      saveSession({ ...session, partnerName: 'Updated', messageCount: 5 });
-      const sessions = loadSessions();
-      expect(sessions).toHaveLength(1);
-      expect(sessions[0].partnerName).toBe('Updated');
-      expect(sessions[0].messageCount).toBe(5);
-    });
-  });
-
-  describe('deleteSession', () => {
-    it('removes a session by id', () => {
-      const sessions: StoredSession[] = [
-        { id: 'keep', title: null, partnerName: null, messages: [], preferences: [], lastActivity: '2026-07-30T12:00:00.000Z', messageCount: 0 },
-        { id: 'remove', title: null, partnerName: null, messages: [], preferences: [], lastActivity: '2026-07-30T10:00:00.000Z', messageCount: 0 },
-      ];
-      saveSessions(sessions);
-      deleteSession('remove');
-      const remaining = loadSessions();
-      expect(remaining).toHaveLength(1);
-      expect(remaining[0].id).toBe('keep');
-    });
-
-    it('does nothing if id does not exist', () => {
-      const sessions: StoredSession[] = [
-        { id: 'only', title: null, partnerName: null, messages: [], preferences: [], lastActivity: '2026-07-30T12:00:00.000Z', messageCount: 0 },
-      ];
-      saveSessions(sessions);
-      deleteSession('nonexistent');
-      expect(loadSessions()).toHaveLength(1);
-    });
-  });
-
-  describe('renameSession', () => {
-    it('sets a trimmed title on the matching session', () => {
-      const sessions: StoredSession[] = [
-        { id: 'a', title: null, partnerName: null, messages: [], preferences: [], lastActivity: '2026-07-30T12:00:00.000Z', messageCount: 0 },
-      ];
-      saveSessions(sessions);
-      renameSession('a', '  Anniversary planning  ');
-      expect(loadSessions()[0].title).toBe('Anniversary planning');
-    });
-
-    it('clears the title to null when renamed to blank', () => {
-      const sessions: StoredSession[] = [
-        { id: 'a', title: 'Old name', partnerName: null, messages: [], preferences: [], lastActivity: '2026-07-30T12:00:00.000Z', messageCount: 0 },
-      ];
-      saveSessions(sessions);
-      renameSession('a', '   ');
-      expect(loadSessions()[0].title).toBeNull();
-    });
-
-    it('does nothing if id does not exist', () => {
-      const sessions: StoredSession[] = [
-        { id: 'a', title: null, partnerName: null, messages: [], preferences: [], lastActivity: '2026-07-30T12:00:00.000Z', messageCount: 0 },
-      ];
-      saveSessions(sessions);
-      renameSession('nonexistent', 'Whatever');
-      expect(loadSessions()[0].title).toBeNull();
-    });
-  });
-
-  describe('createNewSession', () => {
-    it('returns a session with a valid UUID id', () => {
-      const session = createNewSession();
-      expect(session.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
-    });
-
-    it('returns a session with empty messages and preferences', () => {
-      const session = createNewSession();
-      expect(session.messages).toEqual([]);
-      expect(session.preferences).toEqual([]);
-      expect(session.messageCount).toBe(0);
-      expect(session.partnerName).toBeNull();
-      expect(session.title).toBeNull();
-    });
-
-    it('returns a session with a recent lastActivity timestamp', () => {
-      const before = new Date().toISOString();
-      const session = createNewSession();
-      const after = new Date().toISOString();
-      expect(session.lastActivity >= before).toBe(true);
-      expect(session.lastActivity <= after).toBe(true);
+      expect(discardLegacySessions()).toBe(1);
+      expect(discardLegacySessions()).toBe(0);
     });
   });
 

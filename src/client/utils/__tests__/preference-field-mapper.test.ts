@@ -55,8 +55,18 @@ describe('resolveField', () => {
     expect(resolveField('food', 'unknown_key')).toBeNull();
   });
 
-  it('returns null for a valid category with wrong key', () => {
-    expect(resolveField('music', 'nonexistent')).toBeNull();
+  it('returns null for a valid multi-field category with an unknown key', () => {
+    // `music` used to be asserted here. It is now a single-field category: any
+    // `music` preference routes to `music_genre`, because extraction routinely
+    // puts the value in the key ("music:listens_to_bachata") and silently
+    // dropping those was the bug this branch fixes. Categories that span several
+    // fields still refuse to guess — see `preference-field-resolution.test.ts`.
+    expect(resolveField('personality_traits', 'nonexistent')).toBeNull();
+    expect(resolveField('important_dates', 'nonexistent')).toBeNull();
+  });
+
+  it('routes any music preference to music_genre', () => {
+    expect(resolveField('music', 'nonexistent')).toBe('music_genre');
   });
 
   it('handles repeated calls consistently', () => {

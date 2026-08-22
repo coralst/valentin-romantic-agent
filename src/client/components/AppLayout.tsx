@@ -1,96 +1,98 @@
 import { useState, useEffect } from 'react';
 import { ChatPanel } from './ChatPanel';
-import { PartnerProfilePanel } from './PartnerProfilePanel';
+import { BriefRail } from './BriefRail';
+import { DossierView } from './DossierView';
 import { MobileNav } from './MobileNav';
 import { ProfileStoreProvider } from '../context/profile-store-context';
+import { DiscoveryProvider } from '../context/discovery-context';
+import { ViewProvider, useViewState } from '../context/view-context';
+import { usePreferenceIngestion } from '../hooks/use-preference-ingestion';
 import { useChatContext } from '../context/chat-context';
 import { SessionSidebar } from './SessionSidebar';
-import { DemoToolbar } from './DemoToolbar';
+import {
+  AppWindow,
+  DOSSIER_COLUMNS,
+  windowCellStyle,
+  windowCellGrowStyle,
+} from './AppWindow';
+import { IconRail } from './IconRail';
+import { LiveArchitectureDrawer, reservedDrawerSpace } from './LiveArchitectureDrawer';
+import {
+  ArchitectureDrawerProvider,
+  useArchitectureDrawer,
+} from '../context/architecture-drawer-context';
 import { useSessionContext } from '../context/session-context';
-import { breakpoints, spacing, colors, typography, shadows, animation, borderRadius } from '../design-system/tokens';
+import { breakpoints, layout } from '../design-system/tokens';
 
-const headerStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: spacing.sm,
-  padding: `${spacing.xs + 4}px ${spacing.md}px`,
-  background: colors.headerGradient,
-  backdropFilter: 'blur(12px)',
-  boxShadow: shadows.header,
-  position: 'relative',
-  zIndex: 10,
-};
-
-const logoStyle: React.CSSProperties = {
-  height: 40,
-  objectFit: 'contain',
-};
-
-const brandStyle: React.CSSProperties = {
-  fontFamily: typography.headingFontFamily,
-  fontSize: typography.sizes.lg,
-  fontWeight: typography.weights.bold,
-  color: colors.softBurgundy,
-  letterSpacing: '-0.01em',
-};
-
-const desktopStyle: React.CSSProperties = {
-  display: 'flex',
-  flex: 1,
-  minHeight: 0,
-  width: '100%',
-};
-
-const leftPanelStyle: React.CSSProperties = {
-  flex: 1,
-  minWidth: 0,
-};
-
-const dividerStyle: React.CSSProperties = {
+const liveRegionStyle: React.CSSProperties = {
+  position: 'absolute',
   width: 1,
-  backgroundColor: colors.borderSubtle,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: 'hidden',
+  clip: 'rect(0, 0, 0, 0)',
+  whiteSpace: 'nowrap',
+  border: 0,
 };
 
-const rightPanelStyle: React.CSSProperties = {
-  width: 380,
-  flexShrink: 0,
-};
+/**
+ * The positioning context the architecture drawer anchors to, and the region
+ * that gives up the space the drawer occupies.
+ *
+ * Two things are load-bearing here.
+ *
+ * `position: relative`, because the drawer is `position: absolute` and this is
+ * what makes it span exactly the region below. It must NOT be `position: fixed`
+ * and must not portal to `document.body`: the app window sets `overflow: hidden`
+ * to keep its 34px radius crisp, so the window's own clip is what keeps the
+ * drawer's bottom corners inside the frame instead of running past it. (The old
+ * inspector portalled out to escape the deleted header's `backdrop-filter`; that
+ * reason is gone, and the replacement reason points the other way — stay inside.)
+ *
+ * `paddingBottom`, because the drawer is a 424px overlay pinned to the bottom of
+ * this region — which is exactly where the composer sits. Reserving the space
+ * rather than covering it is the drawer's whole contract ("not a dialog, no focus
+ * trap, composer stays typable"); occlusion breaks it just as effectively as a
+ * modal would. `boxSizing: border-box` is what makes the padding shrink the
+ * children's height rather than growing the region past its grid track.
+ *
+ * The amount comes from `reservedDrawerSpace()`, which lives next to the heights
+ * it derives from so the layout cannot drift out of agreement with the drawer.
+ */
+function drawerHostStyle(gridColumn: string, reserved: number): React.CSSProperties {
+  return {
+    gridColumn,
+    position: 'relative',
+    boxSizing: 'border-box',
+    paddingBottom: reserved,
+    display: 'grid',
+    // Chat + brief keep their own tracks inside the host, so wrapping them does
+    // not change the window's four-column template.
+    gridTemplateColumns:
+      gridColumn === CHAT_COLUMNS_SPAN
+        ? `minmax(0, 1fr) ${layout.briefRailWidth}px`
+        : 'minmax(0, 1fr)',
+    gridTemplateRows: '100%',
+    minWidth: 0,
+    minHeight: 0,
+    // The reopen bar parks itself at `translateY(100%)` while the drawer is up,
+    // i.e. 34px *below* this host's bottom edge. A transform does not affect
+    // layout but it does extend the scrollable overflow area, so without this
+    // clip the host is 34px taller than its grid track — and the first thing to
+    // scroll it (sending a message, which scrolls the transcript to the bottom)
+    // slides the whole window grid up by 34px, dragging the icon rail and the
+    // sidebar to `top: -20` and shearing the crest off the top of the frame.
+    // Found by driving a real turn with the drawer open; no unit test sees it,
+    // because jsdom performs no layout and so has no overflow to scroll.
+    overflow: 'hidden',
+  };
+}
 
-const mobileContainerStyle: React.CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  height: '100vh',
-  width: '100%',
-};
-
-const mobilePanelStyle: React.CSSProperties = {
-  flex: 1,
-  minHeight: 0,
-};
-
-const outerStyle: React.CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  height: '100vh',
-  width: '100%',
-  backgroundColor: colors.background,
-};
-
-const menuButtonStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: 32,
-  height: 32,
-  border: 'none',
-  borderRadius: borderRadius.sm,
-  backgroundColor: 'transparent',
-  cursor: 'pointer',
-  fontSize: typography.sizes.md,
-  color: colors.textSecondary,
-  marginRight: spacing.xs,
-  transition: `background-color ${animation.durations.fast}ms ${animation.easing.easeInOut}`,
-};
+/** The chat shell's host covers the chat and brief tracks (columns 3 and 4). */
+const CHAT_COLUMNS_SPAN = '3 / 5';
+/** The dossier's host covers the single board track (column 2). */
+const DOSSIER_COLUMN_SPAN = '2 / 3';
 
 /**
  * Owns the profile store for the whole layout, so surfaces outside the
@@ -100,7 +102,11 @@ export function AppLayout() {
   const { state: chatState } = useChatContext();
   return (
     <ProfileStoreProvider sessionId={chatState.sessionId}>
-      <AppLayoutContent />
+      {/* Above the layout because the magnifier lives in the sidebar and the
+          drawer is mounted beside the chat — sibling subtrees. */}
+      <ArchitectureDrawerProvider>
+        <AppLayoutContent />
+      </ArchitectureDrawerProvider>
     </ProfileStoreProvider>
   );
 }
@@ -109,6 +115,27 @@ function AppLayoutContent() {
   const [isMobile, setIsMobile] = useState(false);
   const [activePanel, setActivePanel] = useState<'chat' | 'profile'>('chat');
   const { setSidebarOpen } = useSessionContext();
+
+  // Read here rather than inside the drawer: the *layout* is what has to give up
+  // the space, and only the layout owns the regions whose height it takes from.
+  const { isOpen: isDrawerOpen } = useArchitectureDrawer();
+  const reserved = reservedDrawerSpace(isDrawerOpen);
+
+  /*
+   * The app's only surface state: chat shell vs full-page dossier.
+   *
+   * `useState`, not a router and not localStorage — see the long note in
+   * `context/view-context.tsx` for why persisting it or portalling the dossier
+   * were both rejected.
+   */
+  const view = useViewState();
+  const isDossier = view.surface === 'dossier';
+
+  // The app's single preference-ingestion effect. It lives here because this is
+  // the one component guaranteed to be inside both ProfileStoreProvider and
+  // PreferencesProvider, and to be mounted exactly once regardless of which
+  // panels are visible. Consumers read the result via useDiscoveryContext().
+  const discovery = usePreferenceIngestion();
 
   useEffect(() => {
     const mql = window.matchMedia(`(max-width: ${breakpoints.mobile - 1}px)`);
@@ -119,50 +146,139 @@ function AppLayoutContent() {
     return () => mql.removeEventListener('change', handler);
   }, []);
 
-  const profilePanel = <PartnerProfilePanel />;
+  // The brief needs to know the breakpoint itself: on mobile it goes full-width
+  // and drops the scroll fade, which at the foot of a full-height panel reads as
+  // a rendering fault rather than as depth.
+  const profilePanel = <BriefRail isMobile={isMobile} />;
+
+  /* Live region for screen reader announcements (R8.4) */
+  const liveRegion = (
+    <div aria-live="polite" aria-atomic="true" style={liveRegionStyle} data-testid="live-region">
+      {discovery.liveAnnouncement}
+    </div>
+  );
+
+  /**
+   * Tapping a mobile tab leaves the dossier on the way to that panel.
+   *
+   * Without this the tab would appear to do nothing: the panel behind the
+   * dossier would change while the dossier stayed on top of it.
+   */
+  const changePanel = (panel: 'chat' | 'profile') => {
+    setActivePanel(panel);
+    view.setSurface('chat');
+  };
 
   if (isMobile) {
     return (
-      <div style={outerStyle} data-testid="app-layout" data-layout="mobile">
-        <header style={headerStyle}>
-          <button
-            style={menuButtonStyle}
-            onClick={() => setSidebarOpen(true)}
-            aria-label="Open session history"
-            data-testid="sidebar-menu-button"
-          >
-            &#9776;
-          </button>
-          <img src="/logo.png" alt="Valentin logo" style={logoStyle} />
-          <span style={brandStyle}>Valentin</span>
-          <DemoToolbar />
-        </header>
-        <MobileNav activePanel={activePanel} onPanelChange={setActivePanel} />
-        <div style={mobilePanelStyle}>
-          {activePanel === 'chat' ? <ChatPanel /> : profilePanel}
-        </div>
-        <SessionSidebar isMobile={true} />
-      </div>
+      <DiscoveryProvider value={discovery}>
+        <ViewProvider value={view}>
+          <div data-testid="app-layout" data-layout="mobile" data-surface={view.surface}>
+            <AppWindow variant="mobile">
+              <IconRail
+                orientation="row"
+                activeView={activePanel}
+                onViewChange={changePanel}
+                onOpenSessions={() => setSidebarOpen(true)}
+                isDossierActive={isDossier}
+                onToggleDossier={view.toggleDossier}
+                dossierToggleRef={view.dossierToggleRef}
+              />
+              <div style={windowCellStyle}>
+                <MobileNav
+                  activePanel={activePanel}
+                  onPanelChange={changePanel}
+                  isDossierActive={isDossier}
+                  onOpenDossier={view.openDossier}
+                />
+                {/* On mobile the composer is nearly the whole screen, so the
+                    drawer occluding it matters more here, not less — hence the
+                    same reserved space as on desktop. `flex: 1` alongside
+                    `minHeight: 0` keeps this region filling the cell rather than
+                    sizing to its content, which would float the composer
+                    mid-screen. */}
+                <div
+                  style={{
+                    ...windowCellGrowStyle,
+                    position: 'relative',
+                    boxSizing: 'border-box',
+                    paddingBottom: reserved,
+                  }}
+                  data-drawer-reserved={reserved}
+                >
+                  {/* The dossier replaces both panels full-bleed rather than
+                      sitting inside one of them. */}
+                  {isDossier ? (
+                    <DossierView isMobile />
+                  ) : activePanel === 'chat' ? (
+                    <ChatPanel />
+                  ) : (
+                    profilePanel
+                  )}
+                  {/* The diagram is 916px wide, so on a phone it scrolls
+                      horizontally rather than being withheld — a presenter may
+                      well be on a laptop in a narrow window, and hiding the
+                      drawer there is worse. */}
+                  <LiveArchitectureDrawer />
+                </div>
+              </div>
+            </AppWindow>
+            <SessionSidebar isMobile={true} />
+            {liveRegion}
+          </div>
+        </ViewProvider>
+      </DiscoveryProvider>
     );
   }
 
   return (
-    <div style={outerStyle} data-testid="app-layout" data-layout="desktop">
-      <header style={headerStyle}>
-        <img src="/logo.png" alt="Valentin logo" style={logoStyle} />
-        <span style={brandStyle}>Valentin</span>
-        <DemoToolbar />
-      </header>
-      <div style={desktopStyle}>
-        <SessionSidebar isMobile={false} />
-        <div style={leftPanelStyle}>
-          <ChatPanel />
+    <DiscoveryProvider value={discovery}>
+      <ViewProvider value={view}>
+        <div data-testid="app-layout" data-layout="desktop" data-surface={view.surface}>
+          {/* Two columns for the dossier, four for the chat shell. The rail keeps
+              its 76px across both, so it does not shift under the cursor. */}
+          <AppWindow variant="desktop" columns={isDossier ? DOSSIER_COLUMNS : undefined}>
+            {/* In the chat shell both surfaces are on screen at once, so no rail
+                button claims to be the active view. The dossier is a single
+                surface, so there the ♥ does. */}
+            <IconRail
+              orientation="column"
+              activeView={null}
+              onOpenSessions={() => setSidebarOpen(true)}
+              isDossierActive={isDossier}
+              onToggleDossier={view.toggleDossier}
+              dossierToggleRef={view.dossierToggleRef}
+            />
+            {isDossier ? (
+              /* The drawer follows the dossier rather than unmounting with the
+                 chat shell: closing it on a surface switch would drop the
+                 presenter's place in the walkthrough mid-sentence. */
+              <div
+                style={drawerHostStyle(DOSSIER_COLUMN_SPAN, reserved)}
+                data-drawer-reserved={reserved}
+              >
+                <DossierView />
+                <LiveArchitectureDrawer />
+              </div>
+            ) : (
+              <>
+                <SessionSidebar isMobile={false} />
+                <div
+                  style={drawerHostStyle(CHAT_COLUMNS_SPAN, reserved)}
+                  data-drawer-reserved={reserved}
+                >
+                  <div style={windowCellStyle}>
+                    <ChatPanel />
+                  </div>
+                  <div style={windowCellStyle}>{profilePanel}</div>
+                  <LiveArchitectureDrawer />
+                </div>
+              </>
+            )}
+          </AppWindow>
+          {liveRegion}
         </div>
-        <div style={dividerStyle} />
-        <div style={rightPanelStyle}>
-          {profilePanel}
-        </div>
-      </div>
-    </div>
+      </ViewProvider>
+    </DiscoveryProvider>
   );
 }

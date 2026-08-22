@@ -5,6 +5,8 @@ import type { BedrockClient } from '../agent/bedrock-client';
 import { EXTRACT_PREFERENCES_TOOL } from '../agent/prompts';
 import { ExtractionError } from '../../shared/errors/extraction-error';
 import { mapCategory } from './category-mapper';
+import { isPartnerNamePreference } from './partner-name';
+import { isProfileFieldId } from '../../shared/constants/profile-fields';
 
 /** Callback invoked when a preference is persisted */
 export type OnPreferenceUpdate = (
@@ -20,9 +22,70 @@ export interface PreferenceExtractorInterface {
 /** Raw preference shape returned by the Bedrock tool-use call */
 interface RawExtractedPreference {
   category: string;
+  /** Constrained profile field id, or absent for an off-registry fact. */
+  field?: string;
   key: string;
   value: string;
   confidence: number;
+}
+
+/**
+ * Collapse preferences that the model split across two entries.
+ *
+ * Even with an explicit "one preference per fact" instruction, "she's turning 32
+ * in June" is a standing temptation to emit an age and a month separately. Both
+ * now carry `field: 'birthday'`, so a same-field collision within one extraction
+ * batch is the signal: keep one entry and join the values rather than letting the
+ * second silently overwrite the first.
+ *
+ * Only entries with a resolved `field` are merged. Off-registry facts are keyed
+ * by prose, and two of those are genuinely two facts.
+ */
+export function mergeSplitFacts(
+  raw: RawExtractedPreference[],
+): RawExtractedPreference[] {
+  const byField = new Map<string, RawExtractedPreference>();
+  const passthrough: RawExtractedPreference[] = [];
+
+  for (const pref of raw) {
+    const field = pref.field?.trim();
+    if (!field || !isProfileFieldId(field)) {
+      passthrough.push(pref);
+      continue;
+    }
+
+    const existing = byField.get(field);
+    if (!existing) {
+      byField.set(field, { ...pref });
+      continue;
+    }
+
+    // Same field twice in one batch — two halves of one fact.
+    const a = existing.value.trim();
+    const b = pref.value.trim();
+
+    // If one phrasing already contains the other, the longer one wins outright.
+    if (a.toLowerCase().includes(b.toLowerCase())) {
+      existing.confidence = Math.min(existing.confidence, pref.confidence);
+      continue;
+    }
+    if (b.toLowerCase().includes(a.toLowerCase())) {
+      existing.value = b;
+      existing.confidence = Math.min(existing.confidence, pref.confidence);
+      continue;
+    }
+
+    // Genuinely complementary halves: "June" + "32" -> "June (32)".
+    const [longer, shorter] = a.length >= b.length ? [a, b] : [b, a];
+    existing.value = `${longer} (${shorter})`;
+    existing.confidence = Math.min(existing.confidence, pref.confidence);
+    console.warn(
+      `[preference-extractor] merged split fact for field "${field}": ` +
+        `"${a}" + "${b}" -> "${existing.value}"`,
+    );
+  }
+
+  return [...byField.values(), ...passthrough];
 }
 
 /** Extracts structured preferences from conversation messages via Bedrock tool-use */
@@ -59,7 +122,7 @@ export class PreferenceExtractor implements PreferenceExtractorInterface {
       return;
     }
 
-    for (const raw of rawPreferences) {
+    for (const raw of mergeSplitFacts(rawPreferences)) {
       try {
         await this.processPreference(raw, message);
       } catch (err) {
@@ -93,12 +156,33 @@ export class PreferenceExtractor implements PreferenceExtractorInterface {
     // Validate confidence
     const confidence = Math.max(0, Math.min(1, raw.confidence));
 
+    // Validate the model's field id against the canonical set. An unrecognised
+    // id is dropped to null rather than trusted — the client then falls back to
+    // resolving category+key, and the dev-only warning there makes it visible.
+    const rawField = raw.field?.trim();
+    let fieldId: string | null = null;
+    if (rawField) {
+      if (isProfileFieldId(rawField)) {
+        fieldId = rawField;
+      } else {
+        console.warn(
+          `[preference-extractor] unknown field id "${rawField}" for ` +
+            `${raw.category}:${raw.key} — falling back to key resolution`,
+        );
+      }
+    }
+
     // Validate key/value
     if (!raw.key?.trim() || !raw.value?.trim()) return;
 
     const validated: ExtractedPreference = {
       category,
-      key: raw.key.trim(),
+      // When the model identified a profile field, the field id IS the key. That
+      // keeps `findPreference` stable across turns: the same fact restated in
+      // different words updates one row instead of accumulating near-duplicates
+      // under `birthday_month`, `age_turning`, `birthday`, ...
+      key: fieldId ?? raw.key.trim(),
+      fieldId,
       value: raw.value.trim(),
       confidence,
     };
@@ -114,12 +198,21 @@ export class PreferenceExtractor implements PreferenceExtractorInterface {
     let isNew: boolean;
 
     if (existing) {
-      // Update existing preference — triggers history tracking
-      result = await this.storage.updatePreference(existing.id, {
-        value: validated.value,
-        confidence: validated.confidence,
-        sourceMessageId: message.id,
-      });
+      // Update existing preference — triggers history tracking.
+      // Addressed by natural key, which findPreference above was already given,
+      // so this needs no extra lookup.
+      result = await this.storage.updatePreference(
+        {
+          sessionId: message.sessionId,
+          category: validated.category,
+          key: validated.key,
+        },
+        {
+          value: validated.value,
+          confidence: validated.confidence,
+          sourceMessageId: message.id,
+        },
+      );
       isNew = false;
     } else {
       // Create new preference
@@ -127,11 +220,23 @@ export class PreferenceExtractor implements PreferenceExtractorInterface {
         sessionId: message.sessionId,
         category: validated.category,
         key: validated.key,
+        fieldId: validated.fieldId ?? null,
         value: validated.value,
         confidence: validated.confidence,
         sourceMessageId: message.id,
       });
       isNew = true;
+    }
+
+    // Denormalise the partner's name onto the session so the sidebar can label
+    // the conversation without fetching its whole profile. Nothing else ever
+    // writes this field — PartnerProfilePanel derives the name live for display
+    // and never writes back, which is why SessionEntry has always fallen through
+    // to "New conversation".
+    if (isPartnerNamePreference(validated.category, validated.key)) {
+      await this.storage.updateSessionMeta(message.sessionId, {
+        partnerName: validated.value,
+      });
     }
 
     // Notify listeners

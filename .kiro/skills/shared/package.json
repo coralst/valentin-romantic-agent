@@ -1,0 +1,7 @@
+{
+  "name": "shared-workflow-skills",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "CommonJS modules shared across the .kiro workflow skills. The repo root package.json is an ES module ('type':'module'); these use require()/module.exports and are executed directly by node (from .kiro hooks and CI), so this local marker pins them to CommonJS regardless of the root setting — same reason as .kiro/skills/pr-monitoring/package.json."
+}

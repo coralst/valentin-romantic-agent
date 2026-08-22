@@ -154,11 +154,19 @@ if [[ "$SCOPE" == "all" || "$SCOPE" == "backend" || "$SCOPE" == "infra" ]]; then
       --require-approval never \
       --outputs-file "cdk-outputs-${ENV}.json"
   else
-    run env AWS_PROFILE="$PROFILE" npx cdk deploy --all \
-      --context env="$ENV" \
-      --context imageTag="$IMAGE_TAG" \
-      --require-approval never \
-      --outputs-file "cdk-outputs-${ENV}.json"
+    # Named stacks with --exclusively rather than `--all`: `--all` would also
+    # deploy whatever other branches have changed in their own stacks, so two
+    # people deploying from different branches stomp each other. Order matters:
+    # Auth before Compute, because Compute imports the pool id and client ids.
+    for STACK in Network Data Safety Auth Compute CDN Monitoring; do
+      echo "    -> Valentin-${STACK}-${ENV}"
+      run env AWS_PROFILE="$PROFILE" npx cdk deploy "Valentin-${STACK}-${ENV}" \
+        --exclusively \
+        --context env="$ENV" \
+        --context imageTag="$IMAGE_TAG" \
+        --require-approval never \
+        --outputs-file "cdk-outputs-${ENV}.json"
+    done
   fi
   cd "$ROOT"
 else
@@ -166,12 +174,49 @@ else
   echo "--- Skipping CDK (scope=$SCOPE)"
 fi
 
-# --- 3. Build & deploy frontend ---
+# --- 3. Seed the shared demo account ---
+# Runs here, not by hand: the one-click demo button is broken until the pool user
+# exists, and "remember to run a script" is exactly the step people forget. Only
+# when Auth was part of this deploy; scope=backend touches Compute alone.
+if [[ "$SCOPE" == "all" || "$SCOPE" == "infra" ]]; then
+  echo ""
+  echo "--- Seeding demo account..."
+  run env AWS_PROFILE="$PROFILE" AWS_REGION="$REGION" \
+    bash "${ROOT}/scripts/seed-demo-user.sh" "$ENV"
+fi
+
+# Reads an Auth stack output. Same shape as cdn_output, but Cognito ids are only
+# needed for the frontend build, so it is not worth caching.
+auth_output() {
+  local value
+  value=$(aws cloudformation describe-stacks \
+    --stack-name "Valentin-Auth-${ENV}" \
+    --profile "$PROFILE" --region "$REGION" \
+    --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" \
+    --output text 2>/dev/null || true)
+  [[ "$value" == "None" ]] && value=""
+  echo "$value"
+}
+
+# --- 4. Build & deploy frontend ---
 if [[ "$SCOPE" == "all" || "$SCOPE" == "frontend" ]]; then
   echo ""
   echo "--- Deploying frontend..."
   cd "$ROOT"
-  run npx vite build
+
+  # Cognito ids are read straight out of the stack, so there is no .env to keep
+  # in sync and no chance of shipping a bundle pointed at the wrong user pool.
+  COGNITO_DOMAIN_PREFIX="$(auth_output UserPoolDomain)"
+  VITE_COGNITO_CLIENT_ID="$(auth_output UserPoolClientId)"
+  VITE_COGNITO_DOMAIN=""
+  if [[ -n "$COGNITO_DOMAIN_PREFIX" ]]; then
+    VITE_COGNITO_DOMAIN="https://${COGNITO_DOMAIN_PREFIX}.auth.${REGION}.amazoncognito.com"
+  fi
+  echo "    user pool client: ${VITE_COGNITO_CLIENT_ID:-<unresolved>}"
+
+  run env VITE_COGNITO_DOMAIN="$VITE_COGNITO_DOMAIN" \
+    VITE_COGNITO_CLIENT_ID="$VITE_COGNITO_CLIENT_ID" \
+    npx vite build
 
   # Archive BEFORE the live sync overwrites the previous build, so rollback is
   # one sync rather than a walk through S3 version history.

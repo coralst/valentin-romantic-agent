@@ -13,23 +13,56 @@ const containerStyle: React.CSSProperties = {
   gap: spacing.xs,
 };
 
-const avatarSize = 96;
+/**
+ * The size this component used to hardcode, kept as the default so every
+ * existing caller renders exactly as before.
+ */
+export const DEFAULT_AVATAR_SIZE = 96;
 
-const circleStyle: React.CSSProperties = {
-  width: avatarSize,
-  height: avatarSize,
-  borderRadius: borderRadius.full,
-  overflow: 'hidden',
+/**
+ * The compact layout the dossier's identity header needs: the 24px block padding
+ * and the column gap are for a standalone panel module, and inside a 50px header
+ * cameo they push the name off its row.
+ */
+const compactContainerStyle: React.CSSProperties = {
   display: 'flex',
+  flexDirection: 'column',
   alignItems: 'center',
-  justifyContent: 'center',
-  backgroundColor: colors.blush,
-  border: `3px solid ${colors.dustyRose}`,
-  boxShadow: shadows.card,
-  position: 'relative',
-  cursor: 'pointer',
-  transition: `box-shadow ${animation.durations.normal}ms ${animation.easing.easeInOut}`,
+  padding: 0,
+  gap: 0,
 };
+
+/** Below this the avatar is a cameo, not a module, and drops its chrome. */
+const COMPACT_BELOW = 80;
+
+function getCircleStyle(size: number): React.CSSProperties {
+  return {
+    width: size,
+    height: size,
+    borderRadius: borderRadius.full,
+    overflow: 'hidden',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.blush,
+    // The ring scales with the circle: 3px reads as a frame at 96px and as a
+    // heavy outline at 50px.
+    border: `${size >= COMPACT_BELOW ? 3 : 1}px solid ${colors.dustyRose}`,
+    boxShadow: shadows.card,
+    position: 'relative',
+    cursor: 'pointer',
+    flex: 'none',
+    transition: `box-shadow ${animation.durations.normal}ms ${animation.easing.easeInOut}`,
+  };
+}
+
+/** Initials have to shrink with the circle or they overflow it. */
+function getInitialsStyle(size: number): React.CSSProperties {
+  return {
+    ...initialsStyle,
+    fontSize: size >= COMPACT_BELOW ? typography.sizes.xl : typography.sizes.md,
+  };
+}
 
 const photoStyle: React.CSSProperties = {
   width: '100%',
@@ -80,9 +113,14 @@ const errorStyle: React.CSSProperties = {
 
 interface PartnerAvatarProps {
   partnerName: string | null;
+  /**
+   * Diameter of the circle, in px. Defaults to the 96px this component used to
+   * hardcode; the dossier's identity header asks for 50 (`full-profile.html:42`).
+   */
+  size?: number;
 }
 
-export function PartnerAvatar({ partnerName }: PartnerAvatarProps) {
+export function PartnerAvatar({ partnerName, size = DEFAULT_AVATAR_SIZE }: PartnerAvatarProps) {
   const { state, dispatch } = useProfileStoreContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -138,17 +176,30 @@ export function PartnerAvatar({ partnerName }: PartnerAvatarProps) {
 
   const altText = partnerName ? `Photo of ${partnerName}` : 'Partner photo';
 
+  const isCompact = size < COMPACT_BELOW;
+
   const renderPlaceholder = () => {
     if (partnerName) {
-      return <span style={initialsStyle} aria-hidden="true">{getInitials(partnerName)}</span>;
+      return (
+        <span style={getInitialsStyle(size)} aria-hidden="true">
+          {getInitials(partnerName)}
+        </span>
+      );
     }
-    return <span style={heartStyle} aria-hidden="true">{'♥'}</span>;
+    return (
+      <span style={isCompact ? { ...heartStyle, fontSize: '1.1rem' } : heartStyle} aria-hidden="true">
+        {'♥'}
+      </span>
+    );
   };
 
   return (
-    <div style={containerStyle} data-testid="partner-avatar">
+    <div
+      style={isCompact ? compactContainerStyle : containerStyle}
+      data-testid="partner-avatar"
+    >
       <div
-        style={circleStyle}
+        style={getCircleStyle(size)}
         onClick={handleUploadClick}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleUploadClick(); } }}
         role="button"
@@ -172,7 +223,10 @@ export function PartnerAvatar({ partnerName }: PartnerAvatarProps) {
         data-testid="avatar-file-input"
       />
 
-      {hasPhoto && (
+      {/* At cameo size the Replace/Remove pair is wider than the circle and would
+          break the header row it sits in. The circle is already the replace
+          affordance, so the buttons are a module-only control. */}
+      {hasPhoto && !isCompact && (
         <div style={controlsStyle}>
           <button
             style={buttonStyle}

@@ -1,0 +1,260 @@
+{
+  "$schemaNote": "Committed PREDICTION of the Valentin UI rebuild. Not a status board.",
+
+  "about": {
+    "purpose": [
+      "This file is written BEFORE the work, so the visualization can compare",
+      "PLANNED against ACTUAL instead of only drawing what happened.",
+      "scripts/generate-agent-graph.py renders the real PR history; on its own it",
+      "can only show the shape that occurred, which always looks intentional.",
+      "This manifest is the counterfactual: the dependency graph we expected, the",
+      "owner we expected for each stage, and which stages we expected to run in",
+      "parallel. Where the actual history diverges, the divergence is the finding."
+    ],
+    "falsifiability": [
+      "The point is that this is falsifiable, so it must not be quietly edited to",
+      "match reality after the fact.",
+      "RULE: once a stage entry is committed, DO NOT edit it. If the plan changes,",
+      "append a dated entry to `revisions` naming the stage, what changed, and why.",
+      "The original prediction stays exactly as written. A plan that is silently",
+      "corrected predicts nothing; the revisions log is what makes a wrong",
+      "prediction informative rather than embarrassing.",
+      "Reviewers: a diff that MODIFIES a committed stage object, rather than adding",
+      "to `revisions`, should be treated as a blocking review comment."
+    ],
+    "specificPrediction": [
+      "The sharpest claim here is about QA. Last time, QA authored 1 of 57 PRs",
+      "(1.8%) despite owning e2e/ and despite every user-facing change requiring QA",
+      "sign-off. The stated workflow says QA is a first-class lane; the history says",
+      "QA was an afterthought.",
+      "So this plan commits, in advance, to a QA-owned e2e follow-up PR after each",
+      "of stages 2, 3, 4, 5 and 6 — the `qa-*` entries below. Those five are the",
+      "falsifiable part. If the rebuild lands and the graph shows QA authoring 1 PR",
+      "again, the manifest has proved the failure is structural rather than",
+      "incidental, and it names exactly which five PRs went missing."
+    ],
+    "ownerKeys": "Match the OWNERSHIP list in .kiro/skills/pr-monitoring/review-parser-skill.js and the table in CONTRIBUTING.md, so planned owners and attributed owners are directly comparable.",
+    "fields": {
+      "id": "Stage identifier. Stable; referenced by revisions and by branch names.",
+      "title": "Short human description.",
+      "owner": "Array of owner keys. More than one means a genuinely cross-domain PR that must carry two `agent: *` labels and will be checked as a union by the scope-check CI job.",
+      "depends_on": "Stage ids that must MERGE before this one starts.",
+      "may_run_parallel_with": "Stage ids expected to be open at the same time. Asymmetric entries are a planning error; the graph should flag them.",
+      "expected_paths": "Path prefixes this stage is expected to touch. Feeds attributeOwner(), so a stage whose actual diff attributes elsewhere is a visible plan/reality mismatch.",
+      "kind": "feature | telemetry | e2e — `e2e` marks the QA follow-ups."
+    },
+    "dependencyShape": "0 → 1 → 2 → 3 → {4,5} → 6 → 7, with 6.5, 8 and 9 independent after 6."
+  },
+
+  "planned_at": "2026-08-21",
+  "baseline": {
+    "note": "The record this plan is measured against.",
+    "prs_total": 57,
+    "prs_by_lane": { "infra": 29, "frontend": 12, "backend": 5, "architect": 5, "design": 4, "qa": 1, "master": 1 },
+    "qa_authored_share": "1 of 57 (1.8%)",
+    "infra_share": "29 of 57 (51%) — inflated because everything outside src/ attributed to nobody; fixed in stage 0b."
+  },
+
+  "stages": [
+    {
+      "id": "0a",
+      "title": "Prune dead UI",
+      "owner": ["frontend-dev"],
+      "kind": "feature",
+      "depends_on": [],
+      "may_run_parallel_with": ["0b"],
+      "expected_paths": ["src/client/components/", "src/client/hooks/"],
+      "notes": "Clears the surface the rebuild lands on. Deletions only, so it should be reviewable quickly and merge first."
+    },
+    {
+      "id": "0b",
+      "title": "Workflow telemetry: unified persona matcher, ownership rows, scope-check CI, this manifest",
+      "owner": ["infra"],
+      "kind": "telemetry",
+      "depends_on": [],
+      "may_run_parallel_with": ["0a"],
+      "expected_paths": [".kiro/", ".github/", "scripts/", "docs/", "CONTRIBUTING.md"],
+      "notes": "This PR. Must land before the stages it measures, otherwise the rebuild is recorded by the same archaeology it is meant to replace. Touches no src/, so it cannot conflict with 0a."
+    },
+    {
+      "id": "1",
+      "title": "Claret/gold design tokens + fonts",
+      "owner": ["ui-designer", "infra"],
+      "kind": "feature",
+      "depends_on": ["0a"],
+      "may_run_parallel_with": [],
+      "expected_paths": ["src/client/design-system/", "index.html"],
+      "notes": "Everything visual downstream keys off these tokens, so it is deliberately a solo bottleneck rather than something done per-component later. TWO-LABEL (`agent: design` + `agent: infra`) for a non-obvious reason: the tokens live in src/client/design-system/, but the FONTS are loaded by a <link> tag in index.html, and index.html is Infra-owned, not Frontend or Design (see CONTRIBUTING.md). Writing this stage as design-only was the first thing the manifest's own consistency test caught — expected_paths attributed to infra while owner said ui-designer. Worth recording: the ownership table already disagreed with how a designer would instinctively scope this PR."
+    },
+    {
+      "id": "2",
+      "title": "Lift preference ingestion into a hook",
+      "owner": ["frontend-dev"],
+      "kind": "feature",
+      "depends_on": ["1"],
+      "may_run_parallel_with": [],
+      "expected_paths": ["src/client/hooks/", "src/client/components/"],
+      "notes": "Pure refactor, no visual change. Prediction: this is the stage most likely to be merged without an e2e follow-up, because nothing looks different."
+    },
+    {
+      "id": "qa-2",
+      "title": "e2e: preference ingestion hook behaviour unchanged",
+      "owner": ["qa-agent"],
+      "kind": "e2e",
+      "depends_on": ["2"],
+      "may_run_parallel_with": ["3"],
+      "expected_paths": ["e2e/"],
+      "notes": "A refactor with no visual change is exactly where a regression hides silently."
+    },
+    {
+      "id": "3",
+      "title": "Window shell: AppWindow + IconRail, delete the top header",
+      "owner": ["frontend-dev"],
+      "kind": "feature",
+      "depends_on": ["2"],
+      "may_run_parallel_with": ["qa-2"],
+      "expected_paths": ["src/client/components/", "src/client/App.tsx"],
+      "notes": "Structural. Deleting the top header is expected to break existing e2e selectors — the QA follow-up is not optional here."
+    },
+    {
+      "id": "qa-3",
+      "title": "e2e: window shell, icon rail navigation, no top header",
+      "owner": ["qa-agent"],
+      "kind": "e2e",
+      "depends_on": ["3"],
+      "may_run_parallel_with": ["4", "5"],
+      "expected_paths": ["e2e/"]
+    },
+    {
+      "id": "4",
+      "title": "Brief rail (306px claret rail)",
+      "owner": ["frontend-dev"],
+      "kind": "feature",
+      "depends_on": ["3"],
+      "may_run_parallel_with": ["5", "qa-3", "qa-5"],
+      "expected_paths": ["src/client/components/"],
+      "notes": "Parallel with 5 by design: both hang off the shell from 3 but occupy different regions, so they should not conflict. If they do conflict, the shell boundary from 3 was drawn in the wrong place."
+    },
+    {
+      "id": "qa-4",
+      "title": "e2e: brief rail renders and collapses",
+      "owner": ["qa-agent"],
+      "kind": "e2e",
+      "depends_on": ["4"],
+      "may_run_parallel_with": ["5", "qa-5"],
+      "expected_paths": ["e2e/"]
+    },
+    {
+      "id": "5",
+      "title": "Chat interior restyle + LearnedChip",
+      "owner": ["frontend-dev"],
+      "kind": "feature",
+      "depends_on": ["3"],
+      "may_run_parallel_with": ["4", "qa-3", "qa-4"],
+      "expected_paths": ["src/client/components/"]
+    },
+    {
+      "id": "qa-5",
+      "title": "e2e: chat interior, LearnedChip appears on extraction",
+      "owner": ["qa-agent"],
+      "kind": "e2e",
+      "depends_on": ["5"],
+      "may_run_parallel_with": ["4", "qa-4"],
+      "expected_paths": ["e2e/"]
+    },
+    {
+      "id": "6",
+      "title": "Dossier full-profile view",
+      "owner": ["frontend-dev"],
+      "kind": "feature",
+      "depends_on": ["4", "5"],
+      "may_run_parallel_with": [],
+      "expected_paths": ["src/client/components/"],
+      "notes": "The join point: needs both the rail (4) and the restyled interior (5). Expected to be the largest single frontend PR of the rebuild, and therefore the one most at risk of the oversized-PR split that happened to #16."
+    },
+    {
+      "id": "qa-6",
+      "title": "e2e: dossier view, full profile round-trip",
+      "owner": ["qa-agent"],
+      "kind": "e2e",
+      "depends_on": ["6"],
+      "may_run_parallel_with": ["6.5", "7", "8", "9"],
+      "expected_paths": ["e2e/"]
+    },
+    {
+      "id": "6.5",
+      "title": "Logistics/constraint registry fields",
+      "owner": ["system-architect", "backend-dev"],
+      "kind": "feature",
+      "depends_on": ["6"],
+      "may_run_parallel_with": ["8", "9", "qa-6"],
+      "expected_paths": ["src/shared/", "src/server/"],
+      "notes": "Deliberately a TWO-LABEL PR: `agent: architect` + `agent: backend`. The registry change in src/shared/ and its demo fixture in src/server/ cannot be split, because src/server/api/__tests__/http-routes.test.ts asserts across both and would fail on either half alone. This is the case the scope-check job's union rule exists for — a useful live test of it."
+    },
+    {
+      "id": "7",
+      "title": "Merge integration branch, prune legacy tokens",
+      "owner": ["ui-designer", "frontend-dev"],
+      "kind": "feature",
+      "depends_on": ["6"],
+      "may_run_parallel_with": ["qa-6"],
+      "expected_paths": ["src/client/design-system/", "src/client/components/"],
+      "notes": "Two-label PR (`agent: design` + `agent: frontend`): removing the legacy tokens forces the component edits that stop referencing them, in the same commit. Should land after the qa-* follow-ups so the integration branch merges onto a covered baseline."
+    },
+    {
+      "id": "8",
+      "title": "Profile items (ideas/gifts/constraints), client-only",
+      "owner": ["frontend-dev"],
+      "kind": "feature",
+      "depends_on": ["6"],
+      "may_run_parallel_with": ["6.5", "9", "qa-6"],
+      "expected_paths": ["src/client/components/", "src/client/hooks/", "src/client/utils/"],
+      "notes": "Client-only on purpose, so it can proceed without waiting on the server work in 9."
+    },
+    {
+      "id": "9",
+      "title": "Profile items, server-side",
+      "owner": ["system-architect", "backend-dev", "frontend-dev"],
+      "kind": "feature",
+      "depends_on": ["6"],
+      "may_run_parallel_with": ["6.5", "8", "qa-6"],
+      "expected_paths": ["src/shared/", "src/server/", "src/client/hooks/"],
+      "notes": "THREE labels. Flagged as the highest-risk item in this plan: a three-lane PR is the shape that produced #16 (oversized, split into #22/#23, then rebased and landed whole). Prediction: this either splits or needs a rebase. Noted here in advance so which one happens is informative."
+    }
+  ],
+
+  "predictions": [
+    {
+      "id": "P1",
+      "claim": "All five qa-* stages land as separate QA-authored PRs.",
+      "rationale": "The specific failure this manifest exists to expose: QA authored 1 of 57 PRs last time.",
+      "falsified_if": "Fewer than 5 PRs are authored under `agent: qa`, or e2e/ changes arrive inside frontend-authored PRs instead."
+    },
+    {
+      "id": "P2",
+      "claim": "Stages 4 and 5 are open simultaneously without conflicting.",
+      "rationale": "Both hang off the shell from stage 3 but occupy different regions.",
+      "falsified_if": "Either PR needs a merge-conflict resolution against the other — which would mean stage 3 drew the shell boundary wrong."
+    },
+    {
+      "id": "P3",
+      "claim": "Stages 1, 6.5, 7 and 9 each carry more than one `agent:` label and pass the scope check on union coverage.",
+      "rationale": "They are genuinely cross-domain; the union rule was added in 0b for exactly this. Stage 1 is the least obvious of the four — fonts are loaded from index.html, which is Infra-owned — so it is the best test of whether agents notice the ownership table before pushing rather than after CI fails.",
+      "falsified_if": "Any of them is labelled with a single lane, or is split purely to avoid the scope check rather than for review size."
+    },
+    {
+      "id": "P4",
+      "claim": "The infra lane's share drops well below the previous 51%.",
+      "rationale": "That figure was inflated by everything outside src/ attributing to nobody and defaulting to infra; stage 0b gives those paths real owners.",
+      "falsified_if": "infra still exceeds ~30% of authored PRs once the rebuild lands."
+    },
+    {
+      "id": "P5",
+      "claim": "Stage 9 either splits into multiple PRs or requires a rebase before merging.",
+      "rationale": "Three-lane PRs have not landed cleanly in this repo's history (see #16).",
+      "falsified_if": "Stage 9 lands as a single PR, first try, no rebase — which would be a genuine improvement worth attributing."
+    }
+  ],
+
+  "revisions": []
+}

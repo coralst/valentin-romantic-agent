@@ -47,7 +47,7 @@ describe('MessageBubble', () => {
     );
   });
 
-  it('renders agent message with avatar', () => {
+  it('renders agent message with the crest avatar', () => {
     const msg: ChatMessage = {
       id: '1',
       sessionId: 's1',
@@ -58,7 +58,8 @@ describe('MessageBubble', () => {
     render(<MessageBubble message={msg} />);
     const bubble = screen.getByTestId('message-bubble');
     expect(bubble.getAttribute('data-sender')).toBe('agent');
-    expect(bubble.textContent).toContain('V');
+    // The avatar is the crest image, not a lettermark — assert on the image.
+    expect(screen.getByRole('img', { name: 'Valentin' })).toBeInTheDocument();
     expect(bubble.textContent).toContain('Hello!');
   });
 
@@ -73,8 +74,48 @@ describe('MessageBubble', () => {
     render(<MessageBubble message={msg} />);
     const bubble = screen.getByTestId('message-bubble');
     expect(bubble.getAttribute('data-sender')).toBe('user');
-    expect(bubble.textContent).not.toContain('V');
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
     expect(bubble.textContent).toContain('Hi there');
+  });
+
+  /**
+   * The tail corner is the design's sender cue: the tight 8px corner sits on the
+   * side the message comes from, so the two radii must not be interchangeable.
+   */
+  it('mirrors the bubble tail corner by sender (geometry)', () => {
+    const base = { id: '4', sessionId: 's1', content: 'x', timestamp: new Date().toISOString() };
+
+    const { unmount } = render(<MessageBubble message={{ ...base, sender: 'agent' }} />);
+    // The bubble is the element after the avatar in the agent row.
+    const agentRadius = getComputedStyle(
+      screen.getByTestId('message-bubble').children[1] as HTMLElement,
+    ).borderRadius;
+    unmount();
+
+    render(<MessageBubble message={{ ...base, sender: 'user' }} />);
+    const userRadius = getComputedStyle(
+      screen.getByTestId('message-bubble').children[0] as HTMLElement,
+    ).borderRadius;
+
+    // Agent: tight corner top-left. User: tight corner top-right.
+    expect(agentRadius).toBe('8px 26px 26px 26px');
+    expect(userRadius).toBe('26px 8px 26px 26px');
+    expect(agentRadius).not.toBe(userRadius);
+  });
+
+  it('never renders a square corner on either sender (no sharp corners)', () => {
+    const base = { id: '5', sessionId: 's1', content: 'y', timestamp: new Date().toISOString() };
+
+    for (const sender of ['agent', 'user'] as const) {
+      const { unmount } = render(<MessageBubble message={{ ...base, sender }} />);
+      const row = screen.getByTestId('message-bubble');
+      const bubble = (sender === 'agent' ? row.children[1] : row.children[0]) as HTMLElement;
+      const radii = getComputedStyle(bubble).borderRadius.split(' ');
+      for (const corner of radii) {
+        expect(parseFloat(corner)).toBeGreaterThan(0);
+      }
+      unmount();
+    }
   });
 
   it('exposes full agent message content even when animating (a11y, no regression)', () => {

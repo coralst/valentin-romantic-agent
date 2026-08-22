@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { SessionProvider } from '../../context/session-context';
@@ -7,7 +7,6 @@ import { ChatProvider } from '../../context/chat-context';
 import { PreferencesProvider } from '../../context/preferences-context';
 import { ProfileStoreProvider } from '../../context/profile-store-context';
 import { DemoToolbar } from '../DemoToolbar';
-import type { StoredSession } from '../../hooks/use-session-store';
 
 function renderToolbar(children?: React.ReactNode) {
   return render(
@@ -23,17 +22,40 @@ function renderToolbar(children?: React.ReactNode) {
   );
 }
 
-function makeStoredSession(overrides: Partial<StoredSession> = {}): StoredSession {
-  return {
+/**
+ * Wrap a fetch mock so the provider boots with `session-1` already in front.
+ *
+ * Conversations come from the server now, so an active session is set up by
+ * answering `GET /api/sessions` rather than by planting a row in localStorage.
+ * The inner mock still sees everything else, so assertions on it are unchanged.
+ */
+function withActiveSession(inner: (input: string | URL | Request, init?: RequestInit) => unknown) {
+  const session = {
     id: 'session-1',
-    title: null,
-    partnerName: 'Alice',
-    messages: [],
-    preferences: [],
-    lastActivity: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+    endedAt: null,
     messageCount: 0,
-    ...overrides,
+    preferenceCount: 0,
+    lastActivity: new Date().toISOString(),
+    partnerName: 'Alice',
+    title: null,
   };
+  const json = (body: unknown) =>
+    Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response);
+
+  return vi.fn((input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    if (url === '/api/sessions') return json({ sessions: [session] });
+    if ((init?.method ?? 'GET') === 'GET' && url === '/api/session/session-1') {
+      return json({ session, messages: [], preferences: [] });
+    }
+    return inner(input, init);
+  });
+}
+
+/** Wait for the provider's boot fetches to settle before acting */
+async function booted(outer: ReturnType<typeof vi.fn>) {
+  await waitFor(() => expect(outer.mock.calls.length).toBeGreaterThanOrEqual(2));
 }
 
 /** Build a fetch mock that answers the seed + preferences calls */
@@ -45,6 +67,13 @@ function mockSuccessfulSeed(preferenceCount = 18) {
         ok: true,
         status: 201,
         json: () => Promise.resolve({ sessionId: 'seeded-session', preferenceCount }),
+      } as Response);
+    }
+    if (url === '/api/sessions') {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ sessions: [] }),
       } as Response);
     }
     if (url.endsWith('/preferences')) {
@@ -86,24 +115,14 @@ describe('DemoToolbar', () => {
     expect(screen.getByRole('button', { name: 'Extra control' })).toBeInTheDocument();
   });
 
-  it('includes the architecture inspector toggle', () => {
+  // The architecture toggle used to live here. It moved to the sidebar so it is
+  // reachable from every screen rather than only wherever this toolbar renders;
+  // see `SessionSidebar.test.tsx`. Asserted as an absence so the toggle cannot
+  // quietly come back and end up existing twice.
+  it('does not own the architecture toggle', () => {
     vi.stubGlobal('fetch', vi.fn());
     renderToolbar();
-    expect(
-      screen.getByRole('button', { name: 'Open architecture inspector' }),
-    ).toBeInTheDocument();
-  });
-
-  it('opens the inspector without disturbing the demo controls', async () => {
-    const user = userEvent.setup();
-    vi.stubGlobal('fetch', vi.fn());
-    renderToolbar();
-
-    await user.click(screen.getByRole('button', { name: 'Open architecture inspector' }));
-
-    expect(screen.getByTestId('inspector-panel')).toBeInTheDocument();
-    expect(screen.getByTestId('load-demo-profile-button')).toBeEnabled();
-    expect(screen.getByTestId('reset-session-button')).toBeEnabled();
+    expect(screen.queryByTestId('architecture-toggle')).not.toBeInTheDocument();
   });
 
   describe('Load demo profile', () => {
@@ -153,10 +172,11 @@ describe('DemoToolbar', () => {
     it('brings the seeded session to the foreground', async () => {
       // A pre-existing session starts out active, so the seeded one has to
       // displace it for the demo profile to actually be on screen.
-      localStorage.setItem('valentin_sessions', JSON.stringify([makeStoredSession()]));
       const user = userEvent.setup();
-      vi.stubGlobal('fetch', mockSuccessfulSeed());
+      const fetchMock = withActiveSession(mockSuccessfulSeed());
+      vi.stubGlobal('fetch', fetchMock);
       renderToolbar();
+      await booted(fetchMock);
 
       await user.click(screen.getByRole('button', { name: 'Load demo profile' }));
 
@@ -182,7 +202,7 @@ describe('DemoToolbar', () => {
       await user.click(screen.getByRole('button', { name: 'Load demo profile' }));
 
       expect(screen.getByTestId('demo-toolbar-status')).toHaveTextContent(
-        "Couldn't load the demo profile — the demo endpoint is not available yet.",
+        "Couldn't load the demo profile — it isn't there any more.",
       );
     });
 
@@ -217,32 +237,31 @@ describe('DemoToolbar', () => {
 
   describe('Reset', () => {
     it('POSTs to the reset endpoint for the active session', async () => {
-      localStorage.setItem('valentin_sessions', JSON.stringify([makeStoredSession()]));
       const user = userEvent.setup();
-      const fetchMock = vi.fn(() =>
+      const inner = vi.fn(() =>
         Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) } as Response),
       );
+      const fetchMock = withActiveSession(inner);
       vi.stubGlobal('fetch', fetchMock);
       renderToolbar();
+      await booted(fetchMock);
 
       await user.click(screen.getByRole('button', { name: 'Reset' }));
 
-      expect(fetchMock).toHaveBeenCalledWith(
+      expect(inner).toHaveBeenCalledWith(
         '/api/session/session-1/reset',
         expect.objectContaining({ method: 'POST' }),
       );
     });
 
     it('announces the reset outcome', async () => {
-      localStorage.setItem('valentin_sessions', JSON.stringify([makeStoredSession()]));
       const user = userEvent.setup();
-      vi.stubGlobal(
-        'fetch',
-        vi.fn(() =>
-          Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) } as Response),
-        ),
+      const fetchMock = withActiveSession(() =>
+        Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) } as Response),
       );
+      vi.stubGlobal('fetch', fetchMock);
       renderToolbar();
+      await booted(fetchMock);
 
       await user.click(screen.getByRole('button', { name: 'Reset' }));
 
@@ -250,50 +269,59 @@ describe('DemoToolbar', () => {
     });
 
     it('can be activated from the keyboard', async () => {
-      localStorage.setItem('valentin_sessions', JSON.stringify([makeStoredSession()]));
       const user = userEvent.setup();
-      const fetchMock = vi.fn(() =>
+      const inner = vi.fn(() =>
         Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) } as Response),
       );
+      const fetchMock = withActiveSession(inner);
       vi.stubGlobal('fetch', fetchMock);
       renderToolbar();
+      await booted(fetchMock);
 
       screen.getByRole('button', { name: 'Reset' }).focus();
       await user.keyboard('{Enter}');
 
-      expect(fetchMock).toHaveBeenCalledWith(
+      expect(inner).toHaveBeenCalledWith(
         '/api/session/session-1/reset',
         expect.objectContaining({ method: 'POST' }),
       );
     });
 
     it('surfaces a message when the session is unknown to the server', async () => {
-      localStorage.setItem('valentin_sessions', JSON.stringify([makeStoredSession()]));
       const user = userEvent.setup();
-      vi.stubGlobal(
-        'fetch',
-        vi.fn(() =>
-          Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) } as Response),
-        ),
+      const fetchMock = withActiveSession(() =>
+        Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) } as Response),
       );
+      vi.stubGlobal('fetch', fetchMock);
       renderToolbar();
+      await booted(fetchMock);
 
       await user.click(screen.getByRole('button', { name: 'Reset' }));
 
       expect(screen.getByTestId('demo-toolbar-status')).toHaveTextContent(
-        "Couldn't reset the session — the demo endpoint is not available yet.",
+        "Couldn't reset the session — it isn't there any more.",
       );
     });
 
     it('does not call the server when there is no active session', async () => {
       const user = userEvent.setup();
-      const fetchMock = vi.fn();
+      const fetchMock = vi.fn((_input: string | URL | Request) =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ sessions: [] }),
+        } as Response),
+      );
       vi.stubGlobal('fetch', fetchMock);
       renderToolbar();
+      await screen.findByRole('button', { name: 'Reset' });
 
       await user.click(screen.getByRole('button', { name: 'Reset' }));
 
-      expect(fetchMock).not.toHaveBeenCalled();
+      // The list fetch is expected; a reset call is not.
+      expect(
+        fetchMock.mock.calls.some((call) => String(call[0]).endsWith('/reset')),
+      ).toBe(false);
       expect(screen.getByTestId('demo-toolbar-status')).toHaveTextContent(
         'Nothing to reset yet — no active session.',
       );

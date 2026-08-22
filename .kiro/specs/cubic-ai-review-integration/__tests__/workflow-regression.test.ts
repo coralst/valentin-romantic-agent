@@ -157,8 +157,13 @@ describe('multi-agent conversation flow must not break', () => {
   });
 
   it('routes a non-attributable finding to the master-agent (Req 4.5 / 12.8)', () => {
-    // null owner => caller routes to master-agent for triage
-    expect(attributeOwner('README.md')).toBeNull();
+    // null owner => caller routes to master-agent for triage.
+    // NOTE: this used to assert on 'README.md', which now belongs to the infra
+    // lane — the workflow/platform ownership rows removed the null-by-default
+    // hole that had 51% of PRs falling through to `agent: infra`. The behaviour
+    // under test (an UNOWNED path yields null) is unchanged; only the example
+    // had to move to a surface the map genuinely does not cover.
+    expect(attributeOwner('terraform/main.tf')).toBeNull();
     expect(attributeOwner(undefined)).toBeNull();
   });
 

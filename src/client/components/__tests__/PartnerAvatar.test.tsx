@@ -3,10 +3,10 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { PartnerAvatar } from '../PartnerAvatar';
 import { ProfileStoreProvider } from '../../context/profile-store-context';
 
-function renderWithProvider(partnerName: string | null = null) {
+function renderWithProvider(partnerName: string | null = null, size?: number) {
   return render(
     <ProfileStoreProvider sessionId="test-session">
-      <PartnerAvatar partnerName={partnerName} />
+      <PartnerAvatar partnerName={partnerName} size={size} />
     </ProfileStoreProvider>,
   );
 }
@@ -89,5 +89,27 @@ describe('PartnerAvatar', () => {
     renderWithProvider(null);
     const button = screen.getByRole('button', { name: /upload partner photo/i });
     expect(button).toHaveAttribute('tabindex', '0');
+  });
+
+  describe('size prop', () => {
+    it('defaults to the 96px profile portrait', () => {
+      renderWithProvider('Jane Doe');
+      const circle = screen.getByRole('button', { name: /upload partner photo/i });
+      expect(circle.style.width).toBe('96px');
+    });
+
+    it('renders at cameo size for the dossier header', () => {
+      renderWithProvider('Jane Doe', 50);
+      const circle = screen.getByRole('button', { name: /upload partner photo/i });
+      expect(circle.style.width).toBe('50px');
+      expect(circle.style.height).toBe('50px');
+    });
+
+    it('drops the Replace/Remove pair at cameo size, where it is wider than the circle', () => {
+      renderWithProvider('Jane Doe', 50);
+      // The upload affordance itself stays — only the paired controls go.
+      expect(screen.getByRole('button', { name: /upload partner photo/i })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /remove/i })).not.toBeInTheDocument();
+    });
   });
 });

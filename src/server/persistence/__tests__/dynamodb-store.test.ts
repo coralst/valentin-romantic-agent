@@ -1,445 +1,601 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import {
+  DynamoDBClient,
+  CreateTableCommand,
+  DeleteTableCommand,
+} from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBStore } from '../dynamodb-store';
-import type { ChatMessage } from '../../../shared/interfaces/message';
-import type { PreferenceCategory } from '../../../shared/interfaces/preference';
+import type { StorageInterface } from '../storage-interface';
+import { META_SK, prefSk, sessionPk } from '../keys';
 
-// Mock the DynamoDBDocumentClient
-const mockSend = vi.fn();
-const mockDocClient = { send: mockSend } as unknown as import('@aws-sdk/lib-dynamodb').DynamoDBDocumentClient;
+/**
+ * Contract tests for the DynamoDB store, run against **DynamoDB Local**.
+ *
+ * The suite this replaces was 445 lines of `vi.fn()` asserting which commands
+ * the store *built*. That is precisely why every one of these defects was green:
+ *
+ *   - `begins_with(gsi1pk, …)` — illegal, since `begins_with` cannot apply to a
+ *     partition key. A mock happily records the call.
+ *   - `SET messageCount = messageCount + :inc` against an item with no such
+ *     attribute — a ValidationException in reality, an assertion that passes
+ *     against a mock.
+ *   - a plain `PutCommand` to revise a preference, silently erasing `history`
+ *     while still incrementing the counter.
+ *   - a single-page Query in `clearSession`, reporting success while leaving
+ *     everything past the 1 MB page behind.
+ *
+ * None of those is visible by inspecting a command object. Catching them needs
+ * an engine that can *refuse*.
+ *
+ * DynamoDB Local runs in Docker and so is not always present. The suite skips
+ * with a loud warning rather than failing when the endpoint is unreachable:
+ *
+ *   docker run -d --rm -p 8000:8000 --name valentin-ddb-local \
+ *     amazon/dynamodb-local -jar DynamoDBLocal.jar -inMemory -sharedDb
+ */
 
-describe('DynamoDBStore', () => {
-  let store: DynamoDBStore;
+const ENDPOINT = process.env.DYNAMODB_LOCAL_ENDPOINT ?? 'http://localhost:8000';
+const TABLE_NAME = 'ValentinTable-contract-test';
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-    store = new DynamoDBStore(mockDocClient, 'TestTable');
-  });
+async function isReachable(): Promise<boolean> {
+  try {
+    // DynamoDB Local answers a bare GET with 400. Any HTTP reply at all proves
+    // it is listening, which is the only question here.
+    await fetch(ENDPOINT, { method: 'GET' });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-  describe('createSession', () => {
-    it('should create a session and return an id', async () => {
-      mockSend.mockResolvedValueOnce({});
+const available = await isReachable();
 
-      const id = await store.createSession();
+if (!available) {
+  console.warn(
+    `[dynamodb-store.test] SKIPPED — no DynamoDB Local at ${ENDPOINT}. Start it with: ` +
+      'docker run -d --rm -p 8000:8000 amazon/dynamodb-local ' +
+      '-jar DynamoDBLocal.jar -inMemory -sharedDb',
+  );
+}
 
-      expect(id).toBeDefined();
-      expect(typeof id).toBe('string');
-      expect(id.length).toBeGreaterThan(0);
-      expect(mockSend).toHaveBeenCalledTimes(1);
+describe.runIf(available)('DynamoDBStore (contract, DynamoDB Local)', () => {
+  let client: DynamoDBClient;
+  let docClient: DynamoDBDocumentClient;
+  let alice: StorageInterface;
+  let bob: StorageInterface;
 
-      const putCall = mockSend.mock.calls[0][0];
-      expect(putCall.input.TableName).toBe('TestTable');
-      expect(putCall.input.Item.pk).toBe('USER#anonymous');
-      expect(putCall.input.Item.sk).toBe(`SESSION#${id}`);
-      expect(putCall.input.Item.gsi1pk).toBe(`SESSION#${id}`);
-      expect(putCall.input.Item.gsi1sk).toBe('META');
-      expect(putCall.input.Item.entityType).toBe('Session');
+  beforeAll(() => {
+    client = new DynamoDBClient({
+      endpoint: ENDPOINT,
+      region: 'us-east-1',
+      credentials: { accessKeyId: 'local', secretAccessKey: 'local' },
+    });
+    docClient = DynamoDBDocumentClient.from(client, {
+      marshallOptions: { removeUndefinedValues: true },
     });
   });
 
-  describe('getSession', () => {
-    it('should return session data when found via GSI', async () => {
-      const sessionId = 'test-session-123';
-      const mockItem = {
-        id: sessionId,
-        createdAt: '2026-01-01T00:00:00.000Z',
-        endedAt: null,
-        messageCount: 5,
-        preferenceCount: 3,
-      };
-
-      // First GetCommand returns nothing (direct lookup)
-      mockSend.mockResolvedValueOnce({ Item: undefined });
-      // Then QueryCommand on GSI returns the item
-      mockSend.mockResolvedValueOnce({ Items: [mockItem] });
-
-      const result = await store.getSession(sessionId);
-
-      expect(result).toEqual({
-        id: sessionId,
-        createdAt: '2026-01-01T00:00:00.000Z',
-        endedAt: null,
-        messageCount: 5,
-        preferenceCount: 3,
-      });
-    });
-
-    it('should return null when session not found', async () => {
-      mockSend.mockResolvedValueOnce({ Item: undefined });
-      mockSend.mockResolvedValueOnce({ Items: [] });
-
-      const result = await store.getSession('nonexistent');
-
-      expect(result).toBeNull();
-    });
+  afterAll(() => {
+    docClient?.destroy();
   });
 
-  describe('endSession', () => {
-    it('should update the session with an endedAt timestamp', async () => {
-      mockSend.mockResolvedValueOnce({});
+  beforeEach(async () => {
+    // A fresh table per test, so no case can depend on another's leftovers.
+    await docClient
+      .send(new DeleteTableCommand({ TableName: TABLE_NAME }))
+      .catch(() => {});
 
-      await store.endSession('session-abc');
+    await docClient.send(
+      new CreateTableCommand({
+        TableName: TABLE_NAME,
+        // Mirrors infra/lib/data-stack.ts. Divergence here would make the suite
+        // prove something about a table that does not exist.
+        KeySchema: [
+          { AttributeName: 'pk', KeyType: 'HASH' },
+          { AttributeName: 'sk', KeyType: 'RANGE' },
+        ],
+        AttributeDefinitions: [
+          { AttributeName: 'pk', AttributeType: 'S' },
+          { AttributeName: 'sk', AttributeType: 'S' },
+          { AttributeName: 'gsi1pk', AttributeType: 'S' },
+          { AttributeName: 'gsi1sk', AttributeType: 'S' },
+        ],
+        GlobalSecondaryIndexes: [
+          {
+            IndexName: 'GSI1',
+            KeySchema: [
+              { AttributeName: 'gsi1pk', KeyType: 'HASH' },
+              { AttributeName: 'gsi1sk', KeyType: 'RANGE' },
+            ],
+            Projection: { ProjectionType: 'ALL' },
+          },
+        ],
+        BillingMode: 'PAY_PER_REQUEST',
+      }),
+    );
 
-      expect(mockSend).toHaveBeenCalledTimes(1);
-      const updateCall = mockSend.mock.calls[0][0];
-      expect(updateCall.input.TableName).toBe('TestTable');
-      expect(updateCall.input.Key).toEqual({
-        pk: 'USER#anonymous',
-        sk: 'SESSION#session-abc',
-      });
-      expect(updateCall.input.UpdateExpression).toBe('SET endedAt = :endedAt');
-      expect(updateCall.input.ExpressionAttributeValues[':endedAt']).toBeDefined();
-    });
+    alice = new DynamoDBStore('alice', docClient, TABLE_NAME);
+    bob = new DynamoDBStore('bob', docClient, TABLE_NAME);
   });
 
-  describe('saveMessage', () => {
-    it('should save a message with correct PK/SK pattern', async () => {
-      mockSend.mockResolvedValue({});
+  // --- Sessions ---
 
-      const msg: ChatMessage = {
-        id: 'msg-1',
-        sessionId: 'session-1',
+  describe('sessions', () => {
+    it('reads back a session it just created', async () => {
+      const sessionId = await alice.createSession();
+      const session = await alice.getSession(sessionId);
+
+      expect(session).not.toBeNull();
+      expect(session!.id).toBe(sessionId);
+      expect(session!.endedAt).toBeNull();
+      expect(session!.messageCount).toBe(0);
+      expect(session!.preferenceCount).toBe(0);
+    });
+
+    it('returns null for a session that does not exist', async () => {
+      expect(await alice.getSession('no-such-session')).toBeNull();
+    });
+
+    it("lists only this user's sessions", async () => {
+      const first = await alice.createSession();
+      const second = await alice.createSession();
+      await bob.createSession();
+
+      const ids = (await alice.listSessions()).map((s) => s.id);
+
+      expect(ids).toHaveLength(2);
+      expect(new Set(ids)).toEqual(new Set([first, second]));
+    });
+
+    it('patches title and partnerName independently', async () => {
+      const sessionId = await alice.createSession();
+
+      await alice.updateSessionMeta(sessionId, { partnerName: 'Maya' });
+      await alice.updateSessionMeta(sessionId, { title: 'Anniversary plans' });
+
+      const session = await alice.getSession(sessionId);
+      expect(session!.partnerName).toBe('Maya');
+      expect(session!.title).toBe('Anniversary plans');
+    });
+
+    it('endSession stamps endedAt', async () => {
+      const sessionId = await alice.createSession();
+      await alice.endSession(sessionId);
+
+      expect((await alice.getSession(sessionId))!.endedAt).toBeTruthy();
+    });
+
+    it('is a no-op — not an upsert — for an unknown session id', async () => {
+      // Without ConditionExpression: attribute_exists(pk), UpdateItem *creates*
+      // the item, leaving a half-formed session that listSessions would return.
+      await alice.endSession('no-such-session');
+      await alice.updateSessionMeta('no-such-session', { title: 'ghost' });
+      await alice.clearSession('no-such-session');
+
+      expect(await alice.getSession('no-such-session')).toBeNull();
+      expect(await alice.listSessions()).toEqual([]);
+    });
+
+    it('deleteSession removes the meta row along with its contents', async () => {
+      const sessionId = await alice.createSession();
+      await alice.saveMessage({
+        id: 'm1',
+        sessionId,
         sender: 'user',
-        content: 'Hello',
-        timestamp: '2026-01-01T12:00:00.000Z',
-      };
-
-      await store.saveMessage(msg);
-
-      // Two calls: PutCommand + UpdateCommand for count
-      expect(mockSend).toHaveBeenCalledTimes(2);
-
-      const putCall = mockSend.mock.calls[0][0];
-      expect(putCall.input.Item.pk).toBe('SESSION#session-1');
-      expect(putCall.input.Item.sk).toBe('MSG#2026-01-01T12:00:00.000Z#msg-1');
-      expect(putCall.input.Item.entityType).toBe('Message');
-      expect(putCall.input.Item.sender).toBe('user');
-      expect(putCall.input.Item.content).toBe('Hello');
-    });
-  });
-
-  describe('getMessagesBySession', () => {
-    it('should query messages with begins_with prefix', async () => {
-      const mockItems = [
-        { id: 'msg-1', sessionId: 's1', sender: 'user', content: 'Hi', timestamp: '2026-01-01T12:00:00.000Z' },
-        { id: 'msg-2', sessionId: 's1', sender: 'agent', content: 'Hello!', timestamp: '2026-01-01T12:00:01.000Z' },
-      ];
-      mockSend.mockResolvedValueOnce({ Items: mockItems });
-
-      const messages = await store.getMessagesBySession('s1');
-
-      expect(messages).toHaveLength(2);
-      expect(messages[0].id).toBe('msg-1');
-      expect(messages[1].sender).toBe('agent');
-
-      const queryCall = mockSend.mock.calls[0][0];
-      expect(queryCall.input.KeyConditionExpression).toBe(
-        'pk = :pk AND begins_with(sk, :prefix)',
-      );
-      expect(queryCall.input.ExpressionAttributeValues[':pk']).toBe('SESSION#s1');
-      expect(queryCall.input.ExpressionAttributeValues[':prefix']).toBe('MSG#');
-    });
-
-    it('should return empty array when no messages found', async () => {
-      mockSend.mockResolvedValueOnce({ Items: [] });
-
-      const messages = await store.getMessagesBySession('empty-session');
-
-      expect(messages).toEqual([]);
-    });
-  });
-
-  describe('savePreference', () => {
-    it('should save a preference with correct PK/SK pattern', async () => {
-      mockSend.mockResolvedValue({});
-
-      const result = await store.savePreference({
-        sessionId: 's1',
-        category: 'food' as PreferenceCategory,
-        key: 'favorite_cuisine',
-        value: 'Italian',
-        confidence: 0.9,
-        sourceMessageId: 'msg-1',
+        content: 'hello',
+        timestamp: '2026-01-01T00:00:00.000Z',
       });
-
-      expect(result.id).toBeDefined();
-      expect(result.category).toBe('food');
-      expect(result.key).toBe('favorite_cuisine');
-      expect(result.value).toBe('Italian');
-      expect(result.confidence).toBe(0.9);
-      expect(result.history).toEqual([]);
-
-      // Two calls: PutCommand + UpdateCommand for count
-      expect(mockSend).toHaveBeenCalledTimes(2);
-
-      const putCall = mockSend.mock.calls[0][0];
-      expect(putCall.input.Item.pk).toBe('SESSION#s1');
-      expect(putCall.input.Item.sk).toBe('PREF#food#favorite_cuisine');
-      expect(putCall.input.Item.entityType).toBe('Preference');
-    });
-  });
-
-  describe('updatePreference', () => {
-    it('should update preference and append to history', async () => {
-      const existingItem = {
-        pk: 'SESSION#s1',
-        sk: 'PREF#food#favorite_cuisine',
-        id: 'pref-1',
-        sessionId: 's1',
+      await alice.savePreference({
+        sessionId,
         category: 'food',
-        key: 'favorite_cuisine',
+        key: 'cuisine',
         value: 'Italian',
         confidence: 0.9,
-        sourceMessageId: 'msg-1',
-        createdAt: '2026-01-01T00:00:00.000Z',
-        updatedAt: '2026-01-01T00:00:00.000Z',
-        history: [],
-      };
-
-      // Query to find the preference by id
-      mockSend.mockResolvedValueOnce({ Items: [existingItem] });
-      // UpdateCommand
-      mockSend.mockResolvedValueOnce({});
-
-      const result = await store.updatePreference('pref-1', {
-        value: 'Japanese',
-        confidence: 0.95,
+        sourceMessageId: 'm1',
       });
 
-      expect(result.value).toBe('Japanese');
-      expect(result.confidence).toBe(0.95);
-      expect(result.history).toHaveLength(1);
-      expect(result.history[0].previousValue).toBe('Italian');
-    });
+      await alice.deleteSession(sessionId);
 
-    it('should throw when preference not found', async () => {
-      mockSend.mockResolvedValueOnce({ Items: [] });
-
-      await expect(store.updatePreference('nonexistent', { value: 'x' }))
-        .rejects.toThrow('Preference not found: nonexistent');
+      expect(await alice.getSession(sessionId)).toBeNull();
+      expect(await alice.getMessagesBySession(sessionId)).toEqual([]);
+      expect(await alice.getPreferencesBySession(sessionId)).toEqual([]);
     });
   });
 
-  describe('getPreferencesBySession', () => {
-    it('should query preferences with PREF# prefix', async () => {
-      const mockItems = [
-        {
-          id: 'p1', sessionId: 's1', category: 'food', key: 'cuisine',
-          value: 'Italian', confidence: 0.9, sourceMessageId: 'msg-1',
-          createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
-          history: [],
-        },
-        {
-          id: 'p2', sessionId: 's1', category: 'music', key: 'genre',
-          value: 'Jazz', confidence: 0.8, sourceMessageId: 'msg-2',
-          createdAt: '2026-01-01T00:00:01.000Z', updatedAt: '2026-01-01T00:00:01.000Z',
-          history: [],
-        },
-      ];
-      mockSend.mockResolvedValueOnce({ Items: mockItems });
+  // --- Messages ---
 
-      const prefs = await store.getPreferencesBySession('s1');
+  describe('messages', () => {
+    it('returns messages in chronological order regardless of write order', async () => {
+      const sessionId = await alice.createSession();
 
-      expect(prefs).toHaveLength(2);
-      expect(prefs[0].category).toBe('food');
-      expect(prefs[1].category).toBe('music');
+      // Written newest-first deliberately: ordering must come from the sort key,
+      // not from insertion order.
+      for (const [id, timestamp] of [
+        ['m3', '2026-01-03T00:00:00.000Z'],
+        ['m1', '2026-01-01T00:00:00.000Z'],
+        ['m2', '2026-01-02T00:00:00.000Z'],
+      ]) {
+        await alice.saveMessage({
+          id,
+          sessionId,
+          sender: 'user',
+          content: id,
+          timestamp,
+        });
+      }
 
-      const queryCall = mockSend.mock.calls[0][0];
-      expect(queryCall.input.ExpressionAttributeValues[':pk']).toBe('SESSION#s1');
-      expect(queryCall.input.ExpressionAttributeValues[':prefix']).toBe('PREF#');
+      const ids = (await alice.getMessagesBySession(sessionId)).map((m) => m.id);
+      expect(ids).toEqual(['m1', 'm2', 'm3']);
     });
-  });
 
-  describe('findPreference', () => {
-    it('should get preference by composite key lookup', async () => {
-      const mockItem = {
-        id: 'p1', sessionId: 's1', category: 'food', key: 'cuisine',
-        value: 'Italian', confidence: 0.9, sourceMessageId: 'msg-1',
-        createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
-        history: [],
-      };
-      mockSend.mockResolvedValueOnce({ Item: mockItem });
+    it('increments messageCount and advances lastActivity', async () => {
+      const sessionId = await alice.createSession();
 
-      const result = await store.findPreference('s1', 'food', 'cuisine');
-
-      expect(result).not.toBeNull();
-      expect(result!.value).toBe('Italian');
-
-      const getCall = mockSend.mock.calls[0][0];
-      expect(getCall.input.Key).toEqual({
-        pk: 'SESSION#s1',
-        sk: 'PREF#food#cuisine',
+      await alice.saveMessage({
+        id: 'm1',
+        sessionId,
+        sender: 'user',
+        content: 'hello',
+        timestamp: '2026-06-01T00:00:00.000Z',
       });
-    });
+      await alice.saveMessage({
+        id: 'm2',
+        sessionId,
+        sender: 'agent',
+        content: 'hi',
+        timestamp: '2026-06-02T00:00:00.000Z',
+      });
 
-    it('should return null when preference not found', async () => {
-      mockSend.mockResolvedValueOnce({ Item: undefined });
-
-      const result = await store.findPreference('s1', 'music', 'nonexistent');
-
-      expect(result).toBeNull();
+      const session = await alice.getSession(sessionId);
+      expect(session!.messageCount).toBe(2);
+      expect(session!.lastActivity).toBe('2026-06-02T00:00:00.000Z');
     });
   });
+
+  // --- Preferences ---
+
+  describe('preferences', () => {
+    it('reads back a saved preference by natural key', async () => {
+      const sessionId = await alice.createSession();
+      await alice.savePreference({
+        sessionId,
+        category: 'food',
+        key: 'cuisine',
+        value: 'Italian',
+        confidence: 0.9,
+        sourceMessageId: 'm1',
+      });
+
+      const found = await alice.findPreference(sessionId, 'food', 'cuisine');
+      expect(found).not.toBeNull();
+      expect(found!.value).toBe('Italian');
+      expect(found!.history).toEqual([]);
+    });
+
+    it('saving the same natural key twice keeps one row', async () => {
+      const sessionId = await alice.createSession();
+      const write = () =>
+        alice.savePreference({
+          sessionId,
+          category: 'food',
+          key: 'cuisine',
+          value: 'Italian',
+          confidence: 0.9,
+          sourceMessageId: 'm1',
+        });
+
+      await write();
+      await write();
+
+      expect(await alice.getPreferencesBySession(sessionId)).toHaveLength(1);
+    });
+
+    it('revising a preference appends history and persists it', async () => {
+      const sessionId = await alice.createSession();
+      await alice.savePreference({
+        sessionId,
+        category: 'food',
+        key: 'cuisine',
+        value: 'French',
+        confidence: 0.7,
+        sourceMessageId: 'm0',
+      });
+
+      const first = await alice.updatePreference(
+        { sessionId, category: 'food', key: 'cuisine' },
+        { value: 'Italian', confidence: 0.95, sourceMessageId: 'm1' },
+      );
+      const second = await alice.updatePreference(
+        { sessionId, category: 'food', key: 'cuisine' },
+        { value: 'Thai', confidence: 0.9, sourceMessageId: 'm2' },
+      );
+
+      expect(first.history).toHaveLength(1);
+      expect(second.history).toHaveLength(2);
+
+      // The returned object is easy to get right by accident; what matters is
+      // what actually landed on the item.
+      const persisted = await alice.findPreference(sessionId, 'food', 'cuisine');
+      expect(persisted!.value).toBe('Thai');
+      expect(persisted!.history.map((h) => h.previousValue)).toEqual([
+        'French',
+        'Italian',
+      ]);
+    });
+
+    it('a revision does not inflate preferenceCount', async () => {
+      const sessionId = await alice.createSession();
+      await alice.savePreference({
+        sessionId,
+        category: 'food',
+        key: 'cuisine',
+        value: 'French',
+        confidence: 0.7,
+        sourceMessageId: 'm0',
+      });
+      await alice.updatePreference(
+        { sessionId, category: 'food', key: 'cuisine' },
+        { value: 'Italian', confidence: 0.95, sourceMessageId: 'm1' },
+      );
+
+      expect((await alice.getSession(sessionId))!.preferenceCount).toBe(1);
+    });
+
+    it('revising a preference that does not exist throws rather than creating one', async () => {
+      const sessionId = await alice.createSession();
+
+      await expect(
+        alice.updatePreference(
+          { sessionId, category: 'food', key: 'cuisine' },
+          { value: 'Italian' },
+        ),
+      ).rejects.toThrow(/not found/i);
+
+      expect(await alice.getPreferencesBySession(sessionId)).toEqual([]);
+    });
+
+    it('writes a batch larger than the 25-item BatchWriteItem limit', async () => {
+      const sessionId = await alice.createSession();
+      const prefs = Array.from({ length: 30 }, (_, i) => ({
+        category: 'food' as const,
+        key: `dish-${i}`,
+        value: `value-${i}`,
+        confidence: 0.8,
+        sourceMessageId: 'seed',
+      }));
+
+      const written = await alice.savePreferencesBatch(sessionId, prefs);
+
+      expect(written).toHaveLength(30);
+      expect(await alice.getPreferencesBySession(sessionId)).toHaveLength(30);
+      // One counter update for the whole batch, not one per item.
+      expect((await alice.getSession(sessionId))!.preferenceCount).toBe(30);
+    });
+
+    it('an empty batch touches nothing', async () => {
+      const sessionId = await alice.createSession();
+      expect(await alice.savePreferencesBatch(sessionId, [])).toEqual([]);
+      expect((await alice.getSession(sessionId))!.preferenceCount).toBe(0);
+    });
+
+    it('tolerates delimiters inside a preference key', async () => {
+      const sessionId = await alice.createSession();
+      await alice.savePreference({
+        sessionId,
+        category: 'food',
+        key: 'PREF#weird#key',
+        value: 'still works',
+        confidence: 0.5,
+        sourceMessageId: 'm1',
+      });
+
+      const found = await alice.findPreference(sessionId, 'food', 'PREF#weird#key');
+      expect(found!.value).toBe('still works');
+    });
+  });
+
+  // --- Reset ---
 
   describe('clearSession', () => {
-    /** Build N projected PREF#/MSG# key items for a session partition */
-    function keyItems(sessionId: string, prefix: string, count: number) {
-      return Array.from({ length: count }, (_, i) => ({
-        pk: `SESSION#${sessionId}`,
-        sk: `${prefix}${i}`,
-      }));
-    }
-
-    it('batch-deletes every PREF# and MSG# item for the session', async () => {
-      mockSend.mockResolvedValueOnce({ Items: keyItems('s1', 'PREF#food#', 2) });
-      mockSend.mockResolvedValueOnce({ Items: keyItems('s1', 'MSG#t#', 1) });
-      mockSend.mockResolvedValueOnce({}); // BatchWrite
-      mockSend.mockResolvedValueOnce({}); // counter reset
-
-      await store.clearSession('s1');
-
-      const batchCall = mockSend.mock.calls[2][0];
-      const requests = batchCall.input.RequestItems.TestTable;
-      expect(requests).toHaveLength(3);
-      expect(requests[0].DeleteRequest.Key).toEqual({
-        pk: 'SESSION#s1',
-        sk: 'PREF#food#0',
+    it('drops messages and preferences, keeps the session, zeroes the counters', async () => {
+      const sessionId = await alice.createSession();
+      await alice.saveMessage({
+        id: 'm1',
+        sessionId,
+        sender: 'user',
+        content: 'hello',
+        timestamp: '2026-01-01T00:00:00.000Z',
       });
-      expect(requests[2].DeleteRequest.Key).toEqual({
-        pk: 'SESSION#s1',
-        sk: 'MSG#t#0',
-      });
-    });
-
-    it('queries the session partition with PREF# and MSG# sk prefixes', async () => {
-      mockSend.mockResolvedValueOnce({ Items: [] });
-      mockSend.mockResolvedValueOnce({ Items: [] });
-      mockSend.mockResolvedValueOnce({});
-
-      await store.clearSession('s1');
-
-      const prefQuery = mockSend.mock.calls[0][0];
-      const msgQuery = mockSend.mock.calls[1][0];
-      expect(prefQuery.input.ExpressionAttributeValues[':pk']).toBe('SESSION#s1');
-      expect(prefQuery.input.ExpressionAttributeValues[':prefix']).toBe('PREF#');
-      expect(msgQuery.input.ExpressionAttributeValues[':prefix']).toBe('MSG#');
-    });
-
-    it('resets the session counters to zero', async () => {
-      mockSend.mockResolvedValueOnce({ Items: [] });
-      mockSend.mockResolvedValueOnce({ Items: [] });
-      mockSend.mockResolvedValueOnce({});
-
-      await store.clearSession('s1');
-
-      const updateCall = mockSend.mock.calls[2][0];
-      expect(updateCall.input.Key).toEqual({
-        pk: 'USER#anonymous',
-        sk: 'SESSION#s1',
-      });
-      expect(updateCall.input.UpdateExpression).toContain('messageCount = :zero');
-      expect(updateCall.input.UpdateExpression).toContain('preferenceCount = :zero');
-      expect(updateCall.input.ExpressionAttributeValues[':zero']).toBe(0);
-    });
-
-    it('skips the batch write when the session has no items', async () => {
-      mockSend.mockResolvedValueOnce({ Items: [] });
-      mockSend.mockResolvedValueOnce({ Items: [] });
-      mockSend.mockResolvedValueOnce({});
-
-      await store.clearSession('s1');
-
-      // 2 queries + 1 counter reset, no BatchWrite
-      expect(mockSend).toHaveBeenCalledTimes(3);
-    });
-
-    it('chunks deletes into batches of 25', async () => {
-      mockSend.mockResolvedValueOnce({ Items: keyItems('s1', 'PREF#food#', 30) });
-      mockSend.mockResolvedValueOnce({ Items: [] });
-      mockSend.mockResolvedValueOnce({}); // first BatchWrite
-      mockSend.mockResolvedValueOnce({}); // second BatchWrite
-      mockSend.mockResolvedValueOnce({}); // counter reset
-
-      await store.clearSession('s1');
-
-      expect(
-        mockSend.mock.calls[2][0].input.RequestItems.TestTable,
-      ).toHaveLength(25);
-      expect(
-        mockSend.mock.calls[3][0].input.RequestItems.TestTable,
-      ).toHaveLength(5);
-    });
-
-    it('retries keys DynamoDB reports as unprocessed', async () => {
-      const unprocessedKey = { pk: 'SESSION#s1', sk: 'PREF#food#1' };
-      mockSend.mockResolvedValueOnce({ Items: keyItems('s1', 'PREF#food#', 2) });
-      mockSend.mockResolvedValueOnce({ Items: [] });
-      mockSend.mockResolvedValueOnce({
-        UnprocessedItems: {
-          TestTable: [{ DeleteRequest: { Key: unprocessedKey } }],
+      await alice.savePreferencesBatch(sessionId, [
+        {
+          category: 'food',
+          key: 'cuisine',
+          value: 'Italian',
+          confidence: 0.9,
+          sourceMessageId: 'm1',
         },
-      });
-      mockSend.mockResolvedValueOnce({}); // retry succeeds
-      mockSend.mockResolvedValueOnce({}); // counter reset
+      ]);
+      await alice.updateSessionMeta(sessionId, { partnerName: 'Maya' });
 
-      await store.clearSession('s1');
+      await alice.clearSession(sessionId);
 
-      const retryCall = mockSend.mock.calls[3][0];
-      const retryRequests = retryCall.input.RequestItems.TestTable;
-      expect(retryRequests).toHaveLength(1);
-      expect(retryRequests[0].DeleteRequest.Key).toEqual(unprocessedKey);
+      expect(await alice.getMessagesBySession(sessionId)).toEqual([]);
+      expect(await alice.getPreferencesBySession(sessionId)).toEqual([]);
+
+      const session = await alice.getSession(sessionId);
+      expect(session).not.toBeNull();
+      expect(session!.messageCount).toBe(0);
+      expect(session!.preferenceCount).toBe(0);
+      expect(session!.partnerName).toBeNull();
     });
 
-    it('throws when unprocessed keys persist past the retry limit', async () => {
-      mockSend.mockResolvedValueOnce({ Items: keyItems('s1', 'PREF#food#', 1) });
-      mockSend.mockResolvedValueOnce({ Items: [] });
-      mockSend.mockResolvedValue({
-        UnprocessedItems: {
-          TestTable: [
-            { DeleteRequest: { Key: { pk: 'SESSION#s1', sk: 'PREF#food#0' } } },
-          ],
-        },
-      });
+    it('leaves the same user\'s other sessions untouched', async () => {
+      const kept = await alice.createSession();
+      const cleared = await alice.createSession();
+      for (const sessionId of [kept, cleared]) {
+        await alice.savePreference({
+          sessionId,
+          category: 'food',
+          key: 'cuisine',
+          value: 'Italian',
+          confidence: 0.9,
+          sourceMessageId: 'm1',
+        });
+      }
 
-      await expect(store.clearSession('s1')).rejects.toThrow(/after 5 attempts/);
+      await alice.clearSession(cleared);
+
+      expect(await alice.getPreferencesBySession(kept)).toHaveLength(1);
     });
   });
 
-  describe('key generation patterns', () => {
-    it('generates correct session PK/SK', async () => {
-      mockSend.mockResolvedValue({});
-      const id = await store.createSession();
-      const putCall = mockSend.mock.calls[0][0];
-      expect(putCall.input.Item.pk).toMatch(/^USER#anonymous$/);
-      expect(putCall.input.Item.sk).toMatch(/^SESSION#[0-9a-f-]+$/);
-      expect(putCall.input.Item.gsi1pk).toBe(`SESSION#${id}`);
-    });
+  // --- Cross-tenant isolation ---
 
-    it('generates correct message SK with timestamp ordering', async () => {
-      mockSend.mockResolvedValue({});
-      const msg: ChatMessage = {
-        id: 'abc-123',
-        sessionId: 'sess-1',
+  describe('cross-tenant isolation', () => {
+    let aliceSession: string;
+
+    beforeEach(async () => {
+      aliceSession = await alice.createSession();
+      await alice.saveMessage({
+        id: 'm1',
+        sessionId: aliceSession,
         sender: 'user',
-        content: 'test',
-        timestamp: '2026-06-15T10:30:00.000Z',
-      };
-      await store.saveMessage(msg);
-      const putCall = mockSend.mock.calls[0][0];
-      expect(putCall.input.Item.sk).toBe('MSG#2026-06-15T10:30:00.000Z#abc-123');
+        content: 'private',
+        timestamp: '2026-01-01T00:00:00.000Z',
+      });
+      await alice.savePreference({
+        sessionId: aliceSession,
+        category: 'food',
+        key: 'cuisine',
+        value: 'Italian',
+        confidence: 0.9,
+        sourceMessageId: 'm1',
+      });
     });
 
-    it('generates correct preference composite SK', async () => {
-      mockSend.mockResolvedValue({});
-      await store.savePreference({
-        sessionId: 'sess-1',
-        category: 'love_language',
-        key: 'primary',
-        value: 'quality_time',
-        confidence: 0.85,
-        sourceMessageId: 'msg-5',
+    it('hides the session, its messages and its preferences from another user', async () => {
+      // Bob holds a *valid* session id. Isolation must not rest on him not
+      // knowing it.
+      expect(await bob.getSession(aliceSession)).toBeNull();
+      expect(await bob.getMessagesBySession(aliceSession)).toEqual([]);
+      expect(await bob.getPreferencesBySession(aliceSession)).toEqual([]);
+      expect(await bob.findPreference(aliceSession, 'food', 'cuisine')).toBeNull();
+      expect(await bob.listSessions()).toEqual([]);
+    });
+
+    it("refuses another user's writes to that session", async () => {
+      await bob.endSession(aliceSession);
+      await bob.updateSessionMeta(aliceSession, { title: 'hijacked' });
+      await bob.clearSession(aliceSession);
+      await bob.deleteSession(aliceSession);
+
+      const session = await alice.getSession(aliceSession);
+      expect(session).not.toBeNull();
+      expect(session!.endedAt).toBeNull();
+      expect(session!.title).toBeNull();
+      expect(await alice.getMessagesBySession(aliceSession)).toHaveLength(1);
+      expect(await alice.getPreferencesBySession(aliceSession)).toHaveLength(1);
+    });
+  });
+
+  // --- TTL ---
+
+  describe('ttl', () => {
+    it('stamps an epoch-second expiry when the store was given a lifetime', async () => {
+      const ephemeral = new DynamoDBStore('demo', docClient, TABLE_NAME, 3600);
+      const sessionId = await ephemeral.createSession();
+
+      const result = await docClient.send(
+        new GetCommand({
+          TableName: TABLE_NAME,
+          Key: { pk: sessionPk('demo', sessionId), sk: META_SK },
+        }),
+      );
+
+      const ttl = result.Item!.ttl as number;
+      const nowSeconds = Math.floor(Date.now() / 1000);
+
+      // Seconds, not milliseconds. A millisecond value would sit roughly 50,000
+      // years in the future and silently disable expiry altogether.
+      expect(ttl).toBeGreaterThan(nowSeconds);
+      expect(ttl).toBeLessThanOrEqual(nowSeconds + 3601);
+    });
+
+    it('omits ttl entirely for a store with no lifetime', async () => {
+      const sessionId = await alice.createSession();
+
+      const result = await docClient.send(
+        new GetCommand({
+          TableName: TABLE_NAME,
+          Key: { pk: sessionPk('alice', sessionId), sk: META_SK },
+        }),
+      );
+
+      expect(result.Item).not.toHaveProperty('ttl');
+    });
+  });
+
+  // --- Key layout ---
+
+  describe('item layout', () => {
+    it('places a preference at the key the schema documents', async () => {
+      const sessionId = await alice.createSession();
+      await alice.savePreference({
+        sessionId,
+        category: 'food',
+        key: 'cuisine',
+        value: 'Italian',
+        confidence: 0.9,
+        sourceMessageId: 'm1',
       });
-      const putCall = mockSend.mock.calls[0][0];
-      expect(putCall.input.Item.sk).toBe('PREF#love_language#primary');
+
+      // Asserted directly, because the key layout is a storage contract: a
+      // change here is a migration, not a refactor.
+      const result = await docClient.send(
+        new GetCommand({
+          TableName: TABLE_NAME,
+          Key: {
+            pk: sessionPk('alice', sessionId),
+            sk: prefSk('food', 'cuisine'),
+          },
+        }),
+      );
+
+      expect(result.Item).toBeDefined();
+      expect(result.Item!.entityType).toBe('Preference');
+    });
+
+    it('carries GSI keys on the session meta row only', async () => {
+      const sessionId = await alice.createSession();
+      await alice.saveMessage({
+        id: 'm1',
+        sessionId,
+        sender: 'user',
+        content: 'hello',
+        timestamp: '2026-01-01T00:00:00.000Z',
+      });
+
+      const meta = await docClient.send(
+        new GetCommand({
+          TableName: TABLE_NAME,
+          Key: { pk: sessionPk('alice', sessionId), sk: META_SK },
+        }),
+      );
+      const message = await docClient.send(
+        new GetCommand({
+          TableName: TABLE_NAME,
+          Key: {
+            pk: sessionPk('alice', sessionId),
+            sk: 'MSG#2026-01-01T00:00:00.000Z#m1',
+          },
+        }),
+      );
+
+      // A sparse index: one GSI row per session, so listSessions needs no filter.
+      expect(meta.Item!.gsi1pk).toBe('USER#alice');
+      expect(message.Item).toBeDefined();
+      expect(message.Item).not.toHaveProperty('gsi1pk');
     });
   });
 });

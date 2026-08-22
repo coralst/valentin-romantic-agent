@@ -4,7 +4,6 @@ import { useChatContext } from '../context/chat-context';
 import { usePreferencesContext } from '../context/preferences-context';
 import { useProfileStoreContext } from '../context/profile-store-context';
 import { seedDemoSession, fetchSessionPreferences, resetSession } from '../utils/demo-session-api';
-import { ValentinInspector } from './ValentinInspector';
 import { colors, spacing, typography, borderRadius, animation } from '../design-system/tokens';
 import type { StoredSession } from '../hooks/use-session-store';
 import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
@@ -209,8 +208,6 @@ export function DemoToolbar({ children }: DemoToolbarProps) {
       >
         {pending === 'reset' ? 'Resetting…' : 'Reset'}
       </button>
-
-      <ValentinInspector />
 
       {children}
 

@@ -28,7 +28,11 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test-setup.ts'],
     // Preserve Vitest's built-in excludes (node_modules, dist, .idea, etc.)
-    // instead of replacing them; only add the Playwright e2e dir on top.
-    exclude: [...configDefaults.exclude, 'e2e/**'],
+    // instead of replacing them; only add ours on top.
+    //
+    // `.claude/**` holds agent worktrees — full copies of this repo. Without it
+    // vitest globs into them and runs every test several times over, which
+    // exhausts memory rather than merely being slow.
+    exclude: [...configDefaults.exclude, 'e2e/**', '.claude/**'],
   },
 });

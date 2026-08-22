@@ -86,24 +86,14 @@ describe('DemoToolbar', () => {
     expect(screen.getByRole('button', { name: 'Extra control' })).toBeInTheDocument();
   });
 
-  it('includes the architecture inspector toggle', () => {
+  // The architecture toggle used to live here. It moved to the sidebar so it is
+  // reachable from every screen rather than only wherever this toolbar renders;
+  // see `SessionSidebar.test.tsx`. Asserted as an absence so the toggle cannot
+  // quietly come back and end up existing twice.
+  it('does not own the architecture toggle', () => {
     vi.stubGlobal('fetch', vi.fn());
     renderToolbar();
-    expect(
-      screen.getByRole('button', { name: 'Open architecture inspector' }),
-    ).toBeInTheDocument();
-  });
-
-  it('opens the inspector without disturbing the demo controls', async () => {
-    const user = userEvent.setup();
-    vi.stubGlobal('fetch', vi.fn());
-    renderToolbar();
-
-    await user.click(screen.getByRole('button', { name: 'Open architecture inspector' }));
-
-    expect(screen.getByTestId('inspector-panel')).toBeInTheDocument();
-    expect(screen.getByTestId('load-demo-profile-button')).toBeEnabled();
-    expect(screen.getByTestId('reset-session-button')).toBeEnabled();
+    expect(screen.queryByTestId('architecture-toggle')).not.toBeInTheDocument();
   });
 
   describe('Load demo profile', () => {

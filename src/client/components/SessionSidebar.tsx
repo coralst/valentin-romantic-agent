@@ -11,14 +11,18 @@ import {
 } from '../design-system/tokens';
 import { useSessionContext } from '../context/session-context';
 import { SessionEntry } from './SessionEntry';
+import { ArchitectureToggle } from './ArchitectureToggle';
 
 /**
- * Column 2 of the window: the wordmark, the new-conversation button and the
- * conversation list on a sand ground.
+ * Column 2 of the window: the wordmark, the architecture magnifier, the
+ * new-conversation button and the conversation list on a sand ground.
  *
  * There is deliberately no collapsed rail any more. The mockup has no collapsed
  * state, and the 76px claret icon rail in column 1 now plays the role the old
- * collapse-to-rail mode was serving.
+ * collapse-to-rail mode was serving. The drawer therefore no longer needs a
+ * `SIDEBAR_WIDTH` / `RAIL_WIDTH` pair exported from here — the column is one
+ * fixed `layout.conversationListWidth`, and the drawer is anchored by a grid
+ * wrapper in `AppLayout` rather than by a hardcoded left inset.
  */
 const columnStyle: React.CSSProperties = {
   width: layout.conversationListWidth,
@@ -64,6 +68,13 @@ const wordmarkRowStyle: React.CSSProperties = {
   alignItems: 'flex-start',
   justifyContent: 'space-between',
   gap: spacing.xs,
+};
+
+const wordmarkActionsStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 2,
+  flexShrink: 0,
 };
 
 const wordmarkNameStyle: React.CSSProperties = {
@@ -174,15 +185,23 @@ export function SessionSidebar({ isMobile }: SessionSidebarProps) {
       <div>
         <h3 style={wordmarkNameStyle}>Valentin</h3>
       </div>
-      {isMobile && (
-        <button
-          style={closeButtonStyle}
-          onClick={() => setSidebarOpen(false)}
-          aria-label="Close sidebar"
-        >
-          &times;
-        </button>
-      )}
+      {/* The magnifier that raises the Live Architecture drawer. It sits here
+          rather than in the demo toolbar so it is reachable from every screen —
+          on mobile the toolbar is behind the rail's gear, two taps away. Compact
+          in both surfaces: the column is 226px and the text variant crowds the
+          wordmark. */}
+      <div style={wordmarkActionsStyle}>
+        <ArchitectureToggle compact />
+        {isMobile && (
+          <button
+            style={closeButtonStyle}
+            onClick={() => setSidebarOpen(false)}
+            aria-label="Close sidebar"
+          >
+            &times;
+          </button>
+        )}
+      </div>
     </div>
   );
 

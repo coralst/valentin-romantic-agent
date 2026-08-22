@@ -11,6 +11,10 @@ import { Construct } from 'constructs';
 import { EnvironmentConfig } from '../config/environments';
 
 export interface ComputeStackProps extends cdk.StackProps {
+  /**
+   * Environment configuration, mirroring DataStack. `config.env` is the
+   * environment name, so no separate `environment` prop is needed.
+   */
   config: EnvironmentConfig;
   /** VPC to deploy into — if not provided, a new one is created */
   vpc?: ec2.IVpc;
@@ -187,6 +191,10 @@ export class ComputeStack extends cdk.Stack {
       portMappings: [{ containerPort: 3001, protocol: ecs.Protocol.TCP }],
       environment: {
         DYNAMO_TABLE_NAME: props.table.tableName,
+        // Opt in to durable storage. Without this the server falls back to
+        // InMemoryStore and the deployed app silently forgets everything on
+        // every task replacement.
+        STORAGE_BACKEND: 'dynamodb',
         S3_PHOTO_BUCKET: props.photoBucket.bucketName,
         BEDROCK_GUARDRAIL_ID: props.guardrailId,
         BEDROCK_GUARDRAIL_VERSION: props.guardrailVersion,

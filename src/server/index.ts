@@ -1,4 +1,4 @@
-import { InMemoryStore } from './persistence/in-memory-store';
+import { createStore } from './persistence/create-store';
 import { InMemoryConversationMemory } from './persistence/conversation-memory';
 import { AwsBedrockClient } from './agent/bedrock-client';
 import { StubAgentCoreAdapter } from './agent/agentcore-adapter';
@@ -7,6 +7,7 @@ import { PreferenceExtractor } from './extraction/preference-extractor';
 import { EventRouter } from './api/event-router';
 import { WsGateway } from './api/ws-gateway';
 import { createHttpRoutes } from './api/http-routes';
+import { startSpanBridge } from './telemetry/span-bridge';
 import type { ServerEvent } from '../shared/interfaces/ws-events';
 
 /**
@@ -37,8 +38,8 @@ export function resolveBroadcastSessionId(
 
 /** Initialize all dependencies and start the server */
 export function createServer() {
-  // Persistence
-  const store = new InMemoryStore();
+  // Persistence — in-memory unless STORAGE_BACKEND says otherwise
+  const store = createStore();
   const memory = new InMemoryConversationMemory(store);
 
   // AWS Bedrock — always use real LLM, no stubs
@@ -77,6 +78,11 @@ export function createServer() {
     agentCore,
     extractor,
   );
+
+  // Telemetry — turns the server's own log lines into `aws_span` events. Not
+  // load-bearing: remove this and the drawer still opens and still highlights
+  // from WebSocket events, it just loses the measured durations.
+  startSpanBridge(emit);
 
   // API layer
   eventRouter = new EventRouter(orchestrator, emit);

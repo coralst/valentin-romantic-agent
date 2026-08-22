@@ -17,9 +17,9 @@ export interface ViewContextValue {
   /**
    * Hides the dossier *and returns focus to the control that opened it*.
    *
-   * Same focus discipline as `ValentinInspector.tsx:521-524`: focus is never
-   * stolen when a surface opens (the user may be mid-sentence in the composer),
-   * but it must not be stranded on a removed element when one closes.
+   * Same focus discipline as the architecture drawer: focus is never stolen when
+   * a surface opens (the user may be mid-sentence in the composer), but it must
+   * not be stranded on a removed element when one closes.
    */
   closeDossier: () => void;
   /** What the icon rail's ♥ does. */
@@ -39,11 +39,12 @@ export interface ViewContextValue {
  * conversation behind it is a poor cold start, and it would make the Playwright
  * specs' `goto('/')` non-deterministic.
  *
- * Deliberately *not* a portal either. The inspector portals (`ValentinInspector
- * .tsx:517-553`) because it is an overlay that has to escape a `backdrop-filter`
- * containing block. The dossier is not an overlay — it shares the icon rail and
- * the window's 34px radius, so portalling it would duplicate the rail and fight
- * the window's `overflow: hidden`.
+ * Deliberately *not* a portal either. Nothing in the window portals out any
+ * more: the old inspector did, to escape the deleted header's `backdrop-filter`
+ * containing block, and `LiveArchitectureDrawer` replaced it with an absolutely
+ * positioned panel that stays inside. The dossier is not an overlay at all — it
+ * shares the icon rail and the window's 34px radius, so portalling it would
+ * duplicate the rail and fight the window's `overflow: hidden`.
  */
 export function useViewState(): ViewContextValue {
   const [surface, setSurface] = useState<Surface>('chat');

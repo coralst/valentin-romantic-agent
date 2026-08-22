@@ -16,8 +16,13 @@ import {
   windowCellGrowStyle,
 } from './AppWindow';
 import { IconRail } from './IconRail';
+import { LiveArchitectureDrawer, reservedDrawerSpace } from './LiveArchitectureDrawer';
+import {
+  ArchitectureDrawerProvider,
+  useArchitectureDrawer,
+} from '../context/architecture-drawer-context';
 import { useSessionContext } from '../context/session-context';
-import { breakpoints } from '../design-system/tokens';
+import { breakpoints, layout } from '../design-system/tokens';
 
 const liveRegionStyle: React.CSSProperties = {
   position: 'absolute',
@@ -32,6 +37,64 @@ const liveRegionStyle: React.CSSProperties = {
 };
 
 /**
+ * The positioning context the architecture drawer anchors to, and the region
+ * that gives up the space the drawer occupies.
+ *
+ * Two things are load-bearing here.
+ *
+ * `position: relative`, because the drawer is `position: absolute` and this is
+ * what makes it span exactly the region below. It must NOT be `position: fixed`
+ * and must not portal to `document.body`: the app window sets `overflow: hidden`
+ * to keep its 34px radius crisp, so the window's own clip is what keeps the
+ * drawer's bottom corners inside the frame instead of running past it. (The old
+ * inspector portalled out to escape the deleted header's `backdrop-filter`; that
+ * reason is gone, and the replacement reason points the other way — stay inside.)
+ *
+ * `paddingBottom`, because the drawer is a 424px overlay pinned to the bottom of
+ * this region — which is exactly where the composer sits. Reserving the space
+ * rather than covering it is the drawer's whole contract ("not a dialog, no focus
+ * trap, composer stays typable"); occlusion breaks it just as effectively as a
+ * modal would. `boxSizing: border-box` is what makes the padding shrink the
+ * children's height rather than growing the region past its grid track.
+ *
+ * The amount comes from `reservedDrawerSpace()`, which lives next to the heights
+ * it derives from so the layout cannot drift out of agreement with the drawer.
+ */
+function drawerHostStyle(gridColumn: string, reserved: number): React.CSSProperties {
+  return {
+    gridColumn,
+    position: 'relative',
+    boxSizing: 'border-box',
+    paddingBottom: reserved,
+    display: 'grid',
+    // Chat + brief keep their own tracks inside the host, so wrapping them does
+    // not change the window's four-column template.
+    gridTemplateColumns:
+      gridColumn === CHAT_COLUMNS_SPAN
+        ? `minmax(0, 1fr) ${layout.briefRailWidth}px`
+        : 'minmax(0, 1fr)',
+    gridTemplateRows: '100%',
+    minWidth: 0,
+    minHeight: 0,
+    // The reopen bar parks itself at `translateY(100%)` while the drawer is up,
+    // i.e. 34px *below* this host's bottom edge. A transform does not affect
+    // layout but it does extend the scrollable overflow area, so without this
+    // clip the host is 34px taller than its grid track — and the first thing to
+    // scroll it (sending a message, which scrolls the transcript to the bottom)
+    // slides the whole window grid up by 34px, dragging the icon rail and the
+    // sidebar to `top: -20` and shearing the crest off the top of the frame.
+    // Found by driving a real turn with the drawer open; no unit test sees it,
+    // because jsdom performs no layout and so has no overflow to scroll.
+    overflow: 'hidden',
+  };
+}
+
+/** The chat shell's host covers the chat and brief tracks (columns 3 and 4). */
+const CHAT_COLUMNS_SPAN = '3 / 5';
+/** The dossier's host covers the single board track (column 2). */
+const DOSSIER_COLUMN_SPAN = '2 / 3';
+
+/**
  * Owns the profile store for the whole layout, so surfaces outside the
  * profile panel (e.g. the demo toolbar) can read and clear profile state.
  */
@@ -39,7 +102,11 @@ export function AppLayout() {
   const { state: chatState } = useChatContext();
   return (
     <ProfileStoreProvider sessionId={chatState.sessionId}>
-      <AppLayoutContent />
+      {/* Above the layout because the magnifier lives in the sidebar and the
+          drawer is mounted beside the chat — sibling subtrees. */}
+      <ArchitectureDrawerProvider>
+        <AppLayoutContent />
+      </ArchitectureDrawerProvider>
     </ProfileStoreProvider>
   );
 }
@@ -48,6 +115,11 @@ function AppLayoutContent() {
   const [isMobile, setIsMobile] = useState(false);
   const [activePanel, setActivePanel] = useState<'chat' | 'profile'>('chat');
   const { setSidebarOpen } = useSessionContext();
+
+  // Read here rather than inside the drawer: the *layout* is what has to give up
+  // the space, and only the layout owns the regions whose height it takes from.
+  const { isOpen: isDrawerOpen } = useArchitectureDrawer();
+  const reserved = reservedDrawerSpace(isDrawerOpen);
 
   /*
    * The app's only surface state: chat shell vs full-page dossier.
@@ -119,7 +191,21 @@ function AppLayoutContent() {
                   isDossierActive={isDossier}
                   onOpenDossier={view.openDossier}
                 />
-                <div style={windowCellGrowStyle}>
+                {/* On mobile the composer is nearly the whole screen, so the
+                    drawer occluding it matters more here, not less — hence the
+                    same reserved space as on desktop. `flex: 1` alongside
+                    `minHeight: 0` keeps this region filling the cell rather than
+                    sizing to its content, which would float the composer
+                    mid-screen. */}
+                <div
+                  style={{
+                    ...windowCellGrowStyle,
+                    position: 'relative',
+                    boxSizing: 'border-box',
+                    paddingBottom: reserved,
+                  }}
+                  data-drawer-reserved={reserved}
+                >
                   {/* The dossier replaces both panels full-bleed rather than
                       sitting inside one of them. */}
                   {isDossier ? (
@@ -129,6 +215,11 @@ function AppLayoutContent() {
                   ) : (
                     profilePanel
                   )}
+                  {/* The diagram is 916px wide, so on a phone it scrolls
+                      horizontally rather than being withheld — a presenter may
+                      well be on a laptop in a narrow window, and hiding the
+                      drawer there is worse. */}
+                  <LiveArchitectureDrawer />
                 </div>
               </div>
             </AppWindow>
@@ -159,14 +250,29 @@ function AppLayoutContent() {
               dossierToggleRef={view.dossierToggleRef}
             />
             {isDossier ? (
-              <DossierView />
+              /* The drawer follows the dossier rather than unmounting with the
+                 chat shell: closing it on a surface switch would drop the
+                 presenter's place in the walkthrough mid-sentence. */
+              <div
+                style={drawerHostStyle(DOSSIER_COLUMN_SPAN, reserved)}
+                data-drawer-reserved={reserved}
+              >
+                <DossierView />
+                <LiveArchitectureDrawer />
+              </div>
             ) : (
               <>
                 <SessionSidebar isMobile={false} />
-                <div style={windowCellStyle}>
-                  <ChatPanel />
+                <div
+                  style={drawerHostStyle(CHAT_COLUMNS_SPAN, reserved)}
+                  data-drawer-reserved={reserved}
+                >
+                  <div style={windowCellStyle}>
+                    <ChatPanel />
+                  </div>
+                  <div style={windowCellStyle}>{profilePanel}</div>
+                  <LiveArchitectureDrawer />
                 </div>
-                <div style={windowCellStyle}>{profilePanel}</div>
               </>
             )}
           </AppWindow>

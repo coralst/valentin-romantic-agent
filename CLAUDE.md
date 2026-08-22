@@ -66,7 +66,7 @@ identity lacks `bedrock:InvokeModel` and the agent silently returns an error
 fallback:
 
 ```bash
-AWS_PROFILE=dev-devops-agent AWS_REGION=us-west-2 npx tsx src/server/dev-server.ts  # :3001
+AWS_PROFILE=dev-devops-agent AWS_REGION=us-east-1 npx tsx src/server/dev-server.ts  # :3001
 npx vite                                                                            # :5173
 ```
 
@@ -114,3 +114,76 @@ Kiro ran as `master-agent` is the **main session's** job here — see the
   honored by Claude Code** — expect permission prompts where Kiro auto-approved.
   The `github` server reads `GITHUB_PERSONAL_ACCESS_TOKEN`; if that is unset it
   registers but fails to authenticate, so prefer the `gh` CLI, which works today.
+
+## Branching
+
+Feature branches open a PR into `main`; when several branches have to be combined,
+they are merged into an `integration/*` branch first and that branch opens the one
+PR. There is no `integration/main-line` — an earlier draft of this file mandated
+one, and no such branch was ever created.
+
+```
+feat/your-thing ──PR──> main            (single change)
+feat/a, feat/b ──> integration/x ──PR──> main   (several at once)
+```
+
+- A PR whose base is not `main` gets `.github/workflows/fast-lane.yml`: lint + unit
+  + build in parallel, **~2 minutes**, no e2e.
+- The `fast-lane` label makes such a PR merge itself when green. **The label does
+  not exist yet and should not be created until the rollback drill has passed** —
+  self-merging PRs on an untested drill is how unverified work reaches the shared
+  line.
+- `main` still gets the full four gates (Lint · Unit · Build · E2E). Do not rename
+  a job in `.github/workflows/ci.yml` — its job names are the ruleset's required
+  contexts, and renaming one makes every PR to main unmergeable.
+
+## The loop: verify locally, deploy deliberately
+
+**Do not use a deploy to find out whether your change works.** A full
+`scripts/deploy.sh` is ~7 minutes; `npm run verify:local` is ~15 seconds and produces the same
+screenshots. Deploying was how defects used to get found, which is why a one-line UI fix cost
+20+ minutes.
+
+```bash
+npm run verify:local            # boots/reuses local servers, runs rehearsal.mjs, writes screenshots
+```
+
+Screenshots land in `screenshots/verify/`. Attach them to your PR — that, not a deploy log, is
+what a reviewer looks at.
+
+Only deploy once the change is verified locally, and **match the scope to what you changed**:
+
+| You changed | Command | Cost |
+|---|---|---|
+| Frontend only (`src/client/**`, styles, assets) | `npm run deploy:frontend` | **~45s** |
+| Backend (`src/server/**`, Dockerfile) | `npm run deploy:backend` | ~5 min |
+| CDK / infra | `bash scripts/deploy.sh dev --scope=infra` | varies |
+| Genuinely everything, or you're unsure | `npm run deploy:dev` | ~7 min |
+
+`--scope=all` is still the default for a bare `scripts/deploy.sh`, so nothing breaks if you
+forget — you just pay for it. `cdk deploy --all` walks 7 stacks, 6 of which are ~16s no-ops,
+and the Compute stack is a multi-minute ECS rolling deploy. A CSS change needs none of that.
+
+**Batch your deploys.** If you have three fixes in flight, verify all three locally, then
+deploy once. Each deploy is also a window in which `s3 sync --delete` can clobber another
+agent's frontend, so fewer deploys is safer as well as faster.
+
+
+## Rolling back
+
+If something is wrong in dev, restore the last verified-good release:
+
+```bash
+bash scripts/rollback.sh --list      # what's recorded
+bash scripts/rollback.sh --dry-run   # what it would do
+bash scripts/rollback.sh             # do it (~3 min)
+```
+
+This rolls back backend **and** frontend together from one manifest entry, because rolling back
+one layer alone risks a frontend/backend contract mismatch. It restores the *running system*
+only; git history is untouched, and the script prints the `git revert -m 1 <merge-sha>` line if
+you also want to revert the code.
+
+**Commit before you deploy.** A dirty worktree tags the image `<sha>-dirty`, which cannot be
+reconstructed from any commit — so `deploy.sh` refuses to record it as a rollback target, and
+you lose the ability to return to it.

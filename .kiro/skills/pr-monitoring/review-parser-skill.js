@@ -172,12 +172,18 @@ const OWNERSHIP = [
   ['playwright.config.ts', 'qa-agent'],
   // The Vitest setup file is shared test harness, not app code — QA's.
   ['src/test-setup.ts', 'qa-agent'],
+  // The local rehearsal driver behind `npm run verify:local`. Shared test
+  // harness like the two rows above, not deploy tooling.
+  ['rehearsal.mjs', 'qa-agent'],
   // ── workflow & platform ─────────────────────────────────────────────────
   // The frontend shell (index.html) and static assets (public/) are platform
   // wiring, not component work: they change when the build or the deploy target
   // changes, not when a feature does.
   ['.github/', 'infra'],
   ['.kiro/', 'infra'],
+  // Agent harness config: slash commands, hooks, and settings. Same category as
+  // .kiro/ — it governs how work gets done, not what the product does.
+  ['.claude/', 'infra'],
   ['scripts/', 'infra'],
   ['infra/', 'infra'],
   ['public/', 'infra'],
@@ -195,6 +201,7 @@ const OWNERSHIP = [
   ['.gitignore', 'infra'],
   ['README.md', 'infra'],
   ['CONTRIBUTING.md', 'infra'],
+  ['CLAUDE.md', 'infra'],
   // `docs/` LAST among the docs rules: docs/design/ is the UI Designer's (per
   // CONTRIBUTING.md), and the rest — METHODOLOGY.md, refactor-plan.json, the
   // workflow write-ups — is documentation OF the workflow, which is infra's.

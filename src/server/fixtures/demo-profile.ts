@@ -41,13 +41,13 @@ export const DEMO_PROFILE_PREFERENCES: readonly ExtractedPreference[] = [
   {
     category: 'personality_traits',
     key: 'name',
-    value: 'Mirabel',
+    value: 'Samantha',
     confidence: 0.97,
   },
   {
     category: 'personality_traits',
     key: 'nickname',
-    value: 'Mira',
+    value: 'Sam',
     confidence: 0.91,
   },
   {

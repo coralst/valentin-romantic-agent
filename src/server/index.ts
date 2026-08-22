@@ -197,8 +197,8 @@ export function createServer(deps: ServerDeps = {}) {
         // ttl.
         storeFor: (userId) =>
           storeFactory.forUser(userId, { ttlSeconds: DEMO_TTL_SECONDS }),
-        seedSession: async (storage) => {
-          const result = await createHttpRoutes(storage).seedSession();
+        seedSession: async (storage, persona) => {
+          const result = await createHttpRoutes(storage).seedSession(persona);
           return (result.body as { sessionId: string }).sessionId;
         },
       })

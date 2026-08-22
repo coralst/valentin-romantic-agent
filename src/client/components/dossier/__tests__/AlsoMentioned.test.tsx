@@ -48,11 +48,11 @@ describe('AlsoMentioned — rescuing unmapped extraction output', () => {
   });
 
   it('leaves mapped preferences out — they belong to Everything I know', () => {
-    const mapped = preference({ category: 'personality_traits', key: 'nickname', value: 'Mira' });
+    const mapped = preference({ category: 'personality_traits', key: 'nickname', value: 'Sam' });
     expect(resolveField(mapped.category, mapped.key)).toBe('nickname');
 
     render(<AlsoMentioned preferences={[mapped]} />);
-    expect(screen.queryByText('Mira')).not.toBeInTheDocument();
+    expect(screen.queryByText('Sam')).not.toBeInTheDocument();
     expect(screen.getByTestId('dossier-also-mentioned-empty')).toBeInTheDocument();
   });
 

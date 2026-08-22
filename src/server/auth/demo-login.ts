@@ -7,6 +7,7 @@ import {
   SecretsManagerClient,
 } from '@aws-sdk/client-secrets-manager';
 import { config } from '../config';
+import { resolvePersona, type DemoPersonaId } from '../fixtures/demo-personas';
 import type { HttpResponse } from '../api/http-routes';
 import type { StorageInterface } from '../persistence/storage-interface';
 import type { TokenVerifier } from './token-verifier';
@@ -58,6 +59,8 @@ export interface DemoLoginBody {
   expiresIn: number;
   /** A freshly seeded session, so the profile panel is populated on arrival */
   sessionId: string;
+  /** The persona actually seeded — the fallback makes this differ from the ask */
+  persona: string;
 }
 
 /** Injectable collaborators, so tests never reach a real AWS account */
@@ -68,8 +71,11 @@ export interface DemoLoginDeps {
   verifier: TokenVerifier;
   /** Builds the demo user's scoped store once their `sub` is known */
   storeFor: (userId: string) => StorageInterface;
-  /** Seeds the demo profile into a fresh session, returning its id */
-  seedSession: (storage: StorageInterface) => Promise<string>;
+  /** Seeds the persona's profile into a fresh session, returning its id */
+  seedSession: (
+    storage: StorageInterface,
+    persona: DemoPersonaId,
+  ) => Promise<string>;
   bucket?: TokenBucket;
 }
 
@@ -109,7 +115,11 @@ export class DemoLoginService {
     return Boolean(config.cognito.userPoolId && config.cognito.demoClientId && config.cognito.demoSecretArn);
   }
 
-  async login(): Promise<HttpResponse> {
+  /**
+   * @param persona Which demo profile to seed. Unknown ids fall back to the
+   *   default rather than erroring — see `resolvePersona`.
+   */
+  async login(persona?: unknown): Promise<HttpResponse> {
     if (!this.isConfigured) {
       return {
         status: 503,
@@ -156,9 +166,13 @@ export class DemoLoginService {
     // user later, looking like a broken endpoint.
     const { userId } = await this.deps.verifier.verify(result.AccessToken);
 
+    // Resolved here rather than inside `seedSession` so the id we report back is
+    // the one that was actually seeded.
+    const resolved = resolvePersona(persona);
+
     const storage = this.deps.storeFor(userId);
     await this.reapStaleSessions(storage);
-    const sessionId = await this.deps.seedSession(storage);
+    const sessionId = await this.deps.seedSession(storage, resolved.id);
 
     return {
       status: 200,
@@ -167,6 +181,7 @@ export class DemoLoginService {
         refreshToken: result.RefreshToken,
         expiresIn: result.ExpiresIn ?? 3600,
         sessionId,
+        persona: resolved.id,
       } satisfies DemoLoginBody,
     };
   }

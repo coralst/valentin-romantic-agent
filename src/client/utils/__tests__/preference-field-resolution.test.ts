@@ -65,7 +65,7 @@ describe('field resolution against real extraction output', () => {
   });
 
   describe('the specific keys from the reported bug', () => {
-    // The live run emitted chips reading Mirabel, she/her, 32, June. The first
+    // The live run emitted chips reading Samantha, she/her, 32, June. The first
     // three of these resolved to null before the fix, so the rail never moved.
     it('routes a birth month to birthday', () => {
       expect(resolveField('important_dates', 'birthday_month')).toBe('birthday');

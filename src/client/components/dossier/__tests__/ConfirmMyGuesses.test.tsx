@@ -10,7 +10,7 @@ function preference(overrides: Partial<PreferenceWithHistory> = {}): PreferenceW
     sessionId: 'session-1',
     category: 'personality_traits',
     key: 'nickname',
-    value: 'Mira',
+    value: 'Sam',
     confidence: 0.6,
     sourceMessageId: 'msg-1',
     createdAt: '2026-08-11T00:00:00.000Z',
@@ -24,8 +24,8 @@ describe('deriveGuesses', () => {
   it('offers a low-confidence discovery as a settleable question', () => {
     const [guess] = deriveGuesses([preference()]);
     expect(guess.fieldId).toBe('nickname');
-    expect(guess.question).toBe('Nickname: Mira?');
-    expect(guess.value).toBe('Mira');
+    expect(guess.question).toBe('Nickname: Sam?');
+    expect(guess.value).toBe('Sam');
     expect(guess.confidence).toBe('likely');
   });
 
@@ -71,8 +71,8 @@ describe('ConfirmMyGuesses', () => {
   const guess = {
     id: 'personality_traits:nickname',
     fieldId: 'nickname',
-    question: 'Nickname: Mira?',
-    value: 'Mira',
+    question: 'Nickname: Sam?',
+    value: 'Sam',
     confidence: 'likely',
     provenance: 'I noted this on 11 Aug from something you said.',
   };
@@ -108,6 +108,6 @@ describe('ConfirmMyGuesses', () => {
       />,
     );
     expect(screen.queryByText(/noted this on/)).not.toBeInTheDocument();
-    expect(screen.getByText(/Nickname: Mira\?/)).toBeInTheDocument();
+    expect(screen.getByText(/Nickname: Sam\?/)).toBeInTheDocument();
   });
 });

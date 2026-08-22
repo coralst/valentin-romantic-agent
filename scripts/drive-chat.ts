@@ -13,7 +13,7 @@ const baseUrl = process.argv[3] ?? 'http://localhost:5199';
 const outDir = path.resolve('docs/design/checkpoints', label);
 
 const TURNS = [
-  "Her name's Mirabel and she uses she/her. She's turning 32 in June.",
+  "Her name's Samantha and she uses she/her. She's turning 32 in June.",
   'She loves salsa dancing and she is badly allergic to shellfish.',
 ];
 

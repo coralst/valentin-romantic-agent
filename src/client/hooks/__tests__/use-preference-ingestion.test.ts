@@ -501,7 +501,7 @@ describe('ingestion of real extraction output', () => {
       );
     });
 
-    expect(view.result.current.profile.getFieldValue('partner_name')?.value).toBe('Mirabel');
+    expect(view.result.current.profile.getFieldValue('partner_name')?.value).toBe('Samantha');
 
     const filled = PROFILE_FIELD_REGISTRY.filter(
       (f) => view.result.current.profile.getFieldValue(f.id) !== null,

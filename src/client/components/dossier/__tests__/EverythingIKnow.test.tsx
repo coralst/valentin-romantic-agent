@@ -53,7 +53,7 @@ describe('EverythingIKnow', () => {
 
   it('keeps ProfileField’s inline edit for known values', async () => {
     const user = userEvent.setup();
-    const props = renderCard({ partner_name: manual('Mirabel') });
+    const props = renderCard({ partner_name: manual('Samantha') });
 
     const row = screen
       .getAllByTestId('dossier-field')
@@ -64,8 +64,8 @@ describe('EverythingIKnow', () => {
     await user.click(screen.getByRole('button', { name: 'Edit Name' }));
     const input = screen.getByTestId('input-partner_name');
     await user.clear(input);
-    await user.type(input, 'Mira{Enter}');
-    expect(props.onSaveField).toHaveBeenCalledWith('partner_name', 'Mira');
+    await user.type(input, 'Sam{Enter}');
+    expect(props.onSaveField).toHaveBeenCalledWith('partner_name', 'Sam');
   });
 
   it('turns an unknown field into an Ask prompt rather than an empty row', async () => {
@@ -85,7 +85,7 @@ describe('EverythingIKnow', () => {
   });
 
   it('counts what is known overall and per section', () => {
-    renderCard({ partner_name: manual('Mirabel'), nickname: manual('Mira') });
+    renderCard({ partner_name: manual('Samantha'), nickname: manual('Sam') });
     expect(screen.getByText(`2 of ${PROFILE_FIELD_REGISTRY.length}`)).toBeInTheDocument();
     // Basics holds four fields, two of which are now filled.
     expect(screen.getByText('2 of 4')).toBeInTheDocument();

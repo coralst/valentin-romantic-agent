@@ -85,7 +85,7 @@ describe('DossierView board layout', () => {
   });
 
   it('shows the zero-state copy for the cards a partial profile leaves empty', () => {
-    renderDossier([{ fieldId: 'partner_name', value: 'Mirabel' }]);
+    renderDossier([{ fieldId: 'partner_name', value: 'Samantha' }]);
     // "Also mentioned" has an empty state rather than vanishing, because its
     // absence would otherwise be indistinguishable from dropped extractions.
     expect(screen.getByTestId('dossier-also-mentioned-empty')).toBeInTheDocument();

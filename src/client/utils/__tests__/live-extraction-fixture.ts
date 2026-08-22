@@ -18,7 +18,7 @@ import type { PreferenceCategory } from '../../../shared/interfaces/preference';
  * whole point. Nothing in this file may be "tidied" to match the registry; the
  * messiness IS the fixture.
  *
- * Turn 1: "Her name's Mirabel and she uses she/her. She's turning 32 in June."
+ * Turn 1: "Her name's Samantha and she uses she/her. She's turning 32 in June."
  * Turn 2: "She loves salsa dancing and she is badly allergic to shellfish."
  */
 export interface LiveExtractionRow {
@@ -93,7 +93,7 @@ export const LIVE_EXTRACTION_RUN_3: readonly LiveExtractionRow[] = [
   {
     category: 'personality_traits',
     key: 'name',
-    value: 'Mirabel',
+    value: 'Samantha',
     expectedFieldId: 'partner_name',
   },
   {
@@ -128,13 +128,13 @@ export const REALISTIC_KEY_VARIANTS: readonly LiveExtractionRow[] = [
   {
     category: 'personality_traits',
     key: 'Partner Name',
-    value: 'Mirabel',
+    value: 'Samantha',
     expectedFieldId: 'partner_name',
   },
   {
     category: 'personality_traits',
     key: 'first_name',
-    value: 'Mirabel',
+    value: 'Samantha',
     expectedFieldId: 'partner_name',
   },
   {

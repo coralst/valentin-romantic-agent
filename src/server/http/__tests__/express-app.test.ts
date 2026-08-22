@@ -7,6 +7,8 @@ import { createServer } from '../../index';
 import { InMemoryStoreFactory } from '../../persistence/in-memory-store';
 import type { AuthContext, TokenVerifier } from '../../auth/token-verifier';
 import { TokenVerificationError } from '../../auth/token-verifier';
+import { DEMO_PERSONAS } from '../../fixtures/demo-personas';
+import { DEMO_PROFILE_PREFERENCES } from '../../fixtures/demo-profile';
 
 /**
  * The route table is exercised over a real socket rather than by calling
@@ -108,6 +110,47 @@ describe('GET /api/config', () => {
 
     expect(body).not.toContain('secret');
     expect(body).not.toContain('demoClientId');
+  });
+
+  it('returns exactly the five documented keys', async () => {
+    // The landing page reads this before it has a token. Anything added here is
+    // public, so the key list is asserted rather than merely matched.
+    const body = (await (await get('/api/config')).json()) as object;
+
+    expect(Object.keys(body).sort()).toEqual([
+      'authDisabled',
+      'clientId',
+      'cognitoDomain',
+      'demoAvailable',
+      'demoPersonas',
+    ]);
+  });
+
+  it('advertises the demo personas, with counts but no values', async () => {
+    const { demoPersonas } = (await (await get('/api/config')).json()) as {
+      demoPersonas: unknown[];
+    };
+
+    expect(demoPersonas).toEqual(
+      DEMO_PERSONAS.map((persona) => ({
+        id: persona.id,
+        name: persona.name,
+        blurb: persona.blurb,
+        fieldCount: persona.preferences.length,
+      })),
+    );
+  });
+
+  it('offers a persona seeding the whole fixture and one seeding nothing', async () => {
+    const { demoPersonas } = (await (await get('/api/config')).json()) as {
+      demoPersonas: { id: string; fieldCount: number }[];
+    };
+    const counts = Object.fromEntries(
+      demoPersonas.map((persona) => [persona.id, persona.fieldCount]),
+    );
+
+    expect(counts.samantha).toBe(DEMO_PROFILE_PREFERENCES.length);
+    expect(counts.fresh).toBe(0);
   });
 });
 

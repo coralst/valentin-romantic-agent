@@ -1,8 +1,9 @@
-import type { StorageInterface } from '../persistence/storage-interface';
-import {
-  DEMO_PROFILE_PREFERENCES,
-  DEMO_SEED_SOURCE_MESSAGE_ID,
-} from '../fixtures/demo-profile';
+import type {
+  ExtractedPreference,
+  StorageInterface,
+} from '../persistence/storage-interface';
+import { DEMO_SEED_SOURCE_MESSAGE_ID } from '../fixtures/demo-profile';
+import { resolvePersona } from '../fixtures/demo-personas';
 import { isPartnerNamePreference } from '../extraction/partner-name';
 
 /** Simple framework-agnostic request representation */
@@ -20,7 +21,7 @@ export interface HttpResponse {
 }
 
 /**
- * Persist every demo fixture preference into a session.
+ * Persist a persona's preferences into a session.
  *
  * One batch, not a loop. Written one at a time each fixture is a put *plus* a
  * counter update — 36 sequential round trips, one to two seconds on the single
@@ -31,10 +32,15 @@ export interface HttpResponse {
 async function seedDemoProfile(
   storage: StorageInterface,
   sessionId: string,
+  preferences: readonly ExtractedPreference[],
 ): Promise<number> {
+  // The "start fresh" persona has nothing to write, and an empty batch is a
+  // round trip some storage backends reject outright.
+  if (preferences.length === 0) return 0;
+
   const written = await storage.savePreferencesBatch(
     sessionId,
-    DEMO_PROFILE_PREFERENCES.map((pref) => ({
+    preferences.map((pref) => ({
       ...pref,
       // Seeded rows have no originating conversation turn — see the fixture.
       sourceMessageId: DEMO_SEED_SOURCE_MESSAGE_ID,
@@ -43,7 +49,7 @@ async function seedDemoProfile(
 
   // Label the conversation in the sidebar. The extractor does this as a real
   // conversation reveals the name; a seeded profile knows it up front.
-  const name = DEMO_PROFILE_PREFERENCES.find((pref) =>
+  const name = preferences.find((pref) =>
     isPartnerNamePreference(pref.category, pref.key),
   );
   if (name) {
@@ -123,16 +129,22 @@ export function createHttpRoutes(storage: StorageInterface) {
     },
 
     /**
-     * POST /session/seed — create a session pre-populated with the demo profile.
+     * POST /session/seed — create a session pre-populated with a demo persona.
      *
      * Used to open a presentation on a fully populated partner profile rather
-     * than an empty panel.
+     * than an empty panel. An unknown or absent persona resolves to the default
+     * one, so this can never fail on what the caller asked for.
      */
-    async seedSession(): Promise<HttpResponse> {
+    async seedSession(persona?: unknown): Promise<HttpResponse> {
+      const { id, preferences } = resolvePersona(persona);
       const sessionId = await storage.createSession();
-      const preferenceCount = await seedDemoProfile(storage, sessionId);
+      const preferenceCount = await seedDemoProfile(
+        storage,
+        sessionId,
+        preferences,
+      );
 
-      return { status: 201, body: { sessionId, preferenceCount } };
+      return { status: 201, body: { sessionId, preferenceCount, persona: id } };
     },
 
     /**
@@ -206,7 +218,7 @@ export function createHttpRoutes(storage: StorageInterface) {
       // POST /session/seed — must precede any /session/:id pattern so the
       // literal "seed" segment is never captured as a session id.
       if (req.method === 'POST' && req.url === '/session/seed') {
-        return this.seedSession();
+        return this.seedSession((req.body as { persona?: unknown })?.persona);
       }
 
       // POST /session

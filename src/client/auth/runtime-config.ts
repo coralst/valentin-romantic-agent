@@ -16,6 +16,25 @@ export interface RuntimeAuthConfig {
   clientId: string | null;
   /** Whether POST /api/demo/login is available on this deployment */
   demoAvailable: boolean;
+  /**
+   * The demo profiles the login screen may offer.
+   *
+   * Counts, not values: `/api/config` is unauthenticated, so the server sends
+   * only enough to render a choice. Absent on a deployment that predates
+   * personas, hence optional.
+   */
+  demoPersonas?: DemoPersonaSummary[];
+}
+
+/** One selectable demo profile, as `/api/config` advertises it */
+export interface DemoPersonaSummary {
+  id: string;
+  /** Button label, and the header chip once signed in as this persona */
+  name: string;
+  /** One line of copy explaining what this persona demonstrates */
+  blurb: string;
+  /** How many preferences the persona seeds — 0 for "start fresh" */
+  fieldCount: number;
 }
 
 /** Read the deployment's auth configuration */

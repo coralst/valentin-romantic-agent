@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { config } from '../../config';
 import { DemoLoginService, TokenBucket, type DemoLoginDeps } from '../demo-login';
+import { DEFAULT_PERSONA_ID } from '../../fixtures/demo-personas';
 import { InMemoryStoreFactory } from '../../persistence/in-memory-store';
 import type { StorageInterface } from '../../persistence/storage-interface';
 import type { AuthContext, TokenVerifier } from '../token-verifier';
@@ -89,6 +90,42 @@ describe('DemoLoginService.login', () => {
       expiresIn: 3600,
     });
     expect((result.body as { sessionId: string }).sessionId).toBeTruthy();
+  });
+
+  it('passes the requested persona to the seeder and reports it back', async () => {
+    const { service, seedSession } = build();
+
+    const result = await service.login('fresh');
+
+    expect(seedSession).toHaveBeenCalledWith(expect.anything(), 'fresh');
+    expect(result.body).toMatchObject({ persona: 'fresh' });
+  });
+
+  it('seeds the default persona when the caller names none', async () => {
+    // Every caller that predates personas posts an empty body.
+    const { service, seedSession } = build();
+
+    const result = await service.login();
+
+    expect(seedSession).toHaveBeenCalledWith(
+      expect.anything(),
+      DEFAULT_PERSONA_ID,
+    );
+    expect(result.body).toMatchObject({ persona: DEFAULT_PERSONA_ID });
+  });
+
+  it('seeds the default persona rather than failing on an unknown id', async () => {
+    // The id comes off an unauthenticated request body, so a stranger's typo
+    // must not turn into a 500.
+    const { service, seedSession } = build();
+
+    const result = await service.login('someone-else');
+
+    expect(result.status).toBe(200);
+    expect(seedSession).toHaveBeenCalledWith(
+      expect.anything(),
+      DEFAULT_PERSONA_ID,
+    );
   });
 
   it('signs in through the server-only client with the admin password flow', async () => {

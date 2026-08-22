@@ -75,6 +75,59 @@ describe('createHttpRoutes', () => {
 
       expect(first.sessionId).not.toBe(second.sessionId);
     });
+
+    it('seeds the whole fixture for the samantha persona', async () => {
+      const { body } = await routes.seedSession('samantha');
+
+      const stored = await store.getPreferencesBySession(
+        (body as SeedBody).sessionId,
+      );
+      expect(stored).toHaveLength(DEMO_PROFILE_PREFERENCES.length);
+      expect((body as SeedBody).preferenceCount).toBe(
+        DEMO_PROFILE_PREFERENCES.length,
+      );
+    });
+
+    it('seeds a usable but empty session for the fresh persona', async () => {
+      const { status, body } = await routes.seedSession('fresh');
+
+      // Still a real session — the conversation has to start somewhere, it just
+      // starts with nothing known about the partner.
+      expect(status).toBe(201);
+      const { sessionId, preferenceCount } = body as SeedBody;
+      expect(await store.getSession(sessionId)).not.toBeNull();
+      expect(preferenceCount).toBe(0);
+      expect(await store.getPreferencesBySession(sessionId)).toHaveLength(0);
+    });
+
+    it('leaves the fresh session unlabelled, since no partner is named yet', async () => {
+      const { sessionId } = (await routes.seedSession('fresh'))
+        .body as SeedBody;
+
+      const session = await store.getSession(sessionId);
+      expect(session?.partnerName ?? null).toBeNull();
+    });
+
+    it('falls back to the default persona on an id it does not know', async () => {
+      // The id reaches here from an unauthenticated body, so a stranger's typo
+      // must not be an error.
+      const { body } = await routes.seedSession('not-a-persona');
+
+      expect((body as SeedBody).preferenceCount).toBe(
+        DEMO_PROFILE_PREFERENCES.length,
+      );
+    });
+
+    it('routes the persona through POST /session/seed', async () => {
+      const result = await routes.handleRequest({
+        method: 'POST',
+        url: '/session/seed',
+        params: {},
+        body: { persona: 'fresh' },
+      });
+
+      expect((result.body as SeedBody).preferenceCount).toBe(0);
+    });
   });
 
   // The contract test: the fixture is only useful if every key it writes still
@@ -218,7 +271,7 @@ describe('createHttpRoutes', () => {
       const { sessions } = (await routes.listSessions()).body as {
         sessions: { partnerName: string | null }[];
       };
-      expect(sessions[0].partnerName).toBe('Mirabel');
+      expect(sessions[0].partnerName).toBe('Samantha');
     });
   });
 
@@ -265,7 +318,7 @@ describe('createHttpRoutes', () => {
       const result = await bob.getSessionDetail(sessionId);
 
       expect(result.status).toBe(404);
-      expect(JSON.stringify(result.body)).not.toContain('Mirabel');
+      expect(JSON.stringify(result.body)).not.toContain('Samantha');
     });
   });
 
@@ -288,7 +341,7 @@ describe('createHttpRoutes', () => {
 
       const session = await store.getSession(sessionId);
       expect(session?.title).toBeNull();
-      expect(session?.partnerName).toBe('Mirabel');
+      expect(session?.partnerName).toBe('Samantha');
     });
 
     it('rejects a missing title rather than storing undefined', async () => {

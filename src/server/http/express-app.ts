@@ -6,6 +6,7 @@ import type { AuthContext, TokenVerifier } from '../auth/token-verifier';
 import { isAuthDisabled } from '../auth/token-verifier';
 import { config } from '../config';
 import type { DemoLoginService } from '../auth/demo-login';
+import { describePersonas } from '../fixtures/demo-personas';
 
 /** Structured log sink, so the two entry points keep their own formats */
 export type LogFn = (
@@ -163,6 +164,11 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
    *
    * Only public values: a Cognito domain and a public PKCE client id, both of
    * which appear in the browser's address bar during a normal login.
+   *
+   * The persona list is here for the same reason — this is the only route the
+   * landing page can reach before it has a token, so it is the only place it can
+   * learn which demo profiles exist. Names, blurbs and *counts* only: the
+   * preference values themselves stay behind the token.
    */
   app.get('/api/config', (_req, res) => {
     res.status(200).json({
@@ -170,6 +176,7 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
       cognitoDomain: config.cognito.domain ?? null,
       clientId: config.cognito.spaClientId ?? null,
       demoAvailable: Boolean(deps.demoLogin),
+      demoPersonas: describePersonas(),
     });
   });
 
@@ -186,7 +193,10 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
     }
 
     try {
-      const result = await deps.demoLogin.login();
+      // Optional: the button shipped before personas existed and still sends no
+      // body, which `login` reads as the default persona.
+      const persona = (req.body as { persona?: unknown } | undefined)?.persona;
+      const result = await deps.demoLogin.login(persona);
       deps.log('info', 'Demo login', {
         status: result.status,
         requestId: req.headers['x-request-id'],
@@ -215,8 +225,10 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
   // segment can never be captured as a session id.
   app.post(
     '/api/session/seed',
-    scoped(deps, async (routes) => {
-      const result = await routes.seedSession();
+    scoped(deps, async (routes, req) => {
+      const result = await routes.seedSession(
+        (req.body as { persona?: unknown } | undefined)?.persona,
+      );
       deps.log('info', 'Demo session seeded', {
         ...(result.body as Record<string, unknown>),
       });

@@ -18,7 +18,7 @@ function serverSession(overrides: Partial<SessionData> = {}): SessionData {
     messageCount: 4,
     preferenceCount: 2,
     lastActivity: '2026-08-02T09:00:00.000Z',
-    partnerName: 'Mirabel',
+    partnerName: 'Samantha',
     title: null,
     ...overrides,
   };
@@ -105,7 +105,7 @@ describe('fetchSessionDetail', () => {
 
     expect(detail.messages).toHaveLength(1);
     expect(detail.preferences).toHaveLength(1);
-    expect(detail.partnerName).toBe('Mirabel');
+    expect(detail.partnerName).toBe('Samantha');
   });
 
   it('escapes the id rather than pasting it into a path', async () => {

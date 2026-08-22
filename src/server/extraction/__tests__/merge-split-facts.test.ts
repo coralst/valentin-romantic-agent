@@ -57,7 +57,7 @@ describe('mergeSplitFacts', () => {
 
   it('leaves distinct fields untouched', () => {
     const merged = mergeSplitFacts([
-      { category: 'personality_traits', field: 'partner_name', key: 'partner_name', value: 'Mirabel', confidence: 1 },
+      { category: 'personality_traits', field: 'partner_name', key: 'partner_name', value: 'Samantha', confidence: 1 },
       { category: 'important_dates', field: 'birthday', key: 'birthday', value: 'June', confidence: 1 },
       { category: 'hobbies', field: 'hobbies', key: 'hobbies', value: 'salsa dancing', confidence: 1 },
     ]);

@@ -283,8 +283,13 @@ export function FamilyTree({
             // Her own card belongs on the peer row even though she is not a
             // record in the store — the tree is *hers*, so leaving her out makes
             // it a diagram of a family she is not in.
-            const isEmptyRow = row.length === 0 && !isPeerRow;
-            if (isEmptyRow) return null;
+            //
+            // All three rows are drawn even when empty, holding only their `+`.
+            // Skipping them looked tidier and made the card unusable: with a
+            // mother and a sister recorded but no children, there was no way to
+            // *start* a younger person — the only route was to add them to
+            // another row and then change the row select, which nothing tells
+            // you about. An empty row is one 30px button, which is a fair price.
 
             return (
               <div key={generation} style={rowStyle} data-testid={`family-row-${generation}`}>

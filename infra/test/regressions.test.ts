@@ -17,6 +17,7 @@ import { SafetyStack } from '../lib/safety-stack';
 import { ComputeStack } from '../lib/compute-stack';
 import { AuthStack } from '../lib/auth-stack';
 import { MonitoringStack } from '../lib/monitoring-stack';
+import { AgentCoreStack } from '../lib/agentcore-stack';
 
 const config = getConfig('dev');
 
@@ -24,6 +25,7 @@ let computeTemplate: Template;
 let monitoringTemplate: Template;
 let dataTemplate: Template;
 let safetyTemplate: Template;
+let agentCoreTemplate: Template;
 
 beforeAll(() => {
   const app = new cdk.App();
@@ -52,6 +54,17 @@ beforeAll(() => {
     env: stackEnv,
   });
 
+  const agentCore = new AgentCoreStack(app, 'AgentCore', {
+    config,
+    table: data.table,
+    guardrailId: safety.guardrailId,
+    guardrailVersion: 'DRAFT',
+    userPool: auth.userPool,
+    cognitoDomainPrefix: auth.userPoolDomainPrefix,
+    imageTag: 'test-sha',
+    env: stackEnv,
+  });
+
   const monitoring = new MonitoringStack(app, 'Mon', {
     config,
     loadBalancer: compute.loadBalancer,
@@ -65,6 +78,7 @@ beforeAll(() => {
   monitoringTemplate = Template.fromStack(monitoring);
   dataTemplate = Template.fromStack(data);
   safetyTemplate = Template.fromStack(safety);
+  agentCoreTemplate = Template.fromStack(agentCore);
 });
 
 /** The guardrail's denied-topic list, keyed by topic name. */
@@ -335,5 +349,97 @@ describe('deployment safety', () => {
     computeTemplate.hasResourceProperties('AWS::Logs::LogGroup', {
       RetentionInDays: config.logRetention,
     });
+  });
+});
+
+describe('agentcore engine B', () => {
+  /*
+   * The two naming rules are opposites, and `cdk synth` only *warns* about a
+   * violation — it does not fail. So a wrong name synthesises fine, deploys for
+   * ten minutes, and then fails at CreateStack. These two tests turn that into a
+   * red test in a second.
+   */
+  it('names Runtime and Memory with underscores, which their API requires', () => {
+    agentCoreTemplate.hasResourceProperties('AWS::BedrockAgentCore::Runtime', {
+      AgentRuntimeName: 'valentin_agent_dev',
+    });
+    agentCoreTemplate.hasResourceProperties('AWS::BedrockAgentCore::Memory', {
+      Name: 'valentin_memory_dev',
+    });
+  });
+
+  it('names the Gateway without underscores, which its API rejects', () => {
+    const gateways = agentCoreTemplate.findResources('AWS::BedrockAgentCore::Gateway');
+    const name = (Object.values(gateways)[0] as any).Properties.Name;
+    expect(name).toBe('valentin-gateway-dev');
+    expect(name).not.toContain('_');
+  });
+
+  it('scopes the Gateway JWT authorizer to the machine client only', () => {
+    // Without allowedClients, any token this pool issues would open the gateway —
+    // including a signed-in visitor's, which would let a browser call the tools.
+    const gateways = agentCoreTemplate.findResources('AWS::BedrockAgentCore::Gateway');
+    const authorizer = (Object.values(gateways)[0] as any).Properties.AuthorizerConfiguration
+      .CustomJWTAuthorizer;
+    expect(authorizer.AllowedClients).toHaveLength(1);
+    expect(authorizer.DiscoveryUrl).toBeDefined();
+  });
+
+  it('never puts the gateway client secret in the template', () => {
+    // The runtime reads it with DescribeUserPoolClient instead. A custom-resource
+    // read would store the plaintext in this stack's own event history.
+    const json = JSON.stringify(agentCoreTemplate.toJSON());
+    expect(json).not.toContain('ClientSecret');
+    expect(json).not.toContain('userPoolClientSecret');
+  });
+
+  it('gives Memory an execution role, without which extraction silently produces nothing', () => {
+    const memories = agentCoreTemplate.findResources('AWS::BedrockAgentCore::Memory');
+    const props = (Object.values(memories)[0] as any).Properties;
+    expect(props.MemoryExecutionRoleArn).toBeDefined();
+    expect(props.MemoryStrategies[0].UserPreferenceMemoryStrategy).toBeDefined();
+  });
+
+  it('scopes the memory namespace per session, not per user', () => {
+    // A user-wide namespace blends two partners' profiles for anyone who starts a
+    // second session — the exact bug the per-session DynamoDB partition avoids.
+    const memories = agentCoreTemplate.findResources('AWS::BedrockAgentCore::Memory');
+    const namespaces = (Object.values(memories)[0] as any).Properties.MemoryStrategies[0]
+      .UserPreferenceMemoryStrategy.Namespaces;
+    expect(namespaces[0]).toContain('{sessionId}');
+  });
+
+  it('runs the agent on a specific image tag rather than :latest', () => {
+    const json = JSON.stringify(agentCoreTemplate.toJSON());
+    expect(json).toContain('test-sha');
+    expect(json).not.toContain(':latest');
+  });
+
+  it('holds both engines to the same model and guardrail', () => {
+    // If the engines differed here, a measured difference between them would say
+    // nothing about AgentCore.
+    const runtimes = agentCoreTemplate.findResources('AWS::BedrockAgentCore::Runtime');
+    const vars = (Object.values(runtimes)[0] as any).Properties.EnvironmentVariables;
+    expect(vars.BEDROCK_MODEL_ID).toBe(config.bedrockModelId);
+    expect(vars.BEDROCK_GUARDRAIL_ID).toBeDefined();
+  });
+
+  it('exposes exactly the three profile tools', () => {
+    const targets = agentCoreTemplate.findResources('AWS::BedrockAgentCore::GatewayTarget');
+    const tools = (Object.values(targets)[0] as any).Properties.TargetConfiguration.Mcp.Lambda
+      .ToolSchema.InlinePayload;
+    expect(tools.map((t: any) => t.Name).sort()).toEqual([
+      'get_partner_profile',
+      'list_preferences',
+      'save_preference',
+    ]);
+  });
+
+  it('bounds log retention on both new log groups', () => {
+    agentCoreTemplate.resourceCountIs('AWS::Logs::LogGroup', 2);
+    const groups = agentCoreTemplate.findResources('AWS::Logs::LogGroup');
+    for (const group of Object.values(groups)) {
+      expect((group as any).Properties.RetentionInDays).toBe(config.logRetention);
+    }
   });
 });

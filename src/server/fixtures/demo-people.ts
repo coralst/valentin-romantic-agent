@@ -3,34 +3,38 @@ import type { Person } from '../../shared/interfaces/person';
 /**
  * Her people, for the demo profile.
  *
- * Client-side rather than in `demo-profile.ts` because people are not profile
- * fields: they live in `use-people-store`'s own per-session `localStorage` key
- * and never reach the server. Seeding them alongside the preferences is the only
- * way the demo path can populate `FamilyTree` and `TheirBirthdays`, which
- * otherwise sat at "nobody yet" even at 21 of 21 known — the family tree is the
- * most diagram-like card on the board and it could never be shown.
+ * Server-side, and seeded into DynamoDB alongside the preferences. This used to
+ * live under `src/client/fixtures/` and be written straight into
+ * `use-people-store`'s own `localStorage` key, which meant the family tree — the
+ * largest card on the board — was the one part of a fully-seeded Samantha that
+ * did not survive opening the app on another machine.
  *
- * All three generations are filled, because the tree draws three and a seed that
- * filled only one would still misrepresent it. The unnamed brother-in-law is
+ * All four generations are filled, because the tree draws four and a seed that
+ * filled three would still misrepresent it. The unnamed relatives are
  * deliberate: a gap is drawn dashed and is the state the feature was built for
- * ("her brother, whose name I have never caught"), so the demo should show one.
+ * ("her brother, whose name I have never caught"), so the demo should show two.
  *
  * EXTENDED FAMILY, NOT JUST THE HOUSEHOLD — grandmother, uncle, aunt, cousin,
  * nephew. `relationship` is free text, so this needs no new structure: an uncle is
  * an `elder` whose relationship reads "Her uncle". It is a seeding decision, and
  * the reason it matters is that a tree of four people is a list with extra lines
- * through it. Thirteen across three generations is where the drawing starts doing
+ * through it. Thirteen across four generations is where the drawing starts doing
  * work a list cannot: you can see that her mother's side is the crowded one, that
  * Yosef is the uncle whose birthday is next, and that there are two people on the
  * peer row whose names nobody has ever told me.
  *
  * Birthdays are given for eight of the thirteen. Filling all of them would leave
- * the "no date yet" state in both `FamilyTree`'s chips and `TheirBirthdays`
+ * the "no date yet" state in both `FamilyTree`'s chips and the birthday list
  * unexercised, and the point of that card is that remembering theirs lands harder
  * than remembering hers.
+ *
+ * Ids are fixed strings rather than generated. A seeded person is written to a
+ * real key, so a re-seed of the same session must overwrite the row it wrote last
+ * time instead of laying down a second Ruth beside the first.
  */
-export const DEMO_PEOPLE: readonly Omit<Person, 'id' | 'updatedAt'>[] = [
+export const DEMO_PEOPLE: readonly Omit<Person, 'updatedAt'>[] = [
   {
+    id: 'demo-person-ruth',
     name: 'Ruth',
     relationship: 'Her mother',
     generation: 'elder',
@@ -39,6 +43,7 @@ export const DEMO_PEOPLE: readonly Omit<Person, 'id' | 'updatedAt'>[] = [
     source: 'manual',
   },
   {
+    id: 'demo-person-daniel',
     name: 'Daniel',
     relationship: 'Her father',
     generation: 'elder',
@@ -47,16 +52,19 @@ export const DEMO_PEOPLE: readonly Omit<Person, 'id' | 'updatedAt'>[] = [
     source: 'manual',
   },
   {
-    // The oldest person on the tree, and the reason the elder row is the crowded
-    // one — which is a thing you can only see in a drawing.
+    id: 'demo-person-miriam',
+    // The only person on the top rung. Her own row rather than folded in with
+    // Ruth and Daniel: a grandmother drawn level with her daughter reads as a
+    // sibling, which is the one thing a family tree must not say.
     name: 'Miriam',
     relationship: 'Her grandmother',
-    generation: 'elder',
+    generation: 'grandparent',
     birthday: '1934-01-17',
     note: "Ruth's mother. Ninety-two and still hosts.",
     source: 'manual',
   },
   {
+    id: 'demo-person-yosef',
     name: 'Yosef',
     relationship: 'Her uncle',
     generation: 'elder',
@@ -65,6 +73,7 @@ export const DEMO_PEOPLE: readonly Omit<Person, 'id' | 'updatedAt'>[] = [
     source: 'manual',
   },
   {
+    id: 'demo-person-dahlia',
     name: 'Dahlia',
     relationship: 'Her aunt',
     generation: 'elder',
@@ -74,6 +83,7 @@ export const DEMO_PEOPLE: readonly Omit<Person, 'id' | 'updatedAt'>[] = [
     source: 'manual',
   },
   {
+    id: 'demo-person-uncle-fathers-side',
     // A second gap, on the elder row this time. One gap reads as an oversight; two
     // read as the honest state of anyone's knowledge of their partner's family.
     name: null,
@@ -84,6 +94,7 @@ export const DEMO_PEOPLE: readonly Omit<Person, 'id' | 'updatedAt'>[] = [
     source: 'manual',
   },
   {
+    id: 'demo-person-nadia',
     name: 'Nadia',
     relationship: 'Older sister',
     generation: 'peer',
@@ -92,6 +103,7 @@ export const DEMO_PEOPLE: readonly Omit<Person, 'id' | 'updatedAt'>[] = [
     source: 'manual',
   },
   {
+    id: 'demo-person-tom',
     // Named but undated: he belongs on the tree and not on the birthday list.
     name: 'Tom',
     relationship: 'Her closest friend',
@@ -101,6 +113,7 @@ export const DEMO_PEOPLE: readonly Omit<Person, 'id' | 'updatedAt'>[] = [
     source: 'manual',
   },
   {
+    id: 'demo-person-nadias-husband',
     // A gap on purpose — drawn dashed, and the card offers to ask about him.
     name: null,
     relationship: "Nadia's husband",
@@ -110,6 +123,7 @@ export const DEMO_PEOPLE: readonly Omit<Person, 'id' | 'updatedAt'>[] = [
     source: 'manual',
   },
   {
+    id: 'demo-person-lena',
     name: 'Lena',
     relationship: 'Her cousin',
     generation: 'peer',
@@ -118,6 +132,7 @@ export const DEMO_PEOPLE: readonly Omit<Person, 'id' | 'updatedAt'>[] = [
     source: 'manual',
   },
   {
+    id: 'demo-person-ari',
     // The younger row: without it the tree draws an empty third generation, which
     // is a correct empty state but not the one worth demonstrating.
     name: 'Ari',
@@ -128,6 +143,7 @@ export const DEMO_PEOPLE: readonly Omit<Person, 'id' | 'updatedAt'>[] = [
     source: 'manual',
   },
   {
+    id: 'demo-person-talia',
     name: 'Talia',
     relationship: 'Her niece',
     generation: 'younger',
@@ -136,6 +152,7 @@ export const DEMO_PEOPLE: readonly Omit<Person, 'id' | 'updatedAt'>[] = [
     source: 'manual',
   },
   {
+    id: 'demo-person-ruben',
     name: 'Ruben',
     relationship: 'Her younger cousin',
     generation: 'younger',

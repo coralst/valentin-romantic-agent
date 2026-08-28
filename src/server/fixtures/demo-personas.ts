@@ -11,8 +11,12 @@
  * The personas are fictional. No real person, and no identifying detail.
  */
 
+import type { Person } from '../../shared/interfaces/person';
 import type { ExtractedPreference } from '../persistence/storage-interface';
 import { DEMO_PROFILE_PREFERENCES } from './demo-profile';
+import { DEMO_PEOPLE } from './demo-people';
+import { DEMO_TASKS } from './demo-tasks';
+import type { DemoTask } from './demo-tasks';
 import { SAMANTHA_HISTORY } from './demo-history';
 import type { DemoConversation } from './demo-history';
 
@@ -54,6 +58,17 @@ export interface DemoPersona {
   /** Seeded into the session the demo login creates */
   preferences: readonly ExtractedPreference[];
   /**
+   * Her family, seeded alongside the preferences.
+   *
+   * A separate list rather than more preferences because a family is a set of
+   * records and the registry holds twenty-one single-valued fields — see
+   * `shared/interfaces/person.ts`. Optional, so "start fresh" stays empty
+   * without having to spell out an empty tree.
+   */
+  people?: readonly Omit<Person, 'updatedAt'>[];
+  /** What he has to do next. Dues are resolved against the seed moment. */
+  tasks?: readonly DemoTask[];
+  /**
    * Backdated conversations to seed alongside the preferences, oldest first.
    *
    * Absent — not empty — for a persona with no past, so "this persona has no
@@ -74,6 +89,8 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
     userName: 'Ralf',
     blurb: 'Three years together. He remembers all of it.',
     preferences: DEMO_PROFILE_PREFERENCES,
+    people: DEMO_PEOPLE,
+    tasks: DEMO_TASKS,
     history: SAMANTHA_HISTORY,
   },
   {

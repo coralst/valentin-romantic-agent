@@ -7,12 +7,17 @@ import {
   DEMO_SEED_SOURCE_MESSAGE_ID,
 } from '../../fixtures/demo-profile';
 import { resolvePersona } from '../../fixtures/demo-personas';
+import { DEMO_PEOPLE } from '../../fixtures/demo-people';
+import { DEMO_TASKS } from '../../fixtures/demo-tasks';
+import { isGap } from '../../../shared/interfaces/person';
 import { PROFILE_FIELD_REGISTRY } from '../../../client/utils/profile-field-registry';
 import { resolveField } from '../../../client/utils/preference-field-mapper';
 
 interface SeedBody {
   sessionId: string;
   preferenceCount: number;
+  peopleCount: number;
+  taskCount: number;
   historyCount: number;
 }
 
@@ -219,6 +224,99 @@ describe('createHttpRoutes', () => {
       expect(sessions[0].title ?? null).toBeNull();
       expect(sessions[0].messageCount).toBe(0);
       expect(sessions[0].preferenceCount).toBe(0);
+    });
+
+    it('seeds her whole family into the same session', async () => {
+      const { sessionId, peopleCount } = (await routes.seedSession('samantha'))
+        .body as SeedBody;
+
+      const stored = await store.getPeopleBySession(sessionId);
+      expect(stored).toHaveLength(DEMO_PEOPLE.length);
+      expect(peopleCount).toBe(DEMO_PEOPLE.length);
+    });
+
+    it('fills all four generation rungs, because the tree draws four', async () => {
+      // A seed that filled three would leave the tree looking broken rather than
+      // empty — the band with nobody in it still draws its label and its rung.
+      const { sessionId } = (await routes.seedSession('samantha'))
+        .body as SeedBody;
+
+      const generations = new Set(
+        (await store.getPeopleBySession(sessionId)).map((p) => p.generation),
+      );
+      expect([...generations].sort()).toEqual([
+        'elder',
+        'grandparent',
+        'peer',
+        'younger',
+      ]);
+    });
+
+    it('keeps the two people whose names nobody has said', async () => {
+      const { sessionId } = (await routes.seedSession('samantha'))
+        .body as SeedBody;
+
+      const gaps = (await store.getPeopleBySession(sessionId)).filter(isGap);
+      expect(gaps).toHaveLength(2);
+      // And they are still *someone* — a gap that lost its relationship would be
+      // an empty card instead of a question worth asking.
+      for (const gap of gaps) {
+        expect(gap.relationship.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('re-seeding the same session overwrites her family rather than doubling it', async () => {
+      // Ids are fixed in the fixture for exactly this. A presenter clicking the
+      // demo button twice must not end up with two Ruths.
+      const { sessionId } = (await routes.seedSession('samantha'))
+        .body as SeedBody;
+      const persona = resolvePersona('samantha');
+      const stamp = new Date().toISOString();
+      await store.savePeopleBatch(
+        sessionId,
+        (persona.people ?? []).map((person) => ({ ...person, updatedAt: stamp })),
+      );
+
+      expect(await store.getPeopleBySession(sessionId)).toHaveLength(
+        DEMO_PEOPLE.length,
+      );
+    });
+
+    it("seeds his to-do list, two of them already ticked", async () => {
+      const { sessionId, taskCount } = (await routes.seedSession('samantha'))
+        .body as SeedBody;
+
+      const stored = await store.getTasksBySession(sessionId);
+      expect(stored).toHaveLength(DEMO_TASKS.length);
+      expect(taskCount).toBe(DEMO_TASKS.length);
+      // The ticked pair is the whole reason tasks are stored and not derived.
+      expect(stored.filter((task) => task.done)).toHaveLength(2);
+    });
+
+    it('resolves task dues against the seed moment, not a frozen date', async () => {
+      const today = new Date().toISOString().slice(0, 10);
+
+      const { sessionId } = (await routes.seedSession('samantha'))
+        .body as SeedBody;
+
+      const stored = await store.getTasksBySession(sessionId);
+      // One due today, one with no date at all, and both ticked ones behind us.
+      expect(stored.some((task) => task.due === today)).toBe(true);
+      expect(stored.some((task) => !task.due)).toBe(true);
+      for (const done of stored.filter((task) => task.done)) {
+        expect(done.due! < today).toBe(true);
+      }
+    });
+
+    it('leaves the fresh persona with no family and nothing to do', async () => {
+      const { sessionId, peopleCount, taskCount } = (
+        await routes.seedSession('fresh')
+      ).body as SeedBody;
+
+      expect(peopleCount).toBe(0);
+      expect(taskCount).toBe(0);
+      expect(await store.getPeopleBySession(sessionId)).toEqual([]);
+      expect(await store.getTasksBySession(sessionId)).toEqual([]);
     });
 
     it('routes the persona through POST /session/seed', async () => {
@@ -650,6 +748,254 @@ describe('createHttpRoutes', () => {
 
       expect(result.status).toBe(201);
       expect(result.body).not.toHaveProperty('preferenceCount');
+    });
+  });
+  // --- People, tasks and manual corrections ---
+
+  describe('her people', () => {
+    let sessionId: string;
+
+    beforeEach(async () => {
+      sessionId = await store.createSession();
+    });
+
+    it('adds a person and reads them back', async () => {
+      const result = await routes.savePerson(sessionId, {
+        name: 'Leah',
+        relationship: 'Older sister',
+        generation: 'peer',
+        birthday: '1988-09-09',
+      });
+
+      expect(result.status).toBe(200);
+      const listed = await routes.getSessionPeople(sessionId);
+      expect((listed.body as { people: unknown[] }).people).toHaveLength(1);
+    });
+
+    it('accepts a person with no name, because that is the gap the tree prompts about', async () => {
+      const result = await routes.savePerson(sessionId, { relationship: 'Uncle' });
+
+      expect(result.status).toBe(200);
+      expect((result.body as { person: { name: string | null } }).person.name).toBeNull();
+    });
+
+    it('collapses a blank name to null rather than storing an empty string', async () => {
+      // Two spellings of the same gap would leave `isGap` as the only thing
+      // between a stray space and a person called "".
+      const result = await routes.savePerson(sessionId, {
+        name: '   ',
+        relationship: 'Cousin',
+      });
+
+      expect((result.body as { person: { name: string | null } }).person.name).toBeNull();
+    });
+
+    it('rejects a person with no relationship', async () => {
+      // The relationship is what labels the node; without one there is nothing to
+      // draw, named or not.
+      const result = await routes.savePerson(sessionId, { name: 'Leah' });
+
+      expect(result.status).toBe(400);
+    });
+
+    it('drops an unparseable birthday instead of storing it', async () => {
+      // The countdown parses these — a bad date renders as "NaN days" beside her
+      // name, which is worse than no date.
+      const result = await routes.savePerson(sessionId, {
+        relationship: 'Mother',
+        birthday: 'next spring',
+      });
+
+      expect((result.body as { person: { birthday: string | null } }).person.birthday).toBeNull();
+    });
+
+    it('falls back on a generation the tree cannot draw', async () => {
+      const result = await routes.savePerson(sessionId, {
+        relationship: 'Great-aunt',
+        generation: 'ancestor',
+      });
+
+      expect((result.body as { person: { generation: string } }).person.generation).toBe('elder');
+    });
+
+    it('mints an id when the client does not supply one', async () => {
+      const result = await routes.savePerson(sessionId, { relationship: 'Brother' });
+
+      expect((result.body as { person: { id: string } }).person.id).toBeTruthy();
+    });
+
+    it('revises rather than duplicates when the id is resent', async () => {
+      const first = await routes.savePerson(sessionId, { relationship: 'Sister' });
+      const { id } = (first.body as { person: { id: string } }).person;
+
+      await routes.savePerson(sessionId, { id, relationship: 'Sister', name: 'Nadia' });
+
+      const listed = await routes.getSessionPeople(sessionId);
+      const people = (listed.body as { people: { name: string | null }[] }).people;
+      expect(people).toHaveLength(1);
+      expect(people[0].name).toBe('Nadia');
+    });
+
+    it('deletes one person', async () => {
+      const added = await routes.savePerson(sessionId, { relationship: 'Sister' });
+      const { id } = (added.body as { person: { id: string } }).person;
+
+      await routes.deletePerson(sessionId, id);
+
+      expect((await routes.getSessionPeople(sessionId)).body).toEqual({ people: [] });
+    });
+
+    it('responds 404 for a session that is not the caller\'s', async () => {
+      for (const call of [
+        routes.getSessionPeople('nope'),
+        routes.savePerson('nope', { relationship: 'Sister' }),
+        routes.deletePerson('nope', 'p1'),
+      ]) {
+        expect((await call).status).toBe(404);
+      }
+    });
+  });
+
+  describe('his tasks', () => {
+    let sessionId: string;
+
+    beforeEach(async () => {
+      sessionId = await store.createSession();
+    });
+
+    it('adds a task and reads it back open', async () => {
+      const result = await routes.saveTask(sessionId, {
+        title: 'Book somewhere for the anniversary',
+        due: '2026-09-11',
+      });
+
+      expect(result.status).toBe(200);
+      expect((result.body as { task: { done: boolean } }).task.done).toBe(false);
+    });
+
+    it('rejects a task with no title', async () => {
+      expect((await routes.saveTask(sessionId, { due: '2026-09-11' })).status).toBe(400);
+    });
+
+    it('keeps createdAt when the client resends a task to tick it', async () => {
+      // Otherwise ticking a task would reset how long it had been outstanding,
+      // which is the one thing the row's age is for.
+      const added = await routes.saveTask(sessionId, { title: 'Draft the card' });
+      const task = (added.body as { task: { id: string; createdAt: string } }).task;
+
+      const ticked = await routes.saveTask(sessionId, { ...task, done: true });
+
+      const body = (ticked.body as { task: { createdAt: string; done: boolean } }).task;
+      expect(body.createdAt).toBe(task.createdAt);
+      expect(body.done).toBe(true);
+    });
+
+    it('deletes one task', async () => {
+      const added = await routes.saveTask(sessionId, { title: 'Draft the card' });
+      const { id } = (added.body as { task: { id: string } }).task;
+
+      await routes.deleteTask(sessionId, id);
+
+      expect((await routes.getSessionTasks(sessionId)).body).toEqual({ tasks: [] });
+    });
+  });
+
+  describe('manual corrections', () => {
+    let sessionId: string;
+
+    beforeEach(async () => {
+      sessionId = await store.createSession();
+    });
+
+    it('stores the user\'s own answer for a field', async () => {
+      const result = await routes.setManualValue(sessionId, 'bra_size', { value: '34B' });
+
+      expect(result.status).toBe(200);
+      expect((await routes.getManualValues(sessionId)).body).toEqual({
+        manualValues: { bra_size: '34B' },
+      });
+    });
+
+    it('rejects a field id the registry does not have', async () => {
+      // A row nothing reads back would let the correction appear to save and then
+      // vanish on reload — the exact failure this route exists to fix.
+      const result = await routes.setManualValue(sessionId, 'favourite_dinosaur', {
+        value: 'Stegosaurus',
+      });
+
+      expect(result.status).toBe(400);
+    });
+
+    it('rejects a blank value, since clearing has its own verb', async () => {
+      expect(
+        (await routes.setManualValue(sessionId, 'bra_size', { value: '  ' })).status,
+      ).toBe(400);
+    });
+
+    it('clears one value and leaves the others', async () => {
+      await routes.setManualValue(sessionId, 'bra_size', { value: '34B' });
+      await routes.setManualValue(sessionId, 'shoe_size', { value: 'UK 6' });
+
+      await routes.clearManualValue(sessionId, 'bra_size');
+
+      expect((await routes.getManualValues(sessionId)).body).toEqual({
+        manualValues: { shoe_size: 'UK 6' },
+      });
+    });
+
+    it('checks the field id before it checks the session, so a typo is a 400', async () => {
+      // A 404 here would send the client looking for a missing session when the
+      // real fault is the field name it sent.
+      expect(
+        (await routes.setManualValue('nope', 'favourite_dinosaur', { value: 'x' })).status,
+      ).toBe(400);
+    });
+  });
+
+  describe('dispatching the new routes', () => {
+    it('routes each verb to its handler', async () => {
+      const sessionId = await store.createSession();
+
+      const added = await routes.handleRequest({
+        method: 'POST',
+        url: `/session/${sessionId}/people`,
+        params: {},
+        body: { name: 'Leah', relationship: 'Older sister' },
+      });
+      expect(added.status).toBe(200);
+      const { id } = (added.body as { person: { id: string } }).person;
+
+      const listed = await routes.handleRequest({
+        method: 'GET',
+        url: `/session/${sessionId}/people`,
+        params: {},
+        body: null,
+      });
+      expect((listed.body as { people: unknown[] }).people).toHaveLength(1);
+
+      const removed = await routes.handleRequest({
+        method: 'DELETE',
+        url: `/session/${sessionId}/people/${id}`,
+        params: {},
+        body: null,
+      });
+      expect(removed.status).toBe(200);
+
+      const corrected = await routes.handleRequest({
+        method: 'PUT',
+        url: `/session/${sessionId}/manual/bra_size`,
+        params: {},
+        body: { value: '34B' },
+      });
+      expect(corrected.status).toBe(200);
+
+      const tasked = await routes.handleRequest({
+        method: 'POST',
+        url: `/session/${sessionId}/tasks`,
+        params: {},
+        body: { title: 'Draft the card' },
+      });
+      expect(tasked.status).toBe(200);
     });
   });
 });

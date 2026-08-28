@@ -130,6 +130,17 @@ export const DEMO_PROFILE_PREFERENCES: readonly ExtractedPreference[] = [
     value: 'pottery, sunrise trail runs, watercolour sketching, bread baking',
     confidence: 0.9,
   },
+  // Her week, as "Day@what it is@how much of the day it takes". Only the days she
+  // actually named: an empty Wednesday on the chart is the truth, and inventing a
+  // commitment to fill the row would be the one thing a rhythm chart must not do.
+  {
+    category: 'hobbies',
+    key: 'weekly rhythm',
+    fieldId: 'weekly_rhythm',
+    value:
+      'Mon@early run@light, Tue@pottery until nine@heavy, Thu@sketching group@medium, Sat@long trail run@heavy, Sun@bread baking@medium',
+    confidence: 0.83,
+  },
   {
     category: 'travel',
     key: 'dream destination',
@@ -176,7 +187,11 @@ export const DEMO_PROFILE_PREFERENCES: readonly ExtractedPreference[] = [
     category: 'gifts',
     key: 'clothing size',
     fieldId: 'clothing_size',
-    value: 'UK 10 / EU 38 — sizes up for knitwear',
+    // Shortened when this became one of three numbers in a measurements row: the
+    // old "UK 10 / EU 38 — sizes up for knitwear" wrapped to two lines and threw
+    // the other two measurements out of alignment. The knitwear note belongs in
+    // her style notes, not in a size cell.
+    value: 'UK 10',
     confidence: 0.9,
   },
   {
@@ -193,6 +208,35 @@ export const DEMO_PROFILE_PREFERENCES: readonly ExtractedPreference[] = [
     value: 'UK M (US 6)',
     confidence: 0.82,
   },
+  // The three the measurements card shows. Bare numbers, not sentences: they sit
+  // in a row of their own on the card, where a clause like "sizes up for
+  // knitwear" would wrap and break the alignment.
+  {
+    category: 'gifts',
+    key: 'bra size',
+    fieldId: 'bra_size',
+    value: '34B',
+    confidence: 0.9,
+  },
+  {
+    category: 'gifts',
+    key: 'shoulder width',
+    fieldId: 'shoulder_width',
+    value: '38 cm',
+    confidence: 0.72,
+  },
+
+  // --- Style ---
+  //
+  // Named colours rather than hex: "deep sage" is a decision she made and
+  // #6B7A5E is a guess about it. The first item is the lead swatch.
+  {
+    category: 'gifts',
+    key: 'color palette',
+    fieldId: 'color_palette',
+    value: 'Deep sage, Linen, Oat, Blush',
+    confidence: 0.81,
+  },
 
   // --- Gifts & Celebrations ---
   {
@@ -208,6 +252,16 @@ export const DEMO_PROFILE_PREFERENCES: readonly ExtractedPreference[] = [
     fieldId: 'wish_list',
     value: 'ceramic glaze set, linen apron, hardback poetry anthology, trail shoes',
     confidence: 0.85,
+  },
+  // What *he* is weighing up, priced. The wish list above is what *she* has said
+  // she wants; the board shows this one against his budget, so folding the two
+  // together would put a price on her own words.
+  {
+    category: 'gifts',
+    key: 'gift shortlist',
+    fieldId: 'gift_shortlist',
+    value: 'Ceramic glaze set@62, Linen apron@34, Poetry anthology@22, Trail shoes@95',
+    confidence: 0.8,
   },
   {
     category: 'gifts',

@@ -27,6 +27,7 @@ export interface CdnStackProps extends cdk.StackProps {
 export class CdnStack extends cdk.Stack {
   public readonly distribution: cloudfront.Distribution;
   public readonly staticBucket: s3.Bucket;
+  public readonly releaseBucket: s3.Bucket;
 
   constructor(scope: Construct, id: string, props: CdnStackProps) {
     super(scope, id, props);
@@ -44,6 +45,38 @@ export class CdnStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN,
       encryption: s3.BucketEncryption.S3_MANAGED,
       versioned: true,
+    });
+
+    // --- S3 Bucket for immutable per-release frontend copies ---
+    // Rollback needs the *previous* build back, byte for byte. Versioning on
+    // staticBucket is not enough on its own: `deploy.sh` syncs it with
+    // --delete, which writes delete markers for every hashed asset that the new
+    // build dropped, so restoring build N-1 would mean replaying per-key
+    // version history. An archive turns that into one deterministic sync.
+    //
+    // Deliberately a SEPARATE bucket rather than a prefix of staticBucket: the
+    // deploy sync scans that bucket's root, so an in-bucket `_releases/` prefix
+    // would be reaped by the very next deploy.
+    this.releaseBucket = new s3.Bucket(this, 'ReleaseBucket', {
+      bucketName: `valentin-releases-${env}`,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+      // Also guards manifest.jsonl, which is read-modify-written per deploy.
+      versioned: true,
+      lifecycleRules: [
+        {
+          id: 'expire-old-releases',
+          prefix: 'frontend/',
+          expiration: cdk.Duration.days(60),
+        },
+      ],
+    });
+
+    new cdk.CfnOutput(this, 'ReleaseBucketName', {
+      value: this.releaseBucket.bucketName,
+      description: 'Bucket holding per-release frontend archives + deploy manifest',
+      exportName: `valentin-releases-bucket-${env}`,
     });
 
     // --- WAF Web ACL ---

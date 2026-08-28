@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePreferencesContext } from '../context/preferences-context';
 import { useProfileStoreContext } from '../context/profile-store-context';
 import { useChatContext } from '../context/chat-context';
@@ -8,19 +8,39 @@ import { colors, insets, radii, typography } from '../design-system/tokens';
 import { PREFERENCE_CATEGORIES } from '../../shared/constants/categories';
 import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
 import { PROFILE_FIELD_REGISTRY, getDateFields } from '../utils/profile-field-registry';
-import { deriveOccasions } from '../utils/occasion-derivation';
+import {
+  deriveOccasions,
+  getDaysUntilOccasion,
+  getNextOccasion,
+} from '../utils/occasion-derivation';
+import { deriveTogetherDays, formatTogetherDays } from '../utils/together-days';
 import { rankUnfilledFields, type FieldGap } from '../utils/field-payoff';
 import { getAgeBucketFromValue } from '../utils/age-bucket';
 import { formatBirthdayValue } from '../utils/birthday-display';
 import { deriveCautions } from './brief/KeepInMind';
 import { IdentityHeader } from './dossier/IdentityHeader';
-import { CardBoard, spanAllStyle, spanTwoStyle } from './dossier/CardBoard';
+import {
+  BOARD_HALF,
+  BOARD_THIRD,
+  BOARD_TWO_THIRDS,
+  CardBoard,
+  span,
+  spanAllStyle,
+} from './dossier/CardBoard';
+import { StatBar, type Stat } from './dossier/StatBar';
+import { DossierTabs, type DossierTab, type TabDefinition } from './dossier/DossierTabs';
 import { WhatsComing } from './dossier/WhatsComing';
 import { KeepInMindCard } from './dossier/KeepInMindCard';
 import { ConfirmMyGuesses, deriveGuesses, type Guess } from './dossier/ConfirmMyGuesses';
 import { WorthAskingNext } from './dossier/WorthAskingNext';
 import { AlsoMentioned } from './dossier/AlsoMentioned';
 import { EverythingIKnow } from './dossier/EverythingIKnow';
+import { FamilyTree } from './dossier/FamilyTree';
+import { TheirBirthdays } from './dossier/TheirBirthdays';
+import { PersonEditor, type PersonDraft } from './dossier/PersonEditor';
+import { useOptionalPeopleContext } from '../context/people-context';
+import type { Person, PersonGeneration } from '../../shared/interfaces/person';
+import { countGaps } from '../utils/people-derivation';
 
 /*
  * "17 June 1988 · mid-thirties · Gemini" — the same subtitle the rail builds, from
@@ -146,7 +166,7 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
   const { closeDossier } = useViewContext();
 
   /**
-   * Escape closes the dossier, which also returns focus to the rail's ♥.
+   * Escape closes the dossier, which also returns focus to her portrait in the brief.
    *
    * Bound on `document` rather than on the shell, because the user may well be
    * inside a `ProfileField` input three cards down when they give up on it.
@@ -301,6 +321,137 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
 
   const topGap: FieldGap | null = gaps[0] ?? null;
 
+  /*
+   * Her people.
+   *
+   * Optional context, like the profile store's: `DossierView` is mounted in tests
+   * that provide neither, and a board with an empty family tree is a correct
+   * empty state rather than a crash.
+   */
+  const people = useOptionalPeopleContext();
+  const peopleList = people?.state.people ?? [];
+  const peopleGaps = countGaps(peopleList);
+
+  /**
+   * Which tab is showing, and who is being edited.
+   *
+   * Local state, not the URL and not a context: the dossier is already a
+   * non-routed sibling of the chat column (see the note above), and a tab you
+   * left on last time is not something you want restored three days later.
+   */
+  const [activeTab, setActiveTab] = useState<DossierTab>('overview');
+  const [editing, setEditing] = useState<
+    { person: Person | null; generation: PersonGeneration } | null
+  >(null);
+
+  const togetherDays = useMemo(
+    () => deriveTogetherDays(getFieldValue('anniversary')?.value ?? null),
+    [getFieldValue],
+  );
+
+  const nextOccasion = useMemo(() => getNextOccasion(occasions), [occasions]);
+
+  /**
+   * The four figures on the command bar.
+   *
+   * Each one is either a real number or absent — never a zero standing in for
+   * "unknown", which is the difference between "you have been together 0 days"
+   * and "I don't know when you started".
+   */
+  const stats = useMemo<Stat[]>(() => {
+    const list: Stat[] = [];
+
+    if (togetherDays !== null) {
+      list.push({
+        value: formatTogetherDays(togetherDays),
+        label: 'Days together',
+        tone: 'date',
+      });
+    }
+
+    if (nextOccasion) {
+      const days = getDaysUntilOccasion(nextOccasion);
+      list.push({
+        value: days === 0 ? 'Today' : `${days}d`,
+        label: 'Next occasion',
+        tone: 'gift',
+        note: nextOccasion.label,
+      });
+    }
+
+    list.push({
+      value: `${Math.round((filled / Math.max(total, 1)) * 100)}%`,
+      label: 'How well I know her',
+      tone: 'grow',
+      note: `${filled} of ${total} known`,
+    });
+
+    if (peopleList.length > 0) {
+      list.push({
+        value: String(peopleList.length),
+        label: 'Her people',
+        tone: 'kin',
+        note: peopleGaps > 0 ? `${peopleGaps} still unnamed` : null,
+      });
+    }
+
+    return list;
+  }, [togetherDays, nextOccasion, filled, total, peopleList.length, peopleGaps]);
+
+  const tabs = useMemo<TabDefinition[]>(
+    () => [
+      { id: 'overview', label: 'Overview', tone: 'date' },
+      { id: 'known', label: 'Everything I know', count: filled, tone: 'fact' },
+      { id: 'gifts', label: 'To do', count: guesses.length + gaps.length, tone: 'gift' },
+      { id: 'people', label: 'Her people', count: peopleList.length, tone: 'kin' },
+      { id: 'memories', label: 'Mentioned', count: allPreferences.length, tone: 'mood' },
+    ],
+    [filled, guesses.length, gaps.length, peopleList.length, allPreferences.length],
+  );
+
+  /** Every tab shows the overview's cards too when it is the overview. */
+  const shows = useCallback(
+    (...tabsShowingIt: DossierTab[]) => tabsShowingIt.includes(activeTab),
+    [activeTab],
+  );
+
+  const savePerson = useCallback(
+    (draft: PersonDraft) => {
+      if (!people || !editing) return;
+      if (editing.person) {
+        people.dispatch({ type: 'UPDATE_PERSON', id: editing.person.id, patch: draft });
+      } else {
+        people.addPerson({ ...draft, source: 'manual' });
+      }
+      setEditing(null);
+    },
+    [people, editing],
+  );
+
+  const removePerson = useCallback(() => {
+    if (!people || !editing?.person) return;
+    people.dispatch({ type: 'REMOVE_PERSON', id: editing.person.id });
+    setEditing(null);
+  }, [people, editing]);
+
+  /**
+   * A gap turns into a question in the composer rather than into a form.
+   *
+   * Pressing a dashed node could open the editor with the name focused, but the
+   * reason the name is missing is usually that you don't know it — so the useful
+   * move is to have Valentin ask her about it in conversation, which is where the
+   * answer will come from.
+   */
+  const askAboutPerson = useCallback(
+    (person: Person) => {
+      chatDispatch({
+        type: 'SET_INPUT',
+        value: `Remind me — what's her ${person.relationship.toLowerCase()}'s name?`,
+      });
+    },
+    [chatDispatch],
+  );
+
   return (
     <div style={shellStyle} data-testid="dossier-view">
       <IdentityHeader
@@ -313,50 +464,130 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
         isMobile={isMobile}
       />
 
+      <StatBar stats={stats} isMobile={isMobile} />
+
+      <DossierTabs
+        tabs={tabs}
+        active={activeTab}
+        onSelect={setActiveTab}
+        isMobile={isMobile}
+      />
+
       <CardBoard isMobile={isMobile}>
         {/*
-         * The two-column span is earned, not fixed.
+         * The wide span is earned, not fixed.
          *
          * Found in the partial-profile screenshots, which the 18/18 demo seed hides:
          * with no dates known, `What's coming` is a single line of prose, and
-         * spanning it across two columns left a ~330px void beneath it, because a
-         * grid row is still as tall as its tallest member no matter how the items
-         * are aligned within it. Empty, it takes one column like everything else
-         * and the short cards simply sit at the top of their own columns — which is
-         * what `align-items: start` is for. Populated, it needs the width for the
-         * spine, the dates and the act-by chips, so it takes it back.
+         * spanning it across two-thirds of the board left a ~330px void beneath it,
+         * because a grid row is still as tall as its tallest member no matter how
+         * the items are aligned within it. Empty, it takes one column like
+         * everything else and the short cards simply sit at the top of their own
+         * columns — which is what `align-items: start` is for. Populated, it needs
+         * the width for the spine, the dates and the act-by chips, so it takes it
+         * back.
          */}
-        <div
-          style={isMobile || occasions.length === 0 ? undefined : spanTwoStyle}
-          data-testid="dossier-whats-coming-slot"
-        >
-          <WhatsComing occasions={occasions} />
-        </div>
+        {shows('overview', 'gifts') && (
+          <div
+            style={
+              isMobile
+                ? undefined
+                : occasions.length === 0
+                  ? span(BOARD_THIRD)
+                  : span(BOARD_TWO_THIRDS)
+            }
+            data-testid="dossier-whats-coming-slot"
+          >
+            <WhatsComing occasions={occasions} />
+          </div>
+        )}
 
-        <KeepInMindCard cautions={cautions} />
+        {shows('overview', 'gifts') && (
+          <div style={isMobile ? undefined : span(BOARD_THIRD)}>
+            <KeepInMindCard cautions={cautions} />
+          </div>
+        )}
 
-        <ConfirmMyGuesses
-          guesses={guesses}
-          onConfirm={confirmGuess}
-          onReject={rejectGuess}
-        />
+        {/*
+         * Her people, on the overview as well as on their own tab.
+         *
+         * The tree is the widest card on the board because it is a *diagram*: at a
+         * third of the width its three rows wrap into an unreadable stack, which
+         * loses the only thing a drawing gives you over a list.
+         */}
+        {shows('overview', 'people') && (
+          <div style={isMobile ? undefined : span(BOARD_TWO_THIRDS)}>
+            <FamilyTree
+              people={peopleList}
+              partnerName={name}
+              onSelectPerson={(person) =>
+                setEditing({ person, generation: person.generation })
+              }
+              onAddPerson={(generation) => setEditing({ person: null, generation })}
+              onAskAboutGap={askAboutPerson}
+            />
+          </div>
+        )}
 
-        <WorthAskingNext gaps={gaps} onAsk={(gap) => askAbout(gap.label)} />
+        {shows('overview', 'people') && (
+          <div style={isMobile ? undefined : span(BOARD_THIRD)}>
+            <TheirBirthdays
+              people={peopleList}
+              onSelectPerson={(person) =>
+                setEditing({ person, generation: person.generation })
+              }
+            />
+          </div>
+        )}
 
-        <AlsoMentioned preferences={allPreferences} />
+        {editing && (
+          <div style={isMobile ? undefined : span(BOARD_HALF)}>
+            <PersonEditor
+              person={editing.person}
+              generation={editing.generation}
+              onSave={savePerson}
+              onCancel={() => setEditing(null)}
+              onRemove={editing.person ? removePerson : undefined}
+            />
+          </div>
+        )}
 
-        <div style={isMobile ? undefined : spanAllStyle}>
-          <EverythingIKnow
-            getFieldValue={getFieldValue}
-            onSaveField={saveField}
-            onClearField={clearField}
-            highlightedFieldIds={discovery?.highlightedFieldIds}
-            onAsk={(field) => askAbout(field.label)}
-            isMobile={isMobile}
-          />
-        </div>
+        {shows('overview', 'gifts') && (
+          <div style={isMobile ? undefined : span(BOARD_THIRD)}>
+            <ConfirmMyGuesses
+              guesses={guesses}
+              onConfirm={confirmGuess}
+              onReject={rejectGuess}
+            />
+          </div>
+        )}
 
-        {topGap && (
+        {shows('overview', 'gifts') && (
+          <div style={isMobile ? undefined : span(BOARD_THIRD)}>
+            <WorthAskingNext gaps={gaps} onAsk={(gap) => askAbout(gap.label)} />
+          </div>
+        )}
+
+        {shows('memories') && (
+          <div style={isMobile ? undefined : span(BOARD_HALF)}>
+            <AlsoMentioned preferences={allPreferences} />
+          </div>
+        )}
+
+        {shows('overview', 'known') && (
+          <div style={isMobile ? undefined : spanAllStyle}>
+            <EverythingIKnow
+              getFieldValue={getFieldValue}
+              onSaveField={saveField}
+              onClearField={clearField}
+              highlightedFieldIds={discovery?.highlightedFieldIds}
+              onAsk={(field) => askAbout(field.label)}
+              isMobile={isMobile}
+            />
+          </div>
+        )}
+
+        {topGap && shows('overview') && (
           <div style={isMobile ? mobileSayStyle : sayStyle} data-testid="dossier-say">
             <div style={sayCrestStyle}>
               <img src="/logo.png" alt="" style={sayCrestImageStyle} />

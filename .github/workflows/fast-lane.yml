@@ -1,0 +1,187 @@
+name: Fast Lane
+
+# Signal for STACKED PRs — the ones that target an integration branch rather
+# than main. Before this existed, a feature branch got no CI at all until it
+# opened a PR against main, so the only way to find out a change was broken was
+# to deploy it.
+#
+# Deliberately a separate file from ci.yml, for three reasons:
+#   1. ci.yml's job `name:` values ARE the `main-protection` ruleset's required
+#      contexts. Editing that file risks renaming a required context and making
+#      every PR to main unmergeable.
+#   2. ci.yml is intentionally serialised (lint -> test -> build -> e2e) because
+#      its required checks must always conclude `success`, never `skipped`. The
+#      fast lane wants the opposite: parallel and freely skippable.
+#   3. Distinct check names guarantee these can never shadow or accidentally
+#      satisfy the four required contexts on main.
+#
+# The trigger sets are disjoint by construction: ci.yml is
+# `pull_request: branches: [main]`, this is `branches-ignore: [main]`. A given PR
+# runs exactly one of the two, and the integration -> main PR runs the full
+# ci.yml gates as usual. There is deliberately no `push:` trigger — every agent
+# flow goes through a PR, and a push trigger would double-run alongside
+# pull_request for the same commit.
+on:
+  pull_request:
+    branches-ignore: [main]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+
+concurrency:
+  group: fast-${{ github.head_ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  # Two network round trips per npm ci that tell us nothing here.
+  NPM_CONFIG_AUDIT: 'false'
+  NPM_CONFIG_FUND: 'false'
+
+jobs:
+  changes:
+    name: Fast Detect
+    runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.filter.outputs.app }}
+      kiro: ${{ steps.filter.outputs.kiro }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            app:
+              - 'src/**'
+              - 'index.html'
+              - 'public/**'
+              - 'package*.json'
+              - 'vite.config.ts'
+              - 'tsconfig*.json'
+            kiro:
+              - '.kiro/**'
+              - '.github/workflows/**'
+
+  lint:
+    name: Fast Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # setup-node's `cache: npm` only caches ~/.npm (the tarballs); `npm ci`
+      # still spends ~40s writing node_modules. Cache node_modules itself, keyed
+      # on the exact lockfile, and skip the install entirely on a hit.
+      - id: mods
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+      - if: steps.mods.outputs.cache-hit != 'true'
+        run: npm ci --prefer-offline --no-audit
+      - run: npm run lint
+
+  test:
+    name: Fast Unit Tests
+    runs-on: ubuntu-latest
+    # No `needs: lint`. In ci.yml the chain means a typo blocks all downstream
+    # jobs; here an agent wants the tsc error AND the test failures in one round
+    # trip, not two.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - id: mods
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+      - if: steps.mods.outputs.cache-hit != 'true'
+        run: npm ci --prefer-offline --no-audit
+      # Scoped to src/ on purpose. vite.config.ts's test.exclude does not exclude
+      # .kiro/**, so a bare `npm test` also runs the workflow-automation suites,
+      # which guard the merge-gate machinery and are irrelevant to an integration
+      # merge. They run in the `kiro` job when .kiro/** actually changed, and
+      # again in full on the integration -> main PR.
+      - run: npx vitest --run src/
+
+  build:
+    name: Fast Build
+    runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ needs.changes.outputs.app == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - id: mods
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+      - if: steps.mods.outputs.cache-hit != 'true'
+        run: npm ci --prefer-offline --no-audit
+      - run: npx vite build
+
+  kiro:
+    name: Fast Kiro Regression
+    runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ needs.changes.outputs.kiro == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - id: mods
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+      - if: steps.mods.outputs.cache-hit != 'true'
+        run: npm ci --prefer-offline --no-audit
+      - run: npx vitest --run .kiro/specs/cubic-ai-review-integration/__tests__ .kiro/specs/pr-conversation-monitoring/__tests__
+
+  # NOTE: no e2e and no `playwright install --with-deps chromium`. That single
+  # step is 60-90s of ci.yml's critical path and downloads a browser every run.
+  # E2E belongs on the integration -> main PR, which runs ci.yml in full.
+
+  merge:
+    name: Fast Merge
+    runs-on: ubuntu-latest
+    needs: [lint, test, build, kiro]
+    # `gh pr merge --auto` CANNOT be used here: `allow_auto_merge` is false at
+    # the repo level, and even with it enabled the GraphQL mutation rejects a PR
+    # that is already mergeable ("in clean status") — which a PR into an
+    # unprotected integration branch always is, because there is nothing to queue
+    # behind. So the gate lives here instead, needing no repo or ruleset change.
+    #
+    # always() so a path-skipped build/kiro job does not cascade-skip the merge;
+    # the explicit result checks still block a job that ran and failed.
+    if: >-
+      ${{ always()
+          && needs.lint.result == 'success'
+          && needs.test.result == 'success'
+          && needs.build.result != 'failure'
+          && needs.kiro.result != 'failure'
+          && github.event.pull_request.draft == false
+          && contains(github.event.pull_request.labels.*.name, 'fast-lane') }}
+    steps:
+      # Opt-in by label: an agent that wants human eyes on a change simply does
+      # not add `fast-lane`, and the PR sits waiting for review.
+      - name: Merge into the integration branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # --merge, not --squash: allow_squash_merge is false on this repo.
+        run: |
+          gh pr merge "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" \
+            --merge --delete-branch

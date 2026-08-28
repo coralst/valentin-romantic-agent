@@ -7,6 +7,7 @@ import { useOptionalViewContext } from '../context/view-context';
 import { useGuidedIntro } from '../demo/use-guided-intro';
 import { fetchSessionPreferences, seedDemoSession } from '../utils/demo-session-api';
 import { colors, insets, radii, typography } from '../design-system/tokens';
+import { chatMeasureStyle } from './chat-measure';
 import type { StoredSession } from '../hooks/use-session-store';
 
 /**
@@ -31,7 +32,13 @@ const PAYOFF_PERSONA = 'samantha';
 
 const cardStyle: React.CSSProperties = {
   flexShrink: 0,
-  margin: `${insets.tight}px ${insets.roomy}px 0`,
+  // The transcript's measure (see `chat-measure.ts`). `width` is overridden below
+  // because this card is its own gutter-to-gutter box rather than a child of the
+  // transcript's padded scroll region: it has to keep the 26px inset itself at
+  // narrow widths, and centre in the leftover once the cap bites.
+  ...chatMeasureStyle,
+  width: `calc(100% - ${insets.roomy * 2}px)`,
+  marginTop: insets.tight,
   padding: `${insets.snug}px ${insets.snug}px`,
   borderRadius: radii.card,
   backgroundColor: colors.linen,

@@ -1,4 +1,5 @@
 import { colors, radii, insets, animation, layout } from '../design-system/tokens';
+import { chatMeasureStyle } from './chat-measure';
 
 interface TypingIndicatorProps {
   isVisible: boolean;
@@ -9,12 +10,20 @@ interface TypingIndicatorProps {
  * 26px gutter and repeats the agent row's crest-then-bubble geometry.
  */
 const wrapperStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'flex-start',
-  gap: 12,
   padding: `0 ${insets.roomy}px`,
   marginBottom: 10,
   flexShrink: 0,
+};
+
+/**
+ * The crest-then-bubble row, held to the transcript's centred measure so the
+ * "Valentin is typing" crest sits exactly where the reply's crest will appear.
+ */
+const rowStyle: React.CSSProperties = {
+  ...chatMeasureStyle,
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: 12,
 };
 
 /** Same crest treatment as MessageBubble, so the two rows read as one speaker. */
@@ -73,20 +82,22 @@ export function TypingIndicator({ isVisible }: TypingIndicatorProps) {
 
   return (
     <div style={wrapperStyle}>
-      <div style={avatarStyle}>
-        <img src="/logo.png" alt="Valentin" style={avatarImageStyle} />
-      </div>
-      <div style={containerStyle} data-testid="typing-indicator" aria-label="Valentin is typing">
-        {[0, 1, 2].map((i) => (
-          <span
-            key={i}
-            style={{
-              ...dotStyle,
-              animation: `typing-bounce ${animation.durations.slow}ms ${animation.easing.easeInOut} infinite`,
-              animationDelay: `${i * 100}ms`,
-            }}
-          />
-        ))}
+      <div style={rowStyle}>
+        <div style={avatarStyle}>
+          <img src="/logo.png" alt="Valentin" style={avatarImageStyle} />
+        </div>
+        <div style={containerStyle} data-testid="typing-indicator" aria-label="Valentin is typing">
+          {[0, 1, 2].map((i) => (
+            <span
+              key={i}
+              style={{
+                ...dotStyle,
+                animation: `typing-bounce ${animation.durations.slow}ms ${animation.easing.easeInOut} infinite`,
+                animationDelay: `${i * 100}ms`,
+              }}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );

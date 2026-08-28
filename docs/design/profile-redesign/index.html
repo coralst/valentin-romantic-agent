@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Valentin · Profile page redesign — 6 proposals</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;1,400&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --burgundy:#9B3A52;--burgundy-lift:#C4566E;--plum:#5C2434;--rose:#D4A0A8;--blush:#F2D4D8;
+  --champagne:#F7EDE2;--taupe:#B8A99A;--ink:#2D2024;--ink-2:#8A7A7E;--border:#EDE6E0;
+  --c-date:#C4566E;--c-gift:#C0873A;--c-taste:#C0684A;--c-mood:#87699A;--c-fact:#4E7C86;--c-grow:#5E8C6A;--c-kin:#A05A7A;
+  --serif:'Playfair Display',Georgia,serif;--sans:'Inter',sans-serif;
+  --ease:cubic-bezier(.2,.8,.2,1);--sh:0 1px 3px rgba(45,32,36,.06),0 4px 12px rgba(45,32,36,.05);
+  --sh-h:0 4px 12px rgba(45,32,36,.09),0 18px 40px rgba(45,32,36,.09);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);color:var(--ink);background:
+  radial-gradient(900px 460px at 88% -8%,#FBF2E4 0%,transparent 60%),
+  radial-gradient(900px 480px at 6% 0%,#FDEEF1 0%,transparent 58%),#F6F1ED;
+  -webkit-font-smoothing:antialiased;padding:56px 34px 70px}
+.wrap{max-width:1180px;margin:0 auto}
+.eyebrow{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--burgundy);font-weight:700}
+h1{font-family:var(--serif);font-size:52px;font-weight:600;letter-spacing:-.03em;margin:12px 0 14px;line-height:1.02}
+h1 em{font-style:italic;color:var(--burgundy)}
+.lede{max-width:76ch;color:#6E6065;font-size:14.5px;line-height:1.75}
+.lede b{color:var(--ink)}
+.hues{display:flex;gap:8px;flex-wrap:wrap;margin:22px 0 4px}
+.hue{display:flex;align-items:center;gap:7px;background:#fff;border:1px solid var(--border);border-radius:9999px;
+  padding:6px 13px 6px 8px;font-size:11.5px;font-weight:600;box-shadow:var(--sh)}
+.hue i{width:12px;height:12px;border-radius:4px;background:var(--h)}
+.hue s{text-decoration:none;color:var(--taupe);font-weight:500}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;margin-top:30px}
+a.tile{display:block;text-decoration:none;color:inherit;background:#fff;border:1px solid var(--border);border-radius:22px;
+  padding:22px 24px 20px;position:relative;overflow:hidden;box-shadow:var(--sh);transition:.24s var(--ease)}
+a.tile::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--a)}
+a.tile:hover{transform:translateY(-4px);box-shadow:var(--sh-h);border-color:transparent}
+a.tile.kit{grid-column:1 / -1;background:linear-gradient(120deg,#fff 0%,#FFF9F5 62%,#FDEEF1 100%)}
+.tile .no{font-family:var(--serif);font-size:12px;color:#fff;background:var(--a);width:26px;height:26px;border-radius:50%;
+  display:grid;place-items:center}
+.tile .hd{display:flex;align-items:center;gap:11px}
+.tile h2{font-family:var(--serif);font-size:23px;font-weight:600;letter-spacing:-.015em}
+.tile .side{margin-left:auto;font-size:10px;letter-spacing:.13em;text-transform:uppercase;font-weight:700;color:var(--a)}
+.tile p{font-size:13px;color:var(--ink-2);line-height:1.65;margin-top:9px;max-width:62ch}
+.tile .tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:13px}
+.tile .tags s{text-decoration:none;font-size:10.5px;font-weight:600;color:var(--plum);background:var(--champagne);
+  border-radius:9999px;padding:4px 10px}
+.tile .go{margin-top:14px;font-size:12px;font-weight:700;color:var(--a)}
+.foot{margin-top:34px;padding:18px 22px;background:#fff;border:1px dashed var(--rose);border-radius:18px;
+  font-size:13px;color:#6E6065;line-height:1.7;max-width:88ch}
+.foot b{color:var(--plum)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">Design proposal · nothing in the app was touched</div>
+  <h1>Her page, <em>rebuilt six ways</em></h1>
+  <p class="lede">The current Profile page isn't ugly — it's <b>flat</b>. Every card is the same cream, the same size, the same
+  weight, so nothing tells you where to look, and two panels dead-end in an empty state. These mockups fix that with one idea:
+  <b>colour carries meaning</b>. Each knowledge domain owns a hue, so grouping happens before you read a word. On top of that,
+  every screen gets one hero figure, deliberate density variation, and empty states that ask a better question instead of
+  apologising. All six files are static HTML+CSS — open them straight in a browser.</p>
+
+  <div class="hues">
+    <span class="hue" style="--h:var(--c-date)"><i></i>Occasions <s>countdowns, dates</s></span>
+    <span class="hue" style="--h:var(--c-gift)"><i></i>Gifts <s>budget, orders</s></span>
+    <span class="hue" style="--h:var(--c-taste)"><i></i>Taste <s>food, places</s></span>
+    <span class="hue" style="--h:var(--c-mood)"><i></i>Mood <s>music, memories</s></span>
+    <span class="hue" style="--h:var(--c-fact)"><i></i>Facts <s>sizes, logistics</s></span>
+    <span class="hue" style="--h:var(--c-grow)"><i></i>Confirmed <s>verified, done</s></span>
+    <span class="hue" style="--h:var(--c-kin)"><i></i>Her people <s>family, names</s></span>
+  </div>
+
+  <div class="grid">
+    <a class="tile kit" href="00-widget-gallery.html" style="--a:var(--burgundy)">
+      <div class="hd"><span class="no">0</span><h2>The widget kit</h2><span class="side">start here</span></div>
+      <p>Thirty-two widgets (W01–W32), each captioned with the job it does and what it replaces on today's page: calendar,
+      countdown ring, reminders, budget dial, sizes wallet, taste radar, mood heatmap, confidence meters, memory wall,
+      one-tap actions, "worth asking next" prompts — and <b>W31, the family tree</b>, plus W32 their birthdays. Ends with
+      ten design principles the five layouts all obey.</p>
+      <div class="tags"><s>32 widgets</s><s>7 accent families</s><s>10 principles</s><s>family tree</s></div>
+      <div class="go">Open the kit →</div>
+    </a>
+
+    <a class="tile" href="01-bento-mosaic.html" style="--a:var(--c-date)">
+      <div class="hd"><span class="no">1</span><h2>Bento mosaic</h2><span class="side">sidebar A</span></div>
+      <p>A six-column asymmetric grid: one big hero tile with the days-together figure, then tiles sized by how much they
+      matter. Sidebar A is a warm burgundy rail with live mini-widgets stacked under the nav.</p>
+      <div class="tags"><s>hero + mosaic</s><s>dense</s><s>dark rail</s></div>
+      <div class="go">Open layout 1 →</div>
+    </a>
+
+    <a class="tile" href="02-timeline-spine.html" style="--a:var(--c-gift)">
+      <div class="hd"><span class="no">2</span><h2>Timeline spine</h2><span class="side">sidebar B</span></div>
+      <p>Everything hangs off one central gradient spine, ordered by time — this week, this month, later this year, always
+      true. Sidebar B is a 72px icon rail that blooms to full width on hover.</p>
+      <div class="tags"><s>time-ordered</s><s>alternating</s><s>hover rail</s></div>
+      <div class="go">Open layout 2 →</div>
+    </a>
+
+    <a class="tile" href="03-category-columns.html" style="--a:var(--c-fact)">
+      <div class="hd"><span class="no">3</span><h2>Category columns</h2><span class="side">sidebar C</span></div>
+      <p>Three lanes, each headed by the question it answers: what's coming, what to do about it, what I know about her.
+      Sidebar C is a light companion panel led by a real mini calendar.</p>
+      <div class="tags"><s>question-led</s><s>scannable</s><s>calendar panel</s></div>
+      <div class="go">Open layout 3 →</div>
+    </a>
+
+    <a class="tile" href="04-editorial-story.html" style="--a:var(--c-mood)">
+      <div class="hd"><span class="no">4</span><h2>Editorial story</h2><span class="side">sidebar D</span></div>
+      <p>Her page as a magazine feature: full-bleed hero spread, numbered sections, a pull quote, a picture gallery.
+      The most emotional of the five. Sidebar D is a floating glass dock with hover labels.</p>
+      <div class="tags"><s>editorial</s><s>airy</s><s>glass dock</s></div>
+      <div class="go">Open layout 4 →</div>
+    </a>
+
+    <a class="tile" href="05-command-center.html" style="--a:var(--c-kin)">
+      <div class="hd"><span class="no">5</span><h2>Command centre</h2><span class="side">sidebar E</span></div>
+      <p>The power-user view: dark stat bar, tab bar, twelve-column dense grid, and the family tree as its centrepiece.
+      Sidebar E is a white segmented control centre with grouped nav and four KPIs.</p>
+      <div class="tags"><s>dense</s><s>tabs + filters</s><s>family tree hero</s></div>
+      <div class="go">Open layout 5 →</div>
+    </a>
+  </div>
+
+  <div class="foot"><b>Design only.</b> No application file was modified and no branch or PR exists — these six files live
+  outside the repo. Say which layout (and which sidebar) you want and I'll open a branch and port it into the real
+  components. Mixing is fine: e.g. layout 3's lanes with sidebar A, or layout 4's hero above layout 1's mosaic.</div>
+</div>
+</body>
+</html>

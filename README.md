@@ -127,6 +127,52 @@ parallel agent work safe.
 
 ---
 
+## The work, as a graph
+
+Every node below is a real pull request. Every chevron is a real review comment.
+Nothing here is illustrative — it's generated straight from this repository's PR
+history by [`scripts/generate-agent-graph.py`](scripts/generate-agent-graph.py),
+and [a workflow](.github/workflows/agent-graph.yml) regenerates it whenever a PR
+closes, so it cannot drift out of date.
+
+🖱️ **[Open the interactive version →](https://coralst.github.io/valentin-romantic-agent/graph.html)**
+— hover any node for the PR title, diff size and reviewers; click to open the PR;
+click a lane to isolate one agent; filter by agent, session, or search.
+
+<p align="center">
+  <img src="docs/assets/graph/agent-contribution-graph.svg"
+       alt="Agent contribution graph: 56 pull requests across seven lanes — Master Agent, System Architect, Frontend Dev, Backend Dev, UI Designer, QA Agent, and Infra — grouped into four working sessions, each PR connected up to the main branch where it merged.">
+</p>
+
+The x-axis is **PR sequence grouped by working session**, not wall-clock time.
+All 56 PRs were opened across four sessions, so a linear time axis collapses into
+four vertical stacks and hides the fan-out completely — which is exactly why
+GitHub's own network graph reads as empty here.
+
+Read it as **one node per PR** in its author's lane, sized by files changed, with
+a line rising to the point on `main` where it merged. A **chevron** means that
+agent *reviewed* a PR it didn't author. Concentric rings mark PRs that drew a
+back-and-forth review thread; hollow dashed nodes were reviewed and closed
+without merging.
+
+Four things worth noticing:
+
+- **The fan-out is real.** Within a single session, five different lanes are open
+  at once, each on its own branch, each merging back independently. That's not
+  one agent renamed six times — it's disjoint ownership running in parallel.
+- **The orchestrator authors almost nothing.** The Master Agent wrote 2 PRs but
+  shows up on **40** of them — the chevrons running the length of its lane are
+  review turns. Counting only authorship makes an orchestrator look idle, which
+  is exactly backwards: it's the busiest actor in the repo.
+- **The biggest lane is the workflow itself.** 31 of the 56 PRs and +10,664 lines
+  went into `.kiro/` and `.github/` — the agents, hooks, turn router, and merge
+  gate. The methodology was *built*, iterated, and debugged, not declared.
+- **Some PRs were closed, not merged.** The hollow nodes are proposals that were
+  reviewed and rejected. A workflow where nothing ever gets turned down isn't a
+  review process.
+
+---
+
 ## The engine: orchestrator-led, not event-led
 
 The most important design decision here came from a failure.
@@ -202,15 +248,32 @@ CI is green. A refused merge is expected behaviour, not a bug.
 | | | | |
 |---|---|---|---|
 | Agent personas | **6** | Kiro hooks | **8** |
-| Pull requests | **54** (46 merged) | Workflow skill modules | **6** |
-| Commits | **157** | Steering documents | **5** |
-| Specs | **5** | Test files | **42** |
+| Pull requests | **56** (48 merged) | Workflow skill modules | **6** |
+| Commits | **165** (68 merges) | Steering documents | **5** |
+| Review comments | **92** | Specs | **5** |
+| Lines added | **+32,770** | Test files | **42** |
 
 **See it for yourself:** [all PRs colour-coded by agent](https://github.com/coralst/valentin-romantic-agent/pulls?q=is%3Apr) ·
 [`agent: backend`](https://github.com/coralst/valentin-romantic-agent/pulls?q=is%3Apr+label%3A%22agent%3A+backend%22) ·
 [`agent: frontend`](https://github.com/coralst/valentin-romantic-agent/pulls?q=is%3Apr+label%3A%22agent%3A+frontend%22) ·
-[Insights → Network](https://github.com/coralst/valentin-romantic-agent/network) for the parallel branch fan-out.
-Open any merged PR to read the multi-persona review dialogue.
+[all 55 agent branches](https://github.com/coralst/valentin-romantic-agent/branches/all) ·
+[`git log --all --graph`](#the-work-as-a-graph) for the fan-out.
+Open any merged PR to read the multi-persona review dialogue — start with
+[#40](https://github.com/coralst/valentin-romantic-agent/pull/40) or
+[#58](https://github.com/coralst/valentin-romantic-agent/pull/58), the two longest threads.
+
+> **On the branches.** Every merged branch was auto-deleted on merge, so for a
+> while the repo showed 2 refs where there had been 56. They have been **restored
+> to their true head commits**, recovered from the remote's own
+> `refs/pull/*/head` — that adds pointers to commits which already existed and
+> rewrites nothing. `main` is byte-for-byte the same 165 commits, and every PR
+> still resolves to the SHAs it was reviewed at.
+>
+> Note that GitHub's own [network graph](https://github.com/coralst/valentin-romantic-agent/network)
+> still under-reports this: it is rebuilt on a daily cadence and only draws a
+> recent window of commits, so most of these branches fall outside what it will
+> render. The graph above is generated from the full PR history instead, which is
+> why it's the one worth looking at.
 
 📖 **[Full methodology, including honest scope and what's convention vs. wired-up →](docs/METHODOLOGY.md)**
 

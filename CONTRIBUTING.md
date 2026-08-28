@@ -36,8 +36,8 @@ asserts the two agree. **Change both, in the same PR** — the test fails otherw
 | ⚛️ Frontend Dev | `agent: frontend` | `src/client/components/`, `src/client/auth/`, `src/client/hooks/`, `src/client/context/`, `src/client/utils/`, `src/client/demo/`, `src/client/App.tsx`, `src/client/main.tsx`, `src/client/vite-env.d.ts` | `src/shared/`, `src/client/design-system/`, `src/server/` |
 | 🔧 Backend Dev | `agent: backend` | `src/server/` | `src/client/`, `src/shared/` |
 | 🎨 UI Designer | `agent: design` | `src/client/design-system/`, `docs/design/` | component logic, `src/server/`, shared types |
-| 🧪 QA Agent | `agent: qa` | `e2e/`, `playwright.config.ts`, `src/test-setup.ts` | all of `src/` |
-| ⚙️ Infra / Workflow | `agent: infra` | `.github/`, `.kiro/`, `scripts/`, `infra/`, `public/`, `index.html`, `package.json`, `package-lock.json`, `tsconfig.json`, `tsconfig.server.json`, `vite.config.ts`, `Dockerfile`, `.dockerignore`, `.gitignore`, `README.md`, `CONTRIBUTING.md`, `docs/` | all of `src/` |
+| 🧪 QA Agent | `agent: qa` | `e2e/`, `playwright.config.ts`, `src/test-setup.ts`, `rehearsal.mjs` | all of `src/` |
+| ⚙️ Infra / Workflow | `agent: infra` | `.github/`, `.kiro/`, `.claude/`, `.mcp.json`, `scripts/`, `infra/`, `public/`, `index.html`, `package.json`, `package-lock.json`, `tsconfig.json`, `tsconfig.server.json`, `vite.config.ts`, `Dockerfile`, `.dockerignore`, `.gitignore`, `README.md`, `CONTRIBUTING.md`, `CLAUDE.md`, `docs/` | all of `src/` |
 
 <!-- OWNERSHIP-TABLE:END -->
 

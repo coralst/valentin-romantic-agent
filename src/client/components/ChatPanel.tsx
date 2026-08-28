@@ -8,6 +8,7 @@ import { TypingIndicator } from './TypingIndicator';
 import { ConnectionBanner } from './ConnectionBanner';
 import { GuidedIntro } from './GuidedIntro';
 import { colors, insets, typography } from '../design-system/tokens';
+import { chatMeasureStyle } from './chat-measure';
 import type { ChatMessage } from '../../shared/interfaces/message';
 
 /**
@@ -27,11 +28,22 @@ const panelStyle: React.CSSProperties = {
 
 /** Name + status row above the transcript (option-5d-brief.html:43-45). */
 const headStyle: React.CSSProperties = {
+  padding: `${insets.snug}px ${insets.roomy}px 13px`,
+  flexShrink: 0,
+};
+
+/**
+ * The name itself, held to the transcript's centred measure.
+ *
+ * The hairline below stays full-bleed — a seam across the column is the point of
+ * it — but the name has to line up with the bubbles it labels, or at wide widths
+ * it sits alone against the left edge of an otherwise centred column.
+ */
+const headInnerStyle: React.CSSProperties = {
+  ...chatMeasureStyle,
   display: 'flex',
   alignItems: 'center',
   gap: 11,
-  padding: `${insets.snug}px ${insets.roomy}px 13px`,
-  flexShrink: 0,
 };
 
 const headNameStyle: React.CSSProperties = {
@@ -95,11 +107,13 @@ export function ChatPanel() {
     <div style={panelStyle} data-testid="chat-panel">
       <ConnectionBanner status={state.connectionStatus} />
       <div style={headStyle} data-testid="chat-header">
-        <div>
-          {/* The head names the person being profiled. Until she has a name,
-              it says so rather than borrowing the agent's. */}
-          <b style={headNameStyle}>{partnerName ?? 'Someone special'}</b>
-          <em style={headStatusStyle}>{status}</em>
+        <div style={headInnerStyle}>
+          <div>
+            {/* The head names the person being profiled. Until she has a name,
+                it says so rather than borrowing the agent's. */}
+            <b style={headNameStyle}>{partnerName ?? 'Someone special'}</b>
+            <em style={headStatusStyle}>{status}</em>
+          </div>
         </div>
       </div>
       <div style={separatorStyle} />

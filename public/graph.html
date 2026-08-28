@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Who built Valentin — agent contribution graph</title>
+<meta name="description" content="Interactive graph of every pull request in the Valentin repository, attributed to the AI agent persona that authored or reviewed it.">
+<style>
+  :root {
+    /* Deck palette — this page loads inside explore.html, which loads inside the
+       same story as deck-v2.html, so all three share one set of tokens. */
+    --bg: #EFE7E1; --panel: #FFFDFB; --line: #E3D7D2;
+    --fg: #2A2226; --muted: #756A70; --gold: #A8762B;
+    --claret: #8C2F45; --blush: #F6DEE2;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  a { color: var(--claret); }
+  header { padding: 16px 30px 4px; }
+  h1 { margin: 0 0 4px; font-size: 23px; letter-spacing: -0.2px; }
+  .sub { color: var(--muted); font-size: 13.5px; }
+  .note { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .note b { color: var(--gold); }
+  .legend { display: flex; flex-wrap: wrap; gap: 5px 18px; align-items: center;
+    margin-top: 8px; color: var(--muted); font-size: 11.5px; }
+  .legend .item { display: flex; align-items: center; gap: 6px; }
+  .legend svg { display: block; }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    padding: 11px 30px; border-bottom: 1px solid var(--line); }
+  .controls .group { display: flex; gap: 6px; align-items: center; }
+  .controls .label { color: var(--muted); font-size: 11.5px; text-transform: uppercase;
+    letter-spacing: 0.6px; margin-right: 2px; }
+  button { background: var(--panel); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 20px; padding: 5px 13px; font-size: 12.5px; cursor: pointer;
+    font-family: inherit; transition: background .12s, border-color .12s; }
+  button:hover { background: var(--blush); }
+  button[aria-pressed="true"] { border-color: currentColor; background: var(--blush); }
+  button.off { opacity: .42; }
+  input[type=search] { background: var(--panel); border: 1px solid var(--line);
+    border-radius: 20px; padding: 5px 13px; color: var(--fg); font: inherit;
+    font-size: 12.5px; width: 210px; }
+
+  /* The page is a fixed-height column: header, controls, chart, stats, footer.
+     The chart takes whatever vertical space is left and is scaled to fit it, so
+     the whole graph is on screen at once with nothing to scroll to. `roomy` is
+     the deliberate exception — that mode is for close-up reading and does pan. */
+  html, body { height: 100%; }
+  body { display: flex; flex-direction: column; overflow: hidden; }
+  header, .controls, .stats, footer { flex: none; }
+  .scroll { flex: 1 1 auto; min-height: 0; overflow: hidden;
+    display: flex; align-items: center; padding: 0 30px; }
+  .scroll.pan { overflow: auto; align-items: flex-start; padding-bottom: 8px; }
+  /* flex: none, or the chart would be shrunk to fit its flex line instead of
+     panning in roomy mode — which is the one mode that is allowed to overflow. */
+  .scroll > svg { display: block; flex: none; }
+  svg { display: block; }
+  .node { cursor: pointer; }
+  .node circle { transition: opacity .12s; }
+  .dim { opacity: .1; }
+
+  #tip { position: fixed; pointer-events: none; opacity: 0; z-index: 9;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 7px;
+    padding: 9px 12px; max-width: 380px; font-size: 12.5px; line-height: 1.45;
+    box-shadow: 0 10px 30px rgba(42,34,38,.18); transition: opacity .1s; }
+  #tip .t { font-weight: 650; margin-bottom: 4px; display: block; }
+  #tip .m { color: var(--muted); font-size: 11.5px; }
+  #tip .s { color: var(--gold); font-size: 11.5px; display: block; margin-top: 4px; }
+
+  /* ── the conversation modal ─────────────────────────────────────────── */
+  #back { position: fixed; inset: 0; z-index: 20; background: rgba(42,34,38,.5);
+    display: none; align-items: center; justify-content: center; padding: 34px 20px; }
+  #back.on { display: flex; }
+  #modal { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    width: min(880px, 100%); max-height: 100%; display: flex; flex-direction: column;
+    box-shadow: 0 24px 70px rgba(42,34,38,.3); }
+  #mhead { position: relative; padding: 18px 22px 14px;
+    border-bottom: 1px solid var(--line); flex: none; }
+  #mhead .n { font-size: 16.5px; font-weight: 650; margin: 0 0 6px;
+    padding-right: 34px; line-height: 1.35; }
+  #mhead .meta { color: var(--muted); font-size: 12px; }
+  #mhead .chip { display: inline-block; padding: 1px 9px; border-radius: 999px;
+    font-size: 11px; font-weight: 650; margin-right: 7px; color: #2A2226; }
+  #mhead .star { display: block; margin-top: 8px; color: var(--gold); font-size: 12.5px; }
+  #mclose { position: absolute; top: 14px; right: 16px; border-radius: 8px;
+    padding: 2px 10px; font-size: 16px; line-height: 1.4; }
+  #mbody { overflow-y: auto; padding: 6px 22px 18px; flex: 1 1 auto; }
+  .turn { border-left: 3px solid var(--blush); padding: 12px 0 12px 14px; margin-top: 14px; }
+  .turn .who { font-size: 12.5px; font-weight: 650; }
+  .turn .when { color: var(--muted); font-size: 11px; margin-left: 8px; font-weight: 400; }
+  .turn pre { margin: 8px 0 0; white-space: pre-wrap; word-break: break-word;
+    font: 12.3px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #3D3237; }
+  .turn.unattr { border-left-style: dashed; }
+  .turn.unattr .who { color: var(--muted); font-style: italic; }
+  .empty { color: var(--muted); padding: 22px 0 8px; font-size: 13px; }
+  #mfoot { padding: 13px 22px; border-top: 1px solid var(--line); flex: none;
+    display: flex; justify-content: space-between; align-items: center;
+    color: var(--muted); font-size: 12px; }
+
+  .stats { display: flex; flex-wrap: wrap; gap: 8px 26px; margin: 10px 0 4px; }
+  .stat b { display: block; font-size: 20px; letter-spacing: -0.3px; }
+  .stat span { color: var(--muted); font-size: 11px; }
+  footer { padding: 8px 30px 12px; color: var(--muted); font-size: 11.5px;
+    border-top: 1px solid var(--line); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Who built Valentin?</h1>
+  <!-- The one summary, at the top. It used to be said twice: a sentence here and a
+       number row under the chart. These counts follow the filters. -->
+  <div class="stats" id="stats"><span class="sub">loading the pull request history…</span></div>
+  <div class="note">
+    Every mark is a real pull request or review comment, read from this repository's
+    GitHub history. <b>Click any node to read the review conversation that preceded
+    the merge</b>. Hover any mark for its stats, click a lane to isolate one agent,
+    <em>roomy</em> to spread the chart out.
+  </div>
+  <!-- Glyph legend. Drawn by buildLegend() with the same primitives as the chart,
+       so it cannot drift from what the nodes actually look like. -->
+  <div class="legend" id="legend"></div>
+</header>
+
+<div class="controls">
+  <div class="group"><span class="label">Agents</span><span id="agentBtns"></span></div>
+  <div class="group">
+    <button id="tReview" aria-pressed="true">reviews</button>
+    <button id="tMerged" aria-pressed="true">merged</button>
+    <!-- The 57 → 49 accounting used to be spelled out under the title; it lives
+         here now so the answer is one hover away without costing a line. -->
+    <button id="tClosed" aria-pressed="true" title="8 of the 57 never merged: 3 throwaway workflow self-tests closed by design (#35 #39 #50), 3 superseded before they could land (#12 #13 #23), 1 abandoned spec sync redone later in #56 (#10), and #68, still open.">closed</button>
+    <button id="tStar" aria-pressed="false">★ only</button>
+    <button id="tDense" aria-pressed="false" title="Spread the chart out for close-up reading — it will scroll sideways">roomy</button>
+  </div>
+  <input type="search" id="q" placeholder="filter by title or #number">
+  <button id="reset">reset</button>
+</div>
+
+<div class="scroll"><svg id="chart"></svg></div>
+<footer>
+  Generated from <code>docs/assets/graph/pr-history.json</code>, refreshed by
+  <code>.github/workflows/agent-graph.yml</code>. Source:
+  <a href="https://github.com/coralst/valentin-romantic-agent">coralst/valentin-romantic-agent</a> ·
+  <a href="https://github.com/coralst/valentin-romantic-agent/blob/main/docs/METHODOLOGY.md">methodology</a>
+</footer>
+
+<div id="tip" role="tooltip"></div>
+
+<div id="back" role="dialog" aria-modal="true" aria-labelledby="mtitle">
+  <div id="modal">
+    <div id="mhead">
+      <button id="mclose" title="Close (Esc)" aria-label="Close">&times;</button>
+      <p class="n" id="mtitle"></p>
+      <div class="meta" id="mmeta"></div>
+    </div>
+    <div id="mbody"></div>
+    <div id="mfoot">
+      <span id="mcount"></span>
+      <a id="mlink" href="#" target="_blank" rel="noopener">Open on GitHub&nbsp;↗</a>
+    </div>
+  </div>
+</div>
+
+<script>
+const REPO = 'coralst/valentin-romantic-agent';
+const AGENTS = [
+  ['master',    'Master Agent',     '#7B68EE', 'orchestrator'],
+  ['architect', 'System Architect', '#FF8C00', 'src/shared/'],
+  ['frontend',  'Frontend Dev',     '#1E90FF', 'src/client/'],
+  ['backend',   'Backend Dev',      '#32CD32', 'src/server/'],
+  ['design',    'UI Designer',      '#FF69B4', 'design-system/'],
+  ['qa',        'QA Agent',         '#FF4500', 'e2e/'],
+  ['infra',     'Infra / Workflow', '#7C7378', '.kiro/ · .github/'],
+];
+const NAME = Object.fromEntries(AGENTS.map(a => [a[0], a[1]]));
+const COLOUR = Object.fromEntries(AGENTS.map(a => [a[0], a[2]]));
+const IDX = Object.fromEntries(AGENTS.map((a, i) => [a[0], i]));
+const GOLD = '#A8762B';
+// The page ground: node halos and hollow-node interiors are punched out to it.
+const PAPER = '#EFE7E1', INK = '#2A2226';
+const GHOST = "M48 8 C26 8 10 25 10 46 V80 Q10 85 15 82.5 L21 79 Q24 77.5 27 79 "
+  + "L33 82.5 Q36 84 39 82.5 L45 79 Q48 77.5 51 79 L57 82.5 Q60 84 63 82.5 "
+  + "L69 79 Q72 77.5 75 79 L81 82.5 Q86 85 86 80 V46 C86 25 70 8 48 8 Z";
+
+// The x-axis is PR *sequence*, not wall-clock time: nodes are spaced evenly in
+// number order and only the real first/last dates are labelled, at the two ends.
+// Spacing by date instead collapses the repo into a few vertical stacks, because
+// the work landed in bursts — and #44 alone spans four weeks.
+const GUTTER = 200, AXIS_Y = 54, SPINE_Y = 100, LANE_TOP = 176;
+const SVGNS = 'http://www.w3.org/2000/svg';
+
+// Two densities. At the original 41px slot the chart is 2627x650 — a 4:1 strip
+// that only fits on screen at ~55% zoom, which is exactly where the in-node PR
+// numbers stop being readable. `compact` shrinks the nodes as well as the
+// spacing, because 25 of the 56 consecutive PR pairs sit in the same lane
+// (infra alone owns 33) and tightening the slots alone would overlap them.
+const DENSITY = {
+  // connW/connOp: at tight spacing the 49 connectors up to `main` read as a
+  // picket fence and drown the nodes, so compact draws them thinner and fainter.
+  compact: { slot: 26, laneH: 84, band: 60, rBase: 5, rSpan: 5,   rK: 0.95,
+             ring1: 3,   ring2: 4.5, labelAll: false, connW: 1.25, connOp: 0.3,
+             spineR: 3.1 },
+  roomy:   { slot: 41, laneH: 70, band: 52, rBase: 6, rSpan: 9.5, rK: 1.75,
+             ring1: 4.5, ring2: 8,   labelAll: true,  connW: 2,    connOp: 0.62,
+             spineR: 4.2 },
+};
+
+// Same resolution order as the Python generator: label first, branch prefix after.
+function agentOf(pr) {
+  const l = (pr.labels || []).find(x => x.startsWith('agent: '));
+  if (l) { const k = l.slice(7).trim(); if (k in IDX) return k; }
+  const tail = pr.ref.includes('/') ? pr.ref.split('/').slice(1).join('/') : pr.ref;
+  const stem = tail.split('-')[0].split('/')[0];
+  return ({ arch: 'architect', shared: 'architect', front: 'frontend',
+    frontend: 'frontend', backend: 'backend', back: 'backend', design: 'design',
+    qa: 'qa', master: 'master' })[stem] || 'infra';
+}
+const el = (n, a = {}) => { const e = document.createElementNS(SVGNS, n);
+  for (const k in a) e.setAttribute(k, a[k]); return e; };
+const radius = (cf, d) => d.rBase + Math.min(d.rSpan, Math.sqrt(Math.max(cf, 1)) * d.rK);
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+// The persona signature is rendered as the turn's byline, so repeating it as the
+// body's first line is noise. Keep any subject that trailed it ("— first pass").
+function stripSignature(body) {
+  const lines = String(body).split('\n');
+  let i = 0;
+  while (i < lines.length && !lines[i].trim()) i++;
+  const head = (lines[i] || '').trim();
+  const m = head.match(/^(?:\*\*|##\s*(?:Review:\s*)?)[^\n]*?(?:\*\*)?\s*(?:[—–-]{1,3}\s*(.*))?$/);
+  const isSig = /^(\*\*|##)/.test(head)
+    && /master|architect|frontend|backend|design|qa|review|approval/i.test(head);
+  if (!isSig) return String(body).trim();
+  const subject = (m && m[1] || '').trim();
+  const rest = lines.slice(i + 1).join('\n').trim();
+  return (subject ? subject + (rest ? '\n\n' + rest : '') : rest);
+}
+
+// A five-pointed star, centred on (x, y).
+function starPath(x, y, s = 6.4) {
+  const pts = [];
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + i * Math.PI / 5;
+    const r = i % 2 === 0 ? s : s * 0.44;
+    pts.push(`${(x + r * Math.cos(a)).toFixed(2)} ${(y + r * Math.sin(a)).toFixed(2)}`);
+  }
+  return 'M' + pts.join(' L') + ' Z';
+}
+
+// Most PRs open at the same moment — the parallelism claim, as one number. The
+// session bands used to carry this visually; on an ordinal axis they can't, so
+// it survives as a statistic rather than being quietly dropped.
+function peakConcurrency(prs) {
+  const ev = [];
+  for (const p of prs) { ev.push([p.c, 1]); ev.push([p.m || p.c, -1]); }
+  // Tie-break closes before opens, matching the Python generator. Several PRs
+  // share a createdAt to the second, and counting the open first would inflate
+  // the peak by one.
+  ev.sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] - b[1]);
+  let cur = 0, peak = 0;
+  for (const [, d] of ev) { cur += d; if (cur > peak) peak = cur; }
+  return peak;
+}
+
+let DATA = null, STATE = {
+  agents: new Set(AGENTS.map(a => a[0])),
+  reviews: true, merged: true, closed: true, starOnly: false, q: '',
+  density: 'compact',
+};
+
+function passes(pr) {
+  if (!STATE.agents.has(pr.agent)) return false;
+  if (STATE.starOnly && !pr.star) return false;
+  if (pr.st === 'MERGED' && !STATE.merged) return false;
+  if (pr.st !== 'MERGED' && !STATE.closed) return false;
+  if (STATE.q) {
+    const q = STATE.q.toLowerCase();
+    if (!pr.t.toLowerCase().includes(q) && !String(pr.n).includes(q.replace('#', '')))
+      return false;
+  }
+  return true;
+}
+
+const tip = document.getElementById('tip');
+function showTip(ev, html) {
+  tip.innerHTML = html; tip.style.opacity = 1;
+  const r = tip.getBoundingClientRect();
+  let x = ev.clientX + 14, y = ev.clientY + 14;
+  if (x + r.width > innerWidth - 8) x = ev.clientX - r.width - 14;
+  if (y + r.height > innerHeight - 8) y = ev.clientY - r.height - 14;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+}
+const hideTip = () => { tip.style.opacity = 0; };
+
+/* ── the conversation modal ────────────────────────────────────────────────
+   Every agent commits and comments under the same GitHub account, so the
+   persona signature in the comment body is the only author signal there is.
+   `thread[].by` is that signature, resolved by the generator; a null means the
+   comment carried no header, which is itself worth showing rather than hiding. */
+const back = document.getElementById('back');
+function openThread(p) {
+  hideTip();
+  const colour = COLOUR[p.agent];
+  document.getElementById('mtitle').innerHTML =
+    `<span style="color:${colour}">#${p.n}</span> ${esc(p.t)}`;
+  document.getElementById('mmeta').innerHTML =
+    `<span class="chip" style="background:${colour}">${esc(NAME[p.agent])}</span>`
+    + `${p.cf} file${p.cf === 1 ? '' : 's'} · +${p.add}/−${p.del} · `
+    + `${p.st === 'MERGED' ? 'merged' : 'closed without merging'}`
+    + (p.star ? `<span class="star">★ ${esc(p.star)}</span>` : '');
+
+  const thread = p.thread || [];
+  const body = document.getElementById('mbody');
+  if (!thread.length) {
+    body.innerHTML = '<p class="empty">No review conversation on this pull request — '
+      + 'it was opened and resolved without a comment exchange.</p>';
+  } else {
+    body.innerHTML = thread.map(c => {
+      const k = c.by, col = k ? COLOUR[k] : 'var(--muted)';
+      const who = k ? esc(NAME[k]) : 'unattributed — no persona header';
+      return `<div class="turn${k ? '' : ' unattr'}" style="border-left-color:${col}">`
+        + `<div class="who" style="color:${col}">${who}`
+        + `<span class="when">${esc((c.at || '').replace('T', ' ').replace('Z', ' UTC'))}</span>`
+        + `</div><pre>${esc(stripSignature(c.body))}</pre></div>`;
+    }).join('');
+  }
+  body.scrollTop = 0;
+
+  const people = new Set(thread.map(c => c.by).filter(Boolean));
+  document.getElementById('mcount').textContent = thread.length
+    ? `${thread.length} comment${thread.length === 1 ? '' : 's'} · `
+      + `${people.size} persona${people.size === 1 ? '' : 's'}`
+    : '';
+  document.getElementById('mlink').href = `https://github.com/${REPO}/pull/${p.n}`;
+  back.classList.add('on');
+  document.getElementById('mclose').focus();
+}
+const closeThread = () => back.classList.remove('on');
+document.getElementById('mclose').addEventListener('click', closeThread);
+back.addEventListener('click', e => { if (e.target === back) closeThread(); });
+addEventListener('keydown', e => { if (e.key === 'Escape') closeThread(); });
+
+function miniGhost(x, y, colour, s = 0.33) {
+  const g = el('g', { transform: `translate(${x},${y}) scale(${s})` });
+  g.appendChild(el('path', { d: GHOST, fill: colour, opacity: 0.95 }));
+  for (const cx of [37, 59]) {
+    g.appendChild(el('ellipse', { cx, cy: 44, rx: 8.5, ry: 10, fill: '#fff' }));
+    g.appendChild(el('circle', { cx: cx + 1.5, cy: 46, r: 4.4, fill: '#1b1b2b' }));
+    g.appendChild(el('circle', { cx: cx + 3.5, cy: 44, r: 1.5, fill: '#fff' }));
+  }
+  for (const cx of [24, 72])
+    g.appendChild(el('ellipse', { cx, cy: 57, rx: 5, ry: 3.2, fill: '#fff', opacity: 0.3 }));
+  return g;
+}
+
+function draw() {
+  const svg = document.getElementById('chart');
+  svg.textContent = '';
+  const prs = DATA.prs.slice().sort((a, b) => a.n - b.n);
+
+  // Slots are computed over the full set so the layout is stable while
+  // filtering — filtered-out nodes fade rather than reflow.
+  const D = { ...DENSITY[STATE.density] };
+  const pan = STATE.density === 'roomy';
+  // The box the chart has to live in. Width comes off the viewport, not off
+  // .scroll: that element is a block whose width follows the page, and the page
+  // is widened by the SVG we are about to draw — measuring it would let the
+  // previous layout decide the next one. Height is safe to measure off .scroll
+  // because it is flex: 1 inside an overflow: hidden column, so the SVG cannot
+  // push it around.
+  const box = document.querySelector('.scroll');
+  const availW = document.documentElement.clientWidth - 64;
+  const availH = Math.max(300, box.clientHeight - 6);
+
+  if (!pan) {
+    // 20px is the slot floor: below it the largest nodes (r = 10) collide in the
+    // infra lane, which runs 33 PRs deep. Narrower windows than that are handled
+    // by the uniform scale below rather than by overlapping nodes.
+    // Slots also *grow* into a wide window, up to the roomy 41px, so the chart
+    // fills the width instead of leaving a dead margin on the right.
+    D.slot = Math.max(20, Math.min(41,
+      Math.floor((availW - GUTTER - 40) / prs.length)));
+    // 54 is the lane floor: the lane label is three lines (name, path, counts).
+    D.laneH = Math.max(54, Math.min(D.laneH,
+      Math.floor((availH - LANE_TOP - 62) / (AGENTS.length - 1))));
+    D.band = Math.min(D.band, D.laneH - 22);
+  }
+  const xOf = {};
+  prs.forEach((p, i) => { xOf[p.n] = GUTTER + i * D.slot + D.slot / 2; });
+  const width = GUTTER + prs.length * D.slot + 40;
+  const laneY = {}; AGENTS.forEach(([k], i) => laneY[k] = LANE_TOP + i * D.laneH);
+  const height = LANE_TOP + (AGENTS.length - 1) * D.laneH + 62;
+
+  // Last resort so the graph is never cut off and never scrolls: keep the
+  // viewBox at drawing scale and shrink the rendered box uniformly. At the sizes
+  // above this is 1 on a normal window, so nothing is softened needlessly.
+  const k = pan ? 1 : Math.min(1, availW / width, availH / height);
+  box.classList.toggle('pan', pan);
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  svg.setAttribute('width', Math.floor(width * k));
+  svg.setAttribute('height', Math.floor(height * k));
+
+  const defs = el('defs');
+  for (const [k, , c] of AGENTS) {
+    const lg = el('linearGradient', { id: `lg-${k}`, x1: 0, y1: 0, x2: 1, y2: 0 });
+    lg.appendChild(el('stop', { offset: 0, 'stop-color': c, 'stop-opacity': 0.2 }));
+    lg.appendChild(el('stop', { offset: 1, 'stop-color': c, 'stop-opacity': 0.03 }));
+    defs.appendChild(lg);
+  }
+  svg.appendChild(defs);
+
+  // ── the sequence axis: real dates at the two ends, nothing in between ──
+  const firstDay = prs.reduce((a, p) => p.c < a ? p.c : a, prs[0].c).slice(0, 10);
+  const lastDay = prs.reduce((a, p) => p.c > a ? p.c : a, prs[0].c).slice(0, 10);
+  const axRight = width - 24;
+  svg.appendChild(el('line', { x1: GUTTER, y1: AXIS_Y, x2: axRight, y2: AXIS_Y,
+    stroke: 'var(--line)', 'stroke-width': 1 }));
+  for (const [xp, anchor, label] of [[GUTTER, 'start', firstDay], [axRight, 'end', lastDay]]) {
+    svg.appendChild(el('line', { x1: xp, y1: AXIS_Y - 5, x2: xp, y2: AXIS_Y + 5,
+      stroke: 'var(--muted)', 'stroke-width': 1.4 }));
+    const t = el('text', { x: xp, y: AXIS_Y - 11, fill: 'var(--muted)',
+      'font-size': 11, 'text-anchor': anchor });
+    t.textContent = label; svg.appendChild(t);
+  }
+  const cap = el('text', { x: (GUTTER + axRight) / 2, y: AXIS_Y - 11,
+    fill: 'var(--muted)', 'font-size': 10.5, 'text-anchor': 'middle', opacity: 0.75 });
+  cap.textContent = 'pull requests in the order they were opened';
+  svg.appendChild(cap);
+
+  // main spine
+  svg.appendChild(el('line', { x1: GUTTER - 30, y1: SPINE_Y, x2: width - 20, y2: SPINE_Y,
+    stroke: INK, 'stroke-width': 3.4, 'stroke-linecap': 'round' }));
+  const ml = el('text', { x: GUTTER - 40, y: SPINE_Y + 4.5, fill: INK,
+    'font-size': 13, 'font-weight': 700, 'text-anchor': 'end' });
+  ml.textContent = 'main'; svg.appendChild(ml);
+
+  // lanes
+  const authored = {}, reviewed = {}, addsBy = {};
+  for (const p of prs) {
+    authored[p.agent] = (authored[p.agent] || 0) + 1;
+    addsBy[p.agent] = (addsBy[p.agent] || 0) + p.add;
+    for (const k in (p.by || {})) if (k !== p.agent) reviewed[k] = (reviewed[k] || 0) + 1;
+  }
+  for (const [k, name, colour, owns] of AGENTS) {
+    const y = laneY[k];
+    const band = el('rect', { x: GUTTER - 24, y: y - D.band / 2, width: width - GUTTER - 4,
+      height: D.band, fill: `url(#lg-${k})`, rx: 8 });
+    svg.appendChild(band);
+    const hit = el('rect', { x: 0, y: y - D.laneH / 2, width: width, height: D.laneH,
+      fill: 'transparent', style: 'cursor:pointer' });
+    hit.addEventListener('click', () => {
+      const only = STATE.agents.size === 1 && STATE.agents.has(k);
+      STATE.agents = only ? new Set(AGENTS.map(a => a[0])) : new Set([k]);
+      syncButtons(); draw();
+    });
+    svg.appendChild(hit);
+    svg.appendChild(miniGhost(24, y - 17, colour));
+    const t = el('text', { x: 62, y: y - 9, fill: 'var(--fg)', 'font-size': 13,
+      'font-weight': 650 }); t.textContent = name;
+    const o = el('text', { x: 62, y: y + 5, fill: colour, 'font-size': 9.5,
+      'font-family': 'ui-monospace,Menlo,monospace', opacity: 0.9 }); o.textContent = owns;
+    const s = el('text', { x: 62, y: y + 19, fill: 'var(--muted)', 'font-size': 10.5 });
+    s.textContent = `${authored[k] || 0} authored · ${reviewed[k] || 0} reviewed`
+      + (addsBy[k] ? ` · +${addsBy[k].toLocaleString()}` : '');
+    svg.append(t, o, s);
+    if (!STATE.agents.has(k)) [band, t, o, s].forEach(n => n.classList.add('dim'));
+  }
+
+  // review chevrons
+  if (STATE.reviews) for (const p of prs) {
+    if (!passes(p)) continue;
+    for (const k in (p.by || {})) {
+      if (k === p.agent || !(k in laneY) || !STATE.agents.has(k)) continue;
+      const x = xOf[p.n], y = laneY[k], n = p.by[k];
+      const g = el('g', { class: 'node' });
+      g.appendChild(el('path', { d: `M${x - 5.2} ${y - 4.4} L${x} ${y + 1.4} L${x + 5.2} ${y - 4.4}`,
+        fill: 'none', stroke: COLOUR[k], 'stroke-width': 2.1,
+        'stroke-linecap': 'round', 'stroke-linejoin': 'round', opacity: 0.88 }));
+      g.appendChild(el('line', { x1: x, y1: y - 8, x2: x, y2: y - 15,
+        stroke: COLOUR[k], 'stroke-width': 1.1, opacity: 0.3,
+        'pointer-events': 'none' }));
+      g.addEventListener('mousemove', ev => showTip(ev,
+        `<span class="t">#${p.n} reviewed by ${k}</span>`
+        + `<span class="m">${n} comment${n === 1 ? '' : 's'} · did not author this PR`
+        + `<br>click to read the thread</span>`));
+      g.addEventListener('mouseleave', hideTip);
+      g.addEventListener('click', () => openThread(p));
+      svg.appendChild(g);
+    }
+  }
+
+  // PR nodes
+  for (const p of prs) {
+    const k = p.agent, x = xOf[p.n], y = laneY[k], r = radius(p.cf, D);
+    const on = passes(p), colour = COLOUR[k], isMerged = p.st === 'MERGED';
+    const g = el('g', { class: 'node' + (on ? '' : ' dim') });
+    // Connectors are decorative: only the node itself should catch the pointer,
+    // otherwise the line up to main hijacks hover for the whole column.
+    if (isMerged) {
+      g.appendChild(el('path', { d: `M${x} ${y - r} L${x} ${SPINE_Y}`, stroke: colour,
+        'stroke-width': D.connW, fill: 'none', opacity: D.connOp,
+        'pointer-events': 'none' }));
+      g.appendChild(el('circle', { cx: x, cy: SPINE_Y, r: D.spineR, fill: colour,
+        stroke: PAPER, 'stroke-width': 1.4, 'pointer-events': 'none' }));
+      // class="pr" marks the clickable node itself. The <g> also contains the
+      // connector up to main, so its bounding box spans several lanes — anything
+      // aiming at a PR programmatically must target this circle, not the group.
+      g.appendChild(el('circle', { class: 'pr', 'data-pr': p.n, cx: x, cy: y, r,
+        fill: colour, stroke: PAPER, 'stroke-width': 2 }));
+    } else {
+      g.appendChild(el('path', { d: `M${x} ${y - r} L${x} ${y - (y - SPINE_Y) * 0.34}`,
+        stroke: colour, 'stroke-width': 1.8, fill: 'none', opacity: 0.4,
+        'stroke-dasharray': '3 3', 'pointer-events': 'none' }));
+      g.appendChild(el('circle', { class: 'pr', 'data-pr': p.n, cx: x, cy: y, r,
+        fill: PAPER, stroke: colour,
+        'stroke-width': 2.4, 'stroke-dasharray': '3 2.4' }));
+    }
+    if (p.nc >= 3) {
+      g.appendChild(el('circle', { cx: x, cy: y, r: r + D.ring1, fill: 'none',
+        stroke: colour, 'stroke-width': 1.5, opacity: 0.85,
+        'pointer-events': 'none' }));
+      g.appendChild(el('circle', { cx: x, cy: y, r: r + D.ring2, fill: 'none',
+        stroke: colour, 'stroke-width': 1, opacity: 0.32,
+        'pointer-events': 'none' }));
+    }
+    // Compact nodes are too small to carry a legible number, so only the ones
+    // you'd actually go looking for keep their label; the rest answer on hover.
+    if (D.labelAll || p.star || p.nc >= 3) {
+      const lab = el('text', { x, y: y + 3.2, fill: isMerged ? INK : colour,
+        'font-size': r >= 8 ? 8.6 : 7.4, 'font-weight': 700, 'text-anchor': 'middle',
+        'font-family': 'ui-monospace,Menlo,monospace', style: 'pointer-events:none' });
+      lab.textContent = p.n; g.appendChild(lab);
+    }
+    if (p.star) {
+      // Sits clear of the review rings when a PR has both.
+      g.appendChild(el('path', { d: starPath(x, y - r - (p.nc >= 3 ? D.ring2 + 9 : 11), 9.5),
+        fill: GOLD, stroke: PAPER, 'stroke-width': 1.1,
+        'pointer-events': 'none' }));
+    }
+
+    const others = Object.keys(p.by || {}).filter(a => a !== k);
+    g.addEventListener('mousemove', ev => showTip(ev,
+      `<span class="t">#${p.n} ${esc(p.t)}</span>`
+      + `<span class="m">authored by <b style="color:${colour}">${k}</b> · `
+      + `${p.cf} files · +${p.add}/−${p.del} · ${p.nc} comment${p.nc === 1 ? '' : 's'} · `
+      + `${isMerged ? 'merged' : 'closed without merging'}`
+      + (others.length ? `<br>reviewed by ${others.join(', ')}` : '')
+      + `<br>click to read the thread</span>`
+      + (p.star ? `<span class="s">★ ${esc(p.star)}</span>` : '')));
+    g.addEventListener('mouseleave', hideTip);
+    g.addEventListener('click', () => openThread(p));
+    svg.appendChild(g);
+  }
+
+  // stats reflect the current filter
+  const vis = prs.filter(passes);
+  const stats = [
+    ['pull requests', vis.length],
+    ['merged', vis.filter(p => p.st === 'MERGED').length],
+    ['review comments', vis.reduce((a, p) => a + p.nc, 0)],
+    ['lines added', '+' + vis.reduce((a, p) => a + p.add, 0).toLocaleString()],
+    ['lines removed', '−' + vis.reduce((a, p) => a + p.del, 0).toLocaleString()],
+    ['files touched', vis.reduce((a, p) => a + p.cf, 0)],
+    ['peak PRs open at once', peakConcurrency(vis)],
+    // Repo-wide, not per-PR: the snapshot has no commit count per pull request, so
+    // this one cannot follow the filters. Labelled "on main" so it doesn't look
+    // stuck when the others move.
+    ['commits on main', DATA.commits],
+    // Six named personas; the seventh lane, Infra / Workflow, is the catch-all
+    // surface for everything they share, not a persona of its own. Fixed, because
+    // it is a fact about the repo rather than about the current filter.
+    ['agent personas, disjoint ownership', AGENTS.length - 1],
+  ];
+  document.getElementById('stats').innerHTML = stats.map(([l, v]) =>
+    `<div class="stat"><b>${v}</b><span>${l}</span></div>`).join('');
+
+  // The stats row and the subtitle above are written *after* the chart, so on the
+  // first paint the chart measured a box that was still missing them and came out
+  // too tall. Re-fit once if the box has moved; the guard stops the two from
+  // chasing each other, since re-drawing rewrites these same lines.
+  if (!REFIT && Math.abs(box.clientHeight - 6 - availH) > 2) {
+    REFIT = true; draw(); REFIT = false;
+  }
+}
+let REFIT = false;
+
+function syncButtons() {
+  document.querySelectorAll('#agentBtns button').forEach(b =>
+    b.classList.toggle('off', !STATE.agents.has(b.dataset.k)));
+}
+
+function buildControls() {
+  const ab = document.getElementById('agentBtns');
+  for (const [k, name, colour] of AGENTS) {
+    const b = document.createElement('button');
+    b.textContent = name; b.dataset.k = k; b.style.color = colour;
+    b.addEventListener('click', () => {
+      STATE.agents.has(k) ? STATE.agents.delete(k) : STATE.agents.add(k);
+      if (!STATE.agents.size) STATE.agents = new Set(AGENTS.map(a => a[0]));
+      syncButtons(); draw();
+    });
+    ab.appendChild(b);
+  }
+  for (const [id, key] of [['tReview', 'reviews'], ['tMerged', 'merged'],
+                           ['tClosed', 'closed'], ['tStar', 'starOnly']]) {
+    const b = document.getElementById(id);
+    b.addEventListener('click', () => {
+      STATE[key] = !STATE[key];
+      b.setAttribute('aria-pressed', STATE[key]);
+      // "★ only" is a narrowing filter, so it starts unpressed and never dims;
+      // the other three start on and dim when switched off.
+      if (key !== 'starOnly') b.classList.toggle('off', !STATE[key]);
+      draw();
+    });
+  }
+  const dense = document.getElementById('tDense');
+  dense.addEventListener('click', () => {
+    STATE.density = STATE.density === 'compact' ? 'roomy' : 'compact';
+    dense.setAttribute('aria-pressed', STATE.density === 'roomy');
+    draw();
+  });
+  document.getElementById('q').addEventListener('input', e => {
+    STATE.q = e.target.value.trim(); draw();
+  });
+  document.getElementById('reset').addEventListener('click', () => {
+    STATE = { agents: new Set(AGENTS.map(a => a[0])),
+      reviews: true, merged: true, closed: true, starOnly: false, q: '',
+      density: 'compact' };
+    document.getElementById('q').value = '';
+    document.getElementById('tDense').setAttribute('aria-pressed', 'false');
+    ['tReview', 'tMerged', 'tClosed'].forEach(i => {
+      document.getElementById(i).setAttribute('aria-pressed', 'true');
+      document.getElementById(i).classList.remove('off');
+    });
+    const st = document.getElementById('tStar');
+    st.setAttribute('aria-pressed', 'false'); st.classList.remove('off');
+    syncButtons(); draw();
+  });
+  buildLegend();
+}
+
+// One legend entry: a small swatch SVG built from the chart's own primitives,
+// plus its caption. Kept in the same file as the drawing code on purpose — a
+// legend that is written by hand is a legend that goes stale.
+function swatch(w, h, draw) {
+  const s = el('svg', { width: w, height: h, viewBox: `0 0 ${w} ${h}` });
+  draw(s, w / 2, h / 2);
+  return s;
+}
+
+function buildLegend() {
+  const GREY = '#8B949E', box = document.getElementById('legend');
+  box.textContent = '';
+  const items = [
+    ['merged', (s, x, y) => {
+      s.appendChild(el('path', { d: `M${x} ${y - 6} L${x} 1`, stroke: GREY,
+        'stroke-width': 1.6, opacity: 0.55 }));
+      s.appendChild(el('circle', { cx: x, cy: y, r: 6, fill: GREY,
+        stroke: PAPER, 'stroke-width': 2 }));
+    }],
+    ['closed without merging', (s, x, y) => {
+      s.appendChild(el('path', { d: `M${x} ${y - 6} L${x} 4`, stroke: GREY,
+        'stroke-width': 1.6, opacity: 0.4, 'stroke-dasharray': '3 3' }));
+      s.appendChild(el('circle', { cx: x, cy: y, r: 6, fill: PAPER,
+        stroke: GREY, 'stroke-width': 2.2, 'stroke-dasharray': '3 2.4' }));
+    }],
+    ['bigger = more files touched', (s, x, y) => {
+      s.appendChild(el('circle', { cx: x - 7, cy: y, r: 3.4, fill: GREY }));
+      s.appendChild(el('circle', { cx: x + 4, cy: y, r: 7.5, fill: GREY }));
+    }],
+    // Both rings are drawn at the same threshold — there is no second tier, so the
+    // caption says "ringed", not "one ring / two rings".
+    ['ringed = 3+ review comments, and keeps its number', (s, x, y) => {
+      s.appendChild(el('circle', { cx: x, cy: y, r: 5, fill: GREY }));
+      s.appendChild(el('circle', { cx: x, cy: y, r: 8, fill: 'none', stroke: GREY,
+        'stroke-width': 1.4, opacity: 0.85 }));
+      s.appendChild(el('circle', { cx: x, cy: y, r: 11, fill: 'none', stroke: GREY,
+        'stroke-width': 1.2, opacity: 0.5 }));
+    }],
+    ['reviewed by an agent who did not author it', (s, x, y) => {
+      s.appendChild(el('line', { x1: x, y1: y - 5, x2: x, y2: 2, stroke: GREY,
+        'stroke-width': 1.1, opacity: 0.35 }));
+      s.appendChild(el('path', { d: `M${x - 5.2} ${y - 1.4} L${x} ${y + 4.4} L${x + 5.2} ${y - 1.4}`,
+        fill: 'none', stroke: GREY, 'stroke-width': 2.1, 'stroke-linecap': 'round',
+        'stroke-linejoin': 'round', opacity: 0.9 }));
+    }],
+    ['a thread worth reading — click it', (s, x, y) => {
+      s.appendChild(el('path', { d: starPath(x, y, 8), fill: GOLD,
+        stroke: PAPER, 'stroke-width': 1.1 }));
+    }],
+  ];
+  for (const [label, draw] of items) {
+    const d = document.createElement('div');
+    d.className = 'item';
+    d.appendChild(swatch(26, 24, draw));
+    const t = document.createElement('span');
+    t.textContent = label;
+    d.appendChild(t);
+    box.appendChild(d);
+  }
+}
+
+// Compact spacing is derived from the window, so a resize needs a redraw.
+let resizeT;
+addEventListener('resize', () => {
+  if (!DATA || STATE.density !== 'compact') return;
+  clearTimeout(resizeT); resizeT = setTimeout(draw, 140);
+});
+
+fetch('deck-assets/pr-history.json')
+  .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+  .then(d => {
+    DATA = d;
+    DATA.prs.forEach(p => p.agent = agentOf(p));
+    buildControls();
+    draw();
+  })
+  .catch(e => {
+    document.getElementById('stats').innerHTML =
+      '<span class="sub">Could not load deck-assets/pr-history.json — '
+      + esc(e.message) + '</span>';
+  });
+</script>
+</body>
+</html>

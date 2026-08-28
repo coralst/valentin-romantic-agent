@@ -9,7 +9,7 @@ interface IdentityHeaderProps {
   subtitle: string | null;
   filled: number;
   total: number;
-  /** Clears the dossier. Focus returns to the rail's ♥ — see `view-context`. */
+  /** Clears the dossier. Focus returns to her portrait in the brief — see `view-context`. */
   onBack: () => void;
   /** Drops "what's missing" into the composer. */
   onAskAll: () => void;

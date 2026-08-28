@@ -69,6 +69,119 @@ describe('LiveArchitectureDrawer', () => {
     });
   });
 
+  /**
+   * The bar is the drawer's one fixture: same place, same colour, both states.
+   *
+   * It used to slide away when the panel came up, which handed its strip to a
+   * cream panel and changed the colour of the foot of the window every time the
+   * drawer moved — a flicker exactly where the eye was already going. It also left
+   * the small `Hide ▾` in the panel's far corner as the only way back down.
+   */
+  describe('the bar, in both states', () => {
+    it('stays on screen with the panel up, and closes it again', async () => {
+      const user = userEvent.setup();
+      renderDrawer();
+      const bar = screen.getByTestId('architecture-reopen-bar');
+
+      await user.click(bar);
+      expect(screen.getByTestId('architecture-drawer')).toHaveAttribute('data-open', 'true');
+      expect(bar).toBeInTheDocument();
+
+      await user.click(bar);
+      expect(screen.getByTestId('architecture-drawer')).toHaveAttribute('data-open', 'false');
+    });
+
+    it('keeps one background across open and closed', async () => {
+      const user = userEvent.setup();
+      renderDrawer();
+      const bar = screen.getByTestId('architecture-reopen-bar');
+      const closedBackground = bar.style.background;
+
+      await user.click(bar);
+
+      expect(bar.style.background).toBe(closedBackground);
+      expect(closedBackground).not.toBe('');
+    });
+
+    /** The hard 1px rule across the window is what the feather replaces. */
+    it('feathers its top edge instead of ruling a hairline', () => {
+      renderDrawer();
+      const bar = screen.getByTestId('architecture-reopen-bar');
+      const feather = screen.getByTestId('architecture-bar-feather');
+
+      expect(bar.style.borderTop).toBe('');
+      expect(feather.style.background).toContain('gradient');
+      expect(feather.style.pointerEvents).toBe('none');
+    });
+
+    /** The lens carries the state, since nothing else about the bar changes. */
+    it('shows a ⊕ lens when closed and a ⊖ lens when open', async () => {
+      const user = userEvent.setup();
+      renderDrawer();
+
+      expect(screen.getByTestId('architecture-bar-sign')).toHaveAttribute('data-sign', 'plus');
+
+      await user.click(screen.getByTestId('architecture-reopen-bar'));
+
+      expect(screen.getByTestId('architecture-bar-sign')).toHaveAttribute('data-sign', 'minus');
+    });
+
+    /**
+     * The lens is the drawer's handle, so it travels with the panel instead of
+     * flipping in place: up to the panel heading on open, back down to the bar on
+     * close, on the panel's own easing.
+     */
+    it('rides up with the panel and slides back down', async () => {
+      const user = userEvent.setup();
+      renderDrawer();
+      const lens = screen.getByTestId('architecture-bar-lens');
+
+      expect(lens.style.transform).toBe('translateY(0)');
+
+      await user.click(screen.getByTestId('architecture-reopen-bar'));
+      expect(lens.style.transform).toMatch(/^translateY\(-\d+px\)$/);
+
+      await user.click(screen.getByTestId('architecture-reopen-bar'));
+      expect(lens.style.transform).toBe('translateY(0)');
+    });
+
+    it('closes the drawer when the risen lens is clicked', async () => {
+      const user = userEvent.setup();
+      renderDrawer();
+
+      await user.click(screen.getByTestId('architecture-reopen-bar'));
+      await user.click(screen.getByTestId('architecture-bar-lens'));
+
+      expect(screen.getByTestId('architecture-drawer')).toHaveAttribute('data-open', 'false');
+    });
+
+    /**
+     * One action, one accessible name. The lens sits on top of the bar and would
+     * otherwise double every `getByRole('button')` query for the same control.
+     */
+    it('hides the travelling lens from assistive tech', () => {
+      renderDrawer();
+
+      expect(screen.getByTestId('architecture-bar-lens')).toHaveAttribute('aria-hidden', 'true');
+    });
+
+    /**
+     * Two buttons with one accessible name is an ambiguous query for a screen
+     * reader user and for `getByRole` alike, and the panel keeps its own `Hide ▾`.
+     */
+    it('does not take the panel Hide button’s name when open', async () => {
+      const user = userEvent.setup();
+      renderDrawer();
+
+      await user.click(screen.getByTestId('architecture-reopen-bar'));
+
+      expect(screen.getByRole('button', { name: DRAWER_COPY.hide })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: DRAWER_COPY.collapse })).toBe(
+        screen.getByTestId('architecture-reopen-bar'),
+      );
+    });
+  });
+
   describe('open', () => {
     it('shows the diagram and the feed', async () => {
       const user = userEvent.setup();

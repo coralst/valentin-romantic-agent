@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Concept 3 — Wiring board (permissions view)</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+  .page { position: absolute; top: 56px; left: var(--rail); right: 0; bottom: 0; background: var(--bg); overflow: auto; }
+  .page-head { padding: 20px 26px 8px; }
+  .page-head h2 { font-family: var(--serif); font-size: 23px; margin: 0 0 4px; color: var(--deep-plum); }
+  .page-head p { margin: 0; font-size: 13px; color: var(--text-secondary); max-width: 640px; line-height: 1.55; }
+  .tabs { display: flex; gap: 20px; padding: 14px 26px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .tabs span { padding-bottom: 9px; color: var(--text-secondary); cursor: pointer; border-bottom: 2px solid transparent; }
+  .tabs span.on { color: var(--burgundy); font-weight: 600; border-color: var(--burgundy); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(238px, 1fr)); gap: 14px; padding: 18px 26px 26px; }
+  .card {
+    background: #fff; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px;
+    display: flex; flex-direction: column; gap: 9px; transition: box-shadow .2s, border-color .2s;
+  }
+  .card:hover { box-shadow: 0 10px 26px rgba(92,36,52,.10); }
+  .card.on { border-color: var(--dusty-rose); box-shadow: inset 3px 0 0 var(--burgundy); }
+  .card .top { display: flex; align-items: center; gap: 10px; }
+  .card .ic { width: 34px; height: 34px; border-radius: 10px; background: var(--champagne); display: grid; place-items: center; font-size: 17px; }
+  .card.on .ic { background: var(--blush); }
+  .card h4 { margin: 0; font-size: 13.5px; }
+  .card .who { font-size: 10.5px; color: var(--text-secondary); }
+  .state { margin-left: auto; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--warm-taupe); }
+  .card.on .state { color: var(--success); }
+  .card p { margin: 0; font-size: 11.5px; color: #6C5D61; line-height: 1.5; min-height: 34px; }
+  .scopes { display: flex; flex-wrap: wrap; gap: 5px; }
+  .scope { font-size: 10px; background: var(--cream); border: 1px solid var(--border); border-radius: 999px; padding: 3px 8px; color: #7A6A6E; }
+  .scope.warn { background: #FDF2F3; border-color: #F3D3D8; color: var(--burgundy); }
+  .btn { border: 0; border-radius: 999px; padding: 8px 0; font-size: 12px; font-weight: 600; cursor: pointer; font-family: var(--sans); width: 100%; }
+  .btn.primary { background: var(--accent-gradient); color: #fff; }
+  .btn.ghost { background: #fff; border: 1px solid var(--border); color: var(--text-secondary); }
+
+  .lane { padding: 0 26px 8px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--warm-taupe); font-weight: 700; }
+
+  /* consent sheet */
+  .sheet-wrap { position: absolute; inset: 0; background: rgba(45,32,36,.42); display: none; place-items: center; z-index: 9; }
+  .sheet-wrap.show { display: grid; }
+  .sheet {
+    width: 420px; background: #fff; border-radius: 18px; padding: 22px; box-shadow: 0 30px 70px rgba(45,32,36,.4);
+    animation: rise .24s cubic-bezier(0,0,.2,1);
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(14px); } }
+  .sheet h3 { font-family: var(--serif); font-size: 19px; margin: 0 0 4px; color: var(--deep-plum); }
+  .sheet .lead { font-size: 12.5px; color: var(--text-secondary); margin: 0 0 14px; line-height: 1.5; }
+  .perm { display: flex; gap: 10px; align-items: flex-start; padding: 9px 0; border-top: 1px solid var(--border-subtle); font-size: 12.5px; }
+  .perm .k { font-weight: 600; }
+  .perm .v { font-size: 11.5px; color: var(--text-secondary); }
+  .perm .sw { margin-left: auto; width: 32px; height: 18px; border-radius: 999px; background: var(--success); position: relative; flex-shrink: 0; }
+  .perm .sw::after { content:''; position:absolute; top:2px; left:16px; width:14px; height:14px; border-radius:50%; background:#fff; }
+  .cap { display: flex; align-items: center; gap: 10px; margin: 14px 0 4px; font-size: 12.5px; }
+  .cap input { flex: 1; accent-color: var(--burgundy); }
+  .sheet .actions { display: flex; gap: 10px; margin-top: 16px; }
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <a href="index.html">← all concepts</a>
+  <a href="concept-1-fanout.html">1 · Fan-out canvas</a>
+  <a href="concept-2-capability-rail.html">2 · Capability rail</a>
+  <a class="here" href="concept-3-wiring-board.html">3 · Wiring board</a>
+  <a href="concept-4-orbit.html">4 · Orbit / constellation</a>
+</div>
+
+<div class="concept-header">
+  <span class="tag">Concept 3</span>
+  <h1>Wiring board — connections as scoped permissions</h1>
+  <p>The grown-up version. Same fan-out idea, but the unit of display is a <em>capability with limits</em>: what the agent may do, up to what amount, with what data. Clicking Connect opens a consent sheet with a spend cap — that's the slide that answers "you let an AI order things?". Tabs let the same page show the raw tool list, which is a straight line to the live-architecture story.</p>
+</div>
+
+<div class="frame">
+  <nav class="rail">
+    <div class="avatar">🌹</div>
+    <button class="rail-btn"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span class="tip">New chat</span></button>
+    <button class="rail-btn"><svg viewBox="0 0 24 24"><path d="M20.8 8.6a5 5 0 0 0-8.8-2.6A5 5 0 0 0 3.2 8.6c0 4.3 8.8 10 8.8 10s8.8-5.7 8.8-10Z"/></svg><span class="tip">Her profile</span></button>
+    <button class="rail-btn"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg><span class="tip">Occasions</span></button>
+    <div class="rail-sep"></div>
+    <button class="rail-btn active"><svg viewBox="0 0 24 24"><path d="M9 2v6M15 2v6M7 8h10v4a5 5 0 0 1-5 5 5 5 0 0 1-5-5Z"/><path d="M12 17v5"/></svg><span class="badge">4</span><span class="tip">Integrations</span></button>
+    <button class="rail-btn"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M17.5 14v7M14 17.5h7"/></svg><span class="dot-live"></span><span class="tip">Live architecture</span></button>
+    <div class="rail-spacer"></div>
+    <button class="rail-btn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg><span class="tip">Settings</span></button>
+  </nav>
+
+  <div class="stage">
+    <div class="topbar"><div><div class="title">Integrations</div><div class="sub">4 connected · $23 of $150 spent this month</div></div></div>
+  </div>
+
+  <section class="page">
+    <div class="page-head">
+      <h2>Give Valentin hands</h2>
+      <p>He already knows her. Connect a service and he can act — inside limits you set, and every action shows up in the conversation before it happens.</p>
+    </div>
+    <div class="tabs"><span class="on">Services</span><span>Tools exposed (11)</span><span>Activity log</span><span>Limits</span></div>
+
+    <div class="lane" style="padding-top:16px">Connected</div>
+    <div class="grid">
+      <div class="card on">
+        <div class="top"><span class="ic">🍣</span><span><h4>OpenTable</h4><span class="who">restaurant booking</span></span><span class="state">On</span></div>
+        <p>Finds quiet tables near her favourites and holds them.</p>
+        <div class="scopes"><span class="scope">search</span><span class="scope warn">book ≤ 4 seats</span><span class="scope">cancel</span></div>
+        <button class="btn ghost">Manage</button>
+      </div>
+      <div class="card on">
+        <div class="top"><span class="ic">📅</span><span><h4>Google Calendar</h4><span class="who">calendar</span></span><span class="state">On</span></div>
+        <p>Checks you are actually free before promising a date night.</p>
+        <div class="scopes"><span class="scope">read busy/free</span><span class="scope warn">create events</span></div>
+        <button class="btn ghost">Manage</button>
+      </div>
+      <div class="card on">
+        <div class="top"><span class="ic">💐</span><span><h4>Bloom &amp; Co</h4><span class="who">flower delivery</span></span><span class="state">On</span></div>
+        <p>Tulips, not roses — he remembers which.</p>
+        <div class="scopes"><span class="scope">catalogue</span><span class="scope warn">order ≤ $80</span></div>
+        <button class="btn ghost">Manage</button>
+      </div>
+      <div class="card on">
+        <div class="top"><span class="ic">🎵</span><span><h4>Spotify</h4><span class="who">music</span></span><span class="state">On</span></div>
+        <p>Builds the playlist for the drive there.</p>
+        <div class="scopes"><span class="scope">create playlist</span></div>
+        <button class="btn ghost">Manage</button>
+      </div>
+    </div>
+
+    <div class="lane">Available</div>
+    <div class="grid">
+      <div class="card">
+        <div class="top"><span class="ic">🛒</span><span><h4>Amazon Fresh</h4><span class="who">groceries &amp; gifts</span></span><span class="state">Off</span></div>
+        <p>Breakfast in bed, ordered the night before.</p>
+        <div class="scopes"><span class="scope">search</span><span class="scope">cart</span><span class="scope warn">checkout</span></div>
+        <button class="btn primary" onclick="document.querySelector('.sheet-wrap').classList.add('show')">Connect</button>
+      </div>
+      <div class="card">
+        <div class="top"><span class="ic">🚗</span><span><h4>Ride booking</h4><span class="who">transport</span></span><span class="state">Off</span></div>
+        <p>Car at the door ten minutes before you need it.</p>
+        <div class="scopes"><span class="scope">quote</span><span class="scope warn">book ride</span></div>
+        <button class="btn primary" onclick="document.querySelector('.sheet-wrap').classList.add('show')">Connect</button>
+      </div>
+      <div class="card">
+        <div class="top"><span class="ic">✈️</span><span><h4>Travel</h4><span class="who">flights &amp; hotels</span></span><span class="state">Off</span></div>
+        <p>Surprise weekends, priced against your cap.</p>
+        <div class="scopes"><span class="scope">search</span><span class="scope warn">hold booking</span></div>
+        <button class="btn primary" onclick="document.querySelector('.sheet-wrap').classList.add('show')">Connect</button>
+      </div>
+      <div class="card">
+        <div class="top"><span class="ic">💬</span><span><h4>WhatsApp</h4><span class="who">messaging</span></span><span class="state">Off</span></div>
+        <p>Drafts the message — you always press send.</p>
+        <div class="scopes"><span class="scope">draft only</span></div>
+        <button class="btn primary" onclick="document.querySelector('.sheet-wrap').classList.add('show')">Connect</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- consent sheet -->
+  <div class="sheet-wrap" onclick="if(event.target===this)this.classList.remove('show')">
+    <div class="sheet">
+      <h3>Connect Amazon Fresh</h3>
+      <p class="lead">Valentin will be able to do exactly this much — nothing else, and nothing silently.</p>
+      <div class="perm"><span><span class="k">Search the catalogue</span><br><span class="v">Read-only</span></span><span class="sw"></span></div>
+      <div class="perm"><span><span class="k">Build a cart</span><br><span class="v">Nothing is charged</span></span><span class="sw"></span></div>
+      <div class="perm"><span><span class="k">Place the order</span><br><span class="v">Asks you in chat first, every time</span></span><span class="sw"></span></div>
+      <div class="cap"><span>Spend cap</span><input type="range" min="10" max="200" value="60"><b>$60</b></div>
+      <div class="actions">
+        <button class="btn ghost" onclick="document.querySelector('.sheet-wrap').classList.remove('show')">Cancel</button>
+        <button class="btn primary" onclick="document.querySelector('.sheet-wrap').classList.remove('show')">Allow &amp; connect</button>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

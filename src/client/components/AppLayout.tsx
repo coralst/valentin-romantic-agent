@@ -4,6 +4,7 @@ import { BriefRail } from './BriefRail';
 import { DossierView } from './DossierView';
 import { MobileNav } from './MobileNav';
 import { ProfileStoreProvider } from '../context/profile-store-context';
+import { PeopleProvider } from '../context/people-context';
 import { DiscoveryProvider } from '../context/discovery-context';
 import { ViewProvider, useViewState } from '../context/view-context';
 import { usePreferenceIngestion } from '../hooks/use-preference-ingestion';
@@ -22,6 +23,8 @@ import {
   useArchitectureDrawer,
 } from '../context/architecture-drawer-context';
 import { useSessionContext } from '../context/session-context';
+import { IntegrationsProvider } from '../context/integrations-context';
+import { IntegrationsPanel } from './IntegrationsPanel';
 import { breakpoints, layout } from '../design-system/tokens';
 
 const liveRegionStyle: React.CSSProperties = {
@@ -37,39 +40,28 @@ const liveRegionStyle: React.CSSProperties = {
 };
 
 /**
- * The positioning context the architecture drawer anchors to, and the region
- * that gives up the space the drawer occupies.
+ * The region the chat shell's two panels share, wrapped so they can span a
+ * contiguous pair of window columns.
  *
- * Two things are load-bearing here.
+ * The architecture drawer used to anchor here and reserve its space with this
+ * region's `paddingBottom`. It no longer does: the drawer is a full-width strip at
+ * the foot of `AppWindow`, and the window reserves the space for it on every
+ * column at once (`bottomInset`), the icon rail and the conversation list
+ * included. Anchoring it here made the bar start in the middle of the frame.
  *
- * `position: relative`, because the drawer is `position: absolute` and this is
- * what makes it span exactly the region below. It must NOT be `position: fixed`
- * and must not portal to `document.body`: the app window sets `overflow: hidden`
- * to keep its 34px radius crisp, so the window's own clip is what keeps the
- * drawer's bottom corners inside the frame instead of running past it. (The old
- * inspector portalled out to escape the deleted header's `backdrop-filter`; that
- * reason is gone, and the replacement reason points the other way — stay inside.)
- *
- * `paddingBottom`, because the drawer is a 424px overlay pinned to the bottom of
- * this region — which is exactly where the composer sits. Reserving the space
- * rather than covering it is the drawer's whole contract ("not a dialog, no focus
- * trap, composer stays typable"); occlusion breaks it just as effectively as a
- * modal would. `boxSizing: border-box` is what makes the padding shrink the
- * children's height rather than growing the region past its grid track.
- *
- * The amount comes from `reservedDrawerSpace()`, which lives next to the heights
- * it derives from so the layout cannot drift out of agreement with the drawer.
+ * `overflow: hidden` stays, and stays load-bearing for the same reason it always
+ * was: a `translateY` does not affect layout but it does extend the scrollable
+ * overflow area, so an unclipped region can be scrolled taller than its grid
+ * track — and the first thing to scroll it (sending a message, which scrolls the
+ * transcript to the bottom) slides the whole window grid up, dragging the icon
+ * rail with it and shearing the crest off the top of the frame. Found by driving a
+ * real turn; no unit test sees it, because jsdom performs no layout.
  */
-function drawerHostStyle(
-  gridColumn: string,
-  reserved: number,
-  isChatShell: boolean,
-): React.CSSProperties {
+function panelHostStyle(gridColumn: string, isChatShell: boolean): React.CSSProperties {
   return {
     gridColumn,
     position: 'relative',
     boxSizing: 'border-box',
-    paddingBottom: reserved,
     display: 'grid',
     // Chat + brief keep their own tracks inside the host, so wrapping them does
     // not change the window's column template.
@@ -79,15 +71,6 @@ function drawerHostStyle(
     gridTemplateRows: '100%',
     minWidth: 0,
     minHeight: 0,
-    // The reopen bar parks itself at `translateY(100%)` while the drawer is up,
-    // i.e. 34px *below* this host's bottom edge. A transform does not affect
-    // layout but it does extend the scrollable overflow area, so without this
-    // clip the host is 34px taller than its grid track — and the first thing to
-    // scroll it (sending a message, which scrolls the transcript to the bottom)
-    // slides the whole window grid up by 34px, dragging the icon rail and the
-    // sidebar to `top: -20` and shearing the crest off the top of the frame.
-    // Found by driving a real turn with the drawer open; no unit test sees it,
-    // because jsdom performs no layout and so has no overflow to scroll.
     overflow: 'hidden',
   };
 }
@@ -120,11 +103,21 @@ export function AppLayout() {
   const { state: chatState } = useChatContext();
   return (
     <ProfileStoreProvider sessionId={chatState.sessionId}>
-      {/* Above the layout because the magnifier lives in the sidebar and the
-          drawer is mounted beside the chat — sibling subtrees. */}
-      <ArchitectureDrawerProvider>
-        <AppLayoutContent />
-      </ArchitectureDrawerProvider>
+      {/* Her family sits beside the profile rather than inside it: same session
+          key, separate store, because a family is a list of records and the
+          profile is a fixed set of fields. See `use-people-store`. */}
+      <PeopleProvider sessionId={chatState.sessionId}>
+        {/* Above the layout because the magnifier lives in the sidebar and the
+            drawer is mounted beside the chat — sibling subtrees. */}
+        <ArchitectureDrawerProvider>
+          {/* Above the layout for the same reason: the badge that counts grants
+              lives on the rail, and the panel that changes the count is mounted
+              beside the chat. */}
+          <IntegrationsProvider>
+            <AppLayoutContent />
+          </IntegrationsProvider>
+        </ArchitectureDrawerProvider>
+      </PeopleProvider>
     </ProfileStoreProvider>
   );
 }
@@ -143,6 +136,36 @@ function AppLayoutContent() {
    * permanent part of the shell that the ☰ takes away, so the default is shown.
    */
   const [isListOpen, setListOpen] = useState(true);
+
+  /*
+   * Whether the window is too narrow to afford the conversation list a column.
+   *
+   * THE OTHER HALF OF THE SCALING FIX (see `chat-measure.ts` for the first).
+   *
+   * Three of the shell's four tracks are fixed pixel measurements, so every pixel
+   * the window loses comes out of the chat column alone. Holding all three on a
+   * 1000px window leaves the transcript 312px — three or four words a line, with
+   * the composer pill narrower than its own placeholder. The list is the one of
+   * the three with somewhere to go: it already has an overlay presentation for
+   * mobile, so below the breakpoint it uses that and the ☰ raises it, exactly as
+   * it does on a phone.
+   *
+   * A media query rather than the chat column's measured width: the column's width
+   * is a *consequence* of this decision, so reading it back to make the decision
+   * is a loop that settles by oscillating.
+   */
+  const [isNarrowDesktop, setNarrowDesktop] = useState(false);
+
+  /*
+   * Whether the integrations fan is up.
+   *
+   * A panel over the shell rather than a fifth surface: what it shows is "what
+   * Valentin can reach", which is a fact *about* the conversation you are having,
+   * and closing it should put you back exactly where you were. `useState` keeps
+   * that true — no history entry, nothing persisted, gone on reload.
+   */
+  const [isIntegrationsOpen, setIntegrationsOpen] = useState(false);
+  const toggleIntegrations = () => setIntegrationsOpen((open) => !open);
 
   // Read here rather than inside the drawer: the *layout* is what has to give up
   // the space, and only the layout owns the regions whose height it takes from.
@@ -174,6 +197,23 @@ function AppLayoutContent() {
     return () => mql.removeEventListener('change', handler);
   }, []);
 
+  useEffect(() => {
+    const mql = window.matchMedia(`(max-width: ${breakpoints.conversationList - 1}px)`);
+    setNarrowDesktop(mql.matches);
+
+    const handler = (e: MediaQueryListEvent) => setNarrowDesktop(e.matches);
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, []);
+
+  /*
+   * The list occupies a column only if it fits and has not been dismissed.
+   *
+   * `isListOpen` stays the user's preference rather than being overwritten when the
+   * window narrows, so widening the window back out restores the column they had.
+   */
+  const hasListColumn = !isNarrowDesktop && isListOpen;
+
   // The brief needs to know the breakpoint itself: on mobile it goes full-width
   // and drops the scroll fade, which at the foot of a full-height panel reads as
   // a rendering fault rather than as depth.
@@ -201,12 +241,15 @@ function AppLayoutContent() {
   };
 
   /**
-   * What the rail's ◆ and ♥ do on desktop.
+   * What the rail's ◆ does on desktop.
    *
    * The desktop rail used to be rendered without `onViewChange` at all, which
    * made the ◆ call an undefined prop — it looked like a button and did nothing.
    * Both surfaces are on screen there, so "switch to chat" means "leave the
    * dossier if it is up, and put the caret in the composer"; see `returnToChat`.
+   * The 'profile' branch is kept because `RailView` still allows it, and the one
+   * honest answer to it is her profile — but nothing in the rail asks for it any
+   * more now that her portrait is the door.
    */
   const changeDesktopView = (panel: 'chat' | 'profile') => {
     if (panel === 'chat') view.returnToChat();
@@ -219,7 +262,7 @@ function AppLayoutContent() {
    * A no-op on desktop chat — that is the honest answer there, because home is
    * already what you are looking at — and never an error. `closeDossier` is
    * guarded rather than called blind so a click on the chat shell does not yank
-   * focus to the ♥ for no reason.
+   * focus to her portrait in the brief for no reason.
    */
   const goHome = () => {
     if (isDossier) view.closeDossier();
@@ -230,16 +273,22 @@ function AppLayoutContent() {
       <DiscoveryProvider value={discovery}>
         <ViewProvider value={view}>
           <div data-testid="app-layout" data-layout="mobile" data-surface={view.surface}>
-            <AppWindow variant="mobile">
+            <AppWindow
+              variant="mobile"
+              bottomInset={reserved}
+              /* On mobile the composer is nearly the whole screen, so the drawer
+                 occluding it matters more here, not less — hence the same
+                 reserved strip as on desktop. */
+              footer={<LiveArchitectureDrawer />}
+            >
               <IconRail
                 orientation="row"
                 activeView={activePanel}
                 onViewChange={changePanel}
                 onGoHome={() => changePanel('chat')}
                 onOpenSessions={() => setSidebarOpen(true)}
-                isDossierActive={isDossier}
-                onToggleDossier={view.toggleDossier}
-                dossierToggleRef={view.dossierToggleRef}
+                onOpenIntegrations={toggleIntegrations}
+                isIntegrationsOpen={isIntegrationsOpen}
               />
               <div style={windowCellStyle}>
                 <MobileNav
@@ -248,20 +297,11 @@ function AppLayoutContent() {
                   isDossierActive={isDossier}
                   onOpenDossier={view.openDossier}
                 />
-                {/* On mobile the composer is nearly the whole screen, so the
-                    drawer occluding it matters more here, not less — hence the
-                    same reserved space as on desktop. `flex: 1` alongside
-                    `minHeight: 0` keeps this region filling the cell rather than
-                    sizing to its content, which would float the composer
-                    mid-screen. */}
+                {/* `flex: 1` alongside `minHeight: 0` keeps this region filling
+                    the cell rather than sizing to its content, which would float
+                    the composer mid-screen. */}
                 <div
-                  style={{
-                    ...windowCellGrowStyle,
-                    position: 'relative',
-                    boxSizing: 'border-box',
-                    paddingBottom: reserved,
-                  }}
-                  data-drawer-reserved={reserved}
+                  style={{ ...windowCellGrowStyle, position: 'relative' }}
                 >
                   {/* The dossier replaces both panels full-bleed rather than
                       sitting inside one of them. */}
@@ -272,13 +312,13 @@ function AppLayoutContent() {
                   ) : (
                     profilePanel
                   )}
-                  {/* The diagram is 916px wide, so on a phone it scrolls
-                      horizontally rather than being withheld — a presenter may
-                      well be on a laptop in a narrow window, and hiding the
-                      drawer there is worse. */}
-                  <LiveArchitectureDrawer />
                 </div>
               </div>
+              {/* Inside the window, below the claret strip, so the same rail
+                  button that opened it is still there to close it. */}
+              {isIntegrationsOpen && (
+                <IntegrationsPanel isMobile onClose={() => setIntegrationsOpen(false)} />
+              )}
             </AppWindow>
             <SessionSidebar isMobile={true} />
             {liveRegion}
@@ -297,61 +337,80 @@ function AppLayoutContent() {
               three, so it does not shift under the cursor. */}
           <AppWindow
             variant="desktop"
+            bottomInset={reserved}
+            /* The drawer follows both surfaces rather than unmounting with the
+               chat shell: closing it on a surface switch would drop the
+               presenter's place in the walkthrough mid-sentence. Rendered by the
+               window, so its bar is one line across the whole bottom edge. */
+            footer={<LiveArchitectureDrawer />}
             columns={
               isDossier
                 ? DOSSIER_COLUMNS
-                : isListOpen
+                : hasListColumn
                   ? undefined
                   : COLLAPSED_CHAT_COLUMNS
             }
           >
-            {/* In the chat shell both surfaces are on screen at once, so no rail
-                button claims to be the active view. The dossier is a single
-                surface, so there the ♥ does. */}
+            {/* `activeView={null}`: on desktop the chat shell shows both
+                surfaces at once, so no rail button claims to be the active
+                view. Her profile is not in the rail at all — it opens from her
+                portrait in the brief. */}
             <IconRail
               orientation="column"
               activeView={null}
               onViewChange={changeDesktopView}
               onGoHome={goHome}
-              // The list is a permanent column here, so the ☰ is a two-way
-              // toggle: hiding it hands the 226px to the conversation.
-              onOpenSessions={() => setListOpen((open) => !open)}
-              isSessionsOpen={isListOpen}
-              isDossierActive={isDossier}
-              onToggleDossier={view.toggleDossier}
-              dossierToggleRef={view.dossierToggleRef}
+              // Wide enough for the column, the ☰ is a two-way toggle: hiding it
+              // hands the 226px to the conversation. Too narrow for it, there is
+              // no column to toggle, so the ☰ raises the overlay instead — the
+              // same thing it does on mobile.
+              onOpenSessions={
+                isNarrowDesktop
+                  ? () => setSidebarOpen(true)
+                  : () => setListOpen((open) => !open)
+              }
+              isSessionsOpen={hasListColumn}
+              onOpenIntegrations={toggleIntegrations}
+              isIntegrationsOpen={isIntegrationsOpen}
             />
             {isDossier ? (
-              /* The drawer follows the dossier rather than unmounting with the
-                 chat shell: closing it on a surface switch would drop the
-                 presenter's place in the walkthrough mid-sentence. */
               <div
-                style={drawerHostStyle(DOSSIER_COLUMN_SPAN, reserved, false)}
-                data-drawer-reserved={reserved}
+                style={panelHostStyle(DOSSIER_COLUMN_SPAN, false)}
               >
                 <DossierView />
-                <LiveArchitectureDrawer />
               </div>
             ) : (
               <>
-                {isListOpen && <SessionSidebar isMobile={false} />}
+                {hasListColumn && <SessionSidebar isMobile={false} />}
                 <div
-                  style={drawerHostStyle(
-                    isListOpen ? CHAT_COLUMNS_SPAN : CHAT_COLUMNS_SPAN_NO_LIST,
-                    reserved,
+                  style={panelHostStyle(
+                    hasListColumn ? CHAT_COLUMNS_SPAN : CHAT_COLUMNS_SPAN_NO_LIST,
                     true,
                   )}
-                  data-drawer-reserved={reserved}
                 >
                   <div style={windowCellStyle}>
                     <ChatPanel />
                   </div>
                   <div style={windowCellStyle}>{profilePanel}</div>
-                  <LiveArchitectureDrawer />
                 </div>
               </>
             )}
+            {/* Spans every track except the rail's, over both surfaces — the
+                dossier is as good a place to ask "what can he reach?" as the
+                chat is, and unmounting it on a surface switch would be a
+                surprise rather than a courtesy. */}
+            {isIntegrationsOpen && (
+              <IntegrationsPanel
+                isMobile={false}
+                onClose={() => setIntegrationsOpen(false)}
+              />
+            )}
           </AppWindow>
+          {/* The overlay presentation of the list, for the widths where it has no
+              column. Outside `AppWindow` because it is `position: fixed` and the
+              window sets `overflow: hidden` to keep its 34px radius crisp — inside,
+              the frame would clip it. It renders nothing until the ☰ opens it. */}
+          {isNarrowDesktop && <SessionSidebar isMobile={true} />}
           {liveRegion}
         </div>
       </ViewProvider>

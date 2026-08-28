@@ -16,8 +16,21 @@ interface WhoHeaderProps {
    * does not exist.
    */
   portrait?: string | null;
-  /** Opens the file picker behind the cameo. */
-  onEditPhoto?: () => void;
+  /**
+   * Opens her full profile. The cameo is the control for it.
+   *
+   * It used to open a file picker, which is not what a portrait in a header
+   * looks like it does: people click a face to go to the person. Uploading a
+   * photo lives on the dossier's own avatar (`PartnerAvatar`), which is one
+   * click further in and is the only place the upload logic has ever lived.
+   */
+  onOpenProfile?: () => void;
+  /**
+   * Focus comes back here when the profile closes — see `view-context`'s
+   * `applyClose`. The cameo is what opened it, so it is what must not be left
+   * stranded on a removed element.
+   */
+  cameoRef?: React.RefObject<HTMLButtonElement | null>;
 }
 
 const whoStyle: React.CSSProperties = {
@@ -82,7 +95,14 @@ const subtitleStyle: React.CSSProperties = {
 };
 
 /** The rail's compact header: cameo and name on one row. */
-export function WhoHeader({ name, subtitle, photo, portrait, onEditPhoto }: WhoHeaderProps) {
+export function WhoHeader({
+  name,
+  subtitle,
+  photo,
+  portrait,
+  onOpenProfile,
+  cameoRef,
+}: WhoHeaderProps) {
   const displayName = name ?? 'Her brief';
   const image = photo ?? portrait ?? null;
   const alt = photo
@@ -96,10 +116,11 @@ export function WhoHeader({ name, subtitle, photo, portrait, onEditPhoto }: WhoH
   return (
     <div style={whoStyle} data-testid="brief-who">
       <button
+        ref={cameoRef}
         type="button"
         style={cameoStyle}
-        onClick={onEditPhoto}
-        aria-label={photo ? 'Change her photo' : 'Add her photo'}
+        onClick={onOpenProfile}
+        aria-label={name ? `Open ${name}'s full profile` : 'Open her full profile'}
         data-testid="brief-cameo"
       >
         {image ? (

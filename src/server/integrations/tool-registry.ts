@@ -35,6 +35,21 @@ export interface ActionProposal {
   url?: string;
   /** ISO timestamp after which confirming must fail */
   expiresAt: string;
+  /**
+   * Whatever the owning tool needs to actually carry this out later.
+   *
+   * Opaque to everything except the tool that set it. A reservation needs the
+   * venue slug, the date, the party size and Ontopo's area identifier at
+   * *confirm* time, and none of those belong in a card the user reads — so they
+   * ride here rather than in a second map keyed by proposal id, which would be a
+   * lifetime to manage and a way for the two halves to disagree.
+   *
+   * This never reaches the client. `onProposal` in `index.ts` maps the fields it
+   * sends one at a time rather than spreading the object, precisely so a
+   * server-side addition here cannot leak onto the wire. Keep that mapping
+   * explicit if you touch it.
+   */
+  payload?: Record<string, unknown>;
 }
 
 /**

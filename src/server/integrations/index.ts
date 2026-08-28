@@ -2,6 +2,7 @@ import { config } from '../config';
 import { logger } from '../logging';
 import type { AgentTool, IntegrationId, ToolRegistry } from './tool-registry';
 import { hebcalTools } from './hebcal/tools';
+import { ontopoTools } from './ontopo/tools';
 
 export type { ToolRegistry, AgentTool, ActionProposal, IntegrationId } from './tool-registry';
 
@@ -13,9 +14,10 @@ export type { ToolRegistry, AgentTool, ActionProposal, IntegrationId } from './t
  * That endpoint returns these booleans and nothing else — never a credential,
  * not even a masked one.
  *
- * Hebcal and Ontopo are unconditionally true. Hebcal is a local calculation and
- * Ontopo mints an anonymous token per session, so neither has a secret to be
- * missing.
+ * Hebcal and Ontopo are unconditionally true, and neither has a secret to be
+ * missing: Hebcal is a local calculation, and Ontopo's availability and checkout
+ * endpoints turn out to need no authentication at all. The site does mint an
+ * anonymous JWT, but it is not required — see the note in `ontopo/client.ts`.
  */
 export function integrationReadiness(): Record<IntegrationId, boolean> {
   const { integrations } = config;
@@ -60,6 +62,7 @@ export function buildToolRegistry(): ToolRegistry {
   // its own `ready` flag, so a half-configured deployment offers the half that
   // works instead of nothing.
   if (ready.hebcal) tools.push(...hebcalTools);
+  if (ready.ontopo) tools.push(...ontopoTools);
 
   const registry = new Map(tools.map((tool) => [tool.name, tool]));
 

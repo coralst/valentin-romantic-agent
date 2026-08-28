@@ -6,6 +6,7 @@ import { DEMO_SEED_SOURCE_MESSAGE_ID } from '../fixtures/demo-profile';
 import { resolvePersona } from '../fixtures/demo-personas';
 import type { DemoConversation } from '../fixtures/demo-personas';
 import { isPartnerNamePreference } from '../extraction/partner-name';
+import { integrationReadiness } from '../integrations';
 
 /** Simple framework-agnostic request representation */
 export interface HttpRequest {
@@ -112,6 +113,30 @@ export function createHttpRoutes(storage: StorageInterface) {
     /** GET /health — health check */
     async health(): Promise<HttpResponse> {
       return { status: 200, body: { status: 'ok' } };
+    },
+
+    /**
+     * GET /integrations — which outside services this deployment can reach.
+     *
+     * Booleans and nothing else. There is no credential in this response, not
+     * even a masked or truncated one: the client needs to know whether Gmail
+     * works, and a prefix of a refresh token would answer that question while
+     * also putting part of a secret into a public-facing payload and into every
+     * browser devtools log that captures it.
+     *
+     * Needs no session and no storage — readiness is a property of the process.
+     */
+    async listIntegrations(): Promise<HttpResponse> {
+      const ready = integrationReadiness();
+      return {
+        status: 200,
+        body: {
+          integrations: Object.entries(ready).map(([id, configured]) => ({
+            id,
+            configured,
+          })),
+        },
+      };
     },
 
     /** POST /session — create a new session */
@@ -299,6 +324,11 @@ export function createHttpRoutes(storage: StorageInterface) {
       // GET /health
       if (req.method === 'GET' && req.url === '/health') {
         return this.health();
+      }
+
+      // GET /integrations
+      if (req.method === 'GET' && req.url === '/integrations') {
+        return this.listIntegrations();
       }
 
       // GET /sessions

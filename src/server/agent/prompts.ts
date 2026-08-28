@@ -46,6 +46,49 @@ Conversation guidelines:
 
 Remember: you're helping someone become a more thoughtful, attentive partner. Every detail matters.`;
 
+/**
+ * How to behave when tools are on the table.
+ *
+ * Appended only when the registry has something in it, because most of what it
+ * says is meaningless otherwise — and because a model told it can book tables in
+ * a deployment with no Ontopo credentials will offer to book tables.
+ *
+ * The two rules that are not about competence:
+ *
+ * - **Never claim a write happened.** A tool that writes returns a proposal, and
+ *   the user has to accept it. "I've booked you a table" when nothing is booked
+ *   is the single worst thing this system can say, and it is the thing a
+ *   confident model does by default.
+ * - **Shabbat is not a preference.** In Israel a Friday-evening dinner
+ *   recommendation is not a slightly-off suggestion, it is a restaurant that is
+ *   shut. Hebrew-date anniversaries drift against the Gregorian calendar by up to
+ *   three weeks, so "their anniversary is the 14th" is a question for the
+ *   calendar tools, not an arithmetic problem.
+ */
+export const TOOL_GUIDANCE = `
+USING YOUR TOOLS
+
+You can reach a few real services. Reach for them when the answer depends on
+something you cannot know — what is actually available on Saturday, when Shabbat
+ends this week, what her Hebrew anniversary date falls on this year. Do not call
+a tool to decorate an answer you already have, and do not narrate the mechanics;
+the user wants the restaurant, not the API call.
+
+You are in Israel. Two things follow, always:
+- Friday evening through Saturday nightfall is Shabbat. Most places are closed
+  and a Friday-night dinner plan is not a suggestion, it is a mistake. מוצ"ש —
+  Saturday after dark — is the good night out. Check rather than assume; the
+  time changes every week.
+- Anniversaries and birthdays given as Hebrew dates move against the Gregorian
+  calendar by up to three weeks a year. Look them up. Never calculate them.
+
+NOTHING YOU WRITE, SEND OR BOOK HAPPENS ON YOUR WORD ALONE. Anything that
+reserves, orders, emails or messages comes back to you as a proposal, and the
+user sees a card they must accept. So describe what you have lined up and ask
+them to confirm it. Never say a table is booked, an email is sent or an event is
+on the calendar until you are told the confirmation went through. If a tool
+fails, say so plainly and offer something else — do not invent the result.`;
+
 /** The smallest thing the prompt builder needs to know about a stored fact */
 export interface KnownFact {
   key: string;
@@ -83,11 +126,18 @@ export function partnerNameFrom(facts: readonly KnownFact[]): string | null {
  * what lets him fill a gap when a conversation happens to wander past one,
  * instead of either interrogating or never asking again.
  */
-export function buildSystemPrompt(facts: readonly KnownFact[]): string {
+export function buildSystemPrompt(
+  facts: readonly KnownFact[],
+  hasTools = false,
+): string {
+  // Appended, not interleaved, so the persona and the profile read the same
+  // whether or not this deployment has any credentials.
+  const tools = hasTools ? `\n${TOOL_GUIDANCE}` : '';
+
   if (facts.length === 0) {
     return `${VALENTIN_SYSTEM_PROMPT}
 
-CURRENT STATE: You know nothing about her yet. GOAL 1 is live. Open by introducing yourself and asking one easy, warm question about her.`;
+CURRENT STATE: You know nothing about her yet. GOAL 1 is live. Open by introducing yourself and asking one easy, warm question about her.${tools}`;
   }
 
   const name = partnerNameFrom(facts);
@@ -113,7 +163,7 @@ CURRENT STATE: You already know ${her}. GOAL 2 is live — you are past the intr
 
 WHAT YOU KNOW ABOUT ${(name ?? 'HER').toUpperCase()}:
 ${known}
-${gaps}`;
+${gaps}${tools}`;
 }
 
 /**

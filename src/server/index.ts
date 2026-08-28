@@ -9,6 +9,7 @@ import { PreferenceExtractor } from './extraction/preference-extractor';
 import { EventRouter } from './api/event-router';
 import { WsGateway } from './api/ws-gateway';
 import { createHttpRoutes } from './api/http-routes';
+import { buildToolRegistry } from './integrations';
 import { startSpanBridge } from './telemetry/span-bridge';
 import {
   ANONYMOUS_USER_ID,
@@ -132,6 +133,11 @@ export function createServer(deps: ServerDeps = {}) {
   const bedrockClient = new AwsBedrockClient();
   const runtime = new LocalValentinRuntime();
 
+  // Built once: the tools are stateless and credential-gated at boot, so there
+  // is nothing per-user about them. What *is* per-user is the proposal store,
+  // which lives on the orchestrator.
+  const toolRegistry = buildToolRegistry();
+
   console.log(`[server] AWS Bedrock (region: ${process.env.AWS_REGION ?? 'us-east-1'}, model: ${process.env.BEDROCK_MODEL_ID ?? 'claude-3-haiku'})`);
 
   // Wired to WsGateway after creation. Built per user, because a session id
@@ -170,6 +176,22 @@ export function createServer(deps: ServerDeps = {}) {
       bedrockClient,
       runtime,
       extractor,
+      {
+        registry: toolRegistry,
+        // The same late-closed edge as the extractor's callback above, and for
+        // the same reason: the router is built from the orchestrator.
+        onProposal: (proposal) => {
+          eventRouter?.emitActionProposal({
+            sessionId: proposal.sessionId,
+            proposalId: proposal.id,
+            service: proposal.service,
+            title: proposal.title,
+            summary: proposal.summary,
+            url: proposal.url,
+            expiresAt: proposal.expiresAt,
+          });
+        },
+      },
     );
 
     eventRouter = new EventRouter(orchestrator, emit);

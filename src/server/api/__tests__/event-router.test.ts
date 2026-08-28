@@ -11,6 +11,7 @@ function createMockOrchestrator(): AgentOrchestratorInterface {
     // transcript, so the honest stub is "nothing to say".
     greetIfEmpty: vi.fn(async () => null),
     handleMessage: vi.fn(),
+    confirmAction: vi.fn(),
   };
 }
 
@@ -140,6 +141,97 @@ describe('EventRouter', () => {
       expect(
         (emitter.events[0].payload as { code: string }).code,
       ).toBe('UNKNOWN_EVENT');
+    });
+  });
+
+  describe('confirm_action routing', () => {
+    const confirmed: ChatMessage = {
+      id: 'msg-9',
+      sessionId: 'sess-1',
+      sender: 'agent',
+      content: 'Booked — 21:00 on Saturday.',
+      timestamp: new Date().toISOString(),
+    };
+
+    it('routes confirm_action to orchestrator.confirmAction', async () => {
+      vi.mocked(orchestrator.confirmAction).mockResolvedValue(confirmed);
+
+      await router.routeEvent('confirm_action', {
+        sessionId: 'sess-1',
+        proposalId: 'prop-1',
+      });
+
+      expect(orchestrator.confirmAction).toHaveBeenCalledWith('sess-1', 'prop-1');
+    });
+
+    it('brackets the confirmation with typing indicators and answers', async () => {
+      vi.mocked(orchestrator.confirmAction).mockResolvedValue(confirmed);
+
+      await router.routeEvent('confirm_action', {
+        sessionId: 'sess-1',
+        proposalId: 'prop-1',
+      });
+
+      expect(emitter.events.map((e) => e.type)).toEqual([
+        'typing_start',
+        'typing_stop',
+        'agent_message',
+      ]);
+      const message = emitter.events.find((e) => e.type === 'agent_message');
+      expect((message!.payload as { message: ChatMessage }).message.content).toBe(
+        'Booked — 21:00 on Saturday.',
+      );
+    });
+
+    it('tells the client when the confirmation blows up', async () => {
+      vi.mocked(orchestrator.confirmAction).mockRejectedValue(
+        new Error('Ontopo unreachable'),
+      );
+
+      await router.routeEvent('confirm_action', {
+        sessionId: 'sess-1',
+        proposalId: 'prop-1',
+      });
+
+      // Someone who just authorised a reservation must never be left looking at
+      // a card that silently did nothing.
+      const error = emitter.events.find((e) => e.type === 'error');
+      expect(error).toBeDefined();
+      expect((error!.payload as { code: string }).code).toBe('CONFIRM_FAILED');
+      expect(emitter.events.map((e) => e.type)).toContain('typing_stop');
+    });
+
+    it('rejects a confirmation with no proposalId', async () => {
+      await router.routeEvent('confirm_action', { sessionId: 'sess-1' });
+
+      expect(orchestrator.confirmAction).not.toHaveBeenCalled();
+      expect(emitter.events).toHaveLength(1);
+      expect((emitter.events[0].payload as { code: string }).code).toBe(
+        'VALIDATION_ERROR',
+      );
+    });
+  });
+
+  describe('action proposal emission', () => {
+    it('emits action_proposal with the session id at the top level', () => {
+      router.emitActionProposal({
+        sessionId: 'sess-1',
+        proposalId: 'prop-1',
+        service: 'ontopo',
+        title: 'Ouzeria, Saturday 21:00',
+        summary: 'Table for two',
+        url: 'https://s1.ontopo.com/checkout/abc',
+        expiresAt: new Date(Date.now() + 900_000).toISOString(),
+      });
+
+      expect(emitter.events).toHaveLength(1);
+      expect(emitter.events[0].type).toBe('action_proposal');
+      // The broadcast path resolves its target from a top-level sessionId and
+      // drops anything without one, which would render as a reply promising a
+      // card the user never sees.
+      expect(
+        (emitter.events[0].payload as { sessionId: string }).sessionId,
+      ).toBe('sess-1');
     });
   });
 

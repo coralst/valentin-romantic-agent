@@ -1,6 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AgentOrchestrator } from '../agent-orchestrator';
-import type { BedrockClient, LlmResponse } from '../bedrock-client';
+import type {
+  BedrockClient,
+  LlmContentBlock,
+  LlmResponse,
+} from '../bedrock-client';
+import type { ChatMessage } from '../../../shared/interfaces/message';
+import type {
+  ActionProposal,
+  AgentTool,
+} from '../../integrations/tool-registry';
 import type { ValentinRuntime } from '../valentin-runtime';
 import type { StorageInterface } from '../../persistence/storage-interface';
 import type { ConversationMemory, ContextWindow } from '../../persistence/conversation-memory';
@@ -44,6 +53,14 @@ function createMockBedrock(): BedrockClient {
     extractWithTool: vi.fn().mockResolvedValue({
       toolName: 'extract_preferences',
       input: { preferences: [] },
+    }),
+    // Never reached by these tests: they build the orchestrator without a tool
+    // registry, which is what sends it down the `generateResponse` path.
+    converseWithTools: vi.fn().mockResolvedValue({
+      message: { role: 'assistant', content: [{ text: 'Mock response' }] },
+      text: 'Mock response',
+      toolUses: [],
+      stopReason: 'end_turn',
     }),
   };
 }
@@ -384,6 +401,173 @@ describe('AgentOrchestrator', () => {
       // Should not throw
       const result = await orchestrator.handleMessage('sess-1', 'Hello');
       expect(result.content).toBe('Nice!');
+    });
+  });
+
+  /**
+   * The confirmation half of the propose/confirm contract.
+   *
+   * Every case here is a way for the click to fail, because the success path is
+   * one line and the failure paths are where a user either loses a table they
+   * think they have or gets two of them.
+   */
+  describe('confirmAction', () => {
+    /** A tool that proposes rather than acts, and records what it confirmed. */
+    function reservationTool(overrides: Partial<AgentTool> = {}): AgentTool {
+      return {
+        name: 'propose_reservation',
+        description: 'Hold a table, pending a yes',
+        input_schema: { type: 'object', properties: {} },
+        service: 'ontopo',
+        requiresConfirmation: true,
+        execute: vi.fn(async (_input, ctx) => ({
+          ok: true,
+          summary: 'Held a table at Ouzeria',
+          proposal: {
+            id: 'prop-1',
+            sessionId: ctx.sessionId,
+            service: 'ontopo' as const,
+            title: 'Ouzeria, Saturday 21:00',
+            summary: 'Table for two',
+            expiresAt: new Date(Date.now() + 900_000).toISOString(),
+          },
+        })),
+        confirm: vi.fn(async () => ({ ok: true, summary: 'Booked — 21:00 on Saturday.' })),
+        ...overrides,
+      };
+    }
+
+    /**
+     * Build an orchestrator whose next turn raises a proposal, and run that turn
+     * so the proposal is pending. Returns the tool so tests can assert on it.
+     */
+    async function withPendingProposal(
+      tool: AgentTool = reservationTool(),
+      sessionId = 'sess-1',
+    ): Promise<{ tool: AgentTool; subject: AgentOrchestrator; proposals: ActionProposal[] }> {
+      const proposals: ActionProposal[] = [];
+      const registry = new Map([[tool.name, tool]]);
+      vi.mocked(bedrock.converseWithTools)
+        .mockResolvedValueOnce({
+          message: {
+            role: 'assistant',
+            content: [
+              {
+                toolUse: { toolUseId: 'use-0', name: tool.name, input: {} },
+              } as unknown as LlmContentBlock,
+            ],
+          },
+          text: '',
+          toolUses: [{ toolUseId: 'use-0', name: tool.name, input: {} }],
+          stopReason: 'tool_use',
+        })
+        .mockResolvedValueOnce({
+          message: { role: 'assistant', content: [{ text: 'Shall I confirm?' }] },
+          text: 'Shall I confirm?',
+          toolUses: [],
+          stopReason: 'end_turn',
+        });
+
+      const subject = new AgentOrchestrator(storage, memory, bedrock, runtime, extractor, {
+        registry,
+        onProposal: (p) => proposals.push(p),
+      });
+      await subject.handleMessage(sessionId, 'book us dinner');
+      return { tool, subject, proposals };
+    }
+
+    it('announces the proposal only after the reply is stored', async () => {
+      const { proposals } = await withPendingProposal();
+
+      expect(proposals).toHaveLength(1);
+      expect(proposals[0].id).toBe('prop-1');
+      // The card must land beneath the sentence that introduces it, so the
+      // agent turn has to be in the transcript first.
+      const storedBeforeAnnounce = vi.mocked(memory.addMessage).mock.calls.some(
+        (call) => (call[1] as ChatMessage).content === 'Shall I confirm?',
+      );
+      expect(storedBeforeAnnounce).toBe(true);
+    });
+
+    it('runs the tool\'s confirm and replies with what happened', async () => {
+      const { tool, subject } = await withPendingProposal();
+
+      const reply = await subject.confirmAction('sess-1', 'prop-1');
+
+      expect(tool.confirm).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'prop-1' }),
+        { sessionId: 'sess-1' },
+      );
+      expect(reply.content).toBe('Booked — 21:00 on Saturday.');
+      expect(reply.sender).toBe('agent');
+    });
+
+    it('does not book twice when the card is clicked twice', async () => {
+      const { tool, subject } = await withPendingProposal();
+
+      await subject.confirmAction('sess-1', 'prop-1');
+      const second = await subject.confirmAction('sess-1', 'prop-1');
+
+      expect(tool.confirm).toHaveBeenCalledTimes(1);
+      expect(second.content).toMatch(/lost track/i);
+    });
+
+    it('refuses an id it has never seen, rather than silently doing nothing', async () => {
+      const { subject } = await withPendingProposal();
+
+      const reply = await subject.confirmAction('sess-1', 'prop-does-not-exist');
+
+      expect(reply.content).toMatch(/lost track/i);
+    });
+
+    it('refuses a proposal raised in another conversation', async () => {
+      const { tool, subject } = await withPendingProposal();
+
+      const reply = await subject.confirmAction('sess-OTHER', 'prop-1');
+
+      expect(tool.confirm).not.toHaveBeenCalled();
+      // Same sentence as an unknown id: a guessed id must not be
+      // distinguishable from one belonging to someone else's session.
+      expect(reply.content).toMatch(/lost track/i);
+    });
+
+    it('fails closed on an expired hold instead of posting a dead link', async () => {
+      const expired = reservationTool({
+        execute: vi.fn(async (_input, ctx) => ({
+          ok: true,
+          summary: 'Held a table',
+          proposal: {
+            id: 'prop-1',
+            sessionId: ctx.sessionId,
+            service: 'ontopo' as const,
+            title: 'Ouzeria',
+            summary: 'Table for two',
+            url: 'https://s1.ontopo.com/checkout/stale',
+            expiresAt: new Date(Date.now() - 1_000).toISOString(),
+          },
+        })),
+      });
+      const { tool, subject } = await withPendingProposal(expired);
+
+      const reply = await subject.confirmAction('sess-1', 'prop-1');
+
+      expect(tool.confirm).not.toHaveBeenCalled();
+      expect(reply.content).toMatch(/expired/i);
+    });
+
+    it('says so plainly when the confirmation itself fails', async () => {
+      const failing = reservationTool({
+        confirm: vi.fn(async () => ({
+          ok: false,
+          summary: 'Ontopo rejected the hold.',
+        })),
+      });
+      const { subject } = await withPendingProposal(failing);
+
+      const reply = await subject.confirmAction('sess-1', 'prop-1');
+
+      expect(reply.content).toContain('Ontopo rejected the hold.');
+      expect(reply.content).not.toMatch(/booked/i);
     });
   });
 });

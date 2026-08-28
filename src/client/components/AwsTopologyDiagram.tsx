@@ -44,15 +44,19 @@ export interface NodeDuration {
 }
 
 export interface AwsTopologyDiagramProps {
-  /** The node the current step lands on. */
+  /** The node the traffic is sitting in, if it is not currently in flight. */
   litNode?: AwsNodeId;
-  /** True when the current step arrived travelling back toward the browser. */
+  /** True when the traffic is travelling back toward the browser. */
   litIsResponse?: boolean;
-  /** Nodes the current traffic transits without stopping. */
-  passNodes?: readonly AwsNodeId[];
-  /** Nodes an earlier step already lit. */
+  /** Nodes already visited — a trail, rendered quietly. */
   doneNodes?: readonly AwsNodeId[];
-  /** The current step's hops, which colour and animate their connectors. */
+  /**
+   * The hop currently in flight, which colours and animates its connector.
+   *
+   * One hop, in practice. It stays a list because the type mirrors `routeBetween`'s
+   * return, but a caller handing over a whole route would light the whole route at
+   * once, which is the thing the leg-by-leg traversal exists to stop.
+   */
   activeHops?: readonly AwsHop[];
   durations?: Readonly<Partial<Record<AwsNodeId, NodeDuration>>>;
   /**
@@ -86,7 +90,7 @@ function ensureKeyframes() {
 }
 
 /** How a node is currently rendered. Mirrors the mockup's card states. */
-type NodeState = 'idle' | 'done' | 'pass' | 'lit' | 'response' | 'muted';
+type NodeState = 'idle' | 'done' | 'lit' | 'response' | 'muted';
 
 const NODE_STATE_STYLES: Record<NodeState, React.CSSProperties> = {
   // The other engine. Greyscaled rather than just faded, so a shaded Bedrock card
@@ -106,13 +110,18 @@ const NODE_STATE_STYLES: Record<NodeState, React.CSSProperties> = {
    * anything — the whole diagram read as faded all the time, and the half you had
    * just asked for was as ghostly as the half you had not. A resource that exists
    * and is wired up is *there*; that it happens not to be carrying a request this
-   * second is said by its border and background, which is what `done`, `pass` and
-   * `lit` also vary. Fade is reserved for the two things fade should mean here:
+   * second is said by its border and background, which is what `done` and `lit`
+   * also vary. Fade is reserved for the two things fade should mean here:
    * the other engine, and a resource this flow genuinely does not touch.
    */
   idle: { borderColor: '#E5D9D2', background: colors.surface },
-  done: { borderColor: '#DFC4CB', background: '#FEF7F8' },
-  pass: { borderColor: '#9FD9CE', background: '#F1FBF8' },
+  /*
+   * Already visited: a trail the eye can follow back, deliberately the quietest
+   * non-idle state there is. Border-only, no fill and no shadow, because by the end
+   * of a flow eleven boxes are in this state at once and anything brighter competes
+   * with the one box that is actually lit.
+   */
+  done: { borderColor: '#DFC4CB', background: colors.surface },
   lit: {
     borderColor: '#8C2F45',
     background: '#F6DEE2',
@@ -386,7 +395,6 @@ function NodeCard({
 export function AwsTopologyDiagram({
   litNode,
   litIsResponse = false,
-  passNodes = [],
   doneNodes = [],
   activeHops = [],
   durations = {},
@@ -404,7 +412,6 @@ export function AwsTopologyDiagram({
     // just switched away from must not keep a shaded card lit.
     if (!isNodeInEngine(id, engine)) return 'muted';
     if (id === litNode) return litIsResponse ? 'response' : 'lit';
-    if (passNodes.includes(id)) return 'pass';
     if (doneNodes.includes(id)) return 'done';
     return 'idle';
   };

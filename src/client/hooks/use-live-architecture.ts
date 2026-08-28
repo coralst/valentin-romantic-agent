@@ -3,12 +3,14 @@ import { subscribeToWsEvents, type ObservedWsEvent } from '../utils/ws-event-obs
 import {
   awsNodeIdForResource,
   describeAwsEvent,
+  flowLegs,
   nodeForEngine,
-  routeBetween,
   type ArchitectureEngine,
   type AwsHop,
   type AwsNodeId,
 } from '../utils/aws-architecture';
+import { useFlowTraversal } from './use-flow-traversal';
+import type { FlowBeat } from '../utils/aws-demo-flows';
 import type { AwsCategory } from '../utils/aws-diagram-layout';
 import type { AwsSpan } from '../../shared/interfaces/ws-events';
 
@@ -21,8 +23,15 @@ import type { AwsSpan } from '../../shared/interfaces/ws-events';
  * different picture from demo mode, because there is only one picture.
  */
 
-/** One thing that happened, live. */
-export interface LiveBeat {
+/**
+ * One thing that happened, live.
+ *
+ * `extends FlowBeat` is the promise, checked by the compiler: a recorded beat is
+ * shaped like a scripted step, so it can be fed to the same diagram, the same feed
+ * and the same replay. A field drifting apart here would silently become two
+ * animations instead of one.
+ */
+export interface LiveBeat extends FlowBeat {
   key: string;
   from: AwsNodeId;
   to: AwsNodeId;
@@ -54,9 +63,10 @@ export interface UseLiveArchitectureResult {
   beats: readonly LiveBeat[];
   /** The beat currently lit, or undefined once the highlight has expired. */
   currentBeat?: LiveBeat;
+  /** The node the traffic is sitting in, or undefined while it is in flight. */
   litNode?: AwsNodeId;
   litIsResponse: boolean;
-  passNodes: readonly AwsNodeId[];
+  /** Nodes already visited — a quiet trail, not a highlight. */
   doneNodes: readonly AwsNodeId[];
   activeHops: readonly AwsHop[];
   /** Number of `aws_span` events seen — the honest "spans" count for the feed. */
@@ -294,22 +304,43 @@ export function useLiveArchitecture(
   }, []);
 
   const currentBeat = beats.find((beat) => beat.key === currentKey);
-  const activeHops = currentBeat ? routeBetween(currentBeat.from, currentBeat.to) : [];
-  const litNode = currentBeat?.to;
+
+  /*
+   * Live traffic is animated exactly the way a scripted step is: the beat's route is
+   * split into legs and walked one at a time.
+   *
+   * It used to be handed to the diagram whole, so a single `preference_update` lit
+   * the browser, CloudFront, the ALB, Fargate, the Gateway, Memory and DynamoDB at
+   * the same instant — a picture that shows which resources exist rather than what
+   * just happened. Sharing the traversal with demo mode is also the only way the two
+   * modes can be trusted to look the same, which is the promise this hook's output
+   * shape exists to keep.
+   */
+  const legs = currentBeat ? flowLegs(currentBeat.from, currentBeat.to) : [];
+  const legIndex = useFlowTraversal({
+    legCount: Math.max(1, legs.length),
+    resetKey: currentKey ?? null,
+    enabled: currentBeat !== undefined,
+  });
+  const leg = legs[Math.min(legIndex, legs.length - 1)];
+
+  const litNode = leg?.kind === 'node' ? leg.node : undefined;
+  const activeHops = leg?.kind === 'hop' ? [leg.hop] : [];
+
+  // The trail: every earlier beat's destination, plus the part of this beat's route
+  // the traffic has already crossed. Not a highlight — the diagram renders these
+  // border-only, so the one lit box stays the only thing that draws the eye.
+  const trail = beats.filter((beat) => beat.key !== currentKey).map((beat) => beat.to);
+  for (const earlier of legs.slice(0, legIndex)) {
+    if (earlier.kind === 'node') trail.push(earlier.node);
+  }
 
   return {
     beats,
     currentBeat,
     litNode,
-    litIsResponse: activeHops.length > 0 && !activeHops[0].downstream,
-    passNodes: activeHops
-      .slice(0, -1)
-      .map((hop) => hop.node)
-      .filter((id) => id !== litNode),
-    doneNodes: beats
-      .filter((beat) => beat.key !== currentKey)
-      .map((beat) => beat.to)
-      .filter((id) => id !== litNode),
+    litIsResponse: leg !== undefined && !leg.downstream,
+    doneNodes: trail.filter((id) => id !== litNode),
     activeHops,
     spanCount,
     modelCallCount,

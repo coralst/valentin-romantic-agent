@@ -1,5 +1,5 @@
 import type { ArchitectureEngine, AwsNodeId } from './aws-architecture';
-import { routeBetween } from './aws-architecture';
+import { flowLegs, routeBetween } from './aws-architecture';
 import type { AwsCategory } from './aws-diagram-layout';
 
 /**
@@ -48,7 +48,7 @@ export interface DemoStep {
 }
 
 /** A step with `from` filled in, which is what the view actually consumes. */
-export interface ResolvedDemoStep extends DemoStep {
+export interface ResolvedDemoStep extends DemoStep, FlowBeat {
   from: AwsNodeId;
 }
 
@@ -400,29 +400,68 @@ export function demoFlow(id: DemoFlowId): DemoFlow {
 }
 
 /**
- * Cumulative diagram state for `steps[0..index]`.
+ * Cumulative diagram state for `steps[0..index]`, at one beat within that step.
  *
  * Rebuilt from scratch every time rather than mutated forward, so stepping
  * backwards is exact instead of an attempted undo — an undo-based version
  * drifted after the first backward step, which is precisely when a presenter
  * reaches for it ("wait, go back").
+ *
+ * At most one node is lit and at most one segment is animated, always. That is
+ * the whole point of the leg index: a step from the browser to Bedrock crosses
+ * five resources, and lighting all five the instant the step begins says "these
+ * eight boxes are involved" when what a presenter needs it to say is "the request
+ * is *here* now".
  */
 export interface FlowFrame {
-  /** The node the current step lands on. */
+  /** The node the traffic is sitting in, or undefined while it is in flight. */
   litNode?: AwsNodeId;
-  /** True when the current step arrived travelling back toward the browser. */
+  /** True when the traffic is travelling back toward the browser. */
   litIsResponse: boolean;
-  /** Nodes the current step's traffic passes through without stopping. */
-  passNodes: readonly AwsNodeId[];
-  /** Nodes lit by an earlier step. */
+  /** Nodes already visited — a quiet trail, not a highlight. */
   doneNodes: readonly AwsNodeId[];
-  /** The current step's hops, with direction. */
+  /** The single segment currently in flight, or empty while the traffic is parked. */
   activeHops: ReturnType<typeof routeBetween>;
   /** Duration pills to show, keyed by node. */
   durations: Readonly<Partial<Record<AwsNodeId, { label: string; ok: boolean; current: boolean }>>>;
 }
 
-export function frameForStep(steps: readonly ResolvedDemoStep[], index: number): FlowFrame {
+/**
+ * The least a thing needs to be animated on the diagram and listed in the feed.
+ *
+ * Both a scripted step and a recorded live beat satisfy it, which is what lets one
+ * renderer, one playback and one frame builder serve demo mode, live mode and the
+ * replay of a real conversation. Any divergence here would immediately become two
+ * animations that drift apart.
+ */
+export interface FlowBeat {
+  from: AwsNodeId;
+  to: AwsNodeId;
+  service: string;
+  operation: string;
+  detail: string;
+  category: AwsCategory;
+  durationMs?: number;
+  ok?: boolean;
+  actor: string;
+  action: string;
+}
+
+/** How many beats a step is animated over: box, arrow, box, arrow, box. */
+export function stepLegCount(beat: FlowBeat | undefined): number {
+  return beat ? flowLegs(beat.from, beat.to).length : 1;
+}
+
+export function frameForStep(
+  steps: readonly FlowBeat[],
+  index: number,
+  /**
+   * Which beat *within* the current step to render. Defaults to the last one —
+   * the settled, arrived state — so a caller that only cares about "where did
+   * this step end up" needn't know legs exist.
+   */
+  legIndex?: number,
+): FlowFrame {
   // Clamp rather than trust the caller. An index past the end would make
   // `isCurrent` false for every step, so nothing would light and the whole flow
   // would render as history — a diagram with no current step, which is the one
@@ -436,26 +475,42 @@ export function frameForStep(steps: readonly ResolvedDemoStep[], index: number):
   let litNode: AwsNodeId | undefined;
   let litIsResponse = false;
   let activeHops: ReturnType<typeof routeBetween> = [];
-  const pass: AwsNodeId[] = [];
 
   for (let k = 0; k <= current; k += 1) {
     const step = steps[k];
     const isCurrent = k === current;
-    const hops = routeBetween(step.from, step.to);
 
     if (isCurrent) {
-      litNode = step.to;
-      // A step whose first hop climbs toward the browser is a response, and gets
-      // the teal treatment. Colour by direction, not by which node it is.
-      litIsResponse = hops.length > 0 && !hops[0].downstream;
-      activeHops = hops;
-      // Everything except the final hop's node is transited, not arrived at.
-      hops.slice(0, -1).forEach((hop) => pass.push(hop.node));
+      const legs = flowLegs(step.from, step.to);
+      const at = Math.max(0, Math.min(legIndex ?? legs.length - 1, legs.length - 1));
+      const leg = legs[at];
+
+      if (leg.kind === 'node') {
+        litNode = leg.node;
+        activeHops = [];
+      } else {
+        // In flight: the arrow carries the highlight and no box holds it, which is
+        // what makes the movement between boxes readable rather than implied.
+        activeHops = [leg.hop];
+      }
+      // Colour by travel direction, not by which node it is: the same node is
+      // claret on the way out and teal on the way home.
+      litIsResponse = !leg.downstream;
+
+      // The trail behind the traffic, within this step as well as before it — so
+      // the path fills in as it is walked instead of appearing all at once.
+      for (const earlier of legs.slice(0, at)) {
+        if (earlier.kind === 'node' && !done.includes(earlier.node)) done.push(earlier.node);
+      }
     } else if (!done.includes(step.to)) {
       done.push(step.to);
     }
 
-    if (step.durationMs !== undefined) {
+    // The current step's pill waits until the traffic has actually arrived: the
+    // number is what the work cost, and announcing it before the box lights would
+    // put a measurement on a node nothing has reached yet.
+    const arrived = !isCurrent || litNode === step.to;
+    if (step.durationMs !== undefined && arrived) {
       durations[step.to] = {
         label: `${step.durationMs} ms`,
         ok: step.ok === true,
@@ -467,16 +522,27 @@ export function frameForStep(steps: readonly ResolvedDemoStep[], index: number):
   return {
     litNode,
     litIsResponse,
-    passNodes: pass.filter((id) => id !== litNode),
     doneNodes: done.filter((id) => id !== litNode),
     activeHops,
     durations,
   };
 }
 
-/** Dwell for a step: a 412 ms Converse call earns more time on screen than a 1 ms hop. */
-export function demoStepDwellMs(step: ResolvedDemoStep | undefined): number {
-  if (!step) return 1100;
-  if (step.durationMs !== undefined && step.durationMs >= 100) return 1900;
-  return 1100;
+/**
+ * Dwell for a step: a 412 ms Converse call earns more time on screen than a 1 ms hop.
+ *
+ * Floored at the time its legs need to be walked, plus a moment to rest on the
+ * destination. Without that floor, autoplay would advance to the next step
+ * mid-traversal on any step that crosses more than a couple of resources, and the
+ * animation would visibly jump instead of arriving.
+ */
+export function demoStepDwellMs(step: FlowBeat | undefined): number {
+  const authored = step?.durationMs !== undefined && step.durationMs >= 100 ? 1900 : 1100;
+  return Math.max(authored, stepLegCount(step) * FLOW_LEG_MS + 500);
 }
+
+/**
+ * How long a single beat holds. Short enough that a seven-leg step still reads as
+ * one movement rather than a slideshow, long enough to follow with your eye.
+ */
+export const FLOW_LEG_MS = 240;

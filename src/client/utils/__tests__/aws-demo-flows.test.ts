@@ -6,6 +6,8 @@ import {
   demoFlow,
   demoStepDwellMs,
   frameForStep,
+  stepLegCount,
+  FLOW_LEG_MS,
   type DemoFlowId,
 } from '../aws-demo-flows';
 import {
@@ -197,25 +199,79 @@ describe('frameForStep', () => {
 
     expect(frame.litNode).toBe('browser');
     expect(frame.litIsResponse).toBe(true);
-    expect(frame.activeHops[0].downstream).toBe(false);
+    // Mid-flight on the way home, the live hop climbs rather than descends.
+    expect(frameForStep(steps, 8, 1).activeHops[0].downstream).toBe(false);
   });
 
-  it('marks transited nodes as passed, not arrived at', () => {
-    const frame = frameForStep(steps, 8);
-
-    // Fargate, ALB and CloudFront are travelled through on the way back.
-    expect(frame.passNodes).toContain('fargate');
-    expect(frame.passNodes).toContain('cloudfront');
-    expect(frame.passNodes).not.toContain('browser');
-  });
-
-  it('never lists a node as both lit and something else', () => {
+  it('never lists a node as both lit and done', () => {
     for (let i = 0; i < steps.length; i += 1) {
       const frame = frameForStep(steps, i);
       if (!frame.litNode) continue;
-      expect(frame.passNodes, `step ${i}`).not.toContain(frame.litNode);
       expect(frame.doneNodes, `step ${i}`).not.toContain(frame.litNode);
     }
+  });
+
+  /**
+   * One thing highlighted at a time, which is the whole reason legs exist.
+   *
+   * The bug this replaces: a step lit every node on its route and animated every
+   * segment the instant it became current, so step 11 of the AgentCore flow glowed
+   * across eight cards at once — a picture of which resources exist rather than of
+   * where the request had got to.
+   */
+  describe('walking a step one beat at a time', () => {
+    // DynamoDB → Browser, the longest journey in the flow.
+    const homeward = 8;
+
+    it('alternates a node and a segment, and never both', () => {
+      const legs = stepLegCount(steps[homeward]);
+      expect(legs).toBeGreaterThan(2);
+
+      for (let leg = 0; leg < legs; leg += 1) {
+        const frame = frameForStep(steps, homeward, leg);
+        const parked = frame.litNode !== undefined;
+        expect(parked, `leg ${leg}`).toBe(leg % 2 === 0);
+        expect(frame.activeHops.length, `leg ${leg}`).toBe(parked ? 0 : 1);
+      }
+    });
+
+    it('starts where the traffic already is and ends where the step lands', () => {
+      expect(frameForStep(steps, homeward, 0).litNode).toBe('dynamodb');
+      expect(frameForStep(steps, homeward, 99).litNode).toBe('browser');
+    });
+
+    it('fills the trail in behind the traffic rather than all at once', () => {
+      // On the first step of the flow nothing has been visited yet, so the trail is
+      // purely this step's own — which is what makes the growth observable.
+      const outbound = 1; // Browser → CloudFront … the descent begins.
+      const first = frameForStep(steps, outbound, 0).doneNodes;
+      const later = frameForStep(steps, outbound, 2).doneNodes;
+
+      expect(first).toEqual([]);
+      expect(later).toContain('browser');
+      expect(later.length).toBeGreaterThan(first.length);
+    });
+
+    it('leaves the node behind it in the trail once the traffic moves on', () => {
+      expect(frameForStep(steps, homeward, 0).doneNodes).not.toContain('dynamodb');
+      expect(frameForStep(steps, homeward, 2).doneNodes).toContain('dynamodb');
+    });
+
+    it('withholds the duration pill until the traffic has arrived', () => {
+      // The number is what the work cost; announcing it over a box nothing has
+      // reached yet would be a measurement of nothing.
+      const bedrock = 4;
+      expect(frameForStep(steps, bedrock, 0).durations.bedrock).toBeUndefined();
+      expect(frameForStep(steps, bedrock).durations.bedrock?.current).toBe(true);
+    });
+
+    it('holds a step at least as long as its legs take to walk', () => {
+      // Otherwise autoplay advances mid-traversal and the animation jumps instead
+      // of arriving.
+      for (const step of steps) {
+        expect(demoStepDwellMs(step)).toBeGreaterThanOrEqual(stepLegCount(step) * FLOW_LEG_MS);
+      }
+    });
   });
 
   it('accumulates duration pills and mutes the ones that are not current', () => {

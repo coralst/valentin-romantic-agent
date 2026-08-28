@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { AwsFlowFeed, groupFeedRows, type FeedRow } from '../AwsFlowFeed';
+import userEvent from '@testing-library/user-event';
+import { AwsFlowFeed, REPLAY_COPY, groupFeedRows, type FeedRow } from '../AwsFlowFeed';
 
 function makeRow(overrides: Partial<FeedRow> = {}): FeedRow {
   return {
@@ -37,10 +38,7 @@ describe('groupFeedRows', () => {
       makeRow({ key: 'b', action: 'learns something new' }),
     ]);
 
-    expect(groups.map((group) => group.action)).toEqual([
-      'writes a reply',
-      'learns something new',
-    ]);
+    expect(groups.map((group) => group.action)).toEqual(['writes a reply', 'learns something new']);
   });
 
   /**
@@ -158,13 +156,101 @@ describe('AwsFlowFeed', () => {
   });
 
   it('shows an em dash for a beat that was a delivery rather than a call', () => {
+    render(<AwsFlowFeed rows={[makeRow({ durationLabel: '—' })]} summary="" heading="Demo flow" />);
+    expect(screen.getByText('—')).toBeInTheDocument();
+  });
+});
+
+/**
+ * Choosing a user action out of the log.
+ *
+ * The feed already grouped its rows by actor and action, but the groups were
+ * captions: there was no way to say "that one — show me its steps again". These are
+ * the affordance that turns the log into an index of the conversation.
+ */
+describe('choosing a user action', () => {
+  const ROWS = [
+    makeRow({ key: 'a', actor: 'User', action: 'sends a message in chat', operation: 'Send' }),
+    makeRow({ key: 'b', actor: 'Valentin', action: 'writes a reply', operation: 'Converse' }),
+    makeRow({ key: 'c', actor: 'Valentin', action: 'writes a reply', operation: 'Query' }),
+  ];
+
+  it('leaves the groups as plain captions when there is nothing to replay to', () => {
+    render(<AwsFlowFeed rows={ROWS} summary="" heading="Demo flow" />);
+
+    // A control that did nothing would be a worse lie than no control.
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('offers each group as a control when replay is available', () => {
+    render(<AwsFlowFeed rows={ROWS} summary="" heading="Demo flow" onSelectGroup={() => {}} />);
+
+    const headers = screen.getAllByTestId('aws-feed-group-header');
+    expect(headers).toHaveLength(2);
+    // A button, not a clickable div: the presenter's hand is not always on a mouse.
+    expect(headers[0].tagName).toBe('BUTTON');
+  });
+
+  it('hands back the chosen group with all of its steps', async () => {
+    const chosen: string[][] = [];
     render(
       <AwsFlowFeed
-        rows={[makeRow({ durationLabel: '—' })]}
+        rows={ROWS}
         summary=""
         heading="Demo flow"
+        onSelectGroup={(group) => chosen.push(group.rows.map((row) => row.key))}
       />,
     );
-    expect(screen.getByText('—')).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    // Newest group first, so "writes a reply" is the one on top.
+    await user.click(screen.getAllByTestId('aws-feed-group-header')[0]);
+
+    // Chronological, not the reversed display order: a replay has to run forwards.
+    expect(chosen).toEqual([['b', 'c']]);
+  });
+
+  it('identifies a group by its first row rather than its position', () => {
+    // Position changes the moment a new beat arrives, which would slide the
+    // selection onto a different action mid-replay.
+    render(<AwsFlowFeed rows={ROWS} summary="" heading="Demo flow" onSelectGroup={() => {}} />);
+
+    const ids = screen.getAllByTestId('aws-feed-group').map((group) => group.dataset.groupId);
+    expect(ids).toEqual(['b', 'a']);
+  });
+
+  it('folds the other actions away so the chosen one is what you see', () => {
+    render(
+      <AwsFlowFeed
+        rows={ROWS}
+        summary=""
+        heading="Replay"
+        onSelectGroup={() => {}}
+        selectedGroupId="b"
+      />,
+    );
+
+    // Both captions stay — you still need to be able to pick another one — but only
+    // the chosen action's steps are listed.
+    expect(screen.getAllByTestId('aws-feed-group')).toHaveLength(2);
+    expect(screen.getAllByTestId('aws-feed-row')).toHaveLength(2);
+    expect(screen.queryByText('Send')).not.toBeInTheDocument();
+  });
+
+  it('marks the group being replayed as pressed', () => {
+    render(
+      <AwsFlowFeed
+        rows={ROWS}
+        summary=""
+        heading="Replay"
+        onSelectGroup={() => {}}
+        selectedGroupId="b"
+      />,
+    );
+
+    const headers = screen.getAllByTestId('aws-feed-group-header');
+    expect(headers[0]).toHaveAttribute('aria-pressed', 'true');
+    expect(headers[1]).toHaveAttribute('aria-pressed', 'false');
+    expect(headers[0]).toHaveTextContent(REPLAY_COPY.replaying);
   });
 });

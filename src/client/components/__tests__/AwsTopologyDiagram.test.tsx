@@ -95,14 +95,31 @@ describe('AwsTopologyDiagram', () => {
       expect(screen.getByTestId('aws-node-browser')).toHaveAttribute('data-state', 'response');
     });
 
-    it('marks transited nodes as passed and earlier ones as done', () => {
-      render(<AwsTopologyDiagram litNode="bedrock" passNodes={['alb']} doneNodes={['browser']} />);
-      expect(screen.getByTestId('aws-node-alb')).toHaveAttribute('data-state', 'pass');
+    it('marks already-visited nodes as done', () => {
+      render(<AwsTopologyDiagram litNode="bedrock" doneNodes={['browser', 'alb']} />);
+      expect(screen.getByTestId('aws-node-alb')).toHaveAttribute('data-state', 'done');
       expect(screen.getByTestId('aws-node-browser')).toHaveAttribute('data-state', 'done');
     });
 
+    /**
+     * There is deliberately no "transited" state any more.
+     *
+     * A step's whole route used to light at once, so one `preference_update` glowed
+     * across eight cards and the diagram said "these resources are involved" rather
+     * than "the request is here". Traffic is now walked one hop at a time, so every
+     * node it touches gets its own beat and nothing is ever passed through.
+     */
+    it('lights exactly one node at a time', () => {
+      render(<AwsTopologyDiagram litNode="bedrock" doneNodes={['browser', 'alb', 'fargate']} />);
+      const highlighted = AWS_NODES.filter((node) => {
+        const state = screen.getByTestId(`aws-node-${node.id}`).getAttribute('data-state');
+        return state === 'lit' || state === 'response';
+      });
+      expect(highlighted.map((node) => node.id)).toEqual(['bedrock']);
+    });
+
     it('leaves S3 idle on a chat flow, so its dimness is explained rather than hidden', () => {
-      render(<AwsTopologyDiagram litNode="bedrock" passNodes={['alb', 'fargate']} />);
+      render(<AwsTopologyDiagram litNode="bedrock" doneNodes={['alb', 'fargate']} />);
       expect(screen.getByTestId('aws-node-s3')).toHaveAttribute('data-state', 'idle');
     });
   });

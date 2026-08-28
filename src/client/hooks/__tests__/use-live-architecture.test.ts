@@ -3,6 +3,7 @@ import { act, renderHook } from '@testing-library/react';
 import { useLiveArchitecture, LIVE_BEAT_LIMIT, LIVE_HIGHLIGHT_MS } from '../use-live-architecture';
 import { publishInboundWsEvent, resetWsObservers } from '../../utils/ws-event-observer';
 import { routeBetween } from '../../utils/aws-architecture';
+import { FLOW_LEG_MS } from '../../utils/aws-demo-flows';
 import type { AwsSpan, ServerEvent } from '../../../shared/interfaces/ws-events';
 import type { PreferenceWithHistory } from '../../../shared/interfaces/preference';
 
@@ -48,6 +49,23 @@ const PREFERENCE_UPDATE: ServerEvent = {
   timestamp: TIMESTAMP,
 };
 
+/**
+ * Walk the current beat's traffic from its origin to its destination.
+ *
+ * A live beat is animated hop by hop rather than arriving all at once, so
+ * immediately after an event `litNode` is the *origin* and the destination is only
+ * lit once the legs have been walked. One `act` per beat: the next beat's timer is
+ * scheduled by an effect, which React does not run until the current update has
+ * committed. Requires fake timers.
+ */
+function walkToArrival(beats = 8) {
+  for (let i = 0; i < beats; i += 1) {
+    act(() => {
+      vi.advanceTimersByTime(FLOW_LEG_MS);
+    });
+  }
+}
+
 describe('useLiveArchitecture', () => {
   afterEach(() => {
     resetWsObservers();
@@ -63,6 +81,7 @@ describe('useLiveArchitecture', () => {
 
   describe('spans', () => {
     it('records a span as a beat on its resource', () => {
+      vi.useFakeTimers();
       const { result } = renderHook(() => useLiveArchitecture());
 
       act(() => {
@@ -70,8 +89,12 @@ describe('useLiveArchitecture', () => {
       });
 
       expect(result.current.beats).toHaveLength(1);
-      expect(result.current.litNode).toBe('dynamodb');
       expect(result.current.spanCount).toBe(1);
+
+      // The traffic starts where it came from and walks to where the work landed.
+      expect(result.current.litNode).toBe('fargate');
+      walkToArrival();
+      expect(result.current.litNode).toBe('dynamodb');
     });
 
     it('keeps the measured duration and outcome', () => {
@@ -125,6 +148,7 @@ describe('useLiveArchitecture', () => {
     });
 
     it('routes a span from Fargate, because that is what made the call', () => {
+      vi.useFakeTimers();
       const { result } = renderHook(() => useLiveArchitecture());
 
       act(() => {
@@ -132,12 +156,19 @@ describe('useLiveArchitecture', () => {
       });
 
       expect(result.current.currentBeat?.from).toBe('fargate');
-      expect(result.current.activeHops).toEqual(routeBetween('fargate', 'dynamodb'));
+
+      // One hop at a time, taken from the real route — never the whole route at
+      // once, which is what used to light seven cards simultaneously.
+      const route = routeBetween('fargate', 'dynamodb');
+      expect(result.current.activeHops).toEqual([]);
+      walkToArrival(1);
+      expect(result.current.activeHops).toEqual([route[0]]);
     });
   });
 
   describe('events', () => {
     it('records a routed event as a beat', () => {
+      vi.useFakeTimers();
       const { result } = renderHook(() => useLiveArchitecture());
 
       act(() => {
@@ -145,6 +176,7 @@ describe('useLiveArchitecture', () => {
       });
 
       expect(result.current.beats).toHaveLength(1);
+      walkToArrival();
       expect(result.current.litNode).toBe('browser');
     });
 
@@ -208,6 +240,7 @@ describe('useLiveArchitecture', () => {
 
   describe('history and highlighting', () => {
     it('keeps earlier beats as done once a new one lands', () => {
+      vi.useFakeTimers();
       const { result } = renderHook(() => useLiveArchitecture());
 
       act(() => {
@@ -218,9 +251,28 @@ describe('useLiveArchitecture', () => {
       act(() => {
         publishInboundWsEvent(makeSpan());
       });
+      walkToArrival();
 
       expect(result.current.litNode).toBe('dynamodb');
       expect(result.current.doneNodes).toContain('bedrock');
+    });
+
+    it('lights one node at a time, whatever the route crossed', () => {
+      // The regression this guards: a beat handed its whole route to the diagram, so
+      // a single event glowed across every resource between its endpoints at once.
+      vi.useFakeTimers();
+      const { result } = renderHook(() => useLiveArchitecture());
+
+      act(() => {
+        publishInboundWsEvent(PREFERENCE_UPDATE);
+      });
+
+      for (let beat = 0; beat < 8; beat += 1) {
+        const parked = result.current.litNode !== undefined;
+        expect(result.current.activeHops.length, `beat ${beat}`).toBe(parked ? 0 : 1);
+        expect(result.current.doneNodes, `beat ${beat}`).not.toContain(result.current.litNode);
+        walkToArrival(1);
+      }
     });
 
     /**
@@ -234,6 +286,7 @@ describe('useLiveArchitecture', () => {
       act(() => {
         publishInboundWsEvent(makeSpan());
       });
+      walkToArrival();
       expect(result.current.litNode).toBe('dynamodb');
 
       act(() => {

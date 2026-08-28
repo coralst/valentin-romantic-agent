@@ -472,6 +472,43 @@ export function nodesAlongRoute(from: AwsNodeId, to: AwsNodeId): readonly AwsNod
 }
 
 /**
+ * One beat of a journey: either sitting in a node, or in flight along a segment.
+ *
+ * A `downstream` flag rides on both kinds so a renderer can colour the beat by
+ * travel direction without re-deriving it — for a node leg it is the direction of
+ * the hop that *arrived* there, which is what makes the response leg read as a
+ * return rather than as a second outbound trip.
+ */
+export type FlowLeg =
+  | { kind: 'node'; node: AwsNodeId; downstream: boolean }
+  | { kind: 'hop'; hop: AwsHop; downstream: boolean };
+
+/**
+ * A route split into single beats, alternating node and segment.
+ *
+ * This is the difference between "this step touched eight things" and "watch it
+ * move": `routeBetween` hands back the whole path at once, which is honest about
+ * the topology but, animated, lights the entire path simultaneously. Interleaving
+ * the nodes between the hops gives a sequence a presenter can follow — box, arrow,
+ * box, arrow, box — where exactly one thing is ever highlighted.
+ *
+ * The origin node leads, so the journey starts where the traffic already is. Work
+ * with no network hop (`from === to`) is a single node leg rather than nothing:
+ * something did happen, it just happened in one place.
+ */
+export function flowLegs(from: AwsNodeId, to: AwsNodeId): readonly FlowLeg[] {
+  const hops = routeBetween(from, to);
+  if (hops.length === 0) return [{ kind: 'node', node: to, downstream: true }];
+
+  const legs: FlowLeg[] = [{ kind: 'node', node: from, downstream: hops[0].downstream }];
+  for (const hop of hops) {
+    legs.push({ kind: 'hop', hop, downstream: hop.downstream });
+    legs.push({ kind: 'node', node: hop.node, downstream: hop.downstream });
+  }
+  return legs;
+}
+
+/**
  * Where each WebSocket event's work lands, and where it started.
  *
  * `from` is the originator, `to` is where the work happens; the route between

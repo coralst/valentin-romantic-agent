@@ -11,6 +11,7 @@ import {
   awsNodesForEventType,
   awsHopsForEventType,
   describeAwsEvent,
+  flowLegs,
   nodesAlongRoute,
   routeBetween,
   type AwsNodeId,
@@ -181,6 +182,65 @@ describe('nodesAlongRoute', () => {
 
   it('returns the single node when there is no hop', () => {
     expect(nodesAlongRoute('bedrock', 'bedrock')).toEqual(['bedrock']);
+  });
+});
+
+/**
+ * The decomposition that lets the diagram animate a step instead of asserting it.
+ *
+ * `routeBetween` is honest about the topology but hands over the whole path at once,
+ * and a renderer given the whole path lights the whole path — which is how one
+ * `preference_update` came to glow across eight cards simultaneously.
+ */
+describe('flowLegs', () => {
+  it('interleaves the nodes between the hops, starting where the traffic is', () => {
+    expect(flowLegs('browser', 'alb')).toEqual([
+      { kind: 'node', node: 'browser', downstream: true },
+      {
+        kind: 'hop',
+        hop: { segment: 'browser-cloudfront', node: 'cloudfront', downstream: true },
+        downstream: true,
+      },
+      { kind: 'node', node: 'cloudfront', downstream: true },
+      {
+        kind: 'hop',
+        hop: { segment: 'cloudfront-alb', node: 'alb', downstream: true },
+        downstream: true,
+      },
+      { kind: 'node', node: 'alb', downstream: true },
+    ]);
+  });
+
+  it('reads box, arrow, box — never two of a kind in a row', () => {
+    const legs = flowLegs('dynamodb', 'browser');
+
+    expect(legs[0].kind).toBe('node');
+    expect(legs[legs.length - 1].kind).toBe('node');
+    for (let i = 1; i < legs.length; i += 1) {
+      expect(legs[i].kind, `leg ${i}`).not.toBe(legs[i - 1].kind);
+    }
+  });
+
+  it('carries the travel direction on every leg, so the return trip reads as one', () => {
+    // Colour is by direction, not by which node it is: the browser is claret on the
+    // way out and teal on the way home.
+    expect(flowLegs('dynamodb', 'browser').every((leg) => !leg.downstream)).toBe(true);
+    expect(flowLegs('browser', 'dynamodb').every((leg) => leg.downstream)).toBe(true);
+  });
+
+  it('visits every node on the route, so nothing is transited without a beat', () => {
+    const nodes = flowLegs('dynamodb', 'browser')
+      .filter((leg) => leg.kind === 'node')
+      .map((leg) => (leg.kind === 'node' ? leg.node : null));
+
+    expect(nodes).toEqual([...nodesAlongRoute('dynamodb', 'browser')]);
+  });
+
+  it('gives work with no network hop a single beat rather than none', () => {
+    // Something did happen; it just happened in one place.
+    expect(flowLegs('bedrock', 'bedrock')).toEqual([
+      { kind: 'node', node: 'bedrock', downstream: true },
+    ]);
   });
 });
 

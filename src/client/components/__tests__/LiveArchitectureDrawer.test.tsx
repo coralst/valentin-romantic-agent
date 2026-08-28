@@ -168,26 +168,58 @@ describe('LiveArchitectureDrawer', () => {
       );
     });
 
-    it('grows the feed as it steps', async () => {
+    /**
+     * The feed lists the whole script, and moves the highlight rather than growing.
+     *
+     * It used to reveal itself a row at a time, which reads well but leaves nothing
+     * to choose from — on a paused flow at step 0 there is exactly one action in the
+     * list, so "pick an action and replay it" had nothing to pick.
+     */
+    it('lists every step of the flow and marks the current one', async () => {
       const user = userEvent.setup();
       renderDrawer();
       await openDrawer(user);
 
-      expect(screen.getAllByTestId('aws-feed-row')).toHaveLength(1);
+      expect(screen.getAllByTestId('aws-feed-row')).toHaveLength(FLOW.steps.length);
+      const current = () =>
+        screen.getAllByTestId('aws-feed-row').filter((row) => row.dataset.current === 'true');
+      expect(current()).toHaveLength(1);
+
       await user.click(screen.getByRole('button', { name: DRAWER_COPY.next }));
-      expect(screen.getAllByTestId('aws-feed-row')).toHaveLength(2);
+      expect(current()).toHaveLength(1);
     });
 
-    it('lights the node the current step lands on', async () => {
+    it('walks the traffic to the node the current step lands on', async () => {
       const user = userEvent.setup();
       renderDrawer();
       await openDrawer(user);
 
       await user.click(screen.getByRole('button', { name: DRAWER_COPY.next }));
-      expect(screen.getByTestId(`aws-node-${FLOW.steps[1].to}`)).toHaveAttribute(
-        'data-state',
-        'lit',
+
+      // Not instant: the step is animated hop by hop, so the destination lights once
+      // the traffic gets there rather than the moment the step becomes current.
+      await waitFor(() =>
+        expect(screen.getByTestId(`aws-node-${FLOW.steps[1].to}`)).toHaveAttribute(
+          'data-state',
+          'lit',
+        ),
       );
+    });
+
+    it('never highlights more than one node at a time', async () => {
+      // The bug: at step 11 of the AgentCore flow eight cards glowed at once, which
+      // says which resources exist rather than where the request has got to.
+      const user = userEvent.setup();
+      renderDrawer();
+      await openDrawer(user);
+
+      for (let step = 0; step < 4; step += 1) {
+        const highlighted = screen
+          .getAllByTestId(/^aws-node-/)
+          .filter((node) => ['lit', 'response'].includes(node.dataset.state ?? ''));
+        expect(highlighted.length, `step ${step}`).toBeLessThanOrEqual(1);
+        await user.click(screen.getByRole('button', { name: DRAWER_COPY.next }));
+      }
     });
 
     /** Authored durations must not be mistaken for measurements. */
@@ -212,8 +244,14 @@ describe('LiveArchitectureDrawer', () => {
         `Step ${FLOW.steps.length} of ${FLOW.steps.length}`,
       );
       expect(screen.getByRole('button', { name: DRAWER_COPY.next })).toBeDisabled();
-      // The flow ends with the preference landing back in the browser.
-      expect(screen.getByTestId('aws-node-browser')).toHaveAttribute('data-state', 'response');
+      // The flow ends with the preference landing back in the browser — and the last
+      // step is the long one, climbing from DynamoDB all the way home, so it takes
+      // several beats to walk rather than arriving inside `waitFor`'s default second.
+      await waitFor(
+        () =>
+          expect(screen.getByTestId('aws-node-browser')).toHaveAttribute('data-state', 'response'),
+        { timeout: 4000 },
+      );
     });
   });
 
@@ -265,7 +303,10 @@ describe('LiveArchitectureDrawer', () => {
 
       expect(screen.getAllByTestId('aws-feed-row')).toHaveLength(1);
       expect(screen.getByTestId('aws-duration-dynamodb')).toHaveTextContent('18 ms');
-      expect(screen.getByTestId('aws-node-dynamodb')).toHaveAttribute('data-state', 'lit');
+      // Live traffic is walked hop by hop too, so the resource lights on arrival.
+      await waitFor(() =>
+        expect(screen.getByTestId('aws-node-dynamodb')).toHaveAttribute('data-state', 'lit'),
+      );
     });
 
     it('counts spans and model calls honestly', async () => {
@@ -587,6 +628,142 @@ describe('the serving-engine chip', () => {
     const user = userEvent.setup();
     renderWithEngine();
     await openDrawer(user);
+    expect(screen.queryByTestId('architecture-serving-chip')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Replaying one user action.
+ *
+ * The ask this satisfies: pick an action out of the log and watch just that action
+ * again. It is a third source alongside live and demo rather than a mode you switch
+ * into, because the action worth replaying is usually one that just happened for
+ * real — so it has to be reachable from live mode without discarding the live feed.
+ */
+describe('replaying a chosen action', () => {
+  afterEach(() => {
+    resetWsObservers();
+  });
+
+  /** The newest group's header — the control that starts a replay. */
+  function topGroupHeader() {
+    return screen.getAllByTestId('aws-feed-group-header')[0];
+  }
+
+  it('replays the chosen action and names it', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    await openDrawer(user);
+
+    await user.click(topGroupHeader());
+
+    const chip = screen.getByTestId('architecture-replay-chip');
+    expect(chip).toHaveTextContent(FLOW.steps[FLOW.steps.length - 1].action);
+  });
+
+  it('narrows what plays to the action, not the whole flow', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    await openDrawer(user);
+
+    const groups = screen.getAllByTestId('aws-feed-group').length;
+    await user.click(topGroupHeader());
+
+    // Only the chosen action's steps are listed…
+    const rows = screen.getAllByTestId('aws-feed-row').length;
+    expect(rows).toBeLessThan(FLOW.steps.length);
+    expect(screen.getByTestId('architecture-step-count')).toHaveTextContent(`of ${rows}`);
+    // …but every action is still on screen to be chosen. Folding the rest away is
+    // not the same as removing them: without their captions, switching to another
+    // action would mean leaving the replay first.
+    expect(screen.getAllByTestId('aws-feed-group')).toHaveLength(groups);
+  });
+
+  it('lets a different action be chosen without leaving the replay first', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    await openDrawer(user);
+
+    await user.click(topGroupHeader());
+    const first = screen.getByTestId('architecture-replay-chip').textContent;
+
+    await user.click(screen.getAllByTestId('aws-feed-group-header')[1]);
+    expect(screen.getByTestId('architecture-replay-chip').textContent).not.toBe(first);
+    expect(screen.getByTestId('architecture-step-count')).toHaveTextContent('Step 1');
+  });
+
+  it('starts the replay from the top of the action rather than mid-way', async () => {
+    // Choosing "replay" and then having to press Next would not be a replay.
+    const user = userEvent.setup();
+    renderDrawer();
+    await openDrawer(user);
+
+    for (let i = 0; i < 4; i += 1) {
+      await user.click(screen.getByRole('button', { name: DRAWER_COPY.next }));
+    }
+    await user.click(topGroupHeader());
+
+    expect(screen.getByTestId('architecture-step-count')).toHaveTextContent('Step 1');
+  });
+
+  it('hands the drawer back when the same action is chosen again', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    await openDrawer(user);
+
+    await user.click(topGroupHeader());
+    expect(screen.getByTestId('architecture-replay-chip')).toBeInTheDocument();
+
+    await user.click(topGroupHeader());
+    expect(screen.queryByTestId('architecture-replay-chip')).not.toBeInTheDocument();
+    expect(screen.getAllByTestId('aws-feed-row')).toHaveLength(FLOW.steps.length);
+  });
+
+  it('leaves the replay by the chip', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    await openDrawer(user);
+
+    await user.click(topGroupHeader());
+    await user.click(screen.getByRole('button', { name: DRAWER_COPY.exitReplay }));
+
+    expect(screen.queryByTestId('architecture-replay-chip')).not.toBeInTheDocument();
+  });
+
+  /**
+   * The case that makes this worth building: replaying traffic that really happened.
+   * Live mode has no step controls because live traffic cannot be rewound — but a
+   * recording of it can be, which is exactly what a replay is.
+   */
+  it('replays real traffic from live mode, step controls and all', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    await openDrawer(user);
+    await user.click(screen.getByRole('button', { name: DRAWER_COPY.liveMode }));
+
+    act(() => {
+      publishInboundWsEvent(makeSpan());
+    });
+    expect(screen.queryByTestId('architecture-step-count')).not.toBeInTheDocument();
+
+    await user.click(topGroupHeader());
+
+    expect(screen.getByTestId('architecture-replay-chip')).toBeInTheDocument();
+    expect(screen.getByTestId('architecture-step-count')).toHaveTextContent('Step 1 of 1');
+    expect(screen.getByRole('button', { name: DRAWER_COPY.next })).toBeInTheDocument();
+  });
+
+  it('drops the serving chip while replaying, since nothing is being answered', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    await openDrawer(user);
+    await user.click(screen.getByRole('button', { name: DRAWER_COPY.liveMode }));
+
+    act(() => {
+      publishInboundWsEvent(makeSpan());
+    });
+    await user.click(topGroupHeader());
+
     expect(screen.queryByTestId('architecture-serving-chip')).not.toBeInTheDocument();
   });
 });

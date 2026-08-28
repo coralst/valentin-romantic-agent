@@ -1,6 +1,7 @@
 import { config } from '../config';
 import { logger } from '../logging';
 import type { AgentTool, IntegrationId, ToolRegistry } from './tool-registry';
+import { hebcalTools } from './hebcal/tools';
 
 export type { ToolRegistry, AgentTool, ActionProposal, IntegrationId } from './tool-registry';
 
@@ -58,6 +59,7 @@ export function buildToolRegistry(): ToolRegistry {
   // Registrations land here as each integration is built. Each one is gated on
   // its own `ready` flag, so a half-configured deployment offers the half that
   // works instead of nothing.
+  if (ready.hebcal) tools.push(...hebcalTools);
 
   const registry = new Map(tools.map((tool) => [tool.name, tool]));
 

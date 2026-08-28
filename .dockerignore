@@ -7,6 +7,9 @@ build
 .claude
 .kiro
 .playwright-mcp
+# Engine B's agent builds from its own context (agentcore/), so shipping it into
+# the Node image would only invalidate the backend's layer cache on every Python edit.
+agentcore
 .vscode
 e2e
 infra

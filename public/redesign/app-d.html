@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>D · Editorial — in the app</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app-shell.css">
+<style>
+  /* CONCEPT D IN THE APP — THE PROFILE AS A WRITTEN PIECE
+     The argument: a dossier of 21 fields is not 21 facts, it is one portrait.
+     So the board reads as an article — standfirst, drop cap, pull quote, marginal
+     file — and the tabular data lives in the margin where reference material
+     belongs. It is the concept that makes the panel feel written for you rather
+     than rendered at you.
+
+     What changed when it moved into the shell: the bare page ran a 92px display
+     headline and a 336px marginal column at 20px body. Inside the app the board
+     has ~990px, and 336px of margin left a 590px measure — too narrow for a drop
+     cap and too wide to be a list. So the margin narrows to 248px, the body
+     steps 20px → 19px, and the hero headline drops entirely: her name is already
+     in the pinned header 60px above it, and printing it twice at 92px is the
+     kind of thing that reads as a template rather than a page. The kicker and
+     standfirst stay, because those are the parts that were actually doing the
+     work. */
+
+  .board { background: #FDF8F4; }
+  .board .page {
+    max-width: 1000px; padding: 30px 40px 40px;
+    font-size: 19px; line-height: 1.62;
+  }
+
+  /* ------------------------------------------------------------- the opening */
+  .board .kicker {
+    font-size: var(--t-sm); font-weight: 600; letter-spacing: .2em; text-transform: uppercase;
+    color: var(--claret); display: flex; align-items: center; gap: 9px;
+  }
+  .board .standfirst {
+    font-family: var(--display); font-size: 34px; line-height: 1.25; margin-top: 12px;
+    max-width: 20em;
+  }
+  .board .facts {
+    display: flex; flex-wrap: wrap; gap: 26px; margin-top: 20px; padding-bottom: 22px;
+    box-shadow: inset 0 -1.5px 0 var(--border);
+  }
+  .board .facts .f .k {
+    font-size: var(--t-sm); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-faint);
+  }
+  .board .facts .f .v { font-family: var(--display); font-size: var(--t-md); }
+
+  /* --------------------------------------------------- body + marginal file */
+  .board .body {
+    display: grid; grid-template-columns: minmax(0, 1fr) 248px; gap: 44px;
+    margin-top: 26px; align-items: start;
+  }
+  .board .body > article { min-width: 0; }
+
+  /* The drop cap is the concept's signature, and it is also the reason the
+     measure may not collapse: a 74px initial in a 480px column looks like a
+     mistake rather than a device. */
+  .board .lead::first-letter {
+    font-family: var(--display); font-size: 74px; line-height: .82; float: left;
+    padding: 5px 12px 0 0; color: var(--claret);
+  }
+  .board article p + p { margin-top: 17px; }
+  .board article em.hl {
+    font-style: normal; background: linear-gradient(transparent 62%, var(--blush) 62%);
+  }
+  .board article h2 {
+    font-family: var(--display); font-size: var(--t-lg); margin: 32px 0 12px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .board article h2 svg { color: var(--claret); }
+
+  .board .pull {
+    margin: 26px 0; padding: 22px 26px; border-left: 3px solid var(--claret);
+    background: var(--paper); border-radius: 0 var(--r-md) var(--r-md) 0;
+    box-shadow: var(--shadow-card);
+  }
+  .board .pull p { font-family: var(--display); font-size: var(--t-lg); line-height: 1.35; }
+  .board .pull cite {
+    display: block; margin-top: 9px; font-style: normal; font-size: var(--t-sm); color: var(--ink-muted);
+  }
+
+  /* The one countdown, set as a rule across the column. */
+  .board .countdown {
+    display: flex; align-items: center; gap: 20px; margin: 28px 0;
+    padding: 20px 24px; border-radius: var(--r-lg);
+    background: linear-gradient(135deg, #7A2740, #A8394F); color: var(--cream);
+  }
+  .board .countdown .n { font-family: var(--display); font-size: 62px; line-height: .9; flex: none; }
+  .board .countdown .u { font-size: var(--t-sm); text-transform: uppercase; letter-spacing: .14em; opacity: .74; }
+  .board .countdown .w { flex: 1; min-width: 0; font-size: var(--t-body); }
+  .board .countdown .w b { display: block; font-family: var(--display); font-size: var(--t-lg); font-weight: 400; }
+
+  /* Her sizes, set as a run of three figures inside the prose rather than in the
+     margin: the user reads this one standing in a shop, so it earns the column. */
+  .board .sizes { display: flex; gap: 12px; margin: 24px 0; }
+  .board .sizes .s {
+    flex: 1; min-width: 0; background: var(--paper); border-radius: var(--r-md); padding: 16px 18px;
+    box-shadow: var(--shadow-card);
+  }
+  .board .sizes .k {
+    font-size: var(--t-sm); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-faint);
+  }
+  .board .sizes .v { font-family: var(--display); font-size: 30px; line-height: 1.1; }
+  .board .sizes .v.long { font-size: var(--t-lg); }
+  .board .sizes .q { font-size: var(--t-sm); color: var(--ink-muted); line-height: 1.4; }
+
+  /* Her people, as a family register: generations as labelled runs of portraits. */
+  .board .gen + .gen { margin-top: 18px; }
+  .board .gen .lb {
+    font-size: var(--t-sm); font-weight: 600; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--ink-faint); margin-bottom: 10px;
+  }
+  .board .portraits { display: flex; flex-wrap: wrap; gap: 20px; }
+  .board .portrait { text-align: center; width: 78px; }
+  .board .portrait .av {
+    width: 54px; height: 54px; border-radius: 50%; margin: 0 auto 7px; display: grid; place-items: center;
+    font-family: var(--display); font-size: var(--t-md); color: var(--claret-deep);
+    background: linear-gradient(150deg, #F2D4D8, #E3B7BF);
+  }
+  .board .portrait .nm { font-size: var(--t-sm); font-weight: 600; line-height: 1.25; }
+  .board .portrait .rel { font-size: 14px; color: var(--ink-muted); line-height: 1.3; }
+  .board .portrait.her .av { background: var(--claret); color: var(--cream); }
+  .board .portrait.gap .av {
+    background: none; color: var(--ink-faint); box-shadow: inset 0 0 0 2px var(--border);
+  }
+  .board .portrait.gap .nm { color: var(--ink-faint); }
+
+  /* Questions, set as a numbered list in the author's voice. */
+  .board .qs { counter-reset: q; margin-top: 8px; }
+  .board .qs li { list-style: none; counter-increment: q; display: flex; gap: 15px; padding: 14px 0; }
+  .board .qs li + li { box-shadow: inset 0 1.5px 0 var(--border); }
+  .board .qs li::before {
+    content: counter(q); flex: none; font-family: var(--display); font-size: var(--t-lg);
+    color: var(--claret-light); line-height: 1.1; width: 26px;
+  }
+  .board .qs .q { font-family: var(--display); font-size: var(--t-md); }
+  .board .qs .why { font-size: var(--t-sm); color: var(--ink-muted); }
+
+  /* ------------------------------------------------------- the marginal file */
+  .board .body > aside { position: sticky; top: 0; min-width: 0; }
+  .board .file {
+    background: var(--paper); border-radius: var(--r-md); padding: 18px;
+    box-shadow: var(--shadow-card);
+  }
+  .board .file > .hd {
+    font-size: var(--t-sm); font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--claret); display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
+  }
+  .board .grp + .grp { margin-top: 16px; padding-top: 14px; box-shadow: inset 0 1.5px 0 var(--border-subtle); }
+  .board .grp > .t { font-size: var(--t-sm); font-weight: 700; color: var(--ink); margin-bottom: 6px; }
+  .board .file .r { display: flex; gap: 10px; padding: 5px 0; font-size: var(--t-sm); line-height: 1.45; }
+  .board .file .r .k { flex: none; width: 74px; color: var(--ink-faint); }
+  .board .file .foot { font-size: 14px; color: var(--ink-faint); margin-top: 14px; }
+
+  .board .dates { margin-top: 14px; }
+  .board .dates .d {
+    display: flex; align-items: baseline; gap: 10px; padding: 9px 0; font-size: var(--t-sm);
+  }
+  .board .dates .d + .d { box-shadow: inset 0 1.5px 0 var(--border-subtle); }
+  .board .dates .d .n { flex: 1; min-width: 0; }
+  .board .dates .d .c {
+    flex: none; font-weight: 600; color: var(--claret); font-variant-numeric: tabular-nums;
+  }
+
+  @media (max-width: 1100px) {
+    .board .body { grid-template-columns: minmax(0,1fr); gap: 28px; }
+    .board .body > aside { position: static; }
+    .board .sizes { flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <nav class="iconrail" aria-label="Valentin">
+    <span class="face" aria-hidden="true">V</span>
+    <span class="grp">Talk</span>
+    <button class="ic on" aria-label="Conversations"><svg class="i"><use href="icons.svg#chat"/></svg></button>
+    <button class="ic" aria-label="Her people"><svg class="i"><use href="icons.svg#users"/></svg></button>
+    <span class="grp">Act</span>
+    <button class="ic" aria-label="Dates ahead"><svg class="i"><use href="icons.svg#calendar"/></svg></button>
+    <button class="ic" aria-label="Gift ideas"><svg class="i"><use href="icons.svg#gift"/></svg></button>
+    <button class="ic gear" aria-label="Settings"><svg class="i"><use href="icons.svg#gear"/></svg></button>
+  </nav>
+
+  <aside class="convo" aria-label="Conversations">
+    <h2>Conversations</h2>
+    <button class="new"><svg class="i-sm i"><use href="icons.svg#chat"/></svg> New conversation</button>
+    <div class="list">
+      <button class="th on"><div class="t1">Anniversary, September</div><div class="t2">She'd rather choose — so ask…</div></button>
+      <button class="th"><div class="t1">Ruth's birthday</div><div class="t2">Ruthie calls on Sundays</div></button>
+      <button class="th"><div class="t1">The pottery class</div><div class="t2">You both made the same mug</div></button>
+      <button class="th"><div class="t1">Sizes, for the knitwear</div><div class="t2">UK 10, sizes up for knits</div></button>
+      <button class="th"><div class="t1">Kyoto, one day</div><div class="t2">Cherry blossom season</div></button>
+      <button class="th"><div class="t1">Nadia and Tom</div><div class="t2">Who tells whom first</div></button>
+    </div>
+  </aside>
+
+  <main class="center">
+    <header class="dosshead">
+      <button class="back" aria-label="Back to the conversation">
+        <svg class="i-sm i" style="transform:rotate(180deg)"><use href="icons.svg#arrow"/></svg>
+      </button>
+      <span class="por" aria-hidden="true">S</span>
+      <div class="id">
+        <h1>Samantha</h1>
+        <div class="sub">12 June 1994 · early-thirties · Gemini</div>
+      </div>
+      <div class="meter">
+        <div class="r"><span class="lb">How well I know her</span><b>21 of 21</b></div>
+        <div class="ticks" role="progressbar" aria-valuenow="21" aria-valuemin="0" aria-valuemax="21"
+             aria-label="21 of 21 fields known">
+          <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        </div>
+      </div>
+      <button class="cta">Ask me what's missing</button>
+    </header>
+
+    <div class="board">
+      <div class="page">
+
+        <div class="kicker"><svg class="i-sm i"><use href="icons.svg#heart"/></svg> Her file · written up</div>
+        <p class="standfirst">Five years in, and the next thing she wants is for you to ask instead of guess.</p>
+        <div class="facts">
+          <div class="f"><div class="k">Together</div><div class="v">1,805 days</div></div>
+          <div class="f"><div class="k">Next date</div><div class="v">21 days</div></div>
+          <div class="f"><div class="k">Her people</div><div class="v">13 known</div></div>
+          <div class="f"><div class="k">On file</div><div class="v">21 of 21</div></div>
+        </div>
+
+        <div class="body">
+          <article>
+            <p class="lead">Samantha keeps her preferences quiet and her opinions firm, which is a difficult combination to buy presents for. What I have learned across five years of your conversations is that she does not want to be surprised so much as she wants to be <em class="hl">understood in advance</em> — the difference being that the first one asks her to perform delight and the second one saves her the trouble.</p>
+
+            <p>She met you at a pottery class on a rainy Sunday, and you both made the same lopsided mug. That detail does more work than any of the twenty other fields I hold: it explains the handmade-over-expensive instinct, the glaze set at the top of her wish list, and why the linen apron is a better idea than the necklace.</p>
+
+            <div class="countdown">
+              <div><div class="n">21</div><div class="u">days</div></div>
+              <div class="w"><b>Your anniversary</b>Friday 18 September — the fifth. Book by the 11th if it needs booking.</div>
+            </div>
+
+            <div class="pull">
+              <p>She prefers to choose. Ask her first — a surprise lands as pressure, not delight.</p>
+              <cite>The one note I would override a good idea for</cite>
+            </div>
+
+            <h2><svg class="i-sm i"><use href="icons.svg#ruler"/></svg> What she wears</h2>
+            <p>Linen, oversized knits, one good silk scarf, and deep sage green ahead of any other colour. Three sizes are on file, which is enough to buy without asking — the qualifier on the first one matters more than the number.</p>
+            <div class="sizes">
+              <div class="s"><div class="k">Clothes</div><div class="v long">UK 10 / EU 38</div><div class="q">sizes up for knitwear</div></div>
+              <div class="s"><div class="k">Shoes</div><div class="v">UK 6</div><div class="q">EU 39</div></div>
+              <div class="s"><div class="k">Ring</div><div class="v">UK M</div><div class="q">US 6</div></div>
+            </div>
+
+            <h2><svg class="i-sm i"><use href="icons.svg#users"/></svg> Who she has</h2>
+            <p>Three generations, thirteen people, and two names I still do not have. Ruth calls on Sundays; Nadia is who she wants in the room for anything that counts as a milestone.</p>
+
+            <div class="gen">
+              <div class="lb">Elders</div>
+              <div class="portraits">
+                <div class="portrait"><div class="av">M</div><div class="nm">Miriam</div><div class="rel">grandmother</div></div>
+                <div class="portrait"><div class="av">R</div><div class="nm">Ruth</div><div class="rel">mother</div></div>
+                <div class="portrait"><div class="av">D</div><div class="nm">Daniel</div><div class="rel">father</div></div>
+                <div class="portrait"><div class="av">Y</div><div class="nm">Yosef</div><div class="rel">uncle, hers</div></div>
+                <div class="portrait"><div class="av">D</div><div class="nm">Dahlia</div><div class="rel">aunt</div></div>
+                <div class="portrait gap"><div class="av">?</div><div class="nm">Unnamed</div><div class="rel">uncle, father's side</div></div>
+              </div>
+            </div>
+            <div class="gen">
+              <div class="lb">Her generation</div>
+              <div class="portraits">
+                <div class="portrait her"><div class="av">S</div><div class="nm">Samantha</div><div class="rel">her</div></div>
+                <div class="portrait"><div class="av">N</div><div class="nm">Nadia</div><div class="rel">sister</div></div>
+                <div class="portrait gap"><div class="av">?</div><div class="nm">Unnamed</div><div class="rel">Nadia's husband</div></div>
+                <div class="portrait"><div class="av">L</div><div class="nm">Lena</div><div class="rel">cousin</div></div>
+                <div class="portrait"><div class="av">R</div><div class="nm">Ruben</div><div class="rel">cousin</div></div>
+                <div class="portrait"><div class="av">T</div><div class="nm">Tom</div><div class="rel">closest friend</div></div>
+              </div>
+            </div>
+            <div class="gen">
+              <div class="lb">Younger</div>
+              <div class="portraits">
+                <div class="portrait"><div class="av">A</div><div class="nm">Ari</div><div class="rel">nephew</div></div>
+                <div class="portrait"><div class="av">T</div><div class="nm">Talia</div><div class="rel">niece</div></div>
+              </div>
+            </div>
+
+            <h2><svg class="i-sm i"><use href="icons.svg#ask"/></svg> What I would ask her next</h2>
+            <ol class="qs">
+              <li><span><span class="q">“What's your father's brother called?”</span>
+                  <span class="why">Closes one of the two gaps on her family tree.</span></span></li>
+              <li><span><span class="q">“Is there a glaze colour you keep running out of?”</span>
+                  <span class="why">Turns the wish list into something you can actually buy.</span></span></li>
+              <li><span><span class="q">“Which anniversary do you two actually celebrate?”</span>
+                  <span class="why">I hold two dates, eleven days apart, and I have been guessing.</span></span></li>
+            </ol>
+
+            <h2><svg class="i-sm i"><use href="icons.svg#check"/></svg> Where I am guessing</h2>
+            <p>Eleven of the things I believe about her are inferences rather than facts she has told you — that she would rather have one good thing than three nice ones, that flowers are fine as long as they are not roses, that handmade beats expensive every time. They are in the file marked as guesses, and any one of them takes ten seconds to confirm.</p>
+          </article>
+
+          <aside>
+            <div class="file">
+              <div class="hd"><svg class="i-sm i"><use href="icons.svg#book"/></svg> The file</div>
+              <div class="grp">
+                <div class="t">Basics</div>
+                <div class="r"><span class="k">Called</span><span>Sam</span></div>
+                <div class="r"><span class="k">Born</span><span>12 Jun 1994 · Gemini</span></div>
+                <div class="r"><span class="k">Love lang.</span><span>Quality time</span></div>
+                <div class="r"><span class="k">Since</span><span>2 Mar 2019</span></div>
+              </div>
+              <div class="grp">
+                <div class="t">Interests</div>
+                <div class="r"><span class="k">Food</span><span>Northern Italian</span></div>
+                <div class="r"><span class="k">Music</span><span>Indie folk</span></div>
+                <div class="r"><span class="k">Making</span><span>Pottery, bread, watercolour</span></div>
+                <div class="r"><span class="k">Trip</span><span>Kyoto in blossom</span></div>
+                <div class="r"><span class="k">Colour</span><span>Deep sage green</span></div>
+                <div class="r"><span class="k">Scent</span><span>Fig, cedar, vanilla</span></div>
+              </div>
+              <div class="grp">
+                <div class="t">Gifting</div>
+                <div class="r"><span class="k">Budget</span><span>~$80, more for milestones</span></div>
+                <div class="r"><span class="k">Rule</span><span>Prefers to choose</span></div>
+                <div class="r"><span class="k">Flowers</span><span>Anything but roses</span></div>
+                <div class="r"><span class="k">Wants</span><span>Glaze set · linen apron · poetry · trail shoes</span></div>
+              </div>
+              <div class="foot">21 of 21 fields on file · 11 marked as my guesses</div>
+            </div>
+
+            <div class="dates">
+              <div class="d"><span class="n">Anniversary · 18 Sep</span><span class="c">21d</span></div>
+              <div class="d"><span class="n">Ruth · 9 Nov</span><span class="c">73d</span></div>
+              <div class="d"><span class="n">Together · 2 Mar</span><span class="c">187d</span></div>
+              <div class="d"><span class="n">Nadia · 22 Mar</span><span class="c">206d</span></div>
+              <div class="d"><span class="n">Her birthday · 12 Jun</span><span class="c">288d</span></div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ============ D · INDEX CARD — the matching brief rail ============ -->
+  <aside class="brief" aria-label="Her brief">
+    <div class="scroll">
+      <div class="card">
+        <div class="kick">Her, in short</div>
+        <div class="nm">Samantha</div>
+        <div class="sub">1,805 days · Gemini · early thirties</div>
+        <div class="rule"></div>
+        <p>Five years in. She keeps her preferences quiet and her opinions firm.</p>
+        <p>Your anniversary is in <em>21 days</em> — Friday the 18th. She'd rather choose than be surprised, so ask before you book.</p>
+        <p>Handmade over expensive, every time. The glaze set is £62.</p>
+        <div class="sig">— Valentin</div>
+      </div>
+
+      <div class="marg">
+        <div class="r"><span class="k">Clothes</span><span>UK 10 / EU 38</span></div>
+        <div class="r"><span class="k">Shoes</span><span>UK 6</span></div>
+        <div class="r"><span class="k">Ring</span><span>UK M</span></div>
+        <div class="r"><span class="k">Colour</span><span>Deep sage</span></div>
+        <div class="r"><span class="k">Scent</span><span>Fig, cedar</span></div>
+        <div class="r"><span class="k">Her people</span><span>13 · 2 unnamed</span></div>
+      </div>
+
+      <h3><svg class="i-sm i"><use href="icons.svg#ask"/></svg> I'd ask <span class="n">3</span></h3>
+      <div class="aside-q">“What's your father's brother called?”</div>
+      <div class="aside-q">“Which glaze colour do you run out of?”</div>
+      <div class="aside-q">“Which anniversary do you actually celebrate?”</div>
+    </div>
+
+    <div class="pin">
+      <span class="chip"><span class="k">Food</span><b>N. Italian</b></span>
+      <span class="chip"><span class="k">Music</span><b>Indie folk</b></span>
+      <span class="chip empty">No roses</span>
+    </div>
+    <div class="nudge">
+      <div class="lbl"><svg class="i-sm i"><use href="icons.svg#sparkle"/></svg> Valentin</div>
+      <p>Her glaze set is £62 — inside the usual budget.</p>
+      <div class="btns"><button class="ask">Ask her</button><button class="later">Later</button></div>
+    </div>
+    <div class="tally">
+      <span class="full"><svg class="i-sm i"><use href="icons.svg#check"/></svg> 21 of 21</span>
+      <span class="bar"><i></i></span>
+    </div>
+  </aside>
+
+  <div class="foot"><span class="dot"></span><b>Live Architecture</b><span class="ev">0 events</span></div>
+</div>
+
+<nav class="appchooser">
+  <a href="app-a.html">A · Timeline</a>
+  <a href="app-b.html">B · Bento</a>
+  <a href="app-c.html">C · Focus rail</a>
+  <a href="app-d.html" aria-current="page">D · Editorial</a>
+  <a href="app-e.html">E · Triage</a>
+  <span class="sep"></span>
+  <a href="index.html">Index</a>
+  <a href="sidebars.html">Rails only</a>
+</nav>
+</body>
+</html>

@@ -1,0 +1,373 @@
+/* THE APPLICATION SHELL, shared by app-a … app-e.
+   ------------------------------------------------------------------------
+   The five board concepts were first drawn on a bare page, which flattered
+   them: a concept that needs 1180px of measure looks calm alone and cramped
+   once the real chrome takes its 608px. So every concept is redrawn here
+   inside the window the app actually has —
+
+     76px  claret icon rail        (layout.iconRailWidth)
+     226px conversation list       (layout.conversationListWidth)
+     1fr   the dossier             what the concept gets to spend
+     306px her brief rail          (layout.briefRailWidth)
+
+   — plus the pinned identity header and the Live Architecture footer. Those
+   four numbers are lifted from src/client/design-system/tokens.ts, so the
+   column the board is judged in is the column it would ship in.
+
+   Naming: everything the shell owns is scoped under .brief or .app so a
+   concept's own board CSS (which lives in each page and is scoped .board)
+   can reuse short class names like .card, .chip or .t without collision. */
+
+body { background: #EFE7E0; padding: 20px; min-height: 100vh; }
+
+/* ---------------------------------------------------------------- window */
+.app {
+  display: flex;
+  height: calc(100vh - 40px);
+  max-width: 1600px;
+  margin: 0 auto;
+  border-radius: 34px;
+  overflow: hidden;
+  background: #FFFDFB;
+  box-shadow: 0 2px 6px rgba(42, 34, 38, .08), 0 30px 80px rgba(42, 34, 38, .16);
+  position: relative;
+}
+
+/* ------------------------------------------------------- 76px icon rail */
+.iconrail {
+  width: 76px; flex: none;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 14px 0 12px;
+  background: linear-gradient(178deg, #8C2F45 0%, #7A2740 60%, #6B1F32 100%);
+  color: #FBEFF1;
+}
+.iconrail .face {
+  width: 52px; height: 52px; border-radius: 50%; flex: none; display: grid; place-items: center;
+  margin-bottom: 18px;
+  font-family: var(--display); font-size: 22px; color: #6B1F32;
+  background: linear-gradient(150deg, #F2D4D8, #E3B7BF);
+  box-shadow: 0 0 0 2px rgba(255, 249, 245, .35);
+}
+.iconrail .grp {
+  font-size: 13px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  color: rgba(251, 239, 241, .5); margin: 12px 0 4px;
+}
+.iconrail .ic {
+  width: 46px; height: 46px; border-radius: 15px; display: grid; place-items: center;
+  color: rgba(251, 239, 241, .8);
+}
+.iconrail .ic.on { background: rgba(255, 249, 245, .16); color: #fff; }
+.iconrail .ic:hover { background: rgba(255, 249, 245, .1); }
+.iconrail .gear { margin-top: auto; }
+
+/* ------------------------------------------------ 226px conversation list */
+.convo {
+  width: 226px; flex: none; display: flex; flex-direction: column;
+  background: #FAF4F0; box-shadow: inset -1.5px 0 0 var(--border);
+}
+.convo > h2 {
+  font-family: var(--body); font-size: 15px; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint);
+  padding: 20px 18px 10px;
+}
+.convo .new {
+  display: flex; align-items: center; gap: 9px; margin: 0 14px 12px;
+  padding: 11px 14px; border-radius: var(--r-pill);
+  background: var(--claret); color: var(--cream); font-size: var(--t-sm); font-weight: 600;
+}
+.convo .list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 10px 14px; }
+.convo .th {
+  display: block; width: 100%; text-align: left; padding: 12px 13px; border-radius: 14px;
+}
+.convo .th + .th { margin-top: 2px; }
+.convo .th:hover { background: rgba(140, 47, 69, .06); }
+.convo .th.on { background: #FFFDFB; box-shadow: var(--shadow-card); }
+.convo .th .t1 { font-size: var(--t-sm); font-weight: 600; }
+.convo .th .t2 {
+  font-size: 14px; color: var(--ink-muted); margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.convo .th.on .t1 { color: var(--claret-deep); }
+
+/* ------------------------------------------------------- the centre column */
+.center { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+/* The pinned identity header. Same in all five, because whose dossier you are
+   looking at is not a thing a concept gets to reinterpret. */
+.dosshead {
+  flex: none; display: flex; align-items: center; gap: 15px;
+  padding: 14px 26px 13px;
+  background: #FFFDFB; box-shadow: 0 1.5px 0 var(--border);
+}
+.dosshead .back {
+  width: 40px; height: 40px; border-radius: 50%; flex: none; display: grid; place-items: center;
+  background: var(--cream); color: var(--claret);
+  box-shadow: inset 0 0 0 1.5px rgba(140, 47, 69, .22);
+}
+.dosshead .por {
+  width: 50px; height: 50px; border-radius: 50%; flex: none; display: grid; place-items: center;
+  font-family: var(--display); font-size: 20px; color: #6B1F32;
+  background: linear-gradient(150deg, #F2D4D8, #E3B7BF);
+}
+.dosshead .id { flex: 1; min-width: 0; }
+.dosshead h1 { font-size: 25px; line-height: 1.1; }
+.dosshead .sub { font-size: var(--t-sm); color: var(--ink-muted); }
+.dosshead .meter { flex: none; }
+.dosshead .meter .r { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.dosshead .meter .lb {
+  font-size: var(--t-sm); font-weight: 500; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ink-faint); white-space: nowrap;
+}
+.dosshead .meter b { font-size: var(--t-sm); font-weight: 500; color: var(--claret); white-space: nowrap; }
+.dosshead .meter .ticks { display: flex; gap: 3px; margin-top: 7px; }
+.dosshead .meter .ticks i {
+  flex: 1; height: 5px; border-radius: 99px;
+  background: linear-gradient(90deg, #B14A62, #8C2F45);
+}
+.dosshead .cta {
+  flex: none; padding: 11px 17px; border-radius: var(--r-pill);
+  background: var(--claret); color: var(--cream);
+  font-size: var(--t-sm); font-weight: 500; white-space: nowrap;
+  box-shadow: 0 6px 16px rgba(140, 47, 69, .26);
+}
+
+/* The board is the only thing that scrolls in the centre column, which is what
+   makes the header pinned and what gives a section rail something to observe. */
+.board { flex: 1; min-height: 0; overflow-y: auto; }
+
+/* ------------------------------------------------------- 306px brief rail */
+.brief {
+  width: 306px; flex: none; display: flex; flex-direction: column; overflow: hidden;
+  background: linear-gradient(168deg, #8C2F45 0%, #7A2740 52%, #6B1F32 100%);
+  color: #FBEFF1;
+}
+.brief .scroll {
+  flex: 1; min-height: 0; overflow-y: auto; padding: 16px 16px 8px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 26px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 26px), transparent);
+}
+.brief .scroll::-webkit-scrollbar { width: 0; }
+.brief h3 {
+  font-family: var(--body); font-size: var(--t-sm); font-weight: 700; letter-spacing: .1em;
+  text-transform: uppercase; color: rgba(251, 239, 241, .62);
+  display: flex; align-items: center; gap: 8px; margin: 20px 0 10px;
+}
+.brief h3 svg { color: rgba(251, 239, 241, .72); }
+.brief h3 .n { margin-left: auto; letter-spacing: 0; color: #F2D4D8; }
+
+.brief .who { display: flex; align-items: center; gap: 13px; }
+.brief .who .fc {
+  width: 56px; height: 56px; border-radius: 50%; flex: none; display: grid; place-items: center;
+  font-family: var(--display); font-size: 24px; color: #6B1F32;
+  background: linear-gradient(150deg, #F2D4D8, #E3B7BF);
+}
+.brief .who .nm { font-family: var(--display); font-size: var(--t-lg); line-height: 1.1; }
+.brief .who .sub { font-size: 14px; color: rgba(251, 239, 241, .66); }
+
+/* The three docked regions: pinned chips, Valentin's nudge, the tally. All five
+   proposals keep them, in this order, because they are the rail's contract. */
+.brief .pin {
+  flex: none; padding: 12px 16px; background: rgba(255, 249, 245, .09);
+  box-shadow: inset 0 1.5px 0 rgba(255, 249, 245, .14);
+  display: flex; flex-wrap: wrap; gap: 7px;
+}
+.brief .chip {
+  display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px; border-radius: var(--r-pill);
+  font-size: 14px; background: rgba(255, 249, 245, .13);
+}
+.brief .chip b { font-weight: 600; }
+.brief .chip .k { color: rgba(251, 239, 241, .6); }
+.brief .chip.empty {
+  background: none; box-shadow: inset 0 0 0 1.5px rgba(255, 249, 245, .22);
+  color: rgba(251, 239, 241, .55);
+}
+.brief .chip svg { color: #F2D4D8; }
+
+.brief .nudge {
+  flex: none; padding: 14px 16px; background: rgba(20, 8, 12, .22);
+  box-shadow: inset 0 1.5px 0 rgba(255, 249, 245, .12);
+}
+.brief .nudge .lbl {
+  font-size: 14px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: #E9B9C3; display: flex; align-items: center; gap: 7px;
+}
+.brief .nudge p { font-size: var(--t-sm); margin-top: 6px; color: rgba(251, 239, 241, .9); }
+.brief .nudge .btns { display: flex; gap: 8px; margin-top: 11px; }
+.brief .nudge .ask {
+  flex: 1; padding: 10px; border-radius: var(--r-pill); background: var(--cream);
+  color: #6B1F32; font-size: 14px; font-weight: 600;
+}
+.brief .nudge .later {
+  padding: 10px 14px; border-radius: var(--r-pill); font-size: 14px;
+  color: rgba(251, 239, 241, .75); box-shadow: inset 0 0 0 1.5px rgba(255, 249, 245, .24);
+}
+.brief .tally {
+  flex: none; padding: 12px 16px 14px; display: flex; align-items: center; gap: 11px;
+  box-shadow: inset 0 1.5px 0 rgba(255, 249, 245, .12); font-size: 14px;
+}
+.brief .tally .bar {
+  flex: 1; height: 7px; border-radius: 99px; background: rgba(255, 249, 245, .2); overflow: hidden;
+}
+.brief .tally .bar i {
+  display: block; height: 100%; width: 100%; border-radius: 99px;
+  background: linear-gradient(90deg, #F2D4D8, #C09A5E);
+}
+.brief .tally .full { color: #F2D4D8; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+
+/* ---- A · spine ---- */
+.brief .spine { position: relative; padding-left: 26px; margin-top: 4px; }
+.brief .spine::before {
+  content: ''; position: absolute; left: 7px; top: 8px; bottom: 8px; width: 2px;
+  background: linear-gradient(180deg, #F2D4D8, rgba(242, 212, 216, .18));
+}
+.brief .spine .ev { position: relative; padding: 11px 0; }
+.brief .spine .ev::before {
+  content: ''; position: absolute; left: -23px; top: 17px; width: 12px; height: 12px;
+  border-radius: 50%; background: #7A2740; box-shadow: inset 0 0 0 2.5px #F2D4D8;
+}
+.brief .spine .ev.now::before { background: #F2D4D8; box-shadow: 0 0 0 5px rgba(242, 212, 216, .2); }
+.brief .spine .cd { font-family: var(--display); font-size: 26px; line-height: 1; }
+.brief .spine .ev.now .cd { font-size: 44px; }
+.brief .spine .nm { font-size: var(--t-sm); font-weight: 600; margin-top: 3px; }
+.brief .spine .dt { font-size: 14px; color: rgba(251, 239, 241, .6); }
+
+/* ---- B · mini-bento ---- */
+.brief .bento { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.brief .t { background: rgba(255, 249, 245, .11); border-radius: 15px; padding: 13px; }
+.brief .t.wide { grid-column: 1 / -1; }
+.brief .t .lb {
+  font-size: 14px; text-transform: uppercase; letter-spacing: .1em; color: rgba(251, 239, 241, .6);
+  display: flex; align-items: center; gap: 6px;
+}
+.brief .t .big { font-family: var(--display); font-size: 32px; line-height: 1.05; margin-top: 5px; }
+.brief .t .sm { font-size: 14px; color: rgba(251, 239, 241, .8); margin-top: 3px; }
+.brief .t.hot { background: var(--cream); color: #6B1F32; }
+.brief .t.hot .lb { color: rgba(107, 31, 50, .62); }
+/* The tile inverts to cream, so the inherited near-white body colour has to
+   invert with it — otherwise the date line is white on cream. */
+.brief .t.hot .sm { color: rgba(107, 31, 50, .74); }
+.brief .t.hot .big { font-size: 46px; }
+.brief .t.warn { background: rgba(192, 154, 94, .28); box-shadow: inset 0 0 0 1.5px rgba(224, 190, 130, .4); }
+
+/* ---- C · now + folds ---- */
+.brief .today {
+  background: var(--cream); color: var(--ink); border-radius: 17px; padding: 16px; margin-top: 4px;
+  box-shadow: 0 10px 26px rgba(20, 8, 12, .22);
+}
+.brief .today .lb {
+  font-size: 14px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--claret); display: flex; align-items: center; gap: 7px;
+}
+.brief .today .cd { display: flex; align-items: baseline; gap: 9px; margin-top: 7px; }
+.brief .today .cd b {
+  font-family: var(--display); font-weight: 400; font-size: 50px; line-height: .95; color: var(--claret);
+}
+.brief .today .cd span {
+  font-size: 14px; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-faint);
+}
+.brief .today h4 { font-family: var(--display); font-weight: 400; font-size: var(--t-md); margin-top: 8px; }
+.brief .today p { font-size: 14px; color: var(--ink-muted); }
+.brief .today .go {
+  width: 100%; margin-top: 13px; padding: 12px; border-radius: var(--r-pill);
+  background: var(--claret); color: var(--cream); font-size: var(--t-sm); font-weight: 600;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.brief .fold { box-shadow: inset 0 1.5px 0 rgba(255, 249, 245, .13); }
+.brief .fold summary {
+  display: flex; align-items: center; gap: 10px; padding: 13px 2px; cursor: pointer;
+  font-size: var(--t-sm); font-weight: 600; list-style: none;
+}
+.brief .fold summary::-webkit-details-marker { display: none; }
+.brief .fold summary .n { margin-left: auto; font-size: 14px; color: #F2D4D8; }
+.brief .fold summary .cv { color: rgba(251, 239, 241, .5); transition: transform .18s; }
+.brief .fold[open] summary .cv { transform: rotate(90deg); }
+.brief .fold .in { padding: 0 2px 14px; }
+.brief .line { display: flex; gap: 10px; padding: 9px 0; font-size: 14px; align-items: baseline; }
+.brief .line + .line { box-shadow: inset 0 1px 0 rgba(255, 249, 245, .1); }
+.brief .line .k { flex: none; width: 84px; color: rgba(251, 239, 241, .6); }
+.brief .warnbox {
+  background: rgba(192, 154, 94, .24); border-radius: 13px; padding: 12px;
+  box-shadow: inset 0 0 0 1.5px rgba(224, 190, 130, .38); display: flex; gap: 10px;
+}
+.brief .warnbox svg { color: #E7C489; flex: none; margin-top: 1px; }
+.brief .warnbox b { display: block; font-size: var(--t-sm); }
+.brief .warnbox p { font-size: 14px; color: rgba(251, 239, 241, .82); }
+
+/* ---- D · index card ---- */
+.brief .card {
+  background: var(--cream); color: var(--ink); border-radius: 18px; padding: 20px 18px;
+  margin-top: 6px; box-shadow: 0 12px 30px rgba(20, 8, 12, .2);
+}
+.brief .card .kick { font-size: 14px; text-transform: uppercase; letter-spacing: .18em; color: var(--claret); }
+.brief .card .nm { font-family: var(--display); font-size: 34px; line-height: 1; margin: 8px 0 4px; }
+.brief .card .sub { font-size: 14px; color: var(--ink-muted); }
+.brief .card .rule { height: 1.5px; background: var(--border); margin: 15px 0; }
+.brief .card p { font-size: 16px; line-height: 1.6; }
+.brief .card p + p { margin-top: 11px; }
+.brief .card em { font-style: normal; background: linear-gradient(transparent 62%, var(--blush) 62%); }
+.brief .card .sig { font-family: var(--display); font-size: var(--t-sm); color: var(--ink-faint); margin-top: 14px; }
+.brief .marg { margin-top: 18px; }
+.brief .marg .r { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; font-size: 14px; }
+.brief .marg .r + .r { box-shadow: inset 0 1px 0 rgba(255, 249, 245, .12); }
+.brief .marg .r .k { color: rgba(251, 239, 241, .6); }
+.brief .aside-q { font-family: var(--display); font-size: var(--t-body); line-height: 1.35; margin-top: 6px; }
+.brief .aside-q + .aside-q {
+  margin-top: 13px; padding-top: 13px; box-shadow: inset 0 1.5px 0 rgba(255, 249, 245, .12);
+}
+
+/* ---- E · three stacks ---- */
+.brief .stack { background: rgba(255, 249, 245, .09); border-radius: 15px; overflow: hidden; margin-top: 10px; }
+.brief .stack > .hd {
+  display: flex; align-items: center; gap: 9px; padding: 12px 13px;
+  font-size: 14px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+  background: rgba(255, 249, 245, .08);
+}
+.brief .stack > .hd .n {
+  margin-left: auto; letter-spacing: 0; padding: 2px 9px; border-radius: 99px;
+  background: var(--cream); color: #6B1F32; font-size: 14px;
+}
+.brief .stack.act > .hd { background: var(--cream); color: #6B1F32; }
+.brief .stack.act > .hd .n { background: var(--claret); color: var(--cream); }
+.brief .it { display: flex; align-items: center; gap: 10px; padding: 11px 13px; font-size: 14px; }
+.brief .it + .it { box-shadow: inset 0 1px 0 rgba(255, 249, 245, .11); }
+.brief .it svg { color: #F2D4D8; }
+.brief .it .g { flex: 1; min-width: 0; }
+/* Both lines are blocks whether the markup nests <div>s or <span>s — a stacked
+   row that collapses to one line reads as "AnniversaryFri 18 Sep". */
+.brief .it .t1 { display: block; font-weight: 600; }
+.brief .it .t2 { display: block; font-size: 14px; color: rgba(251, 239, 241, .6); }
+.brief .it .rt { font-weight: 600; color: #F2D4D8; font-variant-numeric: tabular-nums; }
+.brief .it.warnrow { background: rgba(192, 154, 94, .22); }
+.brief .it.warnrow svg { color: #E7C489; }
+
+/* ------------------------------------------------ Live Architecture footer */
+.foot {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 34px;
+  display: flex; align-items: center; gap: 10px; padding: 0 18px;
+  background: linear-gradient(90deg, #241A20, #3A2A31);
+  color: rgba(255, 249, 245, .8); font-size: 14px;
+}
+.foot .dot { width: 8px; height: 8px; border-radius: 50%; background: #7C8C6B; flex: none; }
+.foot b { font-weight: 600; color: #fff; }
+.foot .ev { color: rgba(255, 249, 245, .55); }
+/* The footer floats over the window, so every column has to end above it. */
+.iconrail, .convo .list, .board, .brief .tally { padding-bottom: 40px; }
+
+/* ------------------------------------------------------------- the chooser */
+.appchooser {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: 8px; z-index: 90;
+  display: flex; gap: 4px; align-items: center; padding: 6px; border-radius: var(--r-pill);
+  background: rgba(28, 22, 25, .94); backdrop-filter: blur(14px); box-shadow: var(--shadow-lift);
+}
+.appchooser a {
+  padding: 8px 15px; border-radius: var(--r-pill); font-size: 14px; font-weight: 500;
+  color: rgba(255, 249, 245, .7); text-decoration: none; white-space: nowrap;
+}
+.appchooser a:hover { color: #fff; background: rgba(255, 255, 255, .1); }
+.appchooser a[aria-current='page'] { color: var(--ink); background: var(--cream); }
+.appchooser .sep { width: 1px; height: 20px; background: rgba(255, 255, 255, .18); margin: 0 4px; }
+
+/* One honest breakpoint: under 1200px the app drops the conversation list, which
+   is what the real shell does, rather than letting every column go unreadable. */
+@media (max-width: 1200px) { .convo { display: none; } }
+@media (max-width: 940px) { .brief { display: none; } }

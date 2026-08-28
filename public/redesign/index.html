@@ -41,88 +41,110 @@
   .rec .letter { background: linear-gradient(150deg,#6B1F32,#8C2F45); }
   .badge { display: inline-flex; align-items: center; gap: 7px; font-size: var(--t-sm); font-weight: 700;
            color: var(--claret); letter-spacing: .04em; text-transform: uppercase; margin-bottom: 6px; }
+
+  /* The reference section: the earlier board-only and rail-only drawings. Kept,
+     because they are useful for judging a concept without the chrome — but
+     demoted, because the chrome is the honest test. */
+  h2.sect { font-size: var(--t-lg); margin: 56px 0 6px; }
+  p.sectlede { font-size: var(--t-body); color: var(--ink-muted); max-width: 62ch; margin-bottom: 20px; }
+  .refs { display: flex; flex-wrap: wrap; gap: 10px; }
+  .refs a {
+    display: inline-flex; align-items: center; gap: 9px; padding: 12px 18px; border-radius: var(--r-pill);
+    background: var(--paper); box-shadow: var(--shadow-card); text-decoration: none; color: inherit;
+    font-size: var(--t-sm); font-weight: 500;
+  }
+  .refs a svg { color: var(--claret); }
 </style>
 </head>
 <body>
 <div class="page">
   <h1>Her dossier, five ways</h1>
-  <p class="lede">Same real data — Samantha, 21 of 21 fields, four people, eleven guesses — laid out five
-     different ways. Every one is a single page with no tabs, icon-led, and nothing below 15px.</p>
+  <p class="lede">Same real data — Samantha, 21 of 21 fields, thirteen people across three generations,
+     eleven guesses — laid out five different ways. Each one is a complete application page: the icon rail,
+     the conversation list, the pinned identity header, the concept's board, and the matching 306px profile
+     rail. Single page, no tabs, icon-led, nothing below 15px.</p>
   <div class="fixes">
     <span><svg class="i-sm i"><use href="icons.svg#check"/></svg> No tabs — nothing hidden behind a click</span>
     <span><svg class="i-sm i"><use href="icons.svg#check"/></svg> 17px body, 15px floor</span>
     <span><svg class="i-sm i"><use href="icons.svg#check"/></svg> One icon per section</span>
-    <span><svg class="i-sm i"><use href="icons.svg#check"/></svg> One clear next action</span>
+    <span><svg class="i-sm i"><use href="icons.svg#check"/></svg> Board + sidebar in the real chrome</span>
   </div>
 
   <div class="list">
-    <a class="card" href="a-timeline.html">
+    <a class="card" href="app-a.html">
       <span class="letter">A</span>
       <div>
         <h2>Timeline spine</h2>
         <p>One vertical chronology. Everything hangs off a date, because the only facts with
-           consequences are the ones with deadlines. You scroll time instead of switching tabs.</p>
+           consequences are the ones with deadlines. You scroll time instead of switching tabs.
+           Paired with the <b>A · Spine</b> rail, which repeats the same thread at 306px.</p>
         <div class="tags"><i>Calmest</i><i>Deadline-first</i><i>Long scroll</i></div>
       </div>
       <svg class="i i-lg go"><use href="icons.svg#arrow"/></svg>
     </a>
 
-    <a class="card" href="b-bento.html">
+    <a class="card" href="app-b.html">
       <span class="letter">B</span>
       <div>
         <h2>Bento board</h2>
         <p>A 12-column bento where tile size <em>is</em> priority — the anniversary gets a quarter of the
-           screen, her ring size gets a row. Closest to what you have now, minus the tabs.</p>
+           screen, her ring size gets its own tile. Closest to what you have now, minus the tabs.
+           Paired with the <b>B · Mini-bento</b> rail.</p>
         <div class="tags"><i>Most familiar</i><i>Glanceable</i><i>Big numerals</i></div>
       </div>
       <svg class="i i-lg go"><use href="icons.svg#arrow"/></svg>
     </a>
 
-    <a class="card rec" href="c-focus.html">
+    <a class="card rec" href="app-c.html">
       <span class="letter">C</span>
       <div>
         <span class="badge"><svg class="i-sm i"><use href="icons.svg#sparkle"/></svg> My recommendation</span>
         <h2>Focus rail</h2>
         <p>Keeps the tab bar's speed and deletes its cost: a sticky icon rail that <em>jumps</em> rather than
            filters, highlighting itself from scroll position. Nothing hidden, ⌘F works, and it tells you
-           where you are — the one thing the old tabs never did.</p>
-        <div class="tags"><i>Scales to 30 widgets</i><i>Scroll-spy</i><i>Best for a demo</i></div>
+           where you are — the one thing the old tabs never did. Paired with the <b>C · Now + folds</b> rail.
+           This is the one now shipping in the React app.</p>
+        <div class="tags"><i>Scales to 30 widgets</i><i>Scroll-spy</i><i>Shipped</i></div>
       </div>
       <svg class="i i-lg go"><use href="icons.svg#arrow"/></svg>
     </a>
 
-    <a class="card" href="d-editorial.html">
+    <a class="card" href="app-d.html">
       <span class="letter">D</span>
       <div>
         <h2>Editorial</h2>
         <p>A magazine profile, not a CRM record. Drop cap, prose sentences, the facts pushed into a
-           marginal file column. Most distinctive and most on-brand; least dense.</p>
-        <div class="tags"><i>Most emotional</i><i>20px body</i><i>Slowest to scan</i></div>
+           marginal file column. Most distinctive and most on-brand; least dense. Paired with the
+           <b>D · Index card</b> rail, which is the same voice at 306px.</p>
+        <div class="tags"><i>Most emotional</i><i>19px body</i><i>Slowest to scan</i></div>
       </div>
       <svg class="i i-lg go"><use href="icons.svg#arrow"/></svg>
     </a>
 
-    <a class="card" href="e-triage.html">
+    <a class="card" href="app-e.html">
       <span class="letter">E</span>
       <div>
         <h2>Triage columns</h2>
-        <p>Three standing columns by intent — <em>Do something · Know her · Help me learn</em> — because
-           every visit is one of three jobs, and the old tabs cut across all three. Everything on screen
-           at once.</p>
+        <p>Three standing columns by urgency — <em>Needs you now · Coming up · Just on file</em> — because
+           a birthday in nine days and a ring size are not the same kind of fact, and topic tabs kept
+           insisting they were. Paired with the <b>E · Three stacks</b> rail.</p>
         <div class="tags"><i>Densest</i><i>Zero scrolling to answer</i><i>Needs a wide screen</i></div>
       </div>
       <svg class="i i-lg go"><use href="icons.svg#arrow"/></svg>
     </a>
-    <a class="card" href="sidebars.html">
-      <span class="letter">▮</span>
-      <div>
-        <h2>The right sidebar, five ways</h2>
-        <p>One matching profile-rail proposal per concept above, at its true 306px — so the rail and the board
-           read as the same product instead of two designs sharing a window.</p>
-        <div class="tags"><i>All five side by side</i><i>Keeps today's seven regions</i></div>
-      </div>
-      <svg class="i i-lg go"><use href="icons.svg#arrow"/></svg>
-    </a>
+  </div>
+
+  <h2 class="sect">Reference drawings</h2>
+  <p class="sectlede">The earlier passes, kept for comparison: five boards drawn on a bare page, and the five
+     306px rails side by side with no board. Useful for judging one part at a time — but the app pages above
+     are the honest test, because that is the width each concept actually gets.</p>
+  <div class="refs">
+    <a href="a-timeline.html"><svg class="i-sm i"><use href="icons.svg#clock"/></svg> A board only</a>
+    <a href="b-bento.html"><svg class="i-sm i"><use href="icons.svg#target"/></svg> B board only</a>
+    <a href="c-focus.html"><svg class="i-sm i"><use href="icons.svg#book"/></svg> C board only</a>
+    <a href="d-editorial.html"><svg class="i-sm i"><use href="icons.svg#quote"/></svg> D board only</a>
+    <a href="e-triage.html"><svg class="i-sm i"><use href="icons.svg#check"/></svg> E board only</a>
+    <a href="sidebars.html"><svg class="i-sm i"><use href="icons.svg#pin"/></svg> All five rails, no board</a>
   </div>
 </div>
 </body>

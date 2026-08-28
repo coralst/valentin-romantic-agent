@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E · Triage — in the app</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app-shell.css">
+<style>
+  /* CONCEPT E IN THE APP — TRIAGE BY URGENCY, NOT BY TOPIC
+     The argument: the panel's real question is never "which category is this" but
+     "what needs me now, what needs me soon, and what is just on file". So the
+     board is three columns in that order, and every card sits in whichever column
+     its deadline puts it in. A birthday in nine days and a ring size are not the
+     same kind of fact, and topic-based tabs kept insisting they were.
+
+     What changed when it moved into the shell: the bare page laid out three fixed
+     columns in 1560px. The board here has ~990px, where three fixed columns are
+     310px each and the numerals stop fitting. So the grid is
+     `repeat(auto-fit, minmax(288px, 1fr))` — three-up on a wide screen, two-up in
+     the app at this width, one-up when the window narrows — and the sticky top
+     bar goes, because the pinned identity header already carries the name, the
+     meter and the ask button it was duplicating. The column headers keep the
+     counts, which is the part that made the triage legible. */
+
+  .board { background: #F1E9E3; }
+  .board .page { padding: 20px 24px 34px; }
+
+  .board .pills { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .board .pills .pill {
+    display: inline-flex; align-items: center; gap: 8px; padding: 9px 15px; border-radius: var(--r-pill);
+    background: var(--paper); font-size: var(--t-sm); font-weight: 500;
+    box-shadow: inset 0 0 0 1.5px var(--border);
+  }
+  .board .pills .pill svg { color: var(--ink-faint); }
+  .board .pills .pill.hot { background: var(--claret); color: var(--cream); box-shadow: none; }
+  .board .pills .pill.hot svg { color: var(--blush); }
+  .board .pills .pill.warn {
+    background: #FFF4E6; color: #6E5A38; box-shadow: inset 0 0 0 1.5px rgba(176,140,79,.4);
+  }
+  .board .pills .pill.warn svg { color: var(--gold); }
+
+  .board .cols {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(288px, 1fr));
+    gap: 16px; align-items: start;
+  }
+  .board .col { min-width: 0; }
+  .board .col > header {
+    display: flex; align-items: center; gap: 10px; padding: 0 4px 11px;
+    font-size: var(--t-sm); font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--ink-muted);
+  }
+  .board .col > header svg { color: var(--claret); }
+  .board .col > header .n {
+    margin-left: auto; letter-spacing: 0; padding: 3px 11px; border-radius: var(--r-pill);
+    background: var(--paper); color: var(--claret); font-size: var(--t-sm);
+  }
+  .board .col.now > header { color: var(--claret-deep); }
+
+  .board .c {
+    background: var(--paper); border-radius: var(--r-lg); padding: 18px;
+    box-shadow: var(--shadow-card); margin-bottom: 14px;
+  }
+  .board .c > h3 {
+    display: flex; align-items: center; gap: 9px; font-family: var(--body);
+    font-size: var(--t-sm); font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+    color: var(--ink-muted); margin-bottom: 13px;
+  }
+  .board .c > h3 svg { color: var(--claret); }
+  .board .c > h3 .n { margin-left: auto; letter-spacing: 0; color: var(--claret); }
+
+  /* The urgent card: the only 62px numeral on the board, which is what makes the
+     first column read as first. */
+  .board .urgent {
+    background: linear-gradient(145deg, #7A2740, #A8394F 60%, #B9455C); color: var(--cream);
+  }
+  .board .urgent > h3 { color: rgba(255,249,245,.7); }
+  .board .urgent > h3 svg { color: var(--blush); }
+  .board .urgent .n { font-family: var(--display); font-size: 62px; line-height: .9; }
+  .board .urgent .u { font-size: var(--t-sm); text-transform: uppercase; letter-spacing: .14em; opacity: .74; }
+  .board .urgent .w { font-family: var(--display); font-size: var(--t-lg); margin-top: 10px; }
+  .board .urgent .sub { font-size: var(--t-sm); opacity: .84; margin-top: 3px; }
+  .board .urgent .go {
+    width: 100%; margin-top: 15px; padding: 12px; border-radius: var(--r-pill);
+    background: var(--cream); color: var(--claret-deep); font-size: var(--t-sm); font-weight: 600;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+
+  .board .caution {
+    background: #FFF4E6; box-shadow: inset 0 0 0 2px rgba(176,140,79,.32);
+  }
+  .board .caution > h3, .board .caution > h3 svg { color: var(--gold); }
+  .board .caution b { display: block; font-family: var(--display); font-size: var(--t-md); }
+  .board .caution p { color: #6E5A38; font-size: var(--t-sm); margin-top: 4px; }
+
+  .board .d { display: flex; align-items: center; gap: 12px; padding: 11px 0; }
+  .board .d + .d { box-shadow: inset 0 1.5px 0 var(--border-subtle); }
+  .board .d .ic {
+    width: 36px; height: 36px; border-radius: 12px; flex: none; display: grid; place-items: center;
+    background: var(--cream); color: var(--claret); box-shadow: inset 0 0 0 1.5px var(--border);
+  }
+  .board .d .g { flex: 1; min-width: 0; }
+  .board .d .t1 { display: block; font-size: var(--t-sm); font-weight: 600; }
+  .board .d .t2 { display: block; font-size: 14px; color: var(--ink-muted); }
+  .board .d .rt {
+    flex: none; font-size: var(--t-body); font-weight: 600; color: var(--claret);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Sizes, as three figures in the "on file" column — which is where they belong,
+     because they never change and they are always the thing you need. */
+  .board .sizes { display: grid; gap: 9px; }
+  .board .sizes .s {
+    display: flex; align-items: baseline; gap: 12px; background: var(--cream);
+    border-radius: var(--r-sm); padding: 11px 14px;
+  }
+  .board .sizes .k {
+    flex: none; width: 62px; font-size: var(--t-sm); font-weight: 600; color: var(--ink-muted);
+  }
+  /* The figure never wraps — "UK 10" broken across two lines is the one thing a
+     size card may not do. The qualifier is what gives way instead. */
+  .board .sizes .v {
+    flex: none; font-family: var(--display); font-size: var(--t-lg); line-height: 1; white-space: nowrap;
+  }
+  .board .sizes .q { flex: 1; min-width: 0; font-size: 14px; color: var(--ink-muted); text-align: right; }
+
+  .board .wish { display: flex; flex-wrap: wrap; gap: 8px; }
+  .board .wish span {
+    display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: var(--r-pill);
+    background: var(--cream); font-size: var(--t-sm); box-shadow: inset 0 0 0 1.5px var(--border);
+  }
+  .board .wish svg { color: var(--claret-light); }
+
+  .board .subhead {
+    font-size: var(--t-sm); font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--claret); margin: 15px 0 5px;
+  }
+  .board .subhead:first-of-type { margin-top: 0; }
+  .board .kv { display: flex; gap: 12px; padding: 8px 0; font-size: var(--t-sm); }
+  .board .kv + .kv { box-shadow: inset 0 1.5px 0 var(--border-subtle); }
+  .board .kv .k { flex: none; width: 88px; color: var(--ink-muted); }
+  .board .kv .v { min-width: 0; }
+
+  /* People: generations as labelled runs, gaps shown as fixable. */
+  .board .genlabel {
+    font-size: 14px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--ink-faint); margin: 13px 0 7px;
+  }
+  .board .genlabel:first-of-type { margin-top: 0; }
+  .board .p { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
+  .board .p .ini {
+    width: 32px; height: 32px; border-radius: 50%; flex: none; display: grid; place-items: center;
+    background: var(--blush); color: var(--claret-deep); font-weight: 600; font-size: 14px;
+  }
+  .board .p .g { flex: 1; min-width: 0; }
+  .board .p .nm { font-size: var(--t-sm); font-weight: 600; }
+  .board .p .rel { font-size: 14px; color: var(--ink-muted); }
+  .board .p .dt { font-size: 14px; color: var(--claret-light); font-weight: 600; flex: none; }
+  .board .p.her .ini { background: var(--claret); color: var(--cream); }
+  .board .p.gap .ini { background: none; color: var(--ink-faint); box-shadow: inset 0 0 0 2px var(--border); }
+  .board .p.gap .nm { color: var(--ink-faint); }
+  .board .p .fix {
+    flex: none; padding: 6px 12px; border-radius: var(--r-pill); font-size: 14px; font-weight: 600;
+    background: var(--claret); color: var(--cream);
+  }
+
+  .board .g { display: flex; gap: 11px; padding: 11px 0; align-items: center; }
+  .board .g + .g { box-shadow: inset 0 1.5px 0 var(--border-subtle); }
+  .board .g .q { flex: 1; font-size: var(--t-sm); }
+  .board .g .yn { display: flex; gap: 6px; flex: none; }
+  .board .g button { padding: 7px 13px; border-radius: var(--r-pill); font-size: 14px; font-weight: 600; }
+  .board .g .y { background: var(--claret); color: var(--cream); }
+  .board .g .n2 { background: var(--cream); color: var(--ink-muted); box-shadow: inset 0 0 0 1.5px var(--border); }
+
+  .board .ask { display: flex; gap: 11px; align-items: flex-start; padding: 12px 0; }
+  .board .ask + .ask { box-shadow: inset 0 1.5px 0 var(--border-subtle); }
+  .board .ask .qm {
+    width: 30px; height: 30px; border-radius: 50%; flex: none; display: grid; place-items: center;
+    background: var(--blush); color: var(--claret-deep);
+  }
+  .board .ask .q { font-family: var(--display); font-size: var(--t-body); }
+  .board .ask .why { font-size: 14px; color: var(--ink-muted); }
+
+  .board .quotes blockquote {
+    font-size: var(--t-sm); padding: 12px 14px; border-radius: var(--r-md);
+    background: var(--cream); border-left: 3px solid var(--blush);
+  }
+  .board .quotes blockquote + blockquote { margin-top: 9px; }
+
+  .board .progress { display: flex; align-items: center; gap: 14px; }
+  .board .progress svg { width: 64px; height: 64px; flex: none; }
+  .board .progress .pct { font-family: var(--display); font-size: 26px; line-height: 1; }
+  .board .progress .cap { font-size: var(--t-sm); color: var(--ink-muted); }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <nav class="iconrail" aria-label="Valentin">
+    <span class="face" aria-hidden="true">V</span>
+    <span class="grp">Talk</span>
+    <button class="ic on" aria-label="Conversations"><svg class="i"><use href="icons.svg#chat"/></svg></button>
+    <button class="ic" aria-label="Her people"><svg class="i"><use href="icons.svg#users"/></svg></button>
+    <span class="grp">Act</span>
+    <button class="ic" aria-label="Dates ahead"><svg class="i"><use href="icons.svg#calendar"/></svg></button>
+    <button class="ic" aria-label="Gift ideas"><svg class="i"><use href="icons.svg#gift"/></svg></button>
+    <button class="ic gear" aria-label="Settings"><svg class="i"><use href="icons.svg#gear"/></svg></button>
+  </nav>
+
+  <aside class="convo" aria-label="Conversations">
+    <h2>Conversations</h2>
+    <button class="new"><svg class="i-sm i"><use href="icons.svg#chat"/></svg> New conversation</button>
+    <div class="list">
+      <button class="th on"><div class="t1">Anniversary, September</div><div class="t2">She'd rather choose — so ask…</div></button>
+      <button class="th"><div class="t1">Ruth's birthday</div><div class="t2">Ruthie calls on Sundays</div></button>
+      <button class="th"><div class="t1">The pottery class</div><div class="t2">You both made the same mug</div></button>
+      <button class="th"><div class="t1">Sizes, for the knitwear</div><div class="t2">UK 10, sizes up for knits</div></button>
+      <button class="th"><div class="t1">Kyoto, one day</div><div class="t2">Cherry blossom season</div></button>
+      <button class="th"><div class="t1">Nadia and Tom</div><div class="t2">Who tells whom first</div></button>
+    </div>
+  </aside>
+
+  <main class="center">
+    <header class="dosshead">
+      <button class="back" aria-label="Back to the conversation">
+        <svg class="i-sm i" style="transform:rotate(180deg)"><use href="icons.svg#arrow"/></svg>
+      </button>
+      <span class="por" aria-hidden="true">S</span>
+      <div class="id">
+        <h1>Samantha</h1>
+        <div class="sub">12 June 1994 · early-thirties · Gemini</div>
+      </div>
+      <div class="meter">
+        <div class="r"><span class="lb">How well I know her</span><b>21 of 21</b></div>
+        <div class="ticks" role="progressbar" aria-valuenow="21" aria-valuemin="0" aria-valuemax="21"
+             aria-label="21 of 21 fields known">
+          <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        </div>
+      </div>
+      <button class="cta">Ask me what's missing</button>
+    </header>
+
+    <div class="board">
+      <div class="page">
+
+        <div class="pills">
+          <span class="pill hot"><svg class="i-sm i"><use href="icons.svg#heart"/></svg> Anniversary in 21 days</span>
+          <span class="pill warn"><svg class="i-sm i"><use href="icons.svg#alert"/></svg> She prefers to choose</span>
+          <span class="pill"><svg class="i-sm i"><use href="icons.svg#check"/></svg> 11 guesses to confirm</span>
+          <span class="pill"><svg class="i-sm i"><use href="icons.svg#users"/></svg> 2 names missing</span>
+        </div>
+
+        <div class="cols">
+
+          <!-- ---------------------------------------------------- NEEDS YOU NOW -->
+          <div class="col now">
+            <header><svg class="i-sm i"><use href="icons.svg#heart"/></svg> Needs you now <span class="n">2</span></header>
+
+            <div class="c urgent">
+              <h3><svg class="i-sm i"><use href="icons.svg#clock"/></svg> Book by 11 Sep</h3>
+              <div class="n">21</div>
+              <div class="u">days away</div>
+              <div class="w">Your anniversary</div>
+              <div class="sub">Friday 18 September · the fifth</div>
+              <button class="go"><svg class="i-sm i"><use href="icons.svg#sparkle"/></svg> Plan it with me</button>
+            </div>
+
+            <div class="c caution">
+              <h3><svg class="i-sm i"><use href="icons.svg#alert"/></svg> Read this first</h3>
+              <b>She prefers to choose</b>
+              <p>Ask her before you book anything. A surprise lands as pressure, not delight — this is the one note I'd override a good idea for.</p>
+            </div>
+
+            <div class="c">
+              <h3><svg class="i-sm i"><use href="icons.svg#ask"/></svg> Worth asking <span class="n">3</span></h3>
+              <div class="ask"><span class="qm"><svg class="i-sm i"><use href="icons.svg#ask"/></svg></span>
+                <span><span class="q">“What's your father's brother called?”</span>
+                <span class="why">Closes one of two gaps on her tree.</span></span></div>
+              <div class="ask"><span class="qm"><svg class="i-sm i"><use href="icons.svg#ask"/></svg></span>
+                <span><span class="q">“Which glaze colour do you run out of?”</span>
+                <span class="why">Makes the wish list buyable.</span></span></div>
+              <div class="ask"><span class="qm"><svg class="i-sm i"><use href="icons.svg#ask"/></svg></span>
+                <span><span class="q">“Which anniversary do you celebrate?”</span>
+                <span class="why">Two dates on file, eleven days apart.</span></span></div>
+            </div>
+          </div>
+
+          <!-- ------------------------------------------------------ COMING SOON -->
+          <div class="col">
+            <header><svg class="i-sm i"><use href="icons.svg#calendar"/></svg> Coming up <span class="n">4</span></header>
+
+            <div class="c">
+              <h3><svg class="i-sm i"><use href="icons.svg#calendar"/></svg> Dates ahead</h3>
+              <div class="d"><span class="ic"><svg class="i-sm i"><use href="icons.svg#cake"/></svg></span>
+                <span class="g"><span class="t1">Ruth</span><span class="t2">9 Nov · her mother</span></span><span class="rt">73d</span></div>
+              <div class="d"><span class="ic"><svg class="i-sm i"><use href="icons.svg#calendar"/></svg></span>
+                <span class="g"><span class="t1">Together since</span><span class="t2">2 Mar · plan by 28 Feb</span></span><span class="rt">187d</span></div>
+              <div class="d"><span class="ic"><svg class="i-sm i"><use href="icons.svg#cake"/></svg></span>
+                <span class="g"><span class="t1">Nadia</span><span class="t2">22 Mar · her sister</span></span><span class="rt">206d</span></div>
+              <div class="d"><span class="ic"><svg class="i-sm i"><use href="icons.svg#sparkle"/></svg></span>
+                <span class="g"><span class="t1">Her birthday</span><span class="t2">12 Jun · order by 29 May</span></span><span class="rt">288d</span></div>
+            </div>
+
+            <div class="c">
+              <h3><svg class="i-sm i"><use href="icons.svg#gift"/></svg> Gift ideas <span class="n">~$80</span></h3>
+              <div class="wish">
+                <span><svg class="i-sm i"><use href="icons.svg#palette"/></svg> Ceramic glaze set</span>
+                <span><svg class="i-sm i"><use href="icons.svg#food"/></svg> Linen apron</span>
+                <span><svg class="i-sm i"><use href="icons.svg#book"/></svg> Poetry anthology</span>
+                <span><svg class="i-sm i"><use href="icons.svg#target"/></svg> Trail shoes</span>
+              </div>
+            </div>
+
+            <div class="c">
+              <h3><svg class="i-sm i"><use href="icons.svg#check"/></svg> Confirm my guesses <span class="n">11</span></h3>
+              <div class="g"><span class="q">One good thing beats three nice ones.</span>
+                <span class="yn"><button class="y">Yes</button><button class="n2">No</button></span></div>
+              <div class="g"><span class="q">Flowers, but never roses.</span>
+                <span class="yn"><button class="y">Yes</button><button class="n2">No</button></span></div>
+              <div class="g"><span class="q">Handmade beats expensive.</span>
+                <span class="yn"><button class="y">Yes</button><button class="n2">No</button></span></div>
+              <div class="g"><span class="q">Nadia there for milestones.</span>
+                <span class="yn"><button class="y">Yes</button><button class="n2">No</button></span></div>
+            </div>
+
+            <div class="c">
+              <h3><svg class="i-sm i"><use href="icons.svg#target"/></svg> Her file</h3>
+              <div class="progress">
+                <svg viewBox="0 0 36 36" aria-hidden="true">
+                  <circle cx="18" cy="18" r="15.5" fill="none" stroke="#EDE6E0" stroke-width="4"/>
+                  <circle cx="18" cy="18" r="15.5" fill="none" stroke="#8C2F45" stroke-width="4"
+                          stroke-linecap="round" stroke-dasharray="97.4 97.4" transform="rotate(-90 18 18)"/>
+                </svg>
+                <div>
+                  <div class="pct">21 of 21</div>
+                  <div class="cap">All fields filled. What's left is confirming the eleven I guessed.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- --------------------------------------------------------- ON FILE -->
+          <div class="col">
+            <header><svg class="i-sm i"><use href="icons.svg#book"/></svg> Just on file <span class="n">21</span></header>
+
+            <div class="c">
+              <h3><svg class="i-sm i"><use href="icons.svg#ruler"/></svg> Her sizes <span class="n">3</span></h3>
+              <div class="sizes">
+                <div class="s"><span class="k">Clothes</span><span class="v">UK 10</span><span class="q">EU 38 · sizes up for knits</span></div>
+                <div class="s"><span class="k">Shoes</span><span class="v">UK 6</span><span class="q">EU 39</span></div>
+                <div class="s"><span class="k">Ring</span><span class="v">UK M</span><span class="q">US 6</span></div>
+              </div>
+            </div>
+
+            <div class="c">
+              <h3><svg class="i-sm i"><use href="icons.svg#users"/></svg> Her people <span class="n">13</span></h3>
+              <div class="genlabel">Elders</div>
+              <div class="p"><span class="ini">M</span><span class="g"><span class="nm">Miriam</span> <span class="rel">grandmother</span></span><span class="dt">17 Jan</span></div>
+              <div class="p"><span class="ini">R</span><span class="g"><span class="nm">Ruth</span> <span class="rel">mother</span></span><span class="dt">9 Nov</span></div>
+              <div class="p"><span class="ini">D</span><span class="g"><span class="nm">Daniel</span> <span class="rel">father</span></span><span class="dt">2 Apr</span></div>
+              <div class="p"><span class="ini">Y</span><span class="g"><span class="nm">Yosef</span> <span class="rel">uncle, mother's side</span></span><span class="dt">12 Sep</span></div>
+              <div class="p"><span class="ini">D</span><span class="g"><span class="nm">Dahlia</span> <span class="rel">aunt</span></span></div>
+              <div class="p gap"><span class="ini">?</span><span class="g"><span class="nm">Unnamed</span> <span class="rel">uncle, father's side</span></span><button class="fix">Ask</button></div>
+
+              <div class="genlabel">Her generation</div>
+              <div class="p her"><span class="ini">S</span><span class="g"><span class="nm">Samantha</span> <span class="rel">her</span></span><span class="dt">12 Jun</span></div>
+              <div class="p"><span class="ini">N</span><span class="g"><span class="nm">Nadia</span> <span class="rel">sister</span></span><span class="dt">22 Mar</span></div>
+              <div class="p gap"><span class="ini">?</span><span class="g"><span class="nm">Unnamed</span> <span class="rel">Nadia's husband</span></span><button class="fix">Ask</button></div>
+              <div class="p"><span class="ini">L</span><span class="g"><span class="nm">Lena</span> <span class="rel">cousin</span></span><span class="dt">30 Jun</span></div>
+              <div class="p"><span class="ini">R</span><span class="g"><span class="nm">Ruben</span> <span class="rel">younger cousin</span></span></div>
+              <div class="p"><span class="ini">T</span><span class="g"><span class="nm">Tom</span> <span class="rel">closest friend</span></span></div>
+
+              <div class="genlabel">Younger</div>
+              <div class="p"><span class="ini">A</span><span class="g"><span class="nm">Ari</span> <span class="rel">nephew</span></span><span class="dt">5 Dec</span></div>
+              <div class="p"><span class="ini">T</span><span class="g"><span class="nm">Talia</span> <span class="rel">niece</span></span><span class="dt">24 Sep</span></div>
+            </div>
+
+            <div class="c">
+              <h3><svg class="i-sm i"><use href="icons.svg#book"/></svg> Everything else <span class="n">18</span></h3>
+              <div class="subhead">Basics</div>
+              <div class="kv"><span class="k">Nickname</span><span class="v">Sam</span></div>
+              <div class="kv"><span class="k">Born</span><span class="v">12 June 1994 · Gemini</span></div>
+              <div class="kv"><span class="k">Love lang.</span><span class="v">Quality time</span></div>
+              <div class="kv"><span class="k">How we met</span><span class="v">A pottery class, and the same lopsided mug</span></div>
+              <div class="kv"><span class="k">Together</span><span class="v">2 March 2019 · 1,805 days</span></div>
+
+              <div class="subhead">Interests</div>
+              <div class="kv"><span class="k">Cuisine</span><span class="v">Northern Italian</span></div>
+              <div class="kv"><span class="k">Music</span><span class="v">Indie folk, close harmonies</span></div>
+              <div class="kv"><span class="k">Hobbies</span><span class="v">Pottery · trail runs · watercolour · bread</span></div>
+              <div class="kv"><span class="k">Dream trip</span><span class="v">Kyoto in blossom season</span></div>
+              <div class="kv"><span class="k">Colour</span><span class="v">Deep sage green</span></div>
+              <div class="kv"><span class="k">Scent</span><span class="v">Fig, cedar, a little vanilla</span></div>
+              <div class="kv"><span class="k">Style</span><span class="v">Linen, oversized knits, one silk scarf</span></div>
+
+              <div class="subhead">Gifting</div>
+              <div class="kv"><span class="k">Budget</span><span class="v">~$80 everyday, more for milestones</span></div>
+              <div class="kv"><span class="k">Flowers</span><span class="v">Anything but roses</span></div>
+            </div>
+
+            <div class="c">
+              <h3><svg class="i-sm i"><use href="icons.svg#quote"/></svg> In her words</h3>
+              <div class="quotes">
+                <blockquote>“I'd rather have one thing I'll keep than three I'll feel guilty about.”</blockquote>
+                <blockquote>“Ruthie calls on Sundays. Always has.”</blockquote>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ============ E · THREE STACKS — the matching brief rail ============ -->
+  <aside class="brief" aria-label="Her brief">
+    <div class="scroll">
+      <div class="who">
+        <span class="fc">S</span>
+        <div><div class="nm">Samantha</div><div class="sub">1,805 days · Gemini</div></div>
+      </div>
+
+      <div class="stack act">
+        <div class="hd"><svg class="i-sm i"><use href="icons.svg#heart"/></svg> Now <span class="n">2</span></div>
+        <div class="it" style="background:var(--cream);color:var(--ink)">
+          <svg class="i-sm i" style="color:var(--claret)"><use href="icons.svg#clock"/></svg>
+          <span class="g"><span class="t1">Anniversary</span><span class="t2" style="color:var(--ink-muted)">Fri 18 Sep · book by the 11th</span></span>
+          <span class="rt" style="color:var(--claret)">21d</span>
+        </div>
+        <div class="it warnrow">
+          <svg class="i-sm i"><use href="icons.svg#alert"/></svg>
+          <span class="g"><span class="t1">She prefers to choose</span><span class="t2">Ask before you book</span></span>
+        </div>
+      </div>
+
+      <div class="stack">
+        <div class="hd"><svg class="i-sm i"><use href="icons.svg#calendar"/></svg> Soon <span class="n">3</span></div>
+        <div class="it"><svg class="i-sm i"><use href="icons.svg#cake"/></svg>
+          <span class="g"><span class="t1">Ruth</span><span class="t2">9 Nov · her mother</span></span><span class="rt">73d</span></div>
+        <div class="it"><svg class="i-sm i"><use href="icons.svg#calendar"/></svg>
+          <span class="g"><span class="t1">Together since</span><span class="t2">2 Mar</span></span><span class="rt">187d</span></div>
+        <div class="it"><svg class="i-sm i"><use href="icons.svg#cake"/></svg>
+          <span class="g"><span class="t1">Nadia</span><span class="t2">22 Mar · her sister</span></span><span class="rt">206d</span></div>
+      </div>
+
+      <div class="stack">
+        <div class="hd"><svg class="i-sm i"><use href="icons.svg#book"/></svg> On file <span class="n">21</span></div>
+        <div class="it"><svg class="i-sm i"><use href="icons.svg#ruler"/></svg>
+          <span class="g"><span class="t1">Sizes</span><span class="t2">UK 10 · UK 6 · ring M</span></span></div>
+        <div class="it"><svg class="i-sm i"><use href="icons.svg#users"/></svg>
+          <span class="g"><span class="t1">Her people</span><span class="t2">13 known · 2 unnamed</span></span></div>
+        <div class="it"><svg class="i-sm i"><use href="icons.svg#gift"/></svg>
+          <span class="g"><span class="t1">Wish list</span><span class="t2">Glaze set · apron · poetry</span></span></div>
+        <div class="it"><svg class="i-sm i"><use href="icons.svg#check"/></svg>
+          <span class="g"><span class="t1">My guesses</span><span class="t2">11 to confirm</span></span></div>
+      </div>
+    </div>
+
+    <div class="pin">
+      <span class="chip"><span class="k">Colour</span><b>Deep sage</b></span>
+      <span class="chip"><span class="k">Food</span><b>N. Italian</b></span>
+      <span class="chip empty">No roses</span>
+    </div>
+    <div class="nudge">
+      <div class="lbl"><svg class="i-sm i"><use href="icons.svg#sparkle"/></svg> Valentin</div>
+      <p>Her glaze set is £62 — inside the usual budget.</p>
+      <div class="btns"><button class="ask">Ask her</button><button class="later">Later</button></div>
+    </div>
+    <div class="tally">
+      <span class="full"><svg class="i-sm i"><use href="icons.svg#check"/></svg> 21 of 21</span>
+      <span class="bar"><i></i></span>
+    </div>
+  </aside>
+
+  <div class="foot"><span class="dot"></span><b>Live Architecture</b><span class="ev">0 events</span></div>
+</div>
+
+<nav class="appchooser">
+  <a href="app-a.html">A · Timeline</a>
+  <a href="app-b.html">B · Bento</a>
+  <a href="app-c.html">C · Focus rail</a>
+  <a href="app-d.html">D · Editorial</a>
+  <a href="app-e.html" aria-current="page">E · Triage</a>
+  <span class="sep"></span>
+  <a href="index.html">Index</a>
+  <a href="sidebars.html">Rails only</a>
+</nav>
+</body>
+</html>

@@ -12,14 +12,31 @@ export default defineConfig({
       '@server': path.resolve(__dirname, 'src/server'),
     },
   },
+  /*
+   * Both ports come from the environment, defaulting to what they have always
+   * been, so nothing changes for a normal `npm run dev` or for CI.
+   *
+   * They are overridable because worktrees collide on them. Two sessions running
+   * E2E at once fight over 5173, and the loser silently tests the *winner's*
+   * frontend against its own branch's assertions — green or red for reasons that
+   * have nothing to do with the code under test. `PORT` is already the dev
+   * server's own variable, so this just stops vite from hardcoding past it.
+   *
+   * `strictPort` is the other half. Vite's default is to step to 5174 when 5173 is
+   * taken, which is the same failure wearing a friendlier face: Playwright and
+   * `verify:local` both look at 5173 regardless. Refusing to start is the loud
+   * version of a problem that is otherwise diagnosed by confusion.
+   */
   server: {
+    port: Number(process.env.VITE_PORT) || 5173,
+    strictPort: true,
     proxy: {
       '/ws': {
-        target: 'http://localhost:3001',
+        target: `http://localhost:${Number(process.env.PORT) || 3001}`,
         ws: true,
       },
       '/api': {
-        target: 'http://localhost:3001',
+        target: `http://localhost:${Number(process.env.PORT) || 3001}`,
       },
     },
   },

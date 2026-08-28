@@ -351,6 +351,59 @@ describe('separating visitors inside the shared demo account', () => {
   });
 });
 
+/*
+ * These exist because `listIntegrations` shipped fully written, fully unit-tested,
+ * and not mounted. `http-routes.test.ts` called the handler directly and passed;
+ * the route table never referenced it, so the panel fetched a 404 and rendered
+ * every capability as "readiness unknown" — no error, just quietly blank badges.
+ * A handler is not an endpoint until the route table says so, and only a test that
+ * goes over the socket can tell the difference.
+ */
+describe('GET /api/integrations', () => {
+  it('is actually mounted, and lists every integration', async () => {
+    const res = await get('/api/integrations', 'grace');
+    expect(res.status).toBe(200);
+
+    const body = (await res.json()) as {
+      integrations: { id: string; label: string; configured: boolean }[];
+    };
+    // Order is `INTEGRATION_IDS`, not whatever the readiness object enumerates in,
+    // so the panel's rows cannot reshuffle underneath a visitor.
+    expect(body.integrations.map((i) => i.id)).toEqual([
+      'hebcal',
+      'ontopo',
+      'amadeus',
+      'google-calendar',
+      'gmail',
+      'whatsapp',
+    ]);
+    // Hebcal is arithmetic in-process, so it is configured on every deployment.
+    expect(body.integrations.find((i) => i.id === 'hebcal')?.configured).toBe(true);
+  });
+
+  it('carries booleans and labels only — never a credential', async () => {
+    const raw = await (await get('/api/integrations', 'grace')).text();
+
+    // Whole-response check rather than per-field, because the risk is a *new*
+    // field leaking, and a per-field assertion cannot see one it does not know
+    // about. Not even a masked prefix: a prefix of a refresh token is still a
+    // piece of a refresh token, in a payload the browser logs.
+    expect(raw).not.toMatch(/token|secret|refresh|client_?id|password|\bkey\b/i);
+
+    const body = (await (await get('/api/integrations', 'grace')).json()) as {
+      integrations: Record<string, unknown>[];
+    };
+    for (const entry of body.integrations) {
+      expect(Object.keys(entry).sort()).toEqual(['configured', 'id', 'label']);
+      expect(typeof entry.configured).toBe('boolean');
+    }
+  });
+
+  it('requires a token like every other /api route', async () => {
+    expect((await get('/api/integrations')).status).toBe(401);
+  });
+});
+
 describe('the session list', () => {
   it('shows a caller only their own sessions', async () => {
     await post('/api/session/seed', 'carol');

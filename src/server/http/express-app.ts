@@ -220,6 +220,24 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
 
   app.use('/api', requireAuth(deps));
 
+  /*
+   * Which outside services this deployment can actually reach.
+   *
+   * Behind the token even though the body is booleans and labels with no
+   * credential in it, because "which integrations are wired up" is a fact about
+   * the deployment and the only caller is the panel inside the app. `/api/config`
+   * is unauthenticated for a reason that does not apply here — the landing page
+   * cannot sign anyone in without it.
+   *
+   * The handler needs no storage; it goes through `scoped` anyway so it stays in
+   * the one route table that `http-routes.test.ts` covers, rather than growing a
+   * second inline copy that can drift.
+   */
+  app.get(
+    '/api/integrations',
+    scoped(deps, (routes) => routes.listIntegrations()),
+  );
+
   app.get(
     '/api/sessions',
     scoped(deps, (routes) => routes.listSessions()),

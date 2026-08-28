@@ -52,6 +52,9 @@ Thumbs.db
 # Test
 coverage/
 test-results/
+# PW_RESULTS lets a concurrent worktree run E2E without overwriting another run's
+# traces, so the directory name is no longer fixed.
+test-results-*/
 playwright-report/
 blob-report/
 

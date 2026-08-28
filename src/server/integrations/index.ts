@@ -5,6 +5,7 @@ import { amadeusTools } from './amadeus/tools';
 import { gmailTools, googleCalendarTools } from './google/tools';
 import { hebcalTools } from './hebcal/tools';
 import { ontopoTools } from './ontopo/tools';
+import { whatsappTools } from './whatsapp/tools';
 
 export type { ToolRegistry, AgentTool, ActionProposal, IntegrationId } from './tool-registry';
 
@@ -71,6 +72,7 @@ export function buildToolRegistry(): ToolRegistry {
   // the account actually granted.
   if (ready['google-calendar']) tools.push(...googleCalendarTools);
   if (ready.gmail) tools.push(...gmailTools);
+  if (ready.whatsapp) tools.push(...whatsappTools);
 
   const registry = new Map(tools.map((tool) => [tool.name, tool]));
 

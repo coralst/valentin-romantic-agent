@@ -36,14 +36,32 @@ export type DossierIconName =
   | 'clock'
   | 'arrow'
   | 'chat'
-  | 'target';
+  | 'target'
+  | 'food'
+  | 'music'
+  | 'plane'
+  | 'edit'
+  | 'pin'
+  | 'heart-star';
+
+/**
+ * One path, or one path drawn at a lighter weight than the icon's own.
+ *
+ * The weight override exists for `heart-star` alone: a Magen David inside a
+ * heart is two overlapping triangles at 24px, and at the set's 1.7 stroke the
+ * six points fill in and it reads as a blob. Everything else is a bare string.
+ */
+type IconPath = string | { d: string; strokeWidth: number };
 
 /**
  * One entry per name. Strings rather than JSX so the whole set costs one object
  * and a component can be picked by name from data — which is what the section
  * rail does, driven by its section list.
+ *
+ * Circles are written as arc paths rather than `<circle>` for the same reason:
+ * one element type per icon means the renderer stays four lines long.
  */
-const PATHS: Record<DossierIconName, string> = {
+const PATHS: Record<DossierIconName, IconPath | IconPath[]> = {
   heart: 'M12 20.5S3.5 15 3.5 9.2A4.7 4.7 0 0 1 12 6.6a4.7 4.7 0 0 1 8.5 2.6c0 5.8-8.5 11.3-8.5 11.3Z',
   calendar: 'M3.5 10h17M8.5 3v4M15.5 3v4M6 5h12a2.5 2.5 0 0 1 2.5 2.5V18A2.5 2.5 0 0 1 18 20.5H6A2.5 2.5 0 0 1 3.5 18V7.5A2.5 2.5 0 0 1 6 5Z',
   cake: 'M4 20.5h16M4.5 20.5v-5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v5M4.5 16.5c1.7 1.4 3.2 1.4 4.9 0 1.7 1.4 3.2 1.4 4.9 0 1.5 1.3 2.9 1.4 4.7.3M12 10.5V8',
@@ -61,7 +79,39 @@ const PATHS: Record<DossierIconName, string> = {
   arrow: 'M4.5 12h15M13.5 6l6 6-6 6',
   chat: 'M20.5 12.4c0 4.1-3.8 7.4-8.5 7.4-1 0-2-.2-2.9-.5L4 21l1.2-3.6A7 7 0 0 1 3.5 12.4C3.5 8.3 7.3 5 12 5s8.5 3.3 8.5 7.4Z',
   target: 'M12 20.7a8.7 8.7 0 1 0 0-17.4 8.7 8.7 0 0 0 0 17.4ZM12 16.6a4.6 4.6 0 1 0 0-9.2 4.6 4.6 0 0 0 0 9.2ZM12 12.9a.9.9 0 1 0 0-1.8.9.9 0 0 0 0 1.8Z',
+  food: 'M6 3v8a2.5 2.5 0 0 0 5 0V3M8.5 13.5V21M16.5 3c-1.7 1.2-2.5 3-2.5 5.5s.9 4 2.5 4.5V21',
+  music: [
+    'M9.5 17.5V7.4l11.5-2.6V15',
+    'M6.5 14.5a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z',
+    'M18 12a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z',
+  ],
+  plane: 'M10.5 13.5 3 11.2l18-6.7-6.7 18-2.3-7.5-1.5-1.5Z',
+  edit: 'M16.6 3.9a2.2 2.2 0 0 1 3.1 3.1L8 18.8l-4.3 1.2 1.2-4.3L16.6 3.9Z',
+  pin: [
+    'M12 21s6.5-6.1 6.5-10.4A6.5 6.5 0 0 0 5.5 10.6C5.5 14.9 12 21 12 21Z',
+    'M12 7.9a2.4 2.4 0 1 0 0 4.8 2.4 2.4 0 0 0 0-4.8Z',
+  ],
+  /*
+   * Tu B'Av, in one mark.
+   *
+   * Valentine's and Tu B'Av are both days for saying the same thing, so they get
+   * the same heart; the Magen David inside says which one. Drawn as the two
+   * overlapping triangles rather than as a Star of David glyph so it inherits the
+   * set's stroke and its colour, and so it never renders as an emoji.
+   */
+  'heart-star': [
+    'M12 20.5S3.5 15 3.5 9.2A4.7 4.7 0 0 1 12 6.6a4.7 4.7 0 0 1 8.5 2.6c0 5.8-8.5 11.3-8.5 11.3Z',
+    { d: 'M12 7.8 9.06 12.9h5.88L12 7.8Z', strokeWidth: 1.15 },
+    { d: 'M12 14.6 9.06 9.5h5.88L12 14.6Z', strokeWidth: 1.15 },
+  ],
 };
+
+/** Every icon as a list of paths, whatever shape its entry took. */
+function pathsFor(name: DossierIconName): Array<{ d: string; strokeWidth?: number }> {
+  const entry = PATHS[name];
+  const list = Array.isArray(entry) ? entry : [entry];
+  return list.map((path) => (typeof path === 'string' ? { d: path } : path));
+}
 
 interface DossierIconProps {
   name: DossierIconName;
@@ -95,7 +145,9 @@ export function DossierIcon({ name, size = 20, color }: DossierIconProps) {
       style={{ flex: 'none', display: 'block' }}
       data-icon={name}
     >
-      <path d={PATHS[name]} />
+      {pathsFor(name).map((path, index) => (
+        <path key={index} d={path.d} strokeWidth={path.strokeWidth} />
+      ))}
     </svg>
   );
 }

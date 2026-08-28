@@ -20,9 +20,12 @@ import { WorthAsking } from './brief/WorthAsking';
 import { GoodToKnow, type Chip } from './brief/GoodToKnow';
 import { BriefSkeleton } from './brief/BriefSkeleton';
 import { ValentinNudge } from './brief/ValentinNudge';
-import { TallyFooter } from './brief/TallyFooter';
+import { PinnedEveryYear } from './brief/PinnedEveryYear';
+import { NextActions } from './brief/NextActions';
 import { onClaret } from './brief/rail-tones';
 import { useOptionalViewContext } from '../context/view-context';
+import { useOptionalTasksContext } from '../context/tasks-context';
+import { derivePinnedDates } from '../utils/pinned-dates';
 import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
 
 /*
@@ -181,6 +184,12 @@ export function BriefRail({ isMobile = false }: BriefRailProps) {
    * in the unit tests that mount it on its own.
    */
   const view = useOptionalViewContext();
+  /*
+   * His list, for "What to do next". Optional for the same reason: the rail is
+   * mounted on its own in unit tests, and a brief that refused to render without a
+   * to-do list would have the dependency backwards.
+   */
+  const tasks = useOptionalTasksContext();
 
   /** Field ids whose nudge the user has waved off this session. */
   const [dismissedGaps, setDismissedGaps] = useState<Set<string>>(new Set());
@@ -233,6 +242,14 @@ export function BriefRail({ isMobile = false }: BriefRailProps) {
     [getFieldValue, allPreferences],
   );
 
+  /*
+   * The annuals, which are not derived from stored dates.
+   *
+   * Valentine's and Tu B'Av come round whether or not anyone entered them, and
+   * that is the point of the block — see `pinned-dates.ts`.
+   */
+  const pinnedDates = useMemo(() => derivePinnedDates(birthdayValue), [birthdayValue]);
+
   const gaps = useMemo(() => rankUnfilledFields(isFilled), [isFilled]);
   const nudgeGap = gaps.find((gap) => !dismissedGaps.has(gap.fieldId)) ?? null;
   // The nudge already occupies the top gap, so the list starts after it.
@@ -266,6 +283,17 @@ export function BriefRail({ isMobile = false }: BriefRailProps) {
   const askAbout = useCallback(
     (gap: FieldGap) => {
       chatDispatch({ type: 'SET_INPUT', value: `Ask me about her ${gap.label.toLowerCase()}.` });
+    },
+    [chatDispatch],
+  );
+
+  /**
+   * A rail action fills the composer, exactly like every other ask on this
+   * surface — Valentin raises it and the user sees the line before it goes.
+   */
+  const actOnTask = useCallback(
+    (task: { title: string }) => {
+      chatDispatch({ type: 'SET_INPUT', value: `Help me with this: ${task.title}.` });
     },
     [chatDispatch],
   );
@@ -315,7 +343,13 @@ export function BriefRail({ isMobile = false }: BriefRailProps) {
           ) : (
             <>
               <NextUp occasions={occasions} />
-              <KeepInMind cautions={cautions} />
+              <PinnedEveryYear dates={pinnedDates} />
+              {/* What to do next, replacing "Don't forget" — every row carries the
+                  button that does it. The cautions `KeepInMind` used to show are
+                  not lost: `deriveCautions` still feeds the board's palette tile
+                  ("Flowers yes — never roses"), which is where a constraint is read
+                  at the moment it applies rather than as a standing warning. */}
+              <NextActions tasks={tasks?.state.tasks ?? []} onAct={actOnTask} />
               <WorthAsking gaps={listedGaps} onAsk={askAbout} />
             </>
           )}
@@ -330,8 +364,6 @@ export function BriefRail({ isMobile = false }: BriefRailProps) {
             onLater={handleLater}
           />
         )}
-
-        <TallyFooter filled={filled} total={total} onOpenFullProfile={view?.openDossier} />
       </aside>
     </div>
   );

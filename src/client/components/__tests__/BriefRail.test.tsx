@@ -127,10 +127,18 @@ describe('BriefRail — zero state', () => {
     expect(screen.queryByTestId('brief-good-to-know')).not.toBeInTheDocument();
   });
 
-  it('still pins the nudge and the tally, which is what they are pinned for', () => {
+  it('still pins the nudge, which is what it is pinned for', () => {
     renderRail();
     expect(screen.getByTestId('brief-nudge')).toBeInTheDocument();
-    expect(screen.getByTestId('brief-tally')).toBeInTheDocument();
+  });
+
+  it('carries no tally, and no progress meter of any kind', () => {
+    // "0 of 21 known" is a score for the app rather than a fact about her, and it
+    // was charged twice — once here, once in the dossier's header. Both are gone;
+    // the nudge is what turns the same information into a question.
+    renderRail();
+    expect(screen.queryByTestId('brief-tally')).not.toBeInTheDocument();
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
   });
 
   it('falls back to a heading rather than a blank where her name goes', () => {
@@ -151,15 +159,13 @@ describe('BriefRail — zero state', () => {
     expect(screen.getAllByTestId('brief-skeleton-row').length).toBeGreaterThan(5);
   });
 
-  it('counts none of the placeholders as known', () => {
+  it('shows the placeholders without claiming any of them is a fact', () => {
     renderRail();
     const rows = screen.getAllByTestId('brief-skeleton-row');
     expect(rows.length).toBeGreaterThan(0);
-    // The whole risk of a skeleton: rows on screen that the tally believes in.
-    expect(screen.getByTestId('brief-tally').textContent).toContain(
-      `0 of ${PROFILE_FIELD_REGISTRY.length} known`,
-    );
-    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
+    // The whole risk of a skeleton: rows on screen that read as answers. Every one
+    // of them is a label with a dash, and none is a value.
+    for (const row of rows) expect(row.textContent).toMatch(/[—–-]/);
   });
 
   it('hands over to the real modules as soon as one fact lands', () => {
@@ -236,53 +242,59 @@ describe('BriefRail — next up', () => {
   });
 });
 
-describe('BriefRail — keep in mind', () => {
-  it('surfaces an allergy that resolves to no registry field', () => {
-    // This is the slice of the deleted "Other Discoveries" group that could not
-    // wait for Stage 6: a dinner suggestion ignoring it is worse than none.
-    renderRail([{ fieldId: 'partner_name', value: 'Coral' }], [preference({})]);
-    const caution = screen.getByTestId('brief-caution');
-    expect(caution.textContent).toContain('shellfish');
-    expect(caution.textContent).toContain('Check every menu');
+/*
+ * "Keep in mind" is no longer a rail block, and its constraints are not lost.
+ *
+ * `deriveCautions` still runs, and still feeds the board's palette tile ("Flowers
+ * yes — never roses"), which is where a constraint is read at the moment it
+ * applies rather than as a standing warning halfway down a column. What took its
+ * place here is "What to do next", where every row carries the button that does it
+ * — a rail that only warns you makes you go and find the thing to click.
+ */
+describe('BriefRail — pinned every year', () => {
+  it("counts down the annuals nobody had to enter", () => {
+    renderRail([{ fieldId: 'partner_name', value: 'Coral' }]);
+    const pinned = screen.getByTestId('brief-pinned');
+    // Valentine's comes round whether or not it is on file, which is the whole
+    // point of the block.
+    expect(pinned).toHaveTextContent("Valentine's");
+    expect(pinned).toHaveTextContent('14 Feb');
   });
 
-  it('warns when she prefers to choose her own gifts', () => {
+  it('leads with her birthday once it is known', () => {
     renderRail([
       { fieldId: 'partner_name', value: 'Coral' },
-      { fieldId: 'surprise_preference', value: 'Prefers to Choose' },
+      { fieldId: 'birthday', value: '1994-06-12' },
     ]);
-    expect(screen.getByTestId('brief-caution').textContent).toContain('Ask first');
+    expect(screen.getByTestId('brief-pinned-birthday')).toHaveTextContent(/12 Jun/);
   });
 
-  it('renders nothing at all when there is nothing to warn about', () => {
-    renderRail([
-      { fieldId: 'partner_name', value: 'Coral' },
-      { fieldId: 'surprise_preference', value: 'Loves Surprises' },
-    ]);
-    expect(screen.queryByTestId('brief-keep-in-mind')).not.toBeInTheDocument();
+  it('drops her birthday rather than pinning it as unknown', () => {
+    // An annual-reminder list with "her birthday: unknown" in it is the app
+    // admitting the one thing it should be asking about, in the place least likely
+    // to be acted on. `WorthAsking` raises it instead.
+    renderRail([{ fieldId: 'partner_name', value: 'Coral' }]);
+    expect(screen.queryByTestId('brief-pinned-birthday')).not.toBeInTheDocument();
+    expect(screen.getByTestId('brief-pinned-valentines')).toBeInTheDocument();
   });
 
-  it('keys each caution stably, without depending on the server-assigned id', () => {
-    // Caught by a browser console warning, not by a failing assertion: two
-    // cautions from records with no `id` both keyed on undefined. The key comes
-    // from category+key now, which also survives re-extraction reassigning ids.
-    renderRail(
-      [{ fieldId: 'partner_name', value: 'Coral' }],
-      [
-        preference({ id: '', key: 'allergies', value: 'shellfish' }),
-        preference({ id: '', key: 'dislikes', value: 'aniseed' }),
-      ],
-    );
-    expect(screen.getAllByTestId('brief-caution')).toHaveLength(2);
-    expect(consoleErrorSpy).not.toHaveBeenCalled();
+  it('gives Tu B’Av the same heart as Valentine’s, with a Magen David in it', () => {
+    renderRail([{ fieldId: 'partner_name', value: 'Coral' }]);
+    const row = screen.getByTestId('brief-pinned-tu-bav');
+    expect(row).toHaveTextContent("Tu B'Av");
+    expect(row).toHaveTextContent('15 Av');
+    // They are the same day for the same purpose in two calendars; unrelated marks
+    // would say they were different kinds of occasion.
+    expect(row.querySelector('[data-icon="heart-star"]')).not.toBeNull();
   });
+});
 
-  it('does not mistake an ordinary preference for a constraint', () => {
-    renderRail(
-      [{ fieldId: 'partner_name', value: 'Coral' }],
-      [preference({ key: 'favorite cuisine', value: 'Thai' })],
-    );
-    expect(screen.queryByTestId('brief-caution')).not.toBeInTheDocument();
+describe('BriefRail — what to do next', () => {
+  it('renders nothing at all when he has no list', () => {
+    // No tasks provider in this tree, which is the same as an empty list — and a
+    // heading over nothing is worse than no heading.
+    renderRail([{ fieldId: 'partner_name', value: 'Coral' }]);
+    expect(screen.queryByTestId('brief-next-actions')).not.toBeInTheDocument();
   });
 });
 
@@ -355,24 +367,5 @@ describe('BriefRail — good to know', () => {
       .filter((chip) => chip.getAttribute('data-empty') === 'true');
     expect(empties.length).toBeGreaterThan(0);
     expect(empties[0].textContent).toMatch(/^\+ /);
-  });
-});
-
-describe('BriefRail — the tally footer', () => {
-  it('counts what is known out of the whole registry', () => {
-    renderRail([
-      { fieldId: 'partner_name', value: 'Coral' },
-      { fieldId: 'birthday', value: '1990-06-17' },
-    ]);
-    expect(screen.getByTestId('brief-tally').textContent).toContain(
-      `2 of ${PROFILE_FIELD_REGISTRY.length} known`,
-    );
-  });
-
-  it('exposes the tally as a progressbar for screen readers', () => {
-    renderRail([{ fieldId: 'partner_name', value: 'Coral' }]);
-    const bar = screen.getByRole('progressbar');
-    expect(bar).toHaveAttribute('aria-valuenow', '1');
-    expect(bar).toHaveAttribute('aria-valuemax', String(PROFILE_FIELD_REGISTRY.length));
   });
 });

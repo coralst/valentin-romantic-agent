@@ -8,195 +8,238 @@ import {
 import {
   countGaps,
   daysUntilBirthday,
+  GENERATION_LABELS,
   GENERATION_ORDER,
   groupByGeneration,
 } from '../../utils/people-derivation';
-import { cardEmptyStyle, cardHeadStyle, cardTitleStyle } from './board-tones';
-import { toneCountStyle, toneGlyphStyle, tonedCardStyle } from './accent-tones';
+import {
+  cardCountStyle,
+  cardEmptyStyle,
+  cardHeadStyle,
+  cardStyle,
+  cardTitleStyle,
+} from './board-tones';
 import { DossierIcon, dossierType } from './dossier-icons';
 
 /**
- * Her family, drawn.
+ * Her family, drawn — the whole width of the board, and the reason the board is
+ * three bands rather than a grid of thirds.
  *
- * The one card on the board that exists so a *name* is never lost. Everything
- * else here can be re-derived from a conversation; the fact that her sister is
- * called Leah cannot be, and being unable to produce it at a dinner table is the
- * specific failure this card prevents.
+ * The one card here that exists so a *name* is never lost. Everything else can be
+ * re-derived from a conversation; the fact that her sister is called Nadia cannot
+ * be, and being unable to produce it at a dinner table is the specific failure
+ * this card prevents.
  *
- * Drawn as three rows with connectors rather than listed, because a list of
- * "mother: Miriam / sister: Leah / niece: Noa" does not show you that Noa belongs
- * to Leah, and the shape is what makes it memorable.
+ * Four generations, top to bottom, each on a centred row with a rung between it
+ * and the one above. Four rather than three because grandparents are a real rung
+ * of a family and folding Miriam in with Ruth and Daniel says she is their
+ * sibling.
  *
- * The gap cards are the second half of the idea: someone you have mentioned but
- * never named is recorded with a dashed border and a question mark, so the card
- * shows what it is missing instead of quietly omitting it. Each one is a question
- * Valentin can ask.
+ * NODES ARE 134px WIDE AND THE NUMBER IS LOAD-BEARING. It is the width at which
+ * her own generation — her, her sister, her sister's husband, two cousins and her
+ * closest friend — fits on one line in the card's measure. A seventh card orphaned
+ * onto a second row reads as a descendant, which is a claim about her family the
+ * app has no basis for.
+ *
+ * The gap cards are the second half of the idea: someone mentioned but never named
+ * is drawn with a ring and a question mark, so the tree shows what it is missing
+ * instead of quietly omitting it. Each one is a question Valentin can ask.
  */
 
 const treeStyle: React.CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 20,
   paddingTop: 2,
+};
+
+const bandLabelStyle: React.CSSProperties = {
+  fontFamily: typography.bodyFontFamily,
+  fontSize: dossierType.small,
+  fontWeight: typography.weights.semibold,
+  letterSpacing: '0.1em',
+  textTransform: 'uppercase',
+  color: colors.inkFaint,
+  textAlign: 'center',
+  marginBottom: 9,
 };
 
 /**
  * One generation: a centred, wrapping row.
  *
- * Wrapping rather than scrolling because a family is small but not bounded, and
- * a row that scrolls hides people — which is the failure mode of the card.
+ * Wrapping rather than scrolling, because a family is small but not bounded and a
+ * row that scrolls hides people — which is the failure mode of the card.
  */
-const rowStyle: React.CSSProperties = {
+const bandStyle: React.CSSProperties = {
   display: 'flex',
   flexWrap: 'wrap',
   justifyContent: 'center',
   gap: 10,
-  position: 'relative',
 };
 
 /**
- * The connector between rows.
+ * The rung between two generations: a rule with a centred drop.
  *
- * A 1px rule above the row rather than per-node SVG lines: at three rows and a
- * wrapping flexbox, exact node-to-node lines would need measured positions and a
- * resize observer to stay attached, and they would be wrong the moment a row
- * wrapped. The rule reads as "this row descends from the one above", which is all
- * the diagram has to say.
+ * Enough to read as descent without pretending to know who descends from whom —
+ * which the app genuinely does not know. Per-node lines would need measured
+ * positions and a resize observer to stay attached, and would be wrong the moment
+ * a row wrapped.
  */
-const connectorStyle: React.CSSProperties = {
+const rungStyle: React.CSSProperties = {
+  height: 30,
+  position: 'relative',
+};
+
+const rungRuleStyle: React.CSSProperties = {
   position: 'absolute',
-  left: '22%',
-  right: '22%',
-  top: -10,
-  height: 1,
+  left: '12%',
+  right: '12%',
+  top: 14,
+  height: 2,
+  background: `linear-gradient(90deg, transparent, ${colors.linenShade} 12%, ${colors.linenShade} 88%, transparent)`,
+};
+
+const rungDropStyle: React.CSSProperties = {
+  position: 'absolute',
+  left: '50%',
+  top: 14,
+  width: 2,
+  height: 16,
   background: colors.linenShade,
+  transform: 'translateX(-1px)',
 };
 
 const nodeBaseStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 9,
-  minWidth: 132,
-  maxWidth: 230,
-  padding: '8px 11px',
-  borderRadius: radii.kv,
+  width: 134,
+  flex: 'none',
   background: colors.porcelain,
-  border: `1px solid ${colors.linenShade}`,
-  textAlign: 'left',
+  borderRadius: radii.kv,
+  padding: '12px 11px',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  textAlign: 'center',
+  gap: 6,
+  position: 'relative',
+  border: 'none',
   cursor: 'pointer',
   font: 'inherit',
   color: colors.ink,
 };
 
+/** The stub joining a node up to its rung. Suppressed on the top band. */
+const nodeStubStyle: React.CSSProperties = {
+  position: 'absolute',
+  top: -14,
+  left: '50%',
+  width: 2,
+  height: 14,
+  background: colors.linenShade,
+  transform: 'translateX(-1px)',
+};
+
 /** Her own card: the only filled one, so the eye finds her first. */
 const herNodeStyle: React.CSSProperties = {
   ...nodeBaseStyle,
-  background: colors.claret,
-  borderColor: 'transparent',
+  background: `linear-gradient(150deg, ${colors.claret}, #A8394F)`,
   color: colors.textOnAccent,
+  boxShadow: '0 8px 22px rgba(140, 47, 69, 0.26)',
+  cursor: 'default',
 };
 
-/** A person recorded without a name — dashed, and quieter. */
+/** A person recorded without a name. */
 const gapNodeStyle: React.CSSProperties = {
   ...nodeBaseStyle,
-  borderStyle: 'dashed',
-  borderColor: colors.warmTaupe,
-  background: 'transparent',
-  color: colors.inkMuted,
+  background: 'none',
+  boxShadow: `inset 0 0 0 2px ${colors.linenShade}`,
 };
 
 const initialStyle: React.CSSProperties = {
-  flex: 'none',
-  width: 26,
-  height: 26,
-  borderRadius: radii.pill,
+  width: 40,
+  height: 40,
+  borderRadius: '50%',
   display: 'grid',
   placeItems: 'center',
-  background: '#F9EDF3',
-  color: '#A05A7A',
-  fontFamily: typography.headingFontFamily,
+  background: colors.blush,
+  color: colors.deepPlum,
+  fontFamily: typography.bodyFontFamily,
+  fontWeight: typography.weights.semibold,
   fontSize: dossierType.small,
   lineHeight: 1,
 };
 
 const herInitialStyle: React.CSSProperties = {
   ...initialStyle,
-  background: 'rgba(255, 255, 255, 0.22)',
+  background: 'rgba(255, 249, 245, 0.2)',
   color: colors.textOnAccent,
 };
 
+const gapInitialStyle: React.CSSProperties = {
+  ...initialStyle,
+  background: 'none',
+  color: colors.inkFaint,
+  boxShadow: `inset 0 0 0 2px ${colors.linenShade}`,
+};
+
 const nameStyle: React.CSSProperties = {
-  display: 'block',
   fontFamily: typography.bodyFontFamily,
   fontSize: dossierType.small,
   fontWeight: typography.weights.semibold,
-  lineHeight: 1.25,
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
+  lineHeight: 1.15,
 };
 
+const gapNameStyle: React.CSSProperties = { ...nameStyle, color: colors.inkFaint };
+
+/**
+ * The relationship, wrapping freely.
+ *
+ * No ellipsis: "uncle, mother's side" is the useful half of what the tree knows
+ * about him, and truncating it to "uncle, moth…" in a 134px card would lose the
+ * side of the family — which is the part that tells you whose birthday it is.
+ */
 const roleStyle: React.CSSProperties = {
-  display: 'block',
-  marginTop: 1,
   fontFamily: typography.bodyFontFamily,
   fontSize: dossierType.small,
+  lineHeight: 1.25,
   color: colors.inkMuted,
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
 };
 
 const herRoleStyle: React.CSSProperties = {
   ...roleStyle,
-  color: 'rgba(255, 255, 255, 0.78)',
+  color: 'rgba(255, 249, 245, 0.78)',
 };
 
 const dateStyle: React.CSSProperties = {
-  flex: 'none',
-  marginLeft: 'auto',
   fontFamily: typography.bodyFontFamily,
   fontSize: dossierType.small,
-  fontWeight: typography.weights.medium,
-  letterSpacing: '0.06em',
-  color: colors.inkFaint,
-  whiteSpace: 'nowrap',
+  fontWeight: typography.weights.semibold,
+  fontVariantNumeric: 'tabular-nums',
+  color: colors.claret,
 };
 
-const legendStyle: React.CSSProperties = {
-  display: 'flex',
-  flexWrap: 'wrap',
-  gap: 12,
-  marginTop: 16,
-  paddingTop: 11,
-  borderTop: `1px dashed ${colors.linenShade}`,
+const herDateStyle: React.CSSProperties = { ...dateStyle, color: colors.blush };
+
+/** The claret pill on a gap: the question, as a button. */
+const fixStyle: React.CSSProperties = {
+  padding: '6px 14px',
+  borderRadius: radii.pill,
+  border: 'none',
+  cursor: 'pointer',
+  background: colors.claret,
+  color: colors.textOnAccent,
   fontFamily: typography.bodyFontFamily,
   fontSize: dossierType.small,
-  color: colors.inkMuted,
+  fontWeight: typography.weights.semibold,
 };
 
-const swatchStyle = (background: string, dashed = false): React.CSSProperties => ({
-  display: 'inline-block',
-  width: 8,
-  height: 8,
-  marginRight: 5,
-  borderRadius: 2,
-  background: dashed ? 'transparent' : background,
-  border: dashed ? `1px dashed ${colors.warmTaupe}` : undefined,
-  verticalAlign: 'middle',
-});
-
+/** The `+` that starts a record on a band. Sized like a node so rows stay even. */
 const addStyle: React.CSSProperties = {
   ...nodeBaseStyle,
-  minWidth: 0,
-  borderStyle: 'dashed',
-  borderColor: colors.linenShade,
-  background: 'transparent',
+  background: 'none',
+  boxShadow: `inset 0 0 0 2px ${colors.linenShade}`,
   color: colors.claret,
+  justifyContent: 'center',
   fontFamily: typography.bodyFontFamily,
   fontSize: dossierType.small,
   fontWeight: typography.weights.medium,
-  justifyContent: 'center',
+  minHeight: 96,
 };
 
 /** "9 Sep" — the date without the year, which is the part you need. */
@@ -223,11 +266,19 @@ function formatDateChip(birthday: string, now: Date): string | null {
 
 interface FamilyTreeProps {
   people: Person[];
-  /** Her own name, so she can be drawn in the middle row with the others. */
+  /** Her own name, so she can be drawn on her own band with the others. */
   partnerName: string | null;
+  /**
+   * Her birthday, so her own card carries a date like everyone else's.
+   *
+   * Passed in rather than read from the profile store here: this component is
+   * given her family, and reaching past its props for one more field of hers
+   * would make the tree impossible to render from a fixture.
+   */
+  partnerBirthday?: string | null;
   /** Opens a person for editing. */
   onSelectPerson: (person: Person) => void;
-  /** Starts a new record on the given row. */
+  /** Starts a new record on the given band. */
   onAddPerson: (generation: PersonGeneration) => void;
   /** Fills the composer with the question a gap implies. */
   onAskAboutGap: (person: Person) => void;
@@ -237,39 +288,40 @@ interface FamilyTreeProps {
 export function FamilyTree({
   people,
   partnerName,
+  partnerBirthday = null,
   onSelectPerson,
   onAddPerson,
   onAskAboutGap,
   now = new Date(),
 }: FamilyTreeProps) {
-  const rows = groupByGeneration(people);
+  const bands = groupByGeneration(people);
   const gaps = countGaps(people);
-  const named = people.length - gaps;
+  const herBirthday = partnerBirthday ? formatDateChip(partnerBirthday, now) : null;
 
   return (
-    <section style={tonedCardStyle('kin')} data-testid="dossier-family-tree">
+    <section style={cardStyle} data-testid="dossier-family-tree">
       <div style={cardHeadStyle}>
-        <span style={toneGlyphStyle('kin')} aria-hidden="true">
-          <DossierIcon name="people" size={16} />
+        <span style={{ color: colors.claret, display: 'flex' }} aria-hidden="true">
+          <DossierIcon name="people" size={18} />
         </span>
-        <h2 style={cardTitleStyle}>Her people</h2>
-        <span style={toneCountStyle('kin')}>
+        <h2 style={cardTitleStyle}>Her family</h2>
+        <span style={cardCountStyle}>
           {people.length === 0
             ? 'nobody yet'
-            : `${named} named${gaps > 0 ? ` · ${gaps} ${gaps === 1 ? 'gap' : 'gaps'}` : ''}`}
+            : `${people.length} known${gaps > 0 ? ` · ${gaps} still unnamed` : ''}`}
         </span>
       </div>
 
       {people.length === 0 ? (
         <div>
           <p style={cardEmptyStyle}>
-            Nobody here yet. Add her mother, her sister, the friend she talks about
-            most — and I&rsquo;ll keep their names and birthdays so you never have to
-            reach for one.
+            Nobody here yet. Tell me about her mother, her sister, the friend she
+            talks about most — and I&rsquo;ll keep their names and birthdays so you
+            never have to reach for one.
           </p>
           <button
             type="button"
-            style={{ ...addStyle, marginTop: 12 }}
+            style={{ ...addStyle, marginTop: 12, minHeight: 0, width: 'auto', padding: '10px 18px' }}
             onClick={() => onAddPerson('peer')}
             data-testid="family-tree-add-first"
           >
@@ -277,99 +329,93 @@ export function FamilyTree({
           </button>
         </div>
       ) : (
-        <div style={treeStyle}>
-          {GENERATION_ORDER.map((generation) => {
-            const row = rows[generation];
-            const isPeerRow = generation === 'peer';
-            // Her own card belongs on the peer row even though she is not a
-            // record in the store — the tree is *hers*, so leaving her out makes
-            // it a diagram of a family she is not in.
-            //
-            // All three rows are drawn even when empty, holding only their `+`.
-            // Skipping them looked tidier and made the card unusable: with a
+        <div style={treeStyle} data-testid="family-tree-bands">
+          {GENERATION_ORDER.map((generation, bandIndex) => {
+            const band = bands[generation];
+            const isPeerBand = generation === 'peer';
+            // Every band is drawn even when empty, holding only its `+`. Skipping
+            // the empty ones looked tidier and made the card unusable: with a
             // mother and a sister recorded but no children, there was no way to
-            // *start* a younger person — the only route was to add them to
-            // another row and then change the row select, which nothing tells
-            // you about. An empty row is one 30px button, which is a fair price.
+            // *start* a younger person.
+            //
+            // The top band's nodes carry no stub, because there is no rung above
+            // them for one to reach — a stub there points at nothing.
+            const isTopBand = bandIndex === 0;
 
             return (
-              <div key={generation} style={rowStyle} data-testid={`family-row-${generation}`}>
-                {generation !== 'elder' && <span style={connectorStyle} aria-hidden="true" />}
-
-                {isPeerRow && (
-                  <span style={herNodeStyle} data-testid="family-node-her">
-                    <span style={herInitialStyle} aria-hidden="true">
-                      {(partnerName ?? '?').charAt(0).toUpperCase()}
-                    </span>
-                    <span style={{ minWidth: 0 }}>
-                      <b style={nameStyle}>{partnerName ?? 'Her'}</b>
-                      <span style={herRoleStyle}>Her</span>
-                    </span>
-                  </span>
+              <div key={generation}>
+                {!isTopBand && (
+                  <div style={rungStyle} aria-hidden="true">
+                    <span style={rungRuleStyle} />
+                    <span style={rungDropStyle} />
+                  </div>
                 )}
 
-                {row.map((person) => {
-                  const gap = isGap(person);
-                  const chip = person.birthday ? formatDateChip(person.birthday, now) : null;
-                  return (
-                    <button
-                      key={person.id}
-                      type="button"
-                      style={gap ? gapNodeStyle : nodeBaseStyle}
-                      onClick={() => (gap ? onAskAboutGap(person) : onSelectPerson(person))}
-                      data-testid={`family-node-${person.id}`}
-                      data-gap={gap ? 'true' : 'false'}
-                      title={
-                        gap
-                          ? 'I know they exist but not their name — ask me and I’ll write it down'
-                          : (person.note ?? undefined)
-                      }
-                    >
-                      <span style={initialStyle} aria-hidden="true">
-                        {gap ? '?' : displayName(person).charAt(0).toUpperCase()}
-                      </span>
-                      <span style={{ minWidth: 0 }}>
-                        <b style={nameStyle}>{displayName(person)}</b>
-                        <span style={roleStyle}>
-                          {gap
-                            ? 'Mentioned — no name yet'
-                            : [person.relationship, person.note].filter(Boolean).join(' · ')}
-                        </span>
-                      </span>
-                      {chip && <span style={dateStyle}>{chip}</span>}
-                    </button>
-                  );
-                })}
+                <div style={bandLabelStyle}>{GENERATION_LABELS[generation]}</div>
 
-                <button
-                  type="button"
-                  style={addStyle}
-                  onClick={() => onAddPerson(generation)}
-                  aria-label={`Add someone to the ${generation} row`}
-                  data-testid={`family-add-${generation}`}
-                >
-                  &#43;
-                </button>
+                <div style={bandStyle} data-testid={`family-band-${generation}`}>
+                  {isPeerBand && (
+                    <span style={herNodeStyle} data-testid="family-node-her">
+                      {!isTopBand && <span style={nodeStubStyle} aria-hidden="true" />}
+                      <span style={herInitialStyle} aria-hidden="true">
+                        {(partnerName ?? '?').charAt(0).toUpperCase()}
+                      </span>
+                      <span style={nameStyle}>{partnerName ?? 'Her'}</span>
+                      <span style={herRoleStyle}>her</span>
+                      {herBirthday && <span style={herDateStyle}>{herBirthday}</span>}
+                    </span>
+                  )}
+
+                  {band.map((person) => {
+                    const gap = isGap(person);
+                    const chip = person.birthday
+                      ? formatDateChip(person.birthday, now)
+                      : null;
+                    return (
+                      <button
+                        key={person.id}
+                        type="button"
+                        style={gap ? gapNodeStyle : nodeBaseStyle}
+                        onClick={() => (gap ? onAskAboutGap(person) : onSelectPerson(person))}
+                        data-testid={`family-node-${person.id}`}
+                        data-gap={gap ? 'true' : 'false'}
+                        title={
+                          gap
+                            ? 'I know they exist but not their name — press to ask'
+                            : (person.note ?? undefined)
+                        }
+                      >
+                        {!isTopBand && <span style={nodeStubStyle} aria-hidden="true" />}
+                        <span style={gap ? gapInitialStyle : initialStyle} aria-hidden="true">
+                          {gap ? '?' : displayName(person).charAt(0).toUpperCase()}
+                        </span>
+                        <span style={gap ? gapNameStyle : nameStyle}>
+                          {gap ? 'Unnamed' : displayName(person)}
+                        </span>
+                        <span style={roleStyle}>{person.relationship}</span>
+                        {gap ? (
+                          <span style={fixStyle}>Ask her</span>
+                        ) : (
+                          <span style={dateStyle}>{chip ?? '—'}</span>
+                        )}
+                      </button>
+                    );
+                  })}
+
+                  <button
+                    type="button"
+                    style={addStyle}
+                    onClick={() => onAddPerson(generation)}
+                    aria-label={`Add someone to ${GENERATION_LABELS[generation].toLowerCase()}`}
+                    data-testid={`family-add-${generation}`}
+                  >
+                    {!isTopBand && <span style={nodeStubStyle} aria-hidden="true" />}
+                    &#43;
+                  </button>
+                </div>
               </div>
             );
           })}
-        </div>
-      )}
-
-      {people.length > 0 && (
-        <div style={legendStyle}>
-          <span>
-            <i style={swatchStyle(colors.claret)} aria-hidden="true" />
-            Her
-          </span>
-          <span>
-            <i style={swatchStyle('#A05A7A')} aria-hidden="true" />
-            Name known
-          </span>
-          <span>
-            <i style={swatchStyle('transparent', true)} aria-hidden="true" />
-            Gap — press to ask
-          </span>
         </div>
       )}
     </section>

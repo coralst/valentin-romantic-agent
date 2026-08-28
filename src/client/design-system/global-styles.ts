@@ -114,6 +114,37 @@ export const globalStyles = `@import url('https://fonts.googleapis.com/css2?fami
     to { stroke-dashoffset: -32; }
   }
 
+  /*
+   * Her file's top band: two halves that become one column when the *board* is
+   * narrow, not when the window is.
+   *
+   * A container query rather than a media query, and that is the whole reason
+   * these two rules cannot be inline styles. Whether the calendar and the to-do
+   * list fit side by side depends on the board's own measure, which is not a
+   * function of window width: at 1600 the board gets 908px with the conversation
+   * list showing, at 1180 it gets 758px with the list hidden — and at 1300, list
+   * showing, only 652px. A viewport breakpoint gets that middle case backwards
+   * every time, stacking the wide board and splitting the narrow one.
+   *
+   * 830px is where the pair stops working: below it each half is under 400px, and
+   * a four-week calendar in 400px puts each day cell at 50px, which is not enough
+   * for a date and a marker.
+   */
+  .dossier-board { container-type: inline-size; }
+
+  .dossier-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+    /* stretch, not the board's usual start: these two are a deliberate pair, and
+       a ragged step at the top of the board is what the bands replaced. */
+    align-items: stretch;
+  }
+
+  @container (max-width: 830px) {
+    .dossier-pair { grid-template-columns: 1fr; }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     [style*="integration-panel-in"],
     [style*="integration-sheet-rise"],

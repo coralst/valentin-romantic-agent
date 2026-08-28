@@ -10,6 +10,7 @@ import {
   useProfileStoreContext,
 } from '../../context/profile-store-context';
 import { ViewProvider, useViewState } from '../../context/view-context';
+import { useChatContext } from '../../context/chat-context';
 
 vi.mock('../../context/websocket-context', () => ({
   useWebSocketContext: () => ({
@@ -42,8 +43,21 @@ function Seeder({ fields }: { fields: Array<{ fieldId: string; value: string }> 
   return (
     <ViewProvider value={view}>
       <DossierView />
+      <ComposerProbe />
     </ViewProvider>
   );
+}
+
+/**
+ * What the composer would be showing.
+ *
+ * The board fills the composer rather than sending — every ask on this surface
+ * works that way — but `ChatPanel` is not mounted here, so the textarea it would
+ * write into does not exist. This reads the same state the composer reads.
+ */
+function ComposerProbe() {
+  const { state } = useChatContext();
+  return <span data-testid="composer-probe">{state.inputValue}</span>;
 }
 
 function renderDossier(fields: Array<{ fieldId: string; value: string }> = []) {
@@ -65,121 +79,141 @@ beforeEach(() => {
 /*
  * The board's own layout, rather than the routing around it.
  *
- * Both of these came out of the partial-profile screenshots: with an 18/18 demo
- * profile every card is full and the empty states never render, so the only way
- * to catch dead space in a zero-state is to drive a partial profile.
+ * Driven from a *partial* profile on purpose: with a fully seeded demo every card
+ * is full and no empty state ever renders, so the only way to catch dead space and
+ * invented data is to render the board against a profile that barely knows her.
  */
-describe('DossierView board layout', () => {
-  it('narrows "What’s coming" to a third while it is empty', () => {
-    // A grid row is as tall as its tallest member however the items align inside
-    // it, so a one-line empty state spanning two-thirds of the row leaves a void
-    // beside the short cards. Empty, it takes a third like everything else.
-    renderDossier();
-    expect(screen.getByTestId('dossier-whats-coming-empty')).toBeInTheDocument();
-    expect(screen.getByTestId('dossier-whats-coming-slot').style.gridColumn).toBe('span 4');
-  });
-
-  it('takes the width back once there are dates to lay out on the spine', () => {
-    renderDossier([{ fieldId: 'birthday', value: '1994-06-12' }]);
-    expect(screen.queryByTestId('dossier-whats-coming-empty')).not.toBeInTheDocument();
-    // Two-thirds of twelve: the spine is the hero figure of the overview, and it
-    // needs the room to read as one.
-    expect(screen.getByTestId('dossier-whats-coming-slot').style.gridColumn).toBe('span 8');
-  });
-
-  it('shows the zero-state copy for the cards a partial profile leaves empty', () => {
+describe('DossierView — three bands', () => {
+  it('reads top to bottom in three bands, widest thing last', () => {
     renderDossier([{ fieldId: 'partner_name', value: 'Samantha' }]);
-    // No clicking to get here any more: every section is mounted, so the empty
-    // state is simply on the page. It still renders rather than vanishing, because
-    // its absence would be indistinguishable from dropped extractions.
-    expect(screen.getByTestId('dossier-also-mentioned-empty')).toBeInTheDocument();
-    // "Confirm my guesses" and "Keep in mind" render nothing at all: a prompt
-    // with no question in it, and a warning with nothing to warn about.
-    expect(screen.queryByTestId('dossier-guesses')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('dossier-keep-in-mind')).not.toBeInTheDocument();
+
+    const bands = screen.getByTestId('dossier-bands');
+    // The pair, then everything I know, then her family. Order is the design: the
+    // tree is last because it is the only thing here with real structure, and a
+    // tree drawn in a third of the measure is just an indented list.
+    const order = ['dossier-band-pair', 'dossier-everything', 'dossier-family-tree'];
+    const found = order.map((id) => screen.getByTestId(id));
+    found.forEach((node) => expect(bands).toContainElement(node));
+    expect(
+      found.every((node, index) =>
+        index === 0
+          ? true
+          : found[index - 1].compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ),
+    ).toBe(true);
   });
 
-  it('leads with figures about the relationship, not only about the form', () => {
-    // The old header's only number was "5 of 21". How long you have been together
-    // and how soon the next occasion is were nowhere on the page.
+  it('has no progress meter anywhere on the surface', () => {
+    // "21 of 21 known" was a score for the app rather than a fact about her, and it
+    // was charged twice — once in this header, once in the rail's tally. Both gone.
+    renderDossier([{ fieldId: 'partner_name', value: 'Samantha' }]);
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('dossier-stat-bar')).not.toBeInTheDocument();
+    expect(screen.getByTestId('dossier-identity')).not.toHaveTextContent('How well I know her');
+  });
+
+  it('puts the four tiles inside "Everything I know", not in a band of their own', () => {
+    renderDossier([{ fieldId: 'partner_name', value: 'Samantha' }]);
+    const card = screen.getByTestId('dossier-everything');
+    for (const tile of [
+      'dossier-her-sizes',
+      'dossier-her-palette',
+      'dossier-gift-shortlist',
+      'dossier-her-week',
+    ]) {
+      expect(card).toContainElement(screen.getByTestId(tile));
+    }
+  });
+
+  it('draws four weeks of real days, and lights at most one of them', () => {
     renderDossier([
-      { fieldId: 'anniversary', value: '2020-06-12' },
+      { fieldId: 'partner_name', value: 'Samantha' },
       { fieldId: 'birthday', value: '1994-06-12' },
+      { fieldId: 'anniversary', value: '2021-09-18' },
     ]);
-    const bar = screen.getByTestId('dossier-stat-bar');
-    expect(bar).toHaveTextContent('Days together');
-    expect(bar).toHaveTextContent('Next occasion');
-    expect(bar).toHaveTextContent('How well I know her');
+
+    // 28 cells, every one of them a date: four weeks from this week's Monday, so
+    // the grid never opens with a row of blanks to skip.
+    expect(screen.getAllByTestId('four-week-cell')).toHaveLength(28);
+    expect(screen.getAllByTestId('four-week-cell').filter((cell) => cell.dataset.today)).toHaveLength(1);
+    // Two focal points in four weeks is none, so at most one cell is lit.
+    expect(
+      screen.getAllByTestId('four-week-cell').filter((cell) => cell.dataset.key).length,
+    ).toBeLessThanOrEqual(1);
   });
 
-  it('shows no figure at all rather than a placeholder for one it cannot compute', () => {
-    // A "—" in a 22px slot reads as a rendering fault, and "about five years?"
-    // would defeat the point of a number whose value is that it is exact.
+  it('says nothing is dated rather than drawing an empty agenda', () => {
     renderDossier();
-    const bar = screen.getByTestId('dossier-stat-bar');
-    expect(bar).not.toHaveTextContent('Days together');
-    // Nobody has been added, so "Her people" is not a figure yet either.
-    expect(bar).not.toHaveTextContent('Her people');
-    expect(bar).toHaveTextContent('How well I know her');
+    expect(screen.getByTestId('dossier-four-weeks')).toHaveTextContent(
+      /Nothing dated in the next four weeks/,
+    );
+    expect(screen.queryByTestId('four-week-agenda')).not.toBeInTheDocument();
   });
 
-  /*
-   * The replacement for the old "filters the board by tab" test, inverted.
-   *
-   * That test asserted the thing the redesign exists to undo: clicking `Everything
-   * I know` used to unmount the family tree. Now nothing unmounts, so what is worth
-   * pinning is that the tree, the field list and her sizes are all on one page at
-   * once — the pair of facts the panel is most often opened for.
-   */
-  it('shows every section at once rather than filtering the board', () => {
+  it('offers to ask for the tiles it has no data for, rather than drawing empty ones', async () => {
+    renderDossier([{ fieldId: 'partner_name', value: 'Samantha' }]);
+
+    // The tiles are the mockup's, and they are all mounted — but a swatch strip
+    // with invented colours in it would be the board asserting something nobody
+    // said. Each one asks instead.
+    expect(screen.getByTestId('dossier-her-palette')).toHaveAttribute('data-shades', '0');
+    await userEvent.click(screen.getByTestId('palette-ask'));
+    expect(screen.getByTestId('composer-probe').textContent).toContain('palette');
+  });
+
+  it('fills the tiles from the stored list fields', () => {
+    renderDossier([
+      { fieldId: 'color_palette', value: 'Deep sage, Linen, Oat, Blush' },
+      { fieldId: 'gift_shortlist', value: 'Ceramic glaze set@62, Trail shoes@95' },
+      { fieldId: 'gift_budget', value: 'Around £80 for everyday gestures' },
+      { fieldId: 'weekly_rhythm', value: 'Tue@pottery until nine@heavy, Sun@bread baking@medium' },
+    ]);
+
+    expect(screen.getAllByTestId('palette-swatch')).toHaveLength(4);
+    expect(screen.getByTestId('dossier-her-palette')).toHaveTextContent('Deep sage');
+
+    expect(screen.getAllByTestId('shortlist-row')).toHaveLength(2);
+    // Over budget is greyed, not hidden: he may still choose it.
+    expect(
+      screen.getAllByTestId('shortlist-row').filter((row) => row.dataset.over),
+    ).toHaveLength(1);
+    expect(screen.getByTestId('shortlist-budget')).toHaveTextContent('£62 / £80');
+
+    // Seven columns whatever she does, two of them busy.
+    expect(screen.getAllByTestId('her-week-column')).toHaveLength(7);
+    expect(screen.getByTestId('dossier-her-week')).toHaveAttribute('data-days', '2');
+    expect(screen.getByTestId('dossier-her-week')).toHaveTextContent('pottery until nine');
+  });
+
+  it('says the list is empty rather than pretending he has nothing to do', () => {
+    // No tasks provider in this tree at all, which is the same as an empty list as
+    // far as the card is concerned — and a correct empty state, not a crash.
+    renderDossier([{ fieldId: 'partner_name', value: 'Samantha' }]);
+    expect(screen.getByTestId('dossier-what-to-do')).toHaveTextContent('0 open');
+    expect(screen.getByTestId('dossier-what-to-do')).toHaveTextContent(/Nothing on the list/);
+  });
+
+  it('keeps her family and her field list on one page at once', () => {
+    // The inverse of the test this replaced, which asserted the thing the redesign
+    // exists to undo: pressing a tab used to unmount the family tree.
     renderDossier([{ fieldId: 'partner_name', value: 'Samantha' }]);
     expect(screen.getByTestId('dossier-family-tree')).toBeInTheDocument();
     expect(screen.getByTestId('dossier-everything')).toBeInTheDocument();
-    expect(screen.getByTestId('dossier-her-sizes')).toBeInTheDocument();
-    expect(screen.getByTestId('dossier-their-birthdays')).toBeInTheDocument();
   });
 
-  it('gives the rail one entry per heading actually on the board, and no more', () => {
+  it('drops "Also mentioned" entirely when nothing was left unmapped', () => {
+    // It is not decoration — it rescues extraction output that resolves to no
+    // registry field — but a heading over an empty state at the foot of the board
+    // is a promise about content that is not there.
     renderDossier([{ fieldId: 'partner_name', value: 'Samantha' }]);
-
-    const railIds = screen
-      .getAllByTestId(/^dossier-section-link-/)
-      .map((entry) => entry.dataset.testid?.replace('dossier-section-link-', ''));
-    const headingIds = screen
-      .getAllByTestId('dossier-section-head')
-      .map((head) => head.dataset.sectionId);
-
-    // Same set, same order. A rail entry whose heading is missing scrolls nowhere,
-    // and a heading with no entry is unreachable from the rail — both are the same
-    // bug, and this is the assertion that catches either.
-    expect(railIds).toEqual(headingIds);
-
-    // Nothing has been guessed from an empty chat, so `Confirm my guesses` is not
-    // one of them: `ConfirmMyGuesses` returns null with no guesses, which would
-    // leave its heading standing over an empty row.
-    expect(railIds).not.toContain('confirm');
-    expect(railIds).toContain('sizes');
+    expect(screen.queryByTestId('dossier-also-mentioned')).not.toBeInTheDocument();
   });
 
-  it('jumps to a section instead of hiding the others when the rail is pressed', async () => {
+  it('names the top gaps when asked what is missing, rather than everything', async () => {
     renderDossier([{ fieldId: 'partner_name', value: 'Samantha' }]);
-
-    // jsdom performs no layout, so `scrollIntoView` is not implemented — the point
-    // being asserted is that the rail *navigates*: it calls scroll, marks itself
-    // current, and leaves every card mounted.
-    const heading = screen
-      .getAllByTestId('dossier-section-head')
-      .find((head) => head.dataset.sectionId === 'file');
-    const scrollIntoView = vi.fn();
-    heading!.scrollIntoView = scrollIntoView;
-
-    await userEvent.click(screen.getByTestId('dossier-section-link-file'));
-
-    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
-    expect(screen.getByTestId('dossier-section-link-file')).toHaveAttribute(
-      'aria-current',
-      'true',
+    await userEvent.click(screen.getByTestId('dossier-ask-all'));
+    expect(screen.getByTestId('composer-probe').textContent).toMatch(
+      /^Ask me about her .+, .+, .+\.$/,
     );
-    expect(screen.getByTestId('dossier-family-tree')).toBeInTheDocument();
   });
 });

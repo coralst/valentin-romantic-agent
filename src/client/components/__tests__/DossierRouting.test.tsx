@@ -117,11 +117,16 @@ describe('dossier surface routing', () => {
     expect(screen.queryByTestId('dossier-view')).not.toBeInTheDocument();
   });
 
-  it('opens from the brief footer’s "Full profile →"', async () => {
-    const user = userEvent.setup();
+  /*
+   * There were two doors into her file and now there are three, none of which is
+   * the brief's old footer link. The tally footer that carried it is deleted —
+   * "21 of 21 known" was a score for the app, not a fact about her — so the ways
+   * in are her portrait, the pinned thread in the conversation list, and the ◆.
+   */
+  it('has no "Full profile" link left in the brief, because the tally is gone', () => {
     renderApp();
-    await user.click(screen.getByRole('button', { name: /Full profile/ }));
-    expect(screen.getByTestId('dossier-view')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Full profile/ })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('brief-tally')).not.toBeInTheDocument();
   });
 
   /*

@@ -5,6 +5,7 @@ import { usePreferencesContext } from './preferences-context';
 
 interface WebSocketContextValue {
   sendMessage: (content: string) => void;
+  confirmAction: (proposalId: string) => void;
   connectionStatus: 'connected' | 'reconnecting' | 'disconnected';
   lastError: string | null;
 }
@@ -16,14 +17,16 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const { state, dispatch: chatDispatch } = useChatContext();
   const { dispatch: preferencesDispatch } = usePreferencesContext();
 
-  const { sendMessage, connectionStatus, lastError } = useWebSocket({
+  const { sendMessage, confirmAction, connectionStatus, lastError } = useWebSocket({
     chatDispatch,
     preferencesDispatch,
     sessionId: state.sessionId,
   });
 
   return (
-    <WebSocketContext.Provider value={{ sendMessage, connectionStatus, lastError }}>
+    <WebSocketContext.Provider
+      value={{ sendMessage, confirmAction, connectionStatus, lastError }}
+    >
       {children}
     </WebSocketContext.Provider>
   );

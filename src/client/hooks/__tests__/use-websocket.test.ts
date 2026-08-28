@@ -350,6 +350,59 @@ describe('WebSocket observation seam', () => {
    * dispatch. Adding a `default: throw` upstream would break the drawer, and
    * this is the test that would catch it.
    */
+  it('sends a confirm_action naming the proposal', () => {
+    const { result, socket } = renderSocket();
+
+    act(() => {
+      result.current.confirmAction('prop-7');
+    });
+
+    const sent = socket.sent
+      .map((raw) => JSON.parse(raw) as { type: string; payload: Record<string, unknown> })
+      .filter((frame) => frame.type === 'confirm_action');
+    expect(sent).toHaveLength(1);
+    expect(sent[0].payload).toEqual({ sessionId: 'sess-1', proposalId: 'prop-7' });
+  });
+
+  it('holds a confirmation sent before auth rather than losing the socket', () => {
+    const { result, socket } = renderSocket('sess-1', { authenticate: false });
+
+    act(() => {
+      result.current.confirmAction('prop-7');
+    });
+    // The gateway closes the connection on a pre-auth frame, so this must not go
+    // out yet — a lost confirmation looks to the user like a button that did
+    // nothing.
+    expect(socket.sent.filter((raw) => raw.includes('confirm_action'))).toHaveLength(0);
+
+    act(() => {
+      socket.receive(authOk());
+    });
+    expect(socket.sent.filter((raw) => raw.includes('confirm_action'))).toHaveLength(1);
+  });
+
+  it('turns an action_proposal into a card rather than a message', () => {
+    const { socket, chatDispatch } = renderSocket();
+    const proposal = {
+      sessionId: 'sess-1',
+      proposalId: 'prop-7',
+      service: 'ontopo',
+      title: 'Table for two',
+      summary: 'Saturday at 20:00',
+      expiresAt: new Date(Date.now() + 600_000).toISOString(),
+    };
+
+    act(() => {
+      socket.receive({
+        type: 'action_proposal',
+        payload: proposal,
+        timestamp: new Date().toISOString(),
+      });
+    });
+
+    expect(chatDispatch).toHaveBeenCalledWith({ type: 'RECEIVE_PROPOSAL', proposal });
+  });
+
   it('publishes aws_span even though no reducer handles it', () => {
     const { socket } = renderSocket();
 

@@ -15,6 +15,12 @@ import {
 /** Return type of the useWebSocket hook */
 export interface UseWebSocketReturn {
   sendMessage: (content: string) => void;
+  /**
+   * Accept a proposal. This is the authority to act: the server executes the
+   * held tool on receipt without going back through the model, so nothing calls
+   * this except a click on a Confirm button.
+   */
+  confirmAction: (proposalId: string) => void;
   connectionStatus: 'connected' | 'reconnecting' | 'disconnected';
   lastError: string | null;
 }
@@ -66,6 +72,12 @@ export function dispatchServerEvent(
 
     case 'agent_message':
       chatDispatch({ type: 'RECEIVE_MESSAGE', message: event.payload.message });
+      break;
+
+    case 'action_proposal':
+      // Its own event rather than prose in a message, because it has to be
+      // accepted with a click — see `ActionProposalPayload`.
+      chatDispatch({ type: 'RECEIVE_PROPOSAL', proposal: event.payload });
       break;
 
     case 'typing_start':
@@ -400,16 +412,16 @@ export function useWebSocket({
     connect();
   }, [sessionId, connect]);
 
-  const sendMessage = useCallback(
-    (content: string) => {
-      if (!sessionId) return;
-
-      const event: ClientEvent = {
-        type: 'send_message',
-        payload: { sessionId, content },
-        timestamp: new Date().toISOString(),
-      };
-
+  /**
+   * Send one client event, or hold it until the connection can carry it.
+   *
+   * Shared by `sendMessage` and `confirmAction` because the rules are properties
+   * of the gateway rather than of either event: a frame sent before `auth_ok`
+   * closes the socket, and a frame naming a session this connection is not bound
+   * to earns a SESSION_MISMATCH.
+   */
+  const sendFrame = useCallback(
+    (event: ClientEvent) => {
       /*
        * Held until the connection is authenticated, and dropped only when there
        * is no connection at all.
@@ -433,5 +445,35 @@ export function useWebSocket({
     [sessionId],
   );
 
-  return { sendMessage, connectionStatus, lastError };
+  const sendMessage = useCallback(
+    (content: string) => {
+      if (!sessionId) return;
+      sendFrame({
+        type: 'send_message',
+        payload: { sessionId, content },
+        timestamp: new Date().toISOString(),
+      });
+    },
+    [sessionId, sendFrame],
+  );
+
+  const confirmAction = useCallback(
+    (proposalId: string) => {
+      if (!sessionId) return;
+      /*
+       * Queued like a turn if the socket is not ready yet, which is the right
+       * trade even though a held confirmation may arrive after the proposal has
+       * expired: the server checks `expiresAt` itself and refuses, so the worst
+       * case is a clear "that offer has expired" rather than a stale booking.
+       */
+      sendFrame({
+        type: 'confirm_action',
+        payload: { sessionId, proposalId },
+        timestamp: new Date().toISOString(),
+      });
+    },
+    [sessionId, sendFrame],
+  );
+
+  return { sendMessage, confirmAction, connectionStatus, lastError };
 }

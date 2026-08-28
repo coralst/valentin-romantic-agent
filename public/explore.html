@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Valentin — explore the workflow</title>
+<meta name="description" content="Three views of how Valentin was built: the pull-request graph, the guardrails that gated every merge, and the turn-by-turn review loop.">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* One palette across deck-v2.html, this page, and graph.html in the first tab —
+     tokens are the deck's, so the three read as one artifact. */
+  :root {
+    --bg: #EFE7E1; --panel: #FFFDFB; --panel-2: #FBF4F1; --line: #E3D7D2;
+    --fg: #2A2226; --muted: #756A70; --dim: #A3959C;
+    --claret: #8C2F45; --claret-2: #B14A62; --claret-bg: #F6DEE2; --gold: #A8762B;
+    --master: #7B68EE; --arch: #E07B00; --front: #1E90FF;
+    --back: #2FA82F; --design: #E0559C; --qa: #E03E00;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { background: var(--bg); color: var(--fg); font-family: Outfit, -apple-system, sans-serif;
+         display: flex; flex-direction: column; overflow: hidden; }
+  code { font-family: ui-monospace, SFMono-Regular, monospace; font-size: .89em; color: var(--claret); }
+  a { color: var(--claret); }
+
+  /* ---- shell ---- */
+  .bar { flex: none; display: flex; align-items: center; gap: 26px;
+         padding: 0 26px; border-bottom: 1px solid var(--line); background: var(--panel);
+         box-shadow: 0 1px 3px rgba(42,34,38,.05); }
+  .brand { display: flex; align-items: center; gap: 13px; padding: 12px 0; flex: none;
+           text-decoration: none; color: inherit; }
+  .brand img { width: 38px; height: 38px; border-radius: 999px; }
+  .brand b { font: 600 clamp(21px, 1.7vw, 25px) Outfit; letter-spacing: -.015em; }
+  .brand span { font-size: 17px; color: var(--dim); }
+  nav { display: flex; gap: 4px; margin-left: auto; align-self: stretch; }
+  nav a { display: flex; align-items: center; gap: 9px; padding: 0 20px; text-decoration: none;
+          color: var(--muted); font: 500 16px Outfit; border-bottom: 3px solid transparent; }
+  nav a:hover { color: var(--fg); background: var(--panel-2); }
+  nav a[aria-current="page"] { color: var(--fg); font-weight: 600;
+                              border-bottom-color: var(--claret); }
+  nav a i { font-style: normal; font-size: 13px; color: var(--dim); }
+  nav a[aria-current="page"] i { color: var(--claret); }
+  .bar .back { margin-left: 20px; align-self: center; font: 500 14px Outfit; color: var(--muted);
+               text-decoration: none; padding: 7px 15px; border: 1px solid var(--line);
+               border-radius: 999px; flex: none; }
+  .bar .back:hover { color: var(--fg); border-color: var(--dim); }
+
+  .panel { flex: 1 1 auto; min-height: 0; display: none; }
+  .panel[data-on] { display: flex; flex-direction: column; }
+  .panel.scrolls { overflow-y: auto; }
+  iframe { flex: 1 1 auto; width: 100%; border: 0; display: block; }
+  .inner { width: 100%; max-width: 1340px; margin: 0 auto; padding: 34px 30px 60px; }
+
+  h2 { font: 400 clamp(26px, 3vw, 38px) Outfit; letter-spacing: -.01em; }
+  .lede { font-size: 18.5px; line-height: 1.6; color: var(--muted); max-width: 860px; margin-top: 12px; }
+  h3 { font: 500 21px Outfit; margin: 40px 0 4px; display: flex; align-items: baseline; gap: 12px; }
+  h3 s { text-decoration: none; font-size: 14.5px; color: var(--dim); font-weight: 400; }
+  .rule { height: 1px; background: var(--line); margin: 12px 0 20px; }
+
+  /* ---- guardrails: hooks ---- */
+  .hooks { display: grid; grid-template-columns: repeat(2, 1fr); gap: 13px; }
+  .hook { background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+          padding: 18px 20px; border-left: 3px solid var(--c, var(--dim));
+          box-shadow: 0 1px 2px rgba(42,34,38,.04), 0 10px 24px rgba(42,34,38,.05); }
+  .hook .top { display: flex; align-items: center; gap: 11px; flex-wrap: wrap; }
+  .hook b { font: 600 17px ui-monospace, monospace; letter-spacing: -.01em; }
+  /* camelCase, not uppercased — these are literal event names from the hook files. */
+  .ev { font: 500 13px ui-monospace, monospace; letter-spacing: 0;
+        color: var(--c, var(--muted)); background: var(--bg);
+        border-radius: 999px; padding: 4px 11px; white-space: nowrap; }
+  .hook p { font-size: 16px; line-height: 1.55; color: var(--muted); margin-top: 9px; }
+  .hook p em { font-style: normal; color: var(--fg); }
+
+  /* ---- guardrails: the gate ---- */
+  .gate { background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+          padding: 24px 26px;
+          box-shadow: 0 1px 2px rgba(42,34,38,.04), 0 12px 30px rgba(42,34,38,.06); }
+  .gate .conds { display: grid; grid-template-columns: repeat(2, 1fr); gap: 11px; margin-top: 16px; }
+  .cond { display: grid; grid-template-columns: 26px 1fr; gap: 13px; align-items: start;
+          background: var(--panel-2); border-radius: 12px; padding: 15px 17px; }
+  .cond .m { width: 26px; height: 26px; border-radius: 999px; background: #E4EEDD;
+             color: #4C6B33; display: grid; place-items: center; font-size: 15px; font-weight: 600; }
+  .cond b { font: 600 16px ui-monospace, monospace; }
+  .cond p { font-size: 15.5px; line-height: 1.5; color: var(--muted); margin-top: 5px; }
+  .refused { margin-top: 18px; padding: 16px 18px; border-radius: 12px;
+             background: var(--claret-bg); border: 1px solid #EAC3CC;
+             font-size: 16.5px; line-height: 1.6; }
+  .refused b { color: var(--claret); }
+
+  /* ---- what can go wrong: the failure modes ---- */
+  .fails { display: grid; grid-template-columns: repeat(2, 1fr); gap: 13px; }
+  .fail { background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+          padding: 19px 21px; border-left: 3px solid var(--qa);
+          box-shadow: 0 1px 2px rgba(42,34,38,.04), 0 10px 24px rgba(42,34,38,.05); }
+  .fail .top { display: flex; align-items: baseline; gap: 11px; }
+  .fail b { font: 500 20px Outfit; letter-spacing: -.01em; }
+  .fail p { font-size: 16.5px; line-height: 1.55; color: var(--muted); margin-top: 9px; }
+  .fail p em { font-style: normal; color: var(--fg); }
+  /* The symptom is the useful half — it is what you would actually have observed. */
+  .fail p.sym { color: var(--claret); border-top: 1px solid var(--line); padding-top: 10px;
+                margin-top: 12px; font-size: 16px; }
+
+  /* ---- the solution: the schematic loop ---- */
+  .schem { display: grid; align-items: stretch; gap: 0;
+           grid-template-columns: 1fr 30px 1.35fr 30px 1fr 30px 1fr; }
+  .st { background: var(--panel); border: 1px solid var(--line); border-radius: 15px;
+        padding: 18px 19px; border-top: 3px solid var(--c, var(--claret));
+        display: flex; flex-direction: column;
+        box-shadow: 0 1px 2px rgba(42,34,38,.04), 0 12px 30px rgba(42,34,38,.06); }
+  .st .k { font: 500 12.5px Outfit; letter-spacing: .13em; text-transform: uppercase;
+           color: var(--c, var(--claret)); }
+  .st > b { font: 500 21px Outfit; letter-spacing: -.01em; margin-top: 5px; }
+  .st > p { font-size: 16px; line-height: 1.5; color: var(--muted); margin-top: 8px; }
+  .st p em { font-style: normal; color: var(--fg); }
+  /* The hook that fires at this stage, pinned to the bottom so the row of badges lines up. */
+  .st .on { margin-top: auto; padding-top: 14px; font: 500 13.5px ui-monospace, monospace;
+            color: var(--c, var(--claret)); }
+  /* The arrow columns are drawn, not typed, so they stay centred at any card height. */
+  .ar { align-self: center; height: 10px; position: relative; }
+  .ar::before { content: ''; position: absolute; inset: 4px 4px auto 0; height: 2px;
+                background: var(--dim); }
+  .ar::after { content: ''; position: absolute; right: 3px; top: 0; width: 8px; height: 8px;
+               border-top: 2px solid var(--dim); border-right: 2px solid var(--dim);
+               transform: rotate(45deg); }
+
+  .st.fan { position: relative; border-top-color: transparent;
+            border: 1px dashed #D9A9B5; gap: 9px; padding-top: 22px; box-shadow: none; }
+  .st.fan .cap { position: absolute; top: -11px; left: 17px; background: var(--bg);
+                 padding: 0 9px; font: 500 12.5px Outfit; letter-spacing: .12em;
+                 text-transform: uppercase; color: var(--claret); }
+  .br { background: var(--panel-2); border: 1px solid var(--line); border-radius: 11px; padding: 13px 15px;
+        border-left: 3px solid var(--c); }
+  .br b { font: 500 17.5px Outfit; }
+  .br p { font-size: 15px; line-height: 1.5; color: var(--muted); margin-top: 5px; }
+  .br p code { font-size: 14.5px; }
+  .st.fan .amp { text-align: center; font: 500 12.5px Outfit; letter-spacing: .12em;
+                 text-transform: uppercase; color: var(--dim); }
+
+  p.foot { font-size: 16px; line-height: 1.6; color: var(--dim); margin-top: 22px; max-width: 980px; }
+
+  @media (max-width: 1000px) {
+    .hooks, .gate .conds, .fails { grid-template-columns: 1fr; }
+    .schem { grid-template-columns: 1fr; }
+    .ar { transform: rotate(90deg); margin: 9px auto; width: 30px; }
+    nav a { padding: 0 13px; font-size: 15px; }
+    nav a i { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <a class="brand" href="deck-v2.html"><img src="logo.png" alt="">
+    <b>Valentin</b><span>· how it was built</span></a>
+  <nav>
+    <a href="#work" data-tab="work"><i>01</i>The work</a>
+    <a href="#problem" data-tab="problem"><i>02</i>What can go wrong</a>
+    <a href="#solution" data-tab="solution"><i>03</i>The solution</a>
+  </nav>
+  <a class="back" href="deck-v2.html">← Deck</a>
+</div>
+
+<!-- ─── 01 · THE WORK ─────────────────────────────────────────── -->
+<div class="panel" id="work">
+  <iframe src="graph.html" title="Agent contribution graph" loading="lazy"></iframe>
+</div>
+
+<!-- ─── 02 · WHAT CAN GO WRONG ────────────────────────────────── -->
+<div class="panel scrolls" id="problem">
+  <div class="inner">
+    <h2>What can go wrong when agents review each other.</h2>
+    <p class="lede">Before any of the guardrails existed, this is what a six-agent team on one
+      repository actually does. None of these are hypothetical — each one either happened here or
+      was one turn away, and every one of them merges cleanly and silently.</p>
+
+    <h3>Eight ways the workflow breaks itself <s>· the state of things before the hooks</s></h3>
+    <div class="rule"></div>
+    <div class="fails">
+      <div class="fail">
+        <div class="top"><b>The loop has no engine</b></div>
+        <p>The first design was event-led: a sub-agent finished, posted “Ready for Review”, and the
+          flow waited for a hook to <em>fire</em>. But Kiro hooks are not GitHub webhooks, there is
+          no webhook back into Kiro, and the poller's dispatch was effectively a no-op.</p>
+        <p class="sym">Symptom: the PR sits at “Ready for Review” forever. Nothing errors. Nothing
+          moves.</p>
+      </div>
+      <div class="fail">
+        <div class="top"><b>The agent marks its own homework</b></div>
+        <p>An agent that decides for itself when it is finished will decide it is finished. Lint,
+          unit tests and the build are one prompt away from being skipped, and “looks right to me”
+          is not a check.</p>
+        <p class="sym">Symptom: red CI discovered after the merge, by a human.</p>
+      </div>
+      <div class="fail">
+        <div class="top"><b>Work starts before there is a spec</b></div>
+        <p>The fastest path from a request to code is to write the code. No Issue, no acceptance
+          criteria, no design anyone agreed to — and, given the chance, straight onto
+          <code>main</code>.</p>
+        <p class="sym">Symptom: a large diff nobody can review against anything, because nothing
+          was ever stated.</p>
+      </div>
+      <div class="fail">
+        <div class="top"><b>Two agents open the same file</b></div>
+        <p>Parallel branches are the whole point of having six agents, and they are exactly what
+          lets two of them edit the same module from two different mental models of it.</p>
+        <p class="sym">Symptom: a semantic conflict that <code>git</code> merges without complaint,
+          because textually there was nothing to resolve.</p>
+      </div>
+      <div class="fail">
+        <div class="top"><b>The thread dangles</b></div>
+        <p>The last comment on the PR is a sub-agent's. It says the work is done. Nobody with
+          authority ever said whether that was accepted.</p>
+        <p class="sym">Symptom: reading the thread later, you cannot tell an approved PR from an
+          abandoned one.</p>
+      </div>
+      <div class="fail">
+        <div class="top"><b>A tagged agent is never heard from</b></div>
+        <p>The master tags two agents in one comment. One replies. The review reads as a
+          conversation, but half of it never happened.</p>
+        <p class="sym">Symptom: the merge proceeds on half a review, and the missing half is the
+          one that would have run the browser.</p>
+      </div>
+      <div class="fail">
+        <div class="top"><b>A comment tags nobody</b></div>
+        <p>A non-terminal comment with no at-mention leaves no next actor. It is not a conclusion
+          and it is not a hand-off; it is a dead end that looks like progress.</p>
+        <p class="sym">Symptom: a stall, with no error raised anywhere, indistinguishable from an
+          agent still thinking.</p>
+      </div>
+      <div class="fail">
+        <div class="top"><b>An approval that can never arrive</b></div>
+        <p>Every agent here — the master included — acts under the same GitHub account, and GitHub
+          refuses to let an author approve their own PR:
+          <code>422 Can not approve your own pull request</code>.</p>
+        <p class="sym">Symptom: gate the merge on a formal approval and you wait on something that
+          is not merely late, it is impossible.</p>
+      </div>
+    </div>
+
+    <p class="foot">Two more that follow from the same root: a <em>skipped</em> required check reads
+      as “not failed”, so a path-filtered CI job can wave through an untested PR; and if a sub-agent
+      is allowed to re-invoke the master, the call graph stops being a hub and starts being a
+      recursion. Every item on this page is a place where model judgement was load-bearing —
+      which is exactly where it should not be.
+      <a href="#solution">See what replaced it →</a></p>
+  </div>
+</div>
+
+<!-- ─── 03 · THE SOLUTION ─────────────────────────────────────── -->
+<div class="panel scrolls" id="solution">
+  <div class="inner">
+    <h2>Eight hooks, and a loop that drives itself.</h2>
+    <p class="lede">Control advances by a function call, never by hoping a trigger fires — and the
+      two fragile moments, the hand-off and the merge, are decided by pure offline JavaScript rather
+      than by the model.</p>
+
+    <h3>The loop, schematically <s>· orchestrator-led, not event-led</s></h3>
+    <div class="rule"></div>
+    <div class="schem">
+      <div class="st" style="--c:var(--master)">
+        <span class="k">Step 1</span>
+        <b>Master reviews</b>
+        <p>Reads the diff and the CI result, posts <em>one</em> comment tagging every agent it
+          needs.</p>
+        <span class="on">route-turn-after-comment</span>
+      </div>
+
+      <div class="ar" aria-hidden="true"></div>
+
+      <div class="st fan">
+        <span class="cap">step 2 · par — one comment, two calls</span>
+        <div class="br" style="--c:var(--back)">
+          <b>Backend Dev</b>
+          <p><code>invokeSubAgent()</code> → pushes fixes → replies → <em>returns</em></p>
+        </div>
+        <div class="amp">at the same time</div>
+        <div class="br" style="--c:var(--qa)">
+          <b>QA Agent</b>
+          <p><code>invokeSubAgent()</code> → runs the browser suite → replies → <em>returns</em></p>
+        </div>
+        <span class="on">pre-task-arch-check, then post-task-ci-review</span>
+      </div>
+
+      <div class="ar" aria-hidden="true"></div>
+
+      <div class="st" style="--c:var(--master)">
+        <span class="k">Step 3</span>
+        <b>Master decides</b>
+        <p>Reads every return. Blockers left → <em>another round</em>, back to step 1. Otherwise it
+          posts the approval token.</p>
+        <span class="on">↻ loops until resolved</span>
+      </div>
+
+      <div class="ar" aria-hidden="true"></div>
+
+      <div class="st" style="--c:var(--claret)">
+        <span class="k">Step 4</span>
+        <b>The merge gate</b>
+        <p><code>merge_pull_request</code> is <em>intercepted</em>, not executed. Four conditions, or
+          the merge is refused.</p>
+        <span class="on">pre-merge-conversation-gate</span>
+      </div>
+    </div>
+    <p class="foot">A sub-agent never re-invokes the master; the return <em>is</em> the hand-back, so
+      the call graph stays a shallow hub-and-spoke. The at-mentions are still the human-readable
+      transcript and a machine-parseable routing signal — they are just no longer the trigger.</p>
+
+    <h3>The gate's four conditions <s>· <code>evaluateConversationGate()</code>, pure and unit-tested</s></h3>
+    <div class="rule"></div>
+    <div class="gate">
+      <div class="conds">
+        <div class="cond"><span class="m">✓</span>
+          <div><b>lastWordIsMaster</b>
+            <p>The master holds the final comment. No PR conversation may end on a sub-agent's
+              turn.</p></div></div>
+        <div class="cond"><span class="m">✓</span>
+          <div><b>allTaggedResponded</b>
+            <p>Every sub-agent that got tagged actually replied. Nobody is left hanging.</p></div></div>
+        <div class="cond"><span class="m">✓</span>
+          <div><b>isApproval</b>
+            <p>That closing comment carries the exact token
+              <code>APPROVED-BY-MASTER-AGENT</code>.</p></div></div>
+        <div class="cond"><span class="m">✓</span>
+          <div><b>ciGreen</b>
+            <p>All four required checks passed — and a <em>skipped</em> check counts as unsatisfied,
+              not as fine.</p></div></div>
+      </div>
+      <div class="refused"><b>A refused merge is a feature, not a bug.</b>
+        <code>{ mergeable: false, reasons: [...] }</code> is the expected output whenever the
+        conversation isn't actually finished. The corrective turn is always the same: make sure every
+        tagged agent has replied, then post the closing comment so the master holds the last word.
+        Only then is the merge retried.</div>
+    </div>
+
+    <h3>The eight hooks <s>· <code>.kiro/hooks/</code> · all enabled</s></h3>
+    <div class="rule"></div>
+    <div class="hooks">
+      <div class="hook" style="--c:var(--arch)">
+        <div class="top"><b>pre-task-arch-check</b><span class="ev">preTaskExecution</span></div>
+        <p><em>Blocks a task from starting</em> unless the Issue exists with acceptance criteria,
+          the architect posted a spec and the master approved it, a Draft PR is open carrying
+          <code>Resolves #N</code>, the branch isn't <code>main</code>, and the agent actually owns
+          the paths it is about to touch.</p>
+      </div>
+      <div class="hook" style="--c:var(--qa)">
+        <div class="top"><b>post-task-ci-review</b><span class="ev">postTaskExecution</span></div>
+        <p>Runs <code>lint</code> → <code>test</code> → <code>build</code>, then machine-checks the
+          changed files for ownership violations, naming, and secrets. <em>The agent doesn't get to
+          declare itself done.</em></p>
+      </div>
+      <div class="hook" style="--c:var(--master)">
+        <div class="top"><b>route-turn-after-comment</b><span class="ev">postToolUse</span></div>
+        <p>Fires on every <code>add_issue_comment</code> and <code>create_pull_request_review</code>.
+          Parses the comment, routes the next turn to whoever was tagged, recognises a terminal
+          master comment — and <em>flags a stall</em> when a non-terminal comment tags nobody.</p>
+      </div>
+      <div class="hook" style="--c:var(--claret)">
+        <div class="top"><b>pre-merge-conversation-gate</b><span class="ev">preToolUse</span></div>
+        <p>Intercepts <code>merge_pull_request</code> itself and <em>refuses the merge</em> unless
+          all four conditions above hold. This is the backstop the whole loop leans on.</p>
+      </div>
+      <div class="hook" style="--c:var(--front)">
+        <div class="top"><b>monitor-pr-after-ready</b><span class="ev">userTriggered</span></div>
+        <p>Detaches a per-PR poller that watches for new reviews and comments, logging each one so a
+          hand-off can be reconstructed after the fact.</p>
+      </div>
+      <div class="hook" style="--c:var(--back)">
+        <div class="top"><b>handle-pr-feedback</b><span class="ev">userTriggered</span></div>
+        <p>Reads the parsed feedback file, hands each blocker to the agent that owns the file, and
+          makes it reply in its own voice rather than posting a checkbox list.</p>
+      </div>
+      <div class="hook" style="--c:var(--design)">
+        <div class="top"><b>push-and-notify-pr</b><span class="ev">userTriggered</span></div>
+        <p>Commits and pushes feature-branch work — <em>never <code>main</code></em> — then posts PR
+          status and a review request to the master and starts monitoring.</p>
+      </div>
+      <div class="hook" style="--c:var(--dim)">
+        <div class="top"><b>stop-pr-monitoring</b><span class="ev">userTriggered</span></div>
+        <p>Kills the poller for a PR and clears its marker, state, signal, and log files, so a merged
+          PR stops consuming a watcher.</p>
+      </div>
+    </div>
+    <p class="foot">Hooks gate and prompt; they never write the comment — prose quality comes from
+      the voice exemplar in each agent's prompt. And a fifth CI job re-tests the workflow automation
+      itself, so changing a hook has to prove it didn't break the loop.</p>
+  </div>
+</div>
+
+<script>
+  const tabs = [...document.querySelectorAll('nav a')];
+  const show = (name) => {
+    const id = tabs.some((t) => t.dataset.tab === name) ? name : 'work';
+    for (const t of tabs) {
+      const on = t.dataset.tab === id;
+      t.toggleAttribute('aria-current', on);
+      if (on) t.setAttribute('aria-current', 'page');
+      const p = document.getElementById(t.dataset.tab);
+      p.toggleAttribute('data-on', on);
+      if (on) p.scrollTop = 0;
+    }
+  };
+  show(location.hash.slice(1));
+  addEventListener('hashchange', () => show(location.hash.slice(1)));
+  // Left/right arrows page through the tabs, so this is usable from a presenter remote.
+  addEventListener('keydown', (e) => {
+    if (!['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+    const i = tabs.findIndex((t) => t.hasAttribute('aria-current'));
+    const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+    location.hash = next.dataset.tab;
+  });
+</script>
+</body>
+</html>

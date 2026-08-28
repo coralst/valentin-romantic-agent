@@ -9,8 +9,11 @@ on:
         default: 'dev'
         type: choice
         options: [dev, staging, prod]
-  push:
-    branches: [main]
+
+# Deploys are run by hand via scripts/deploy.sh, which uses a local AWS profile.
+# This workflow is dispatch-only on purpose: there is no GitHub OIDC provider or
+# deploy role in the account yet, so a push-triggered run can only fail at the
+# credentials step and paint a false red X on main.
 
 jobs:
   deploy:

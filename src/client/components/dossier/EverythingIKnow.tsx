@@ -89,15 +89,17 @@ const mobileColumnsStyle: React.CSSProperties = {
 /**
  * The four tiles, across the card.
  *
- * `minmax(200px, 1fr)` and not 216: the card has about 872px of inner measure at
- * the board's widest, and 216 rounded down to three columns — which orphaned "Her
- * week" onto a row of its own with a third of the band empty beside it. 200 gives
- * four across at the widest measure and three at the middle one, both of which
- * fill their row.
+ * `minmax(176px, 1fr)`, and the number is measured rather than chosen. The card
+ * has about 756px of inner measure on the widest board this shell produces (796px
+ * — see the container-query note in `global-styles.ts`), and four tiles need
+ * `4 × w + 3 × 13` of it. The mockup said 200, which needs 839px and so wrapped to
+ * three columns here, orphaning "Her week" onto a row of its own with two thirds of
+ * the band empty beside it. 176 needs 743 and fits, and still collapses to three
+ * across on the middle board width rather than squeezing four into 588px.
  */
 const tilesStyle: React.CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(176px, 1fr))',
   gap: 13,
   marginBottom: 16,
 };

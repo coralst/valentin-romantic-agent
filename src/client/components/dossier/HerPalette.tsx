@@ -44,23 +44,30 @@ function swatchStyle(hex: string | null, isLead: boolean): React.CSSProperties {
   };
 }
 
+/**
+ * The names, as one wrapping line rather than one label under each swatch.
+ *
+ * Column-per-swatch is what the mockup drew and it does not survive the real
+ * tile: at four shades in a 176px tile each column gets about 40px, so "Linen"
+ * and "Blush" both came out as "Li…" and "Bl…" — and a colour you cannot read the
+ * name of is not a colour you can ask a shop for. Wrapping gives every name its
+ * full length and keeps the lead first and bold, which is the only ordering the
+ * tile is asserting.
+ */
 const namesRowStyle: React.CSSProperties = {
   display: 'flex',
-  gap: 6,
-  margin: '6px 0 2px',
+  flexWrap: 'wrap',
+  gap: '2px 8px',
+  margin: '8px 0 2px',
 };
 
 function nameStyle(isLead: boolean): React.CSSProperties {
   return {
-    flex: isLead ? 1.6 : 1,
-    minWidth: 0,
-    textAlign: 'center',
     fontFamily: typography.bodyFontFamily,
     fontSize: dossierType.small,
+    lineHeight: 1.35,
     color: isLead ? colors.ink : colors.inkMuted,
     fontWeight: isLead ? typography.weights.semibold : typography.weights.normal,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
   };
 }
 

@@ -229,17 +229,67 @@ const fixStyle: React.CSSProperties = {
   fontWeight: typography.weights.semibold,
 };
 
-/** The `+` that starts a record on a band. Sized like a node so rows stay even. */
-const addStyle: React.CSSProperties = {
-  ...nodeBaseStyle,
-  background: 'none',
-  boxShadow: `inset 0 0 0 2px ${colors.linenShade}`,
-  color: colors.claret,
+/**
+ * The band's label row: the generation, centred, with its `+` at the right end.
+ *
+ * THE `+` IS NOT IN THE BAND, AND THAT IS LOAD-BEARING. It was, drawn the size of
+ * a node, and it made her own generation five people plus a sixth element — 764px
+ * of content in 756px of card, so the row wrapped by one card and the last person
+ * read as a descendant. Found by measuring the real board in a browser; jsdom
+ * performs no layout and cannot see it.
+ *
+ * Moving it up here costs no vertical space at all — the label row was a centred
+ * word with empty space either side — and it is the more honest shape besides: the
+ * `+` is not a member of her family, and drawing it as one said it was a person
+ * whose name nobody had filled in, which is what the ringed gap cards already mean.
+ */
+const bandLabelRowStyle: React.CSSProperties = {
+  position: 'relative',
+  display: 'flex',
+  alignItems: 'center',
   justifyContent: 'center',
+  minHeight: 26,
+};
+
+const addStyle: React.CSSProperties = {
+  position: 'absolute',
+  right: 0,
+  top: 0,
+  width: 26,
+  height: 26,
+  borderRadius: radii.pill,
+  border: 'none',
+  cursor: 'pointer',
+  background: 'none',
+  boxShadow: `inset 0 0 0 1.5px ${colors.linenShade}`,
+  color: colors.claret,
+  display: 'grid',
+  placeItems: 'center',
   fontFamily: typography.bodyFontFamily,
   fontSize: dossierType.small,
   fontWeight: typography.weights.medium,
-  minHeight: 96,
+  lineHeight: 1,
+};
+
+/**
+ * The one add control on an empty card, which has no bands to hang a `+` on.
+ *
+ * Its own style rather than a tweak of `addStyle`, which is absolutely positioned
+ * inside a band label — spreading that and overriding four properties to undo the
+ * positioning is how a style ends up meaning nothing.
+ */
+const firstAddStyle: React.CSSProperties = {
+  marginTop: 12,
+  padding: '10px 18px',
+  borderRadius: radii.pill,
+  border: 'none',
+  cursor: 'pointer',
+  background: 'none',
+  boxShadow: `inset 0 0 0 1.5px ${colors.linenShade}`,
+  color: colors.claret,
+  fontFamily: typography.bodyFontFamily,
+  fontSize: dossierType.small,
+  fontWeight: typography.weights.medium,
 };
 
 /** "9 Sep" — the date without the year, which is the part you need. */
@@ -321,7 +371,7 @@ export function FamilyTree({
           </p>
           <button
             type="button"
-            style={{ ...addStyle, marginTop: 12, minHeight: 0, width: 'auto', padding: '10px 18px' }}
+            style={firstAddStyle}
             onClick={() => onAddPerson('peer')}
             data-testid="family-tree-add-first"
           >
@@ -351,7 +401,18 @@ export function FamilyTree({
                   </div>
                 )}
 
-                <div style={bandLabelStyle}>{GENERATION_LABELS[generation]}</div>
+                <div style={bandLabelRowStyle}>
+                  <div style={bandLabelStyle}>{GENERATION_LABELS[generation]}</div>
+                  <button
+                    type="button"
+                    style={addStyle}
+                    onClick={() => onAddPerson(generation)}
+                    aria-label={`Add someone to ${GENERATION_LABELS[generation].toLowerCase()}`}
+                    data-testid={`family-add-${generation}`}
+                  >
+                    &#43;
+                  </button>
+                </div>
 
                 <div style={bandStyle} data-testid={`family-band-${generation}`}>
                   {isPeerBand && (
@@ -401,17 +462,6 @@ export function FamilyTree({
                       </button>
                     );
                   })}
-
-                  <button
-                    type="button"
-                    style={addStyle}
-                    onClick={() => onAddPerson(generation)}
-                    aria-label={`Add someone to ${GENERATION_LABELS[generation].toLowerCase()}`}
-                    data-testid={`family-add-${generation}`}
-                  >
-                    {!isTopBand && <span style={nodeStubStyle} aria-hidden="true" />}
-                    &#43;
-                  </button>
                 </div>
               </div>
             );

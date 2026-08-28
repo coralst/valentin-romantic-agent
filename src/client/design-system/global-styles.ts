@@ -121,14 +121,28 @@ export const globalStyles = `@import url('https://fonts.googleapis.com/css2?fami
    * A container query rather than a media query, and that is the whole reason
    * these two rules cannot be inline styles. Whether the calendar and the to-do
    * list fit side by side depends on the board's own measure, which is not a
-   * function of window width: at 1600 the board gets 908px with the conversation
-   * list showing, at 1180 it gets 758px with the list hidden — and at 1300, list
-   * showing, only 652px. A viewport breakpoint gets that middle case backwards
-   * every time, stacking the wide board and splitting the narrow one.
+   * function of window width. Measured in a real browser, at this shell's widths:
    *
-   * 830px is where the pair stops working: below it each half is under 400px, and
-   * a four-week calendar in 400px puts each day cell at 50px, which is not enough
-   * for a date and a marker.
+   *   1600 window, list showing  ->  796px of board
+   *   1440 window, list showing  ->  768px
+   *   1300 window, list showing  ->  628px
+   *   1180 window, list showing  ->  508px
+   *   1180 window, list hidden   ->  734px
+   *
+   * Note the third and the last: a *narrower* window gives the board *more* room
+   * once the conversation list gives up its 226px, so a viewport breakpoint gets
+   * that pair backwards every time — stacking the wide board and splitting the
+   * narrow one. e2e/tests/responsive-layout.spec.ts drives exactly those two.
+   *
+   * 720px is the threshold, and it is chosen from those measurements rather than
+   * from taste: it is the largest number that still splits the 734px case, and 734
+   * is the widest the board gets on a laptop screen. Below 720 each half is under
+   * 350px, which puts a four-week calendar's day cells near 45px — about as narrow
+   * as a two-digit date and its markers can be set.
+   *
+   * The mockup's own comment said 830. 830 is wrong here: the mockup's shell was
+   * wider than the real one, so it stacked the pair at every window this app can
+   * actually be opened at, which is not the approved layout.
    */
   .dossier-board { container-type: inline-size; }
 
@@ -141,7 +155,7 @@ export const globalStyles = `@import url('https://fonts.googleapis.com/css2?fami
     align-items: stretch;
   }
 
-  @container (max-width: 830px) {
+  @container (max-width: 720px) {
     .dossier-pair { grid-template-columns: 1fr; }
   }
 

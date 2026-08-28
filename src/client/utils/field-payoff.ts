@@ -61,6 +61,19 @@ export const FIELD_PAYOFFS: Readonly<Record<string, FieldPayoff>> = {
     rank: 60,
     reason: 'Anything she has mentioned wanting? Her own words beat my guesses.',
   },
+  gift_shortlist: {
+    rank: 58,
+    reason: 'Tell me what you are weighing up and I will keep it against your budget.',
+  },
+  /*
+   * Her week outranks cuisine's neighbours because it is the only field that
+   * says when she is *free*. A perfect restaurant on the night she has pottery
+   * is a worse suggestion than a fair one on a Thursday.
+   */
+  weekly_rhythm: {
+    rank: 55,
+    reason: 'Which evenings are already hers? I would rather not plan over her pottery.',
+  },
 
   // --- Tier 3: useful texture once the plan exists. ---
   music_genre: {
@@ -84,18 +97,24 @@ export const FIELD_PAYOFFS: Readonly<Record<string, FieldPayoff>> = {
     reason: 'A fragrance she already wears is the safest gift there is.',
   },
   clothing_style: {
-    rank: 25,
+    rank: 26,
     reason: 'Her style keeps me from suggesting something she would never put on.',
   },
   /*
-   * The three sizes sit as a cluster between style (25) and colour (20) rather
-   * than on the 5-spacing, because in practice they are one question — nobody
-   * asks for a shoe size on Tuesday and a dress size on Thursday. Keeping their
-   * ranks adjacent means the queue offers them together.
+   * The five sizes sit as a contiguous cluster between style (26) and colour
+   * (20) rather than on the 5-spacing, because in practice they are one
+   * question — nobody asks for a shoe size on Tuesday and a dress size on
+   * Thursday. Keeping their ranks adjacent means the queue offers them
+   * together, and keeping them integers means the ordering stays total without
+   * relying on the registry tie-break.
    */
+  bra_size: {
+    rank: 25,
+    reason: 'If you know it, I will hold it — it is the one size nobody wants to ask twice.',
+  },
   clothing_size: {
     rank: 24,
-    reason: 'Her clothing size is the difference between a gift she wears and one she returns.',
+    reason: 'Her trouser size is the difference between a gift she wears and one she returns.',
   },
   shoe_size: {
     rank: 23,
@@ -105,9 +124,17 @@ export const FIELD_PAYOFFS: Readonly<Record<string, FieldPayoff>> = {
     rank: 22,
     reason: 'Her ring size is worth knowing long before the day you need it.',
   },
+  shoulder_width: {
+    rank: 21,
+    reason: 'A shoulder measurement is what anything tailored actually turns on.',
+  },
   favorite_color: {
     rank: 20,
     reason: 'A colour she reaches for makes even a small gift feel chosen.',
+  },
+  color_palette: {
+    rank: 19,
+    reason: 'The shades she actually wears keep me from buying the one colour she owns six of.',
   },
 
   // --- Tier 4: nice to have, never the thing to ask for next. ---

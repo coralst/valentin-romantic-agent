@@ -2,6 +2,9 @@
   <!-- One 24px stroke sprite for all five concepts. Referenced as
        <use href="icons.svg#heart"/> so icon weight can't drift between mockups. -->
   <symbol id="heart" viewBox="0 0 24 24"><path d="M12 20.5S3.5 15 3.5 9.2A4.7 4.7 0 0 1 12 6.6a4.7 4.7 0 0 1 8.5 2.6c0 5.8-8.5 11.3-8.5 11.3Z"/></symbol>
+  <!-- Tu B'Av: the same heart as Valentine's, with a Magen David inside, because
+       her family keeps the Jewish day of love as well as the imported one. -->
+  <symbol id="heart-star" viewBox="0 0 24 24"><path d="M12 20.5S3.5 15 3.5 9.2A4.7 4.7 0 0 1 12 6.6a4.7 4.7 0 0 1 8.5 2.6c0 5.8-8.5 11.3-8.5 11.3Z"/><path style="stroke-width:1.15" d="M12 7.8 9.06 12.9h5.88L12 7.8Z"/><path style="stroke-width:1.15" d="M12 14.6 9.06 9.5h5.88L12 14.6Z"/></symbol>
   <symbol id="calendar" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8.5 3v4M15.5 3v4"/></symbol>
   <symbol id="gift" viewBox="0 0 24 24"><path d="M3.5 11h17v8.5a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5V11Z"/><rect x="2.5" y="7" width="19" height="4" rx="1.5"/><path d="M12 7v14M12 7S10.5 3 8 3a2 2 0 0 0 0 4M12 7s1.5-4 4-4a2 2 0 0 1 0 4"/></symbol>
   <symbol id="users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20.5c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16.5 5.2a3.5 3.5 0 0 1 0 6.6M18 14.9c2.1.7 3.5 2.6 3.5 5.6"/></symbol>

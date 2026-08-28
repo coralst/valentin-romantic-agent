@@ -1,6 +1,7 @@
 import { config } from '../config';
 import { logger } from '../logging';
 import type { AgentTool, IntegrationId, ToolRegistry } from './tool-registry';
+import { amadeusTools } from './amadeus/tools';
 import { hebcalTools } from './hebcal/tools';
 import { ontopoTools } from './ontopo/tools';
 
@@ -63,6 +64,7 @@ export function buildToolRegistry(): ToolRegistry {
   // works instead of nothing.
   if (ready.hebcal) tools.push(...hebcalTools);
   if (ready.ontopo) tools.push(...ontopoTools);
+  if (ready.amadeus) tools.push(...amadeusTools);
 
   const registry = new Map(tools.map((tool) => [tool.name, tool]));
 

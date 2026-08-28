@@ -9,6 +9,7 @@ import {
   partnerNameFrom,
   type KnownFact,
 } from './prompts';
+import { readKnownFacts } from './partner-profile';
 import { LlmError } from '../../shared/errors/llm-error';
 
 /** Callback invoked when a preference is extracted */
@@ -71,16 +72,14 @@ export function buildWelcomeMessage(
   };
 }
 
-/** Maximum tokens for context window */
-const MAX_CONTEXT_TOKENS = 4096;
-
 /**
- * How many other conversations to gather the partner's profile from.
+ * Maximum tokens for context window.
  *
- * `listSessions` returns newest first, so this takes the recent ones. One query
- * each, on every turn — see {@link AgentOrchestrator.knownFacts}.
+ * Exported because engine B sends the same budget: a difference in how much
+ * history each engine sees would show up as a difference in answer quality that
+ * has nothing to do with AgentCore.
  */
-const MAX_PROFILE_SESSIONS = 6;
+export const MAX_CONTEXT_TOKENS = 4096;
 
 /** Orchestrates conversation flow between user, Bedrock LLM, and preference extraction */
 export class AgentOrchestrator implements AgentOrchestratorInterface {
@@ -188,67 +187,11 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
   /**
    * What Valentin knows about her, for the prompt.
    *
-   * ACCOUNT-WIDE, NOT PER-CONVERSATION. Preferences are stored under a session,
-   * but the partner they describe belongs to the account: opening a second
-   * conversation does not give someone a second partner. Reading only
-   * `sessionId` meant a brand-new chat inside a fully-profiled account was
-   * treated as a first meeting — the exact thing that made him ask a user who
-   * had twenty-one known fields to tell him about his partner.
-   *
-   * The active session is merged last so it wins on conflicts: it holds the most
-   * recent turn, and a fact just corrected there must not be overwritten by the
-   * older copy of it sitting in another conversation.
-   *
-   * Bounded to the most recent handful of conversations. This runs on every turn
-   * and each session is its own query, so it is capped rather than left to grow
-   * with the account's history; the latest conversations are where a current
-   * profile actually lives.
-   *
-   * Best-effort throughout: a store that fails here must cost a personalised
-   * reply, not the reply itself. Falling back to less knowledge degrades him to
-   * the getting-to-know-you register, which is wrong but harmless; propagating
-   * would put an apology on screen instead of an answer.
+   * Delegates to {@link readKnownFacts}, which engine B calls too. See the long
+   * note there for why the account-wide read matters and why it is best-effort.
    */
-  private async knownFacts(sessionId: string): Promise<KnownFact[]> {
-    const merged = new Map<string, KnownFact>();
-
-    for (const id of await this.recentSessionIds(sessionId)) {
-      for (const fact of await this.factsIn(id)) {
-        merged.set(fact.fieldId ?? fact.key, fact);
-      }
-    }
-
-    return [...merged.values()];
-  }
-
-  /** The sessions worth reading, oldest first, with the active one last */
-  private async recentSessionIds(activeId: string): Promise<string[]> {
-    let others: string[] = [];
-    try {
-      others = (await this.storage.listSessions())
-        .map((session) => session.id)
-        .filter((id) => id !== activeId)
-        .slice(0, MAX_PROFILE_SESSIONS)
-        .reverse();
-    } catch (err) {
-      console.warn(
-        '[orchestrator] could not list sessions for the prompt:',
-        err instanceof Error ? err.message : err,
-      );
-    }
-    return [...others, activeId];
-  }
-
-  private async factsIn(sessionId: string): Promise<KnownFact[]> {
-    try {
-      return await this.storage.getPreferencesBySession(sessionId);
-    } catch (err) {
-      console.warn(
-        '[orchestrator] could not read the profile for the prompt:',
-        err instanceof Error ? err.message : err,
-      );
-      return [];
-    }
+  private knownFacts(sessionId: string): Promise<KnownFact[]> {
+    return readKnownFacts(this.storage, sessionId);
   }
 
   /** Call Bedrock, retry once on failure, throw on second failure */

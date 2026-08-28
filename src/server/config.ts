@@ -31,4 +31,20 @@ export const config = {
      */
     domain: process.env.COGNITO_DOMAIN,
   },
+
+  /**
+   * Engine B's managed half, all supplied by compute-stack.ts to the proxy
+   * service only.
+   *
+   * Deliberately optional, for the same reason the Cognito block is: with these
+   * unset the server runs engine A and nothing here is read, which is what keeps
+   * `npm test` and a bare `npm run dev:server` working without an AWS account.
+   * The engine selector treats a missing `runtimeArn` as "engine B is not
+   * available here" rather than as a boot failure — see agent/engine.ts.
+   */
+  agentCore: {
+    runtimeArn: process.env.AGENTCORE_RUNTIME_ARN,
+    memoryId: process.env.AGENTCORE_MEMORY_ID,
+    gatewayUrl: process.env.AGENTCORE_GATEWAY_URL,
+  },
 };

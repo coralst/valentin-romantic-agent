@@ -171,13 +171,69 @@ describe('AWS_SEGMENT_GEOMETRY', () => {
   });
 });
 
+describe('the fan-out column', () => {
+  /**
+   * Three cards share x=762 now, and a card is ~87px tall once it is showing a
+   * duration pill — which all three are during a tool call, so that is the normal
+   * case rather than an edge one. This guards the one failure mode of a hand-tuned
+   * pitch: cards that look fine idle and overlap the moment they light.
+   */
+  it('leaves room for three lit cards without overlapping', () => {
+    const LIT_CARD_HEIGHT = 87;
+    const column = (['bedrock', 'dynamodb', 'integrations'] as const).map(
+      (id) => AWS_NODE_BOXES[id],
+    );
+
+    for (const box of column) expect(box.x).toBe(762);
+    expect(column[0].top).toBeGreaterThanOrEqual(0);
+
+    for (let i = 1; i < column.length; i += 1) {
+      expect(column[i].top).toBeGreaterThan(column[i - 1].top + LIT_CARD_HEIGHT);
+    }
+
+    // And the bottom one still fits the canvas it is drawn on.
+    expect(column[column.length - 1].top + LIT_CARD_HEIGHT).toBeLessThanOrEqual(
+      AWS_DIAGRAM_CANVAS.height,
+    );
+  });
+
+  it('runs the segment to DynamoDB straight down the spine', () => {
+    // The reason the column fits at all: DynamoDB took the spine slot so the third
+    // card could have the space below it.
+    for (const [, y] of pathPoints(awsSegmentGeometry('fargate-dynamodb').path)) {
+      expect(y).toBe(AWS_DIAGRAM_SPINE_Y);
+    }
+  });
+});
+
 describe('mid-leg chevrons', () => {
   it('marks exactly the three links that bend', () => {
     expect([...ELBOWED_SEGMENTS].sort()).toEqual([
       'cloudfront-s3',
       'fargate-bedrock',
-      'fargate-dynamodb',
+      // DynamoDB sits on the spine now and runs straight, so the below-spine
+      // elbow — and the chevron pair that is easy to get backwards — moved to the
+      // integrations leg.
+      'fargate-integrations',
     ]);
+  });
+
+  /**
+   * The bug this whole mechanism exists for, asserted rather than eyeballed on a
+   * projector: Bedrock is above the spine and External APIs below it, so their
+   * outbound chevrons must point *opposite* ways. Copying one pair to the other
+   * leg is the mistake, and it looks perfectly plausible in code.
+   */
+  it('points the above-spine and below-spine chevrons opposite ways', () => {
+    const bedrock = awsSegmentGeometry('fargate-bedrock');
+    const integrations = awsSegmentGeometry('fargate-integrations');
+
+    // Bedrock is up the page from the spine, External APIs down it, so "away from
+    // the browser" is a different direction for each.
+    expect(direction(bedrock.midDownstreamHead!)).toBe('up');
+    expect(direction(bedrock.midUpstreamHead!)).toBe('down');
+    expect(direction(integrations.midDownstreamHead!)).toBe('down');
+    expect(direction(integrations.midUpstreamHead!)).toBe('up');
   });
 
   it('gives every elbowed link a chevron in both directions', () => {

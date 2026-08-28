@@ -1,6 +1,19 @@
 import { subscribeToServerLogs, type ServerLogRecord } from '../logging';
 import { config } from '../config';
 import type { AwsSpan, ServerEvent } from '../../shared/interfaces/ws-events';
+import type { IntegrationId } from '../../shared/interfaces/integrations';
+import {
+  INTEGRATION_IDS,
+  INTEGRATION_LABELS,
+} from '../../shared/interfaces/integrations';
+
+/**
+ * The log-event prefix `runTool` writes, e.g. `integration.ontopo`.
+ *
+ * One constant so the producer and this reader cannot drift; `runTool` builds the
+ * event name from the same shape.
+ */
+const INTEGRATION_EVENT_PREFIX = 'integration.';
 
 /**
  * Emits a server event to one user's clients. Same shape as `index.ts`'s
@@ -80,8 +93,47 @@ export function logRecordToSpan(record: ServerLogRecord): AwsSpan | undefined {
     }
 
     default:
-      return undefined;
+      return integrationSpan(record);
   }
+}
+
+/**
+ * Map an `integration.<service>` log onto the diagram's External APIs node.
+ *
+ * A prefix match against the closed {@link INTEGRATION_IDS} set rather than six
+ * near-identical `case` arms. That keeps the bridge's "only recognised events map"
+ * rule intact — an id not in the union is still ignored — without six copies of the
+ * same six lines, which is where a typo would hide.
+ *
+ * `resourceId` is the *node*, not the service, because the diagram carries one
+ * grouped node: six cards do not read on a projector. Which service fired shows in
+ * `resourceName`, so a single node still says "ontopo, 412ms" out loud.
+ *
+ * `operation` is the tool name and there is no `detail` at all. The tool name is the
+ * whole of what is safe to show: a search carries a city and a party size, but a
+ * proposed message carries prose about someone's partner, and this is on a
+ * projector. `runTool` never logs the tool input for the same reason, so there is
+ * nothing here to leak even by accident.
+ */
+function integrationSpan(record: ServerLogRecord): AwsSpan | undefined {
+  const { event, data } = record;
+  if (!event.startsWith(INTEGRATION_EVENT_PREFIX)) return undefined;
+
+  const service = event.slice(INTEGRATION_EVENT_PREFIX.length);
+  if (!INTEGRATION_IDS.includes(service as IntegrationId)) return undefined;
+
+  const sessionId = str(data, 'sessionId');
+  if (!sessionId) return undefined;
+
+  return {
+    sessionId,
+    resourceId: 'integrations',
+    service: 'External APIs',
+    resourceName: INTEGRATION_LABELS[service as IntegrationId],
+    operation: str(data, 'operation') ?? 'call',
+    durationMs: num(data, 'durationMs') ?? 0,
+    ok: data?.ok !== false && record.level !== 'error',
+  };
 }
 
 /**

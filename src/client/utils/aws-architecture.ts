@@ -30,7 +30,8 @@ export type AwsNodeId =
   | 'alb'
   | 'fargate'
   | 'bedrock'
-  | 'dynamodb';
+  | 'dynamodb'
+  | 'integrations';
 
 /** Which column the node occupies, left to right, following the request. */
 export type AwsTier = 'client' | 'edge' | 'origin' | 'compute' | 'data';
@@ -107,6 +108,24 @@ export const AWS_NODES: readonly AwsNode[] = [
     caption: 'pk/sk · GSI1 · on-demand',
     tier: 'data',
   },
+  /*
+   * The one node here that is not AWS, and the only honest way to draw the tool
+   * loop: outbound HTTPS from the task to Ontopo, Hebcal, Amadeus, Google and
+   * Meta. Omitting it would draw a diagram in which Valentin books a restaurant
+   * with no restaurant in the picture.
+   *
+   * One grouped node rather than six. Six cards do not read on a projector, and
+   * which service fired is swapped into `resourceName` live from the span — see
+   * `INTEGRATION_LABELS` in the span bridge — so the room still sees "Ontopo" and
+   * its real duration on a single node.
+   */
+  {
+    id: 'integrations',
+    service: 'External APIs',
+    resourceName: '6 integrations',
+    caption: 'outbound HTTPS · NAT gateway',
+    tier: 'data',
+  },
 ] as const;
 
 /** Lookup by id. */
@@ -133,6 +152,7 @@ const PARENT: Readonly<Partial<Record<AwsNodeId, AwsNodeId>>> = {
   fargate: 'alb',
   bedrock: 'fargate',
   dynamodb: 'fargate',
+  integrations: 'fargate',
 };
 
 /**
@@ -145,7 +165,8 @@ export type AwsSegmentId =
   | 'cloudfront-alb'
   | 'alb-fargate'
   | 'fargate-bedrock'
-  | 'fargate-dynamodb';
+  | 'fargate-dynamodb'
+  | 'fargate-integrations';
 
 /** A connector in the diagram, always oriented parent → child. */
 export interface AwsSegment {
@@ -163,6 +184,10 @@ export const AWS_SEGMENTS: readonly AwsSegment[] = [
   { id: 'alb-fargate', from: 'alb', to: 'fargate', label: 'target group :3001' },
   { id: 'fargate-bedrock', from: 'fargate', to: 'bedrock', label: 'VPC interface endpoint' },
   { id: 'fargate-dynamodb', from: 'fargate', to: 'dynamodb', label: 'VPC gateway endpoint' },
+  // Not an endpoint of any kind: these leave the VPC entirely. Worth labelling
+  // precisely, because "how does the task reach ontopo.com from a private subnet"
+  // is the first question an AWS audience asks about this node.
+  { id: 'fargate-integrations', from: 'fargate', to: 'integrations', label: 'NAT · public internet' },
 ] as const;
 
 /** Segment joining a node to its parent. Undefined for the root. */
@@ -260,6 +285,15 @@ const EVENT_ROUTES: Readonly<Record<string, { from: AwsNodeId; to: AwsNodeId }>>
   error: { from: 'fargate', to: 'browser' },
   ping: { from: 'browser', to: 'fargate' },
   pong: { from: 'fargate', to: 'browser' },
+  /*
+   * The two halves of the authority model, and they deliberately run opposite ways.
+   * A proposal originates at the provider — Ontopo held a table, Amadeus priced a
+   * room — and travels out to the browser. The confirmation starts as a click and
+   * travels all the way back to the provider, which is the point worth watching on
+   * a projector: the click is what reaches the outside world, not the model.
+   */
+  action_proposal: { from: 'integrations', to: 'browser' },
+  confirm_action: { from: 'browser', to: 'integrations' },
 };
 
 /**

@@ -30,8 +30,15 @@ import { barFeather, barGround, resolveBarTheme } from '../design-system/bar-the
  * point is to send a message and watch it travel.
  */
 
-/** Total height the drawer occupies when open, bar included. */
-export const DRAWER_HEIGHT = 424;
+/**
+ * Total height the drawer occupies when open, bar included.
+ *
+ * Grew by 30 with the External APIs node, which is exactly what the canvas grew
+ * by — the diagram row has no `overflowY`, so anything less would clip the bottom
+ * card silently rather than scroll to it. `reservedDrawerSpace` passes the change
+ * on to the composer, so nothing else needs touching.
+ */
+export const DRAWER_HEIGHT = 454;
 /**
  * The bar's height.
  *

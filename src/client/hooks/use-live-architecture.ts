@@ -83,11 +83,17 @@ const EVENT_STORY: Readonly<Record<string, { actor: string; action: string }>> =
   ping: { actor: 'Browser', action: 'keeps the socket alive' },
   pong: { actor: 'Browser', action: 'keeps the socket alive' },
   error: { actor: 'System', action: 'reports a problem' },
+  // Two halves of one beat, and the actor changes hands between them — which is
+  // the sentence the drawer exists to show a room. Valentin only ever offers.
+  action_proposal: { actor: 'Valentin', action: 'offers something to confirm' },
+  confirm_action: { actor: 'User', action: 'confirms it' },
 };
 
 const EVENT_CATEGORY: Readonly<Record<string, AwsCategory>> = {
   agent_message: 'ml',
   preference_update: 'database',
+  action_proposal: 'external',
+  confirm_action: 'external',
 };
 
 /** Where a span's work happened, and where it was called from. */
@@ -96,6 +102,21 @@ const SPAN_CATEGORY: Readonly<Record<string, AwsCategory>> = {
   dynamodb: 'database',
   fargate: 'compute',
   s3: 'storage',
+  integrations: 'external',
+};
+
+/**
+ * What Valentin was doing, per span target. Anything unmapped reads as "thinks",
+ * which is true of Bedrock and harmless for the rest.
+ *
+ * "asks the outside world" rather than "books a table": a span is a call, and at
+ * this point in the flow nothing has been booked — the Confirm press is a
+ * separate beat. Naming it otherwise on a projector would claim an authority the
+ * agent does not have.
+ */
+const SPAN_ACTION: Readonly<Record<string, string>> = {
+  dynamodb: 'learns something new',
+  integrations: 'asks the outside world',
 };
 
 /** Short names for the feed. `Amazon DynamoDB` does not fit 70px. */
@@ -119,6 +140,8 @@ const EVENT_ENDPOINTS: Readonly<Record<string, { from: AwsNodeId; to: AwsNodeId 
   error: { from: 'fargate', to: 'browser' },
   ping: { from: 'browser', to: 'fargate' },
   pong: { from: 'fargate', to: 'browser' },
+  action_proposal: { from: 'integrations', to: 'browser' },
+  confirm_action: { from: 'browser', to: 'integrations' },
 };
 
 function beatFromEvent(observed: ObservedWsEvent, key: string): LiveBeat | undefined {
@@ -161,7 +184,7 @@ function beatFromSpan(span: AwsSpan, key: string): LiveBeat | undefined {
     durationMs: span.durationMs,
     ok: span.ok,
     actor: 'Valentin',
-    action: node === 'dynamodb' ? 'learns something new' : 'thinks',
+    action: SPAN_ACTION[node] ?? 'thinks',
   };
 }
 
@@ -181,6 +204,8 @@ function nodeServiceName(id: AwsNodeId): string {
       return 'Bedrock';
     case 'dynamodb':
       return 'DynamoDB';
+    case 'integrations':
+      return 'External APIs';
   }
 }
 

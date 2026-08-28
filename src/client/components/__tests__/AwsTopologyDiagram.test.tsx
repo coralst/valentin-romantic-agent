@@ -181,14 +181,14 @@ describe('AwsTopologyDiagram', () => {
      * spine end left that whole run unlabelled.
      */
     it('puts a mid-leg chevron on the elbowed links', () => {
-      const hops = routeBetween('fargate', 'dynamodb');
-      render(<AwsTopologyDiagram litNode="dynamodb" activeHops={hops} />);
+      const hops = routeBetween('fargate', 'integrations');
+      render(<AwsTopologyDiagram litNode="integrations" activeHops={hops} />);
 
-      expect(screen.getByTestId('aws-head-fargate-dynamodb-mid-downstream')).toHaveAttribute(
+      expect(screen.getByTestId('aws-head-fargate-integrations-mid-downstream')).toHaveAttribute(
         'data-active',
         'true',
       );
-      expect(screen.getByTestId('aws-head-fargate-dynamodb-mid-upstream')).toHaveAttribute(
+      expect(screen.getByTestId('aws-head-fargate-integrations-mid-upstream')).toHaveAttribute(
         'data-active',
         'false',
       );

@@ -61,7 +61,11 @@ export interface DemoFlow {
   steps: readonly ResolvedDemoStep[];
 }
 
-export type DemoFlowId = 'page-load' | 'chat-reply' | 'learns-something';
+export type DemoFlowId =
+  | 'page-load'
+  | 'chat-reply'
+  | 'learns-something'
+  | 'proposes-a-table';
 
 /**
  * Fill in each step's origin: a flow is a continuous journey, so a step starts
@@ -219,6 +223,82 @@ const LEARNS_SOMETHING: readonly DemoStep[] = [
   },
 ];
 
+/**
+ * The tool loop, and the beat the A/B demo actually turns on.
+ *
+ * Two things are deliberate about the ordering. Hebcal runs *before* Ontopo,
+ * because in Israel a Saturday-night dinner is a Hebrew-calendar question first
+ * and a restaurant question second — asking Ontopo first is the mistake Version A
+ * would make without it. And the flow does not end at the proposal: the last two
+ * steps are the Confirm press travelling back out to Ontopo, which is the only
+ * moment anything is booked. A flow that stopped at the proposal would let a room
+ * assume the agent booked it.
+ *
+ * Every `from` here is `fargate` rather than the previous step's `to`, because
+ * these are sibling calls made by the same task, not a chain. Defaulting would
+ * route Ontopo → Ontopo, which `routeBetween` correctly reports as no hop at all
+ * — a beat that lights nothing.
+ */
+const PROPOSES_A_TABLE: readonly DemoStep[] = [
+  ...CHAT_REPLY.slice(0, 4),
+  {
+    to: 'bedrock',
+    service: 'Bedrock',
+    operation: 'Converse',
+    detail: 'chat-reply · tool_use',
+    category: 'ml',
+    durationMs: 486,
+    actor: 'Valentin',
+    action: 'picks a tool',
+  },
+  {
+    from: 'fargate',
+    to: 'integrations',
+    service: 'External APIs',
+    operation: 'check_shabbat',
+    detail: 'Hebrew calendar · computed locally',
+    category: 'external',
+    durationMs: 4,
+    ok: true,
+    actor: 'Valentin',
+    action: 'asks the outside world',
+  },
+  {
+    from: 'fargate',
+    to: 'integrations',
+    service: 'External APIs',
+    operation: 'search_restaurants',
+    detail: 'Ontopo · Tel Aviv',
+    category: 'external',
+    durationMs: 612,
+    ok: true,
+    actor: 'Valentin',
+    action: 'asks the outside world',
+  },
+  {
+    from: 'integrations',
+    to: 'browser',
+    service: 'Browser',
+    operation: 'action_proposal',
+    detail: 'a table to confirm',
+    category: 'external',
+    actor: 'Valentin',
+    action: 'offers something to confirm',
+  },
+  {
+    from: 'browser',
+    to: 'integrations',
+    service: 'External APIs',
+    operation: 'confirm_action',
+    detail: 'Ontopo · checkout link',
+    category: 'external',
+    durationMs: 388,
+    ok: true,
+    actor: 'User',
+    action: 'confirms it',
+  },
+];
+
 export const DEMO_FLOWS: readonly DemoFlow[] = [
   {
     id: 'page-load',
@@ -239,6 +319,13 @@ export const DEMO_FLOWS: readonly DemoFlow[] = [
     title: 'Valentin learns something',
     synopsis: 'The reply, then a second Converse call that extracts and stores a preference.',
     steps: resolve(LEARNS_SOMETHING),
+  },
+  {
+    id: 'proposes-a-table',
+    title: 'Valentin proposes a table',
+    synopsis:
+      'The tool loop: Hebcal rules out Friday, Ontopo finds a table, and nothing is booked until Confirm.',
+    steps: resolve(PROPOSES_A_TABLE),
   },
 ] as const;
 

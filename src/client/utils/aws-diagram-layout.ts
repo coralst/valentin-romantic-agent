@@ -14,14 +14,21 @@ import type { AwsNodeId, AwsSegmentId } from './aws-architecture';
  */
 
 /** Canvas the connectors are drawn on. Node cards are positioned in the same space. */
-export const AWS_DIAGRAM_CANVAS = { width: 916, height: 286 } as const;
+export const AWS_DIAGRAM_CANVAS = { width: 916, height: 316 } as const;
 
 /**
- * The shared vertical centre of Browser, CloudFront, ALB and Fargate.
+ * The shared vertical centre of Browser, CloudFront, ALB, Fargate and DynamoDB.
  *
- * Those four are the request's spine and sit in a straight line; S3 branches up
- * off it, Bedrock and DynamoDB fan out to the right. Keeping the spine straight
- * is the reason the diagram reads left-to-right at a glance.
+ * The first four are the request's spine and sit in a straight line; S3 branches
+ * up off it, and the last column fans out three ways — Bedrock up, DynamoDB
+ * straight ahead, External APIs down. Keeping the spine straight is the reason
+ * the diagram reads left-to-right at a glance.
+ *
+ * DynamoDB moved onto the spine when the integrations node arrived, and height
+ * is the scarce dimension here: the drawer is 424px tall, so stacking a fourth
+ * card under DynamoDB would have cost ~130px and squeezed the composer. A
+ * three-way fan-out costs 30. It also happens to be truer — DynamoDB is on
+ * every turn's critical path, and now the spine runs through it.
  */
 export const AWS_DIAGRAM_SPINE_Y = 154;
 
@@ -37,8 +44,12 @@ export interface AwsNodeBox {
  *
  * CloudFront is widest (190px) because it carries the WAF chip; the rest sit at
  * 146–168. Tops are set from measured card heights rather than a shared grid,
- * since the cards differ in height: S3 has to clear the ALB below it and Bedrock
- * has to clear DynamoDB.
+ * since the cards differ in height: S3 has to clear the ALB below it, and the
+ * three cards in the last column have to clear each other.
+ *
+ * The last column's pitch is 104px against a card that is ~87px tall when it is
+ * showing a duration pill. That 17px of air is the constraint — three lit cards
+ * at once is the normal case during a tool call, not an edge case.
  */
 export const AWS_NODE_BOXES: Readonly<Record<AwsNodeId, AwsNodeBox>> = {
   browser: { x: 0, top: 112, width: 146 },
@@ -46,8 +57,9 @@ export const AWS_NODE_BOXES: Readonly<Record<AwsNodeId, AwsNodeBox>> = {
   s3: { x: 390, top: 0, width: 152 },
   alb: { x: 390, top: 112, width: 152 },
   fargate: { x: 568, top: 104, width: 168 },
-  bedrock: { x: 762, top: 50, width: 154 },
-  dynamodb: { x: 762, top: 168, width: 154 },
+  bedrock: { x: 762, top: 8, width: 154 },
+  dynamodb: { x: 762, top: 111, width: 154 },
+  integrations: { x: 762, top: 215, width: 154 },
 };
 
 /** Column heading above each tier. */
@@ -61,7 +73,10 @@ export const AWS_TIER_LABELS: readonly AwsTierLabel[] = [
   { label: 'Edge', x: 172 },
   { label: 'Origin', x: 390 },
   { label: 'Compute', x: 568 },
-  { label: 'AI · Data', x: 762 },
+  // Three services in this column now, and only one of them is AWS. Naming the
+  // APIs in the heading is how the room knows the third card is not a stack the
+  // account pays for.
+  { label: 'AI · Data · APIs', x: 762 },
 ] as const;
 
 /** The dashed box drawn around the resources inside `valentin-vpc-dev`. */
@@ -139,24 +154,35 @@ export const AWS_SEGMENT_GEOMETRY: Readonly<Record<AwsSegmentId, AwsSegmentGeome
   },
   'fargate-bedrock': {
     id: 'fargate-bedrock',
-    path: 'M736,154 L749,154 L749,92 L756,92',
-    downstreamHead: '762,92 753,86 753,98',
+    path: 'M736,154 L749,154 L749,50 L756,50',
+    downstreamHead: '762,50 753,44 753,56',
     upstreamHead: '736,154 745,148 745,160',
     elbowed: true,
     // Bedrock is above the spine: outbound points up, the return points down.
-    midDownstreamHead: '749,110 743,119 755,119',
-    midUpstreamHead: '749,122 743,113 755,113',
+    midDownstreamHead: '749,96 743,105 755,105',
+    midUpstreamHead: '749,108 743,99 755,99',
   },
+  // Straight ahead on the spine, so no elbow and — per the note above —
+  // deliberately no mid-leg chevrons: there is no long vertical run for the eye
+  // to misread. The below-spine chevron pair now lives on `fargate-integrations`.
   'fargate-dynamodb': {
     id: 'fargate-dynamodb',
-    path: 'M736,154 L749,154 L749,218 L756,218',
-    downstreamHead: '762,218 753,212 753,224',
+    path: 'M736,154 L756,154',
+    downstreamHead: '762,154 753,148 753,160',
+    upstreamHead: '736,154 745,148 745,160',
+    elbowed: false,
+  },
+  'fargate-integrations': {
+    id: 'fargate-integrations',
+    path: 'M736,154 L749,154 L749,258 L756,258',
+    downstreamHead: '762,258 753,252 753,264',
     upstreamHead: '736,154 745,148 745,160',
     elbowed: true,
-    // DynamoDB is below the spine, so the chevrons are the other way up from
-    // Bedrock's. Getting this pair backwards is exactly the bug above.
-    midDownstreamHead: '749,200 743,191 755,191',
-    midUpstreamHead: '749,188 743,197 755,197',
+    // Below the spine, so the chevrons are the other way up from Bedrock's:
+    // outbound points down, the return points up. Getting this pair backwards is
+    // exactly the bug described above, and it is asserted rather than eyeballed.
+    midDownstreamHead: '749,212 743,203 755,203',
+    midUpstreamHead: '749,200 743,209 755,209',
   },
 };
 
@@ -197,6 +223,10 @@ export const AWS_CATEGORY_COLORS = {
   compute: '#ED7100',
   ml: '#01A88D',
   database: '#527FFF',
+  // Not from AWS's palette, because this one is not an AWS service. Valentin's
+  // own claret, so a builder reading the colours sees at a glance that this call
+  // left the account.
+  external: '#8C2F45',
 } as const;
 
 export type AwsCategory = keyof typeof AWS_CATEGORY_COLORS;
@@ -243,6 +273,16 @@ export const AWS_NODE_VISUALS: Readonly<Record<AwsNodeId, AwsNodeVisual>> = {
     tile: 'linear-gradient(135deg,#7A9DFF,#527FFF)',
     glyph:
       '<ellipse cx="12" cy="5.8" rx="7.4" ry="2.9" /><path d="M4.6 5.8v12.4c0 1.6 3.3 2.9 7.4 2.9s7.4-1.3 7.4-2.9V5.8" /><path d="M4.6 12c0 1.6 3.3 2.9 7.4 2.9s7.4-1.3 7.4-2.9" />',
+  },
+  integrations: {
+    // Claret rather than an AWS service gradient: this card is Ontopo and Meta,
+    // not a service the account is billed for, and the colour is the fastest way
+    // to say so on a projector.
+    tile: 'linear-gradient(135deg,#B8536B,#8C2F45)',
+    // An arrow leaving an open-sided box — the request departing the VPC. A globe
+    // would have been the obvious choice and is already CloudFront's.
+    glyph:
+      '<path d="M13.5 4.5H6A1.5 1.5 0 0 0 4.5 6v12A1.5 1.5 0 0 0 6 19.5h7.5" /><path d="M10.5 12h10M17 8.2l3.5 3.8-3.5 3.8" />',
   },
 };
 

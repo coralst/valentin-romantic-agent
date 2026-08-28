@@ -19,8 +19,13 @@ shift || true
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-FRONTEND_PORT=5173
-BACKEND_PORT=3001
+# Same variables playwright.config.ts and vite.config.ts read, defaulting to what
+# they have always been. Overridable because the "reuse what is already there"
+# behaviour below is a trap across worktrees: another session's frontend on 5173
+# gets reused happily, and the screenshots then show *its* branch. Pass
+# VITE_PORT/PORT to get a stack of your own.
+FRONTEND_PORT="${VITE_PORT:-5173}"
+BACKEND_PORT="${PORT:-3001}"
 STARTED_PIDS=()
 
 port_open() { nc -z localhost "$1" > /dev/null 2>&1; }
@@ -39,7 +44,7 @@ wait_for_port() {
     sleep 0.5
   done
   echo "ERROR: $name did not come up on port $port in 30s." >&2
-  echo "       Check /tmp/valentin-${name}.log" >&2
+  echo "       Check /tmp/valentin-${name}-${port}.log" >&2
   return 1
 }
 
@@ -47,7 +52,9 @@ if port_open "$BACKEND_PORT"; then
   echo "--- Reusing the backend already on :$BACKEND_PORT"
 else
   echo "--- Starting the backend on :$BACKEND_PORT"
-  npm run dev:server > "/tmp/valentin-backend.log" 2>&1 &
+  # Port-suffixed: two worktrees running this at once otherwise interleave their
+  # output into one file, and the error message below sends you to read it.
+  npm run dev:server > "/tmp/valentin-backend-${BACKEND_PORT}.log" 2>&1 &
   STARTED_PIDS+=("$!")
   wait_for_port "$BACKEND_PORT" backend
 fi
@@ -56,7 +63,7 @@ if port_open "$FRONTEND_PORT"; then
   echo "--- Reusing the frontend already on :$FRONTEND_PORT"
 else
   echo "--- Starting the frontend on :$FRONTEND_PORT"
-  npm run dev > "/tmp/valentin-frontend.log" 2>&1 &
+  npm run dev > "/tmp/valentin-frontend-${FRONTEND_PORT}.log" 2>&1 &
   STARTED_PIDS+=("$!")
   wait_for_port "$FRONTEND_PORT" frontend
 fi

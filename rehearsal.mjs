@@ -68,15 +68,28 @@ const bodyMatches = re => waitFor(async () => re.test(await bodyText()), { label
 
 await p.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-// 1. seed
+// The demo controls live inside the rail's gear popover (IconRail.tsx), not on a
+// visible toolbar, so the popover has to be open before the seed and reset buttons
+// exist at all. The gear *toggles*, so this checks first — clicking it while the
+// popover is already open is what closes it, and then the button is unmounted.
 const seed = p.getByRole('button', { name: /load demo profile/i });
+const openDemoMenu = async () => {
+  if (await seed.isVisible().catch(() => false)) return;
+  await p.getByTestId('rail-demo-button').click();
+};
+
+// 1. seed
+await openDemoMenu();
 ok('seed control present', await waitFor(() => seed.isVisible(), { label: 'seed button' }));
 await seed.click();
-// Was a flat 6s sleep; the counter reaching 18/18 is the actual signal.
-ok('18/18 after seed', await bodyMatches(/18\s*\/\s*18/));
+// Was a flat 6s sleep; the counter filling up is the actual signal.
+// 21/21, not 18/18: the default persona is `samantha` (demo-personas.ts), and
+// her fixture carries 21 preferences. The old numbers and the old name were from
+// a persona that no longer seeds by default.
+ok('21/21 after seed', await bodyMatches(/21\s*of\s*21/i));
 let body = await bodyText();
-ok('persona rendered (Mira + Kyoto + pottery)',
-  body.includes('Mira') && body.includes('Kyoto') && body.includes('pottery'));
+ok('persona rendered (Samantha + Kyoto + sage)',
+  body.includes('Samantha') && body.includes('Kyoto') && body.includes('sage'));
 ok('announced "Demo profile loaded"', /demo profile loaded/i.test(body));
 
 // 2. architecture drawer + live message
@@ -143,13 +156,17 @@ await p.getByTestId('architecture-reopen-bar').click();
 await waitFor(() => drawer.isVisible(), { label: 'drawer reopen' });
 
 // 3. reset
+// Back into the gear popover: it closes on outside click, and both Reset and the
+// seed button live inside it.
+await openDemoMenu();
 const reset = p.getByRole('button', { name: /^reset$/i }).first();
 await reset.click();
-ok('counter cleared after reset', await bodyMatches(/0\s*\/\s*18/));
+ok('counter cleared after reset', await bodyMatches(/0\s*of\s*21/i));
 
 // 4. re-seed (the recovery path)
+await openDemoMenu();
 await seed.click();
-ok('re-seed restores 18/18', await bodyMatches(/18\s*\/\s*18/));
+ok('re-seed restores 21/21', await bodyMatches(/21\s*of\s*21/i));
 
 ok('no console errors', errs.length === 0);
 if (errs.length) console.log('  errors:', errs.slice(0, 4));

@@ -16,7 +16,6 @@ import {
   ArchitectureDrawerProvider,
   useArchitectureDrawer,
 } from '../context/architecture-drawer-context';
-import { ArchitectureEngineProvider } from '../context/architecture-engine-context';
 import { useSessionContext } from '../context/session-context';
 import { breakpoints, layout } from '../design-system/tokens';
 
@@ -118,12 +117,12 @@ export function AppLayout() {
     <ProfileStoreProvider sessionId={chatState.sessionId}>
       {/* Above the layout because the magnifier lives in the sidebar and the
           drawer is mounted beside the chat — sibling subtrees. */}
+      {/* The engine provider is deliberately NOT here beside it. The switch has to
+          be readable by `WebSocketProvider`, which is above this component, because
+          the engine decides which socket path the chat opens — so it lives in
+          `App.tsx` instead. See the note there. */}
       <ArchitectureDrawerProvider>
-        {/* Here for the same sibling-subtree reason, one level in: the engine
-            switch is in the icon rail, the diagram it redraws is in the drawer. */}
-        <ArchitectureEngineProvider>
-          <AppLayoutContent />
-        </ArchitectureEngineProvider>
+        <AppLayoutContent />
       </ArchitectureDrawerProvider>
     </ProfileStoreProvider>
   );

@@ -4,7 +4,7 @@ import { AwsFlowFeed, type FeedRow } from './AwsFlowFeed';
 import { useArchitectureDrawer } from '../context/architecture-drawer-context';
 import { useArchitectureMode, type ArchitectureMode } from '../hooks/use-architecture-mode';
 import { useLiveArchitecture } from '../hooks/use-live-architecture';
-import { useArchitectureEngineContext } from '../context/architecture-engine-context';
+import { ENGINE_COPY, useArchitectureEngineContext } from '../context/architecture-engine-context';
 import { useFlowPlayback } from '../hooks/use-flow-playback';
 import { PANEL_SLIDE_MS } from '../hooks/use-inspector-focus';
 import {
@@ -79,7 +79,62 @@ export const DRAWER_COPY = {
   liveEmpty: 'Waiting for traffic. Send a message and it will appear here.',
   /** Says out loud that demo durations are authored, so nobody reads them as measured. */
   demoNote: 'Scripted walkthrough · representative durations',
+  /** Prefix for the chip naming the engine that actually answered. */
+  serving: 'Serving',
+  /** Shown while `/api/config` on the selected route has not answered yet. */
+  servingUnknown: 'Checking engine…',
 } as const;
+
+/**
+ * The chip that names the engine actually answering.
+ *
+ * Here rather than beside the switch in the rail, and load-bearing rather than
+ * decorative. Selecting AgentCore points the socket at `/ws/agentcore`, but a
+ * deployment without the AgentCore wiring accepts that socket and answers on engine
+ * A anyway — deliberately, because the alternative is an outage (see
+ * `server/agent/engine.ts`). Locally there is only ever one process, so that
+ * downgrade is the *normal* case on a laptop. Without this chip the drawer would
+ * show AgentCore's diagram over engine A's spans and every number under it would be
+ * attributed to the wrong architecture.
+ */
+function ServingChip({
+  serving,
+  isDowngraded,
+}: {
+  serving: 'valentin' | 'agentcore' | null;
+  isDowngraded: boolean;
+}) {
+  const label =
+    serving === null
+      ? DRAWER_COPY.servingUnknown
+      : `${DRAWER_COPY.serving}: ${ENGINE_COPY[serving]}`;
+
+  return (
+    <span
+      data-testid="architecture-serving-chip"
+      data-serving={serving ?? 'unknown'}
+      data-downgraded={isDowngraded ? 'true' : 'false'}
+      // The mismatch is the only state worth a colour, because it is the only one
+      // that contradicts what the rest of the panel is showing.
+      title={isDowngraded ? 'The selected engine is not reachable on this deployment' : undefined}
+      style={{
+        fontSize: 9.5,
+        fontWeight: 700,
+        letterSpacing: '0.05em',
+        textTransform: 'uppercase',
+        padding: '4px 8px',
+        borderRadius: 6,
+        marginLeft: 10,
+        whiteSpace: 'nowrap',
+        border: `1px solid ${isDowngraded ? '#E0B7A0' : '#E5D9D2'}`,
+        background: isDowngraded ? '#FBEDE4' : colors.surface,
+        color: isDowngraded ? '#9A5A2B' : '#756A70',
+      }}
+    >
+      {label}
+    </span>
+  );
+}
 
 const drawerStyle: React.CSSProperties = {
   position: 'absolute',
@@ -190,7 +245,7 @@ export function LiveArchitectureDrawer() {
   const { mode, setMode } = useArchitectureMode();
   // The switch itself lives in the icon rail, next to the other things a presenter
   // reaches for mid-sentence; the drawer only reads the choice.
-  const { engine } = useArchitectureEngineContext();
+  const { engine, servingEngine, isDowngraded } = useArchitectureEngineContext();
   const live = useLiveArchitecture(true, engine);
 
   const flow = demoFlow(defaultDemoFlowIdFor(engine));
@@ -330,6 +385,10 @@ export function LiveArchitectureDrawer() {
               onChange={setMode}
               label="Data source"
             />
+
+            {/* Only in live mode: a scripted walkthrough is not being answered by
+                any engine, so naming one there would be a claim about nothing. */}
+            {!isDemo && <ServingChip serving={servingEngine} isDowngraded={isDowngraded} />}
 
             <div
               style={{

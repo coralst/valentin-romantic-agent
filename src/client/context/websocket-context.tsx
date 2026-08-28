@@ -2,6 +2,7 @@ import React, { createContext, useContext } from 'react';
 import { useWebSocket } from '../hooks/use-websocket';
 import { useChatContext } from './chat-context';
 import { usePreferencesContext } from './preferences-context';
+import { useArchitectureEngineContext } from './architecture-engine-context';
 
 interface WebSocketContextValue {
   sendMessage: (content: string) => void;
@@ -16,10 +17,26 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const { state, dispatch: chatDispatch } = useChatContext();
   const { dispatch: preferencesDispatch } = usePreferencesContext();
 
+  /*
+   * The engine switch in the icon rail decides which backend this socket talks to.
+   *
+   * This is the line that makes the switch a real control rather than a drawing:
+   * `useWebSocket` turns the engine into a path — `/ws` for the baseline service,
+   * `/ws/agentcore` for the AgentCore proxy — and the ALB routes on exactly that.
+   * Changing it changes `wsUrl`, which `connect` depends on, so the current socket
+   * is closed and a new one is opened against the other engine.
+   *
+   * The reconnect carries the same session id, so the conversation is *resumed* on
+   * the other engine rather than restarted: the same history, answered by the other
+   * architecture, which is the only version of this comparison worth showing.
+   */
+  const { engine } = useArchitectureEngineContext();
+
   const { sendMessage, connectionStatus, lastError } = useWebSocket({
     chatDispatch,
     preferencesDispatch,
     sessionId: state.sessionId,
+    engine,
   });
 
   return (

@@ -1,9 +1,10 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { LiveArchitectureDrawer, DRAWER_COPY } from '../LiveArchitectureDrawer';
 import { ArchitectureToggle } from '../ArchitectureToggle';
 import { ArchitectureDrawerProvider } from '../../context/architecture-drawer-context';
+import { ArchitectureEngineProvider, ENGINE_COPY } from '../../context/architecture-engine-context';
 import { publishInboundWsEvent, resetWsObservers } from '../../utils/ws-event-observer';
 import { demoFlow, DEFAULT_DEMO_FLOW_ID } from '../../utils/aws-demo-flows';
 import type { AwsSpan, ServerEvent } from '../../../shared/interfaces/ws-events';
@@ -386,9 +387,7 @@ describe('LiveArchitectureDrawer', () => {
       renderDrawer();
       await openDrawer(user);
 
-      expect(
-        screen.getByRole('complementary', { name: DRAWER_COPY.title }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole('complementary', { name: DRAWER_COPY.title })).toBeInTheDocument();
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
 
@@ -480,5 +479,114 @@ describe('LiveArchitectureDrawer', () => {
 
       expect(screen.getByTestId('architecture-drawer')).toHaveAttribute('data-open', 'false');
     });
+  });
+});
+
+/**
+ * The chip that names the engine actually answering.
+ *
+ * It exists because the engine switch now moves the chat's socket, and the socket
+ * can be accepted by the *wrong* engine: `/ws/agentcore` connects on a deployment
+ * with no AgentCore wiring, which then answers as engine A rather than failing. On a
+ * laptop that is the only possible outcome — one process, one `AGENT_ENGINE`. So the
+ * panel has to be able to say "you asked for AgentCore, engine A answered", or every
+ * duration under it is filed under the wrong architecture.
+ */
+describe('the serving-engine chip', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  /** Make `/api/config` answer as a given engine. */
+  function servedBy(engine: string) {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ authDisabled: true, engine }),
+    });
+  }
+
+  /** The drawer with a real engine provider, which is what does the asking. */
+  function renderWithEngine(initialEngine: 'valentin' | 'agentcore' = 'valentin') {
+    return render(
+      <ArchitectureDrawerProvider>
+        <ArchitectureEngineProvider initialEngine={initialEngine}>
+          <ArchitectureToggle />
+          <LiveArchitectureDrawer />
+        </ArchitectureEngineProvider>
+      </ArchitectureDrawerProvider>,
+    );
+  }
+
+  /** Open it and switch to live, which is the only mode an engine answers in. */
+  async function openLive(user: ReturnType<typeof userEvent.setup>) {
+    await openDrawer(user);
+    await user.click(screen.getByRole('button', { name: DRAWER_COPY.liveMode }));
+  }
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    servedBy('valentin');
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('names the engine that answered', async () => {
+    const user = userEvent.setup();
+    renderWithEngine();
+    await openLive(user);
+
+    const chip = await screen.findByTestId('architecture-serving-chip');
+    expect(chip).toHaveTextContent(ENGINE_COPY.valentin);
+    expect(chip).toHaveAttribute('data-serving', 'valentin');
+    expect(chip).toHaveAttribute('data-downgraded', 'false');
+  });
+
+  it('names AgentCore when AgentCore is what answered', async () => {
+    servedBy('agentcore');
+    const user = userEvent.setup();
+    renderWithEngine('agentcore');
+    await openLive(user);
+
+    const chip = await screen.findByTestId('architecture-serving-chip');
+    expect(chip).toHaveTextContent(ENGINE_COPY.agentcore);
+    expect(chip).toHaveAttribute('data-downgraded', 'false');
+  });
+
+  it('flags the engine selected not being the engine serving', async () => {
+    // Asked for AgentCore, answered by engine A — the local case, and the
+    // missing-AgentCore-wiring case. The chip is the only thing on screen that
+    // contradicts the diagram, so it says so and names what really ran.
+    const user = userEvent.setup();
+    renderWithEngine('agentcore');
+    await openLive(user);
+
+    const chip = await screen.findByTestId('architecture-serving-chip');
+    await waitFor(() => expect(chip).toHaveAttribute('data-downgraded', 'true'));
+    expect(chip).toHaveTextContent(ENGINE_COPY.valentin);
+  });
+
+  it('confirms nothing while the question is still open', async () => {
+    // A request that never lands must not read as a downgrade: unreachable and
+    // refused are different faults, and only one of them is the deployment's.
+    fetchMock.mockRejectedValue(new Error('offline'));
+    const user = userEvent.setup();
+    renderWithEngine('agentcore');
+    await openLive(user);
+
+    const chip = await screen.findByTestId('architecture-serving-chip');
+    expect(chip).toHaveTextContent(DRAWER_COPY.servingUnknown);
+    expect(chip).toHaveAttribute('data-downgraded', 'false');
+  });
+
+  /**
+   * Withheld in demo mode: a scripted walkthrough is not being answered by any
+   * engine, so naming one would be a claim about nothing.
+   */
+  it('says nothing while the walkthrough is scripted', async () => {
+    const user = userEvent.setup();
+    renderWithEngine();
+    await openDrawer(user);
+    expect(screen.queryByTestId('architecture-serving-chip')).not.toBeInTheDocument();
   });
 });

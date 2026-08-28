@@ -7,6 +7,11 @@ import { resolvePersona } from '../fixtures/demo-personas';
 import type { DemoConversation } from '../fixtures/demo-personas';
 import { isPartnerNamePreference } from '../extraction/partner-name';
 import { integrationReadiness } from '../integrations';
+import type { IntegrationStatusResponse } from '../../shared/interfaces/integrations';
+import {
+  INTEGRATION_IDS,
+  INTEGRATION_LABELS,
+} from '../../shared/interfaces/integrations';
 
 /** Simple framework-agnostic request representation */
 export interface HttpRequest {
@@ -125,18 +130,21 @@ export function createHttpRoutes(storage: StorageInterface) {
      * browser devtools log that captures it.
      *
      * Needs no session and no storage — readiness is a property of the process.
+     *
+     * Ordered by `INTEGRATION_IDS` rather than by whatever order the readiness
+     * object happens to enumerate in, so the panel's rows do not reshuffle if
+     * someone reorders that function.
      */
     async listIntegrations(): Promise<HttpResponse> {
       const ready = integrationReadiness();
-      return {
-        status: 200,
-        body: {
-          integrations: Object.entries(ready).map(([id, configured]) => ({
-            id,
-            configured,
-          })),
-        },
+      const body: IntegrationStatusResponse = {
+        integrations: INTEGRATION_IDS.map((id) => ({
+          id,
+          label: INTEGRATION_LABELS[id],
+          configured: ready[id],
+        })),
       };
+      return { status: 200, body };
     },
 
     /** POST /session — create a new session */

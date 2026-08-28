@@ -1,3 +1,4 @@
+import type { IntegrationId } from '../../shared/interfaces/integrations';
 import { logger } from '../logging';
 
 /**
@@ -55,19 +56,11 @@ export interface ActionProposal {
 /**
  * The services this build can actually reach.
  *
- * A closed union rather than a string, because three other places key off it:
- * the span bridge maps it to a diagram node, the client catalogue marks an entry
- * live rather than aspirational, and `GET /api/integrations` reports which are
- * configured. A typo in any of those should be a compile error, not a silently
- * dark row in the sidebar.
+ * Re-exported from `shared` rather than declared here: the browser needs the same
+ * union to read `GET /api/integrations`, and two copies is how one of them ends up
+ * a spelling behind. A typo should be a compile error, not a silently dark row.
  */
-export type IntegrationId =
-  | 'hebcal'
-  | 'ontopo'
-  | 'amadeus'
-  | 'google-calendar'
-  | 'gmail'
-  | 'whatsapp';
+export type { IntegrationId };
 
 /** What a tool hands back to the loop. */
 export interface ToolResult {

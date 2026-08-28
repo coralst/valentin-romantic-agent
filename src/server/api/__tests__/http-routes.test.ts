@@ -7,6 +7,8 @@ import {
   DEMO_SEED_SOURCE_MESSAGE_ID,
 } from '../../fixtures/demo-profile';
 import { resolvePersona } from '../../fixtures/demo-personas';
+import type { IntegrationStatusResponse } from '../../../shared/interfaces/integrations';
+import { INTEGRATION_IDS } from '../../../shared/interfaces/integrations';
 import { PROFILE_FIELD_REGISTRY } from '../../../client/utils/profile-field-registry';
 import { resolveField } from '../../../client/utils/preference-field-mapper';
 
@@ -510,7 +512,70 @@ describe('createHttpRoutes', () => {
     });
   });
 
+  describe('listIntegrations', () => {
+    it('reports every integration, in the shared order', async () => {
+      const result = await routes.listIntegrations();
+
+      expect(result.status).toBe(200);
+      const { integrations } = result.body as IntegrationStatusResponse;
+      expect(integrations.map((entry) => entry.id)).toEqual([
+        ...INTEGRATION_IDS,
+      ]);
+      // Hebcal is a local calculation and Ontopo's endpoints need no auth, so
+      // these two are ready in any deployment — including a test run with an
+      // entirely empty environment.
+      expect(integrations.find((e) => e.id === 'hebcal')?.configured).toBe(true);
+      expect(integrations.find((e) => e.id === 'ontopo')?.configured).toBe(true);
+    });
+
+    it('labels every integration for a human', async () => {
+      const { integrations } = (await routes.listIntegrations())
+        .body as IntegrationStatusResponse;
+
+      // Without this the panel would render the raw id, and one of them is
+      // `google-calendar`.
+      for (const entry of integrations) {
+        expect(entry.label.length).toBeGreaterThan(0);
+        expect(entry.label).not.toBe(entry.id);
+      }
+    });
+
+    it('carries nothing but ids, labels and booleans', async () => {
+      const { integrations } = (await routes.listIntegrations())
+        .body as IntegrationStatusResponse;
+
+      /*
+       * The point of the endpoint is that the UI can say "not configured"
+       * without ever seeing a secret. A masked or truncated credential would
+       * answer the same question while putting part of a real token into a
+       * public payload, so the shape is asserted exactly rather than loosely.
+       */
+      for (const entry of integrations) {
+        expect(Object.keys(entry).sort()).toEqual([
+          'configured',
+          'id',
+          'label',
+        ]);
+        expect(typeof entry.configured).toBe('boolean');
+      }
+    });
+  });
+
   describe('handleRequest routing', () => {
+    it('routes GET /integrations to listIntegrations', async () => {
+      const result = await routes.handleRequest({
+        method: 'GET',
+        url: '/integrations',
+        params: {},
+        body: null,
+      });
+
+      expect(result.status).toBe(200);
+      expect(
+        (result.body as IntegrationStatusResponse).integrations,
+      ).toHaveLength(INTEGRATION_IDS.length);
+    });
+
     it('routes PATCH /session/:id to renameSession', async () => {
       const { sessionId } = (await routes.seedSession()).body as SeedBody;
 

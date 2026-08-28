@@ -184,4 +184,50 @@ describe('AppLayout', () => {
       expect(footer).toContainElement(screen.getByTestId('architecture-reopen-bar'));
     });
   });
+
+  describe('the integrations panel', () => {
+    it('is reachable from the desktop rail and closes again', async () => {
+      currentMatches = false; // desktop
+      const user = userEvent.setup();
+      renderWithProviders(<AppLayout />);
+
+      expect(screen.queryByTestId('integrations-panel')).not.toBeInTheDocument();
+
+      await user.click(screen.getByTestId('rail-integrations-button'));
+      expect(screen.getByTestId('integrations-panel')).toBeInTheDocument();
+
+      // The rail stays live behind the panel, so the same button puts it away.
+      await user.click(screen.getByTestId('rail-integrations-button'));
+      expect(screen.queryByTestId('integrations-panel')).not.toBeInTheDocument();
+    });
+
+    it('is reachable from the mobile strip', async () => {
+      currentMatches = true; // mobile
+      const user = userEvent.setup();
+      renderWithProviders(<AppLayout />);
+
+      await user.click(screen.getByTestId('rail-integrations-button'));
+      expect(screen.getByTestId('integrations-panel')).toBeInTheDocument();
+      // Cards, not the fan: a 375px canvas cannot hold a hub and eight nodes.
+      expect(screen.getByTestId('integrations-list')).toBeInTheDocument();
+    });
+
+    /*
+     * The panel is an absolute overlay precisely so that opening it cannot
+     * reshuffle the shell. The first version spanned grid tracks instead, which
+     * made grid auto-placement skip those cells and pushed the conversation list
+     * out of the window entirely.
+     */
+    it('leaves the shell it covers intact', async () => {
+      currentMatches = false; // desktop
+      const user = userEvent.setup();
+      renderWithProviders(<AppLayout />);
+
+      await user.click(screen.getByTestId('rail-integrations-button'));
+
+      expect(screen.getByTestId('session-sidebar')).toBeInTheDocument();
+      expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+      expect(screen.getByTestId('partner-profile-panel')).toBeInTheDocument();
+    });
+  });
 });

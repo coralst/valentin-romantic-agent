@@ -1,10 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SessionProvider } from '../../context/session-context';
 import { ChatProvider } from '../../context/chat-context';
 import { PreferencesProvider } from '../../context/preferences-context';
 import { ProfileStoreProvider } from '../../context/profile-store-context';
+import { IntegrationsProvider } from '../../context/integrations-context';
 import { IconRail, type RailView } from '../IconRail';
 import { layout, radii } from '../../design-system/tokens';
 
@@ -15,6 +16,14 @@ interface RenderOptions {
   onGoHome?: () => void;
   onOpenSessions?: () => void;
   isSessionsOpen?: boolean;
+  onOpenIntegrations?: () => void;
+  isIntegrationsOpen?: boolean;
+  /**
+   * Whether to wrap the rail in a real grants store. Off by default, because most
+   * of these tests are about the rail and the context deliberately falls back to
+   * an inert store rather than throwing.
+   */
+  withIntegrations?: boolean;
 }
 
 function renderRail({
@@ -24,20 +33,28 @@ function renderRail({
   onGoHome,
   onOpenSessions = () => {},
   isSessionsOpen,
+  onOpenIntegrations,
+  isIntegrationsOpen,
+  withIntegrations = false,
 }: RenderOptions = {}) {
+  const rail = (
+    <IconRail
+      orientation={orientation}
+      activeView={activeView}
+      onViewChange={onViewChange}
+      onGoHome={onGoHome}
+      onOpenSessions={onOpenSessions}
+      isSessionsOpen={isSessionsOpen}
+      onOpenIntegrations={onOpenIntegrations}
+      isIntegrationsOpen={isIntegrationsOpen}
+    />
+  );
   return render(
     <SessionProvider>
       <ChatProvider>
         <PreferencesProvider>
           <ProfileStoreProvider sessionId="session-1">
-            <IconRail
-              orientation={orientation}
-              activeView={activeView}
-              onViewChange={onViewChange}
-              onGoHome={onGoHome}
-              onOpenSessions={onOpenSessions}
-              isSessionsOpen={isSessionsOpen}
-            />
+            {withIntegrations ? <IntegrationsProvider>{rail}</IntegrationsProvider> : rail}
           </ProfileStoreProvider>
         </PreferencesProvider>
       </ChatProvider>
@@ -279,6 +296,91 @@ describe('IconRail', () => {
       await user.click(screen.getByRole('button', { name: 'Demo controls' }));
       await user.click(document.body);
       expect(screen.queryByTestId('demo-toolbar')).not.toBeInTheDocument();
+    });
+  });
+
+  /*
+   * The rail's glyphs are legible once you know the app and opaque on first
+   * sight, and this is the first thing a visitor looks at. The bands are the
+   * cheapest fix; they are decoration to a screen reader, which already hears
+   * every button's own name.
+   */
+  describe('the band labels', () => {
+    it('groups the vertical rail into talk / act', () => {
+      renderRail({ orientation: 'column' });
+      for (const label of ['talk', 'act']) {
+        const band = screen.getByText(label);
+        expect(band).toHaveAttribute('aria-hidden', 'true');
+      }
+    });
+
+    // There is no "know" band because there is no ♥ to put under it: her profile
+    // opens from her portrait in the brief, not from the rail. A band label with
+    // nothing beneath it names an empty group.
+    it('has no "know" band, the ♥ having been dropped from the rail', () => {
+      renderRail({ orientation: 'column' });
+      expect(screen.queryByText('know')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('rail-profile-button')).not.toBeInTheDocument();
+    });
+
+    it('drops them on the 56px mobile strip, which has no vertical room', () => {
+      renderRail({ orientation: 'row' });
+      expect(screen.queryByText('talk')).not.toBeInTheDocument();
+      expect(screen.queryByText('act')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('the integrations button', () => {
+    it('is drawn on both orientations, so the rail does not shift under the cursor', () => {
+      renderRail({ orientation: 'column' });
+      expect(screen.getByTestId('rail-integrations-button')).toBeInTheDocument();
+      cleanup();
+      renderRail({ orientation: 'row' });
+      expect(screen.getByTestId('rail-integrations-button')).toBeInTheDocument();
+    });
+
+    it('raises the panel when pressed', async () => {
+      const onOpenIntegrations = vi.fn();
+      const user = userEvent.setup();
+      renderRail({ onOpenIntegrations });
+
+      await user.click(screen.getByTestId('rail-integrations-button'));
+      expect(onOpenIntegrations).toHaveBeenCalledOnce();
+    });
+
+    it('reports whether the panel is up', () => {
+      renderRail({ isIntegrationsOpen: true });
+      expect(screen.getByTestId('rail-integrations-button')).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      );
+    });
+
+    /* The fallback store grants nothing, which is the safe direction to fail in. */
+    it('shows no badge with nothing connected, and is named plainly', () => {
+      renderRail({ withIntegrations: true });
+      expect(screen.queryByTestId('rail-integrations-badge')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Integrations' })).toBeInTheDocument();
+    });
+
+    it('counts the grants in the badge, and spells the count out in its name', () => {
+      localStorage.setItem(
+        'valentin_integrations_v1',
+        JSON.stringify({
+          version: 1,
+          grants: {
+            flowers: { capUsd: 80, grantedAt: '2026-02-14T09:00:00.000Z' },
+            calendar: { capUsd: null, grantedAt: '2026-02-14T09:00:00.000Z' },
+          },
+        }),
+      );
+      renderRail({ withIntegrations: true });
+
+      expect(screen.getByTestId('rail-integrations-badge')).toHaveTextContent('2');
+      expect(
+        screen.getByRole('button', { name: 'Integrations, 2 connected' }),
+      ).toBeInTheDocument();
+      localStorage.clear();
     });
   });
 

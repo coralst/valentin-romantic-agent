@@ -102,9 +102,20 @@ function getFrameStyle(
     borderRadius: isMobile ? 0 : radii.window,
     overflow: 'hidden',
     boxShadow: isMobile ? 'none' : WINDOW_SHADOW,
-    // The containing block for the footer strip. Absolute rather than a grid row
-    // so the strip can slide (the drawer animates on `transform`) without the
-    // window's tracks resizing under it mid-transition.
+    // Two things need this containing block.
+    //
+    // The footer strip: absolute rather than a grid row so the strip can slide
+    // (the drawer animates on `transform`) without the window's tracks resizing
+    // under it mid-transition.
+    //
+    // And overlays that cover part of the window without taking part in its grid
+    // — currently the integrations panel. Placing such an overlay with
+    // `gridColumn`/`gridRow` instead looks right until you notice that an
+    // explicitly placed item makes the grid's auto-placement step skip the cells
+    // it claims, which bumps the auto-placed shell children (the conversation
+    // list, the mobile content region) into an implicit extra row. `relative`
+    // also keeps the overlay inside the window's own clip, which is what
+    // preserves the 34px radius; see the note on `drawerHostStyle`.
     position: 'relative',
     // `border-box` is what makes this shrink the tracks rather than growing the
     // frame past the viewport.

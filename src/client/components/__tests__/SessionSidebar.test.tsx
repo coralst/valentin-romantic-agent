@@ -134,10 +134,20 @@ describe('SessionSidebar', () => {
       expect(screen.getByTestId('session-sidebar')).toBeInTheDocument();
     });
 
+    /*
+     * Queried inside `waitFor` rather than with `findByTestId`, because `await
+     * findBy…` resolves with a *node* and only then asserts on it. Between those
+     * two steps React is free to commit again, and the empty state is exactly the
+     * kind of thing a later commit replaces — leaving the assertion holding a
+     * node that is no longer in the document. That gap made this the one flaky
+     * test in the suite. Re-querying on every poll closes it.
+     */
     it('shows empty state when the account has no conversations', async () => {
       renderSidebar(false);
-      expect(await screen.findByTestId('session-empty-state')).toBeInTheDocument();
-      expect(screen.getByText(/No conversations yet/)).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByTestId('session-empty-state')).toBeInTheDocument();
+        expect(screen.getByText(/No conversations yet/)).toBeInTheDocument();
+      });
     });
 
     it('says it is loading rather than claiming there is nothing', async () => {

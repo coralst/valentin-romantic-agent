@@ -29,7 +29,12 @@ export interface ViewContextValue {
    * not be stranded on a removed element when one closes.
    */
   closeDossier: () => void;
-  /** What the icon rail's ♥ does. */
+  /**
+   * Flips between the dossier and the chat shell.
+   *
+   * Kept for the mobile Dossier tab and for callers that own a two-way control;
+   * the icon rail no longer has one — see `IconRail.tsx`.
+   */
   toggleDossier: () => void;
   /**
    * What the icon rail's ◆ does: leave the dossier if it is up, and put the
@@ -41,8 +46,9 @@ export interface ViewContextValue {
    */
   returnToChat: () => void;
   /**
-   * Attach to the rail's ♥ button. `closeDossier` focuses it, so the ref has to
-   * live with the state rather than with either component.
+   * Attach to whatever opened the dossier — her portrait in the brief
+   * (`brief/WhoHeader.tsx`). `closeDossier` focuses it, so the ref has to live
+   * with the state rather than with either component.
    */
   dossierToggleRef: React.RefObject<HTMLButtonElement | null>;
 }
@@ -87,10 +93,23 @@ export function useViewState(): ViewContextValue {
    */
   const ownsHistoryEntry = useRef(false);
 
-  /** Hide the dossier and bring focus home. The single place `surface` clears. */
+  /**
+   * Hide the dossier and bring focus home. The single place `surface` clears.
+   *
+   * The control that opened the dossier is her portrait in the brief, which on
+   * desktop is part of the chat shell — i.e. *not mounted* at this point, because
+   * the surface swap has only been queued. So the focus call waits a frame when
+   * the ref is empty, the same way `returnToChat` waits for the composer. It is
+   * still tried synchronously first, so the common case does not depend on a
+   * frame that jsdom has to be asked to run.
+   */
   const applyClose = useCallback(() => {
     setSurface('chat');
-    dossierToggleRef.current?.focus();
+    if (dossierToggleRef.current) {
+      dossierToggleRef.current.focus();
+      return;
+    }
+    requestAnimationFrame(() => dossierToggleRef.current?.focus());
   }, []);
 
   /*

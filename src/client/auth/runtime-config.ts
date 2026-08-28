@@ -29,8 +29,21 @@ export interface RuntimeAuthConfig {
 /** One selectable demo profile, as `/api/config` advertises it */
 export interface DemoPersonaSummary {
   id: string;
-  /** Button label, and the header chip once signed in as this persona */
+  /**
+   * The partner the persona is about — a landing-page label only.
+   *
+   * Never the account chip: she is who the user talks *about*, not who is signed
+   * in. Use `userName` for anything that says "signed in as".
+   */
   name: string;
+  /**
+   * The signed-in person's own name.
+   *
+   * Optional because a deployment that predates this field sends no such key,
+   * and the chip falls back to the neutral "Demo profile" rather than to `name`
+   * — naming the partner there is the bug this field exists to fix.
+   */
+  userName?: string;
   /** One line of copy explaining what this persona demonstrates */
   blurb: string;
   /** How many preferences the persona seeds — 0 for "start fresh" */

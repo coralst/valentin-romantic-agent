@@ -89,4 +89,36 @@ export const globalStyles = `@import url('https://fonts.googleapis.com/css2?fami
   ::-webkit-scrollbar-thumb:hover {
     background: ${colors.inkFaint};
   }
+
+  /*
+   * The integrations surface. Keyframes rather than transitions because these
+   * animate elements as they mount — a panel that slides in, a sheet that rises,
+   * and the dash offset that makes a connected edge read as carrying something.
+   *
+   * They live here rather than in the components because inline styles cannot
+   * declare keyframes at all. The reduced-motion block below is the reason they
+   * are all named with the same prefix: it switches every one of them off in a
+   * single rule, so a new one cannot quietly escape the preference.
+   */
+  @keyframes integration-panel-in {
+    from { opacity: 0; transform: translateX(-18px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+
+  @keyframes integration-sheet-rise {
+    from { opacity: 0; transform: translateY(14px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes integration-edge-flow {
+    to { stroke-dashoffset: -32; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [style*="integration-panel-in"],
+    [style*="integration-sheet-rise"],
+    [style*="integration-edge-flow"] {
+      animation: none !important;
+    }
+  }
 `;

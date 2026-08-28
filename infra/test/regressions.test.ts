@@ -107,6 +107,25 @@ describe('table name wiring', () => {
   });
 });
 
+describe('durable storage is switched on', () => {
+  // A correct table name and a correct IAM grant are still not enough: the
+  // server defaults to InMemoryStore and only reaches for DynamoDB when
+  // STORAGE_BACKEND says so. Without it the deployed app forgets every
+  // preference on each task replacement while looking perfectly healthy —
+  // the failure is invisible until a Fargate task cycles mid-demo.
+  it('tells the container to use DynamoDB', () => {
+    expect(containerEnv().STORAGE_BACKEND).toBe('dynamodb');
+  });
+
+  // Guards the pairing rather than the value: pointing the app at durable
+  // storage while granting it nothing, or granting access it never uses, are
+  // both silent no-ops. resolveStorageBackend() accepts exactly these two
+  // spellings, so a typo here degrades to memory without erroring.
+  it('uses a backend the server actually recognises', () => {
+    expect(['dynamodb', 'memory']).toContain(containerEnv().STORAGE_BACKEND);
+  });
+});
+
 describe('guardrail enforcement', () => {
   // BEDROCK_GUARDRAIL_ID was '', and the server disables the guardrail on an
   // empty ID, so the deployed guardrail was never applied to any request.

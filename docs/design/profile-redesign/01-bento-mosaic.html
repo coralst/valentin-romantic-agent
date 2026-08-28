@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Layout 1 · Bento Mosaic — Valentin</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --burgundy:#9B3A52;--burgundy-lift:#C4566E;--plum:#5C2434;--rose:#D4A0A8;--blush:#F2D4D8;
+  --champagne:#F7EDE2;--ivory:#FDFAF7;--cream:#FFF9F5;--taupe:#B8A99A;--bg:#F8F5F2;--surface:#fff;
+  --ink:#2D2024;--ink-2:#8A7A7E;--border:#EDE6E0;--border-soft:#F2ECE7;--ok:#4A9B6A;--err:#D94452;
+  --c-date:#C4566E;--c-date-bg:#FDEEF1;--c-gift:#C0873A;--c-gift-bg:#FBF2E4;
+  --c-taste:#C0684A;--c-taste-bg:#FBEDE7;--c-mood:#87699A;--c-mood-bg:#F5F0F9;
+  --c-fact:#4E7C86;--c-fact-bg:#EAF2F4;--c-grow:#5E8C6A;--c-grow-bg:#EDF4EF;
+  --c-kin:#A05A7A;--c-kin-bg:#F9EDF3;
+  --r-md:10px;--r-lg:16px;--r-xl:20px;--r-xxl:24px;--r-full:9999px;
+  --sh:0 1px 3px rgba(45,32,36,.06),0 4px 12px rgba(45,32,36,.04);
+  --sh-h:0 2px 8px rgba(45,32,36,.08),0 12px 30px rgba(45,32,36,.07);
+  --ease:cubic-bezier(.2,.8,.2,1);--serif:'Playfair Display',Georgia,serif;--sans:'Inter',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);color:var(--ink);background:#EFE9E4;-webkit-font-smoothing:antialiased;padding:34px}
+/* annotation header */
+.doc{max-width:1500px;margin:0 auto 26px}
+.doc .eyebrow{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--burgundy);font-weight:600}
+.doc h1{font-family:var(--serif);font-size:38px;font-weight:600;margin:8px 0 10px;letter-spacing:-.02em}
+.doc h1 em{font-style:italic;color:var(--burgundy)}
+.doc p{max-width:80ch;color:#6E6065;font-size:14px;line-height:1.7}
+.doc .tags{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.doc .tags s{text-decoration:none;font-size:11px;font-weight:600;padding:5px 11px;border-radius:var(--r-full);background:#fff;color:var(--plum);border:1px solid var(--border)}
+
+/* app frame */
+.app{max-width:1500px;margin:0 auto;display:flex;background:var(--bg);border-radius:var(--r-xxl);
+  overflow:hidden;box-shadow:0 24px 70px rgba(45,32,36,.16);min-height:1000px}
+
+/* ══════ SIDEBAR VARIANT A · "Warm rail with a living stack" ══════ */
+aside{width:250px;flex:none;background:linear-gradient(180deg,#6B2A3C 0%,#4E1E2C 100%);color:#fff;
+  padding:20px 16px;display:flex;flex-direction:column;gap:16px;position:relative}
+aside::after{content:"";position:absolute;inset:0 0 auto 0;height:180px;
+  background:radial-gradient(220px 120px at 20% 0%,rgba(212,160,168,.28),transparent 70%);pointer-events:none}
+.me{display:flex;align-items:center;gap:11px}
+.me .av{width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,var(--rose),var(--blush));
+  flex:none;display:grid;place-items:center;font-size:19px;box-shadow:0 0 0 2px rgba(255,255,255,.25)}
+.me .n{font-family:var(--serif);font-size:16px}
+.me .s{font-size:10.5px;color:rgba(255,255,255,.6);display:flex;align-items:center;gap:5px}
+.me .s i{width:6px;height:6px;border-radius:50%;background:#7FD3A0;display:inline-block}
+nav{display:flex;flex-direction:column;gap:3px;margin-top:4px}
+nav a{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:var(--r-md);color:rgba(255,255,255,.72);
+  text-decoration:none;font-size:13px;font-weight:500;transition:.2s var(--ease)}
+nav a i{width:16px;text-align:center;font-size:13px;opacity:.85}
+nav a:hover{background:rgba(255,255,255,.08);color:#fff}
+nav a.on{background:rgba(255,255,255,.14);color:#fff;font-weight:600;box-shadow:inset 3px 0 0 var(--rose)}
+nav a b{margin-left:auto;font-size:10px;font-weight:700;background:var(--rose);color:var(--plum);
+  padding:2px 7px;border-radius:var(--r-full)}
+.side-lbl{font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.38);
+  font-weight:600;margin:14px 0 -4px;padding-left:12px}
+/* mini widgets in the rail — this is what makes variant A distinct */
+.sw{background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.11);border-radius:var(--r-lg);padding:13px}
+.sw .k{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.55);font-weight:600}
+.sw .big{font-family:var(--serif);font-size:30px;line-height:1.1;margin-top:5px}
+.sw .sub{font-size:10.5px;color:rgba(255,255,255,.6);margin-top:4px}
+.dots{display:flex;gap:3px;margin-top:10px}
+.dots s{flex:1;height:4px;border-radius:2px;background:rgba(255,255,255,.2)}
+.dots s.f{background:var(--rose)}
+.strip{display:flex;gap:4px;margin-top:9px}
+.strip s{flex:1;aspect-ratio:1;border-radius:4px;background:rgba(255,255,255,.14);display:grid;place-items:center;
+  font-size:9px;color:rgba(255,255,255,.5)}
+.strip s.ev{background:var(--rose);color:var(--plum);font-weight:700}
+.strip s.today{background:#fff;color:var(--plum);font-weight:700}
+aside .foot{margin-top:auto;display:flex;gap:8px;align-items:center;font-size:11px;color:rgba(255,255,255,.45)}
+.aq{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.aq s{text-decoration:none;background:rgba(255,255,255,.09);border-radius:var(--r-md);padding:9px 6px;text-align:center;
+  font-size:10px;color:rgba(255,255,255,.8);cursor:pointer;transition:.2s var(--ease)}
+.aq s:hover{background:var(--rose);color:var(--plum)}
+.aq s em{display:block;font-style:normal;font-size:15px;margin-bottom:3px}
+
+/* ══════ MAIN ══════ */
+main{flex:1;min-width:0;display:flex;flex-direction:column}
+header.top{display:flex;align-items:center;gap:18px;padding:20px 30px;background:var(--surface);
+  border-bottom:1px solid var(--border)}
+.back{width:34px;height:34px;border-radius:50%;border:1px solid var(--border);background:#fff;display:grid;
+  place-items:center;color:var(--burgundy);cursor:pointer;flex:none}
+.hero-av{width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,var(--blush),var(--rose));
+  display:grid;place-items:center;font-size:24px;flex:none;box-shadow:0 0 0 3px #fff,0 0 0 4px var(--blush)}
+header.top h1{font-family:var(--serif);font-size:30px;font-weight:600;letter-spacing:-.01em;line-height:1.1}
+header.top .meta{font-size:12px;color:var(--ink-2);margin-top:2px;display:flex;gap:8px;align-items:center}
+header.top .meta s{text-decoration:none;color:var(--taupe)}
+.tabs{margin-left:auto;display:flex;gap:4px;background:var(--bg);padding:4px;border-radius:var(--r-full)}
+.tabs s{text-decoration:none;font-size:12px;font-weight:600;padding:7px 15px;border-radius:var(--r-full);
+  color:var(--ink-2);cursor:pointer}
+.tabs s.on{background:#fff;color:var(--plum);box-shadow:var(--sh)}
+.cta{background:linear-gradient(135deg,var(--burgundy),var(--burgundy-lift));color:#fff;border:0;
+  padding:11px 19px;border-radius:var(--r-full);font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer;
+  box-shadow:0 4px 14px rgba(155,58,82,.28)}
+
+/* the bento */
+.bento{padding:24px 30px 40px;display:grid;grid-template-columns:repeat(6,1fr);gap:18px;align-content:start}
+.b{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-xl);padding:18px;
+  box-shadow:var(--sh);position:relative;overflow:hidden;transition:transform .25s var(--ease),box-shadow .25s var(--ease)}
+.b:hover{transform:translateY(-3px);box-shadow:var(--sh-h)}
+.b[data-tone=date]{--a:var(--c-date);--t:var(--c-date-bg)}
+.b[data-tone=gift]{--a:var(--c-gift);--t:var(--c-gift-bg)}
+.b[data-tone=taste]{--a:var(--c-taste);--t:var(--c-taste-bg)}
+.b[data-tone=mood]{--a:var(--c-mood);--t:var(--c-mood-bg)}
+.b[data-tone=fact]{--a:var(--c-fact);--t:var(--c-fact-bg)}
+.b[data-tone=grow]{--a:var(--c-grow);--t:var(--c-grow-bg)}
+.b[data-tone=kin]{--a:var(--c-kin);--t:var(--c-kin-bg)}
+.b::before{content:"";position:absolute;inset:0 auto 0 0;width:3px;background:var(--a,var(--rose))}
+.b.tint{background:linear-gradient(155deg,var(--t) 0%,#fff 70%)}
+.h{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:13px}
+.h .t{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;color:var(--a);display:flex;align-items:center;gap:7px}
+.h .t i{width:17px;height:17px;border-radius:5px;background:var(--a);color:#fff;display:grid;place-items:center;font-size:9px;flex:none}
+.pill{font-size:10px;font-weight:600;padding:3px 8px;border-radius:var(--r-full);background:var(--t);color:var(--a)}
+.meta{font-size:11px;color:var(--taupe)}
+.sub{font-size:11.5px;color:var(--ink-2);margin-top:5px;line-height:1.5}
+.btn{font-family:var(--sans);font-size:12px;font-weight:600;padding:8px 14px;border-radius:var(--r-full);
+  border:1px solid var(--border);background:#fff;color:var(--plum);cursor:pointer;transition:.2s var(--ease)}
+.btn:hover{border-color:var(--a);color:var(--a)}
+.btn.solid{background:var(--a);border-color:transparent;color:#fff}
+.chip{font-size:11px;padding:4px 10px;border-radius:var(--r-full);background:var(--champagne);color:var(--plum);border:1px solid var(--border)}
+.chip.on{background:var(--a);color:#fff;border-color:transparent}
+.bar{height:6px;border-radius:var(--r-full);background:var(--border-soft);overflow:hidden}
+.bar>i{display:block;height:100%;background:var(--a);border-radius:var(--r-full)}
+
+/* spans */
+.c2{grid-column:span 2}.c3{grid-column:span 3}.c4{grid-column:span 4}.c6{grid-column:span 6}
+/* hero tile */
+.hero{grid-column:span 4;background:linear-gradient(135deg,#FDEEF1 0%,#fff 55%,#FBF2E4 100%);
+  border:1px solid var(--border);border-radius:var(--r-xxl);padding:26px;position:relative;overflow:hidden;box-shadow:var(--sh)}
+.hero::after{content:"♥";position:absolute;right:-14px;bottom:-46px;font-size:170px;color:rgba(196,86,110,.09);line-height:1}
+.hero .num{font-family:var(--serif);font-size:76px;font-weight:600;line-height:.95;letter-spacing:-.03em;color:var(--c-date)}
+.hero .lbl{font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--taupe);font-weight:600;margin-top:6px}
+.hero .say{font-family:var(--serif);font-size:19px;line-height:1.45;margin-top:16px;max-width:34ch}
+.hero .strip2{display:flex;gap:20px;margin-top:20px;padding-top:16px;border-top:1px solid rgba(196,86,110,.18)}
+.hero .strip2 div .v{font-family:var(--serif);font-size:22px;color:var(--plum)}
+.ring{width:104px;height:104px;border-radius:50%;flex:none;display:grid;place-items:center;
+  background:conic-gradient(var(--c-date) 0 84%,#EFE7E2 84% 100%)}
+.ring i{width:82px;height:82px;border-radius:50%;background:#fff;display:grid;place-items:center;
+  font-family:var(--serif);font-size:24px;font-weight:600;font-style:normal}
+/* internals reused from gallery */
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;font-size:10px;text-align:center}
+.cal b{color:var(--taupe);font-weight:600;font-size:9px;padding-bottom:3px}
+.cal s{text-decoration:none;padding:5px 0;border-radius:7px;color:var(--ink-2)}
+.cal s.dim{color:#DCD3CD}.cal s.today{background:var(--plum);color:#fff;font-weight:600}
+.cal s.ev{color:#fff;font-weight:600}.cal s.ev.d{background:var(--c-date)}.cal s.ev.g{background:var(--c-gift)}
+.tl{position:relative;padding-left:19px;margin:0}
+.tl::before{content:"";position:absolute;left:5px;top:6px;bottom:6px;width:2px;background:linear-gradient(180deg,var(--c-date),var(--border))}
+.tl li{list-style:none;position:relative;padding:8px 0}
+.tl li::before{content:"";position:absolute;left:-18px;top:13px;width:9px;height:9px;border-radius:50%;background:#fff;border:2.5px solid var(--d,var(--rose))}
+.tl h4{font-family:var(--serif);font-size:15px;font-weight:600}
+.tl .away{float:right;font-size:11px;font-weight:700;color:var(--d)}
+.task{display:flex;gap:10px;align-items:flex-start;padding:9px 10px;border-radius:var(--r-md);background:var(--t);margin-bottom:7px}
+.tick{width:16px;height:16px;border-radius:5px;border:1.5px solid var(--a);flex:none;margin-top:1px;display:grid;place-items:center;color:var(--a);font-size:9px}
+.tick.done{background:var(--a);color:#fff;border-color:transparent}
+.wallet{border-radius:var(--r-lg);padding:15px;color:#fff;background:linear-gradient(135deg,var(--plum),var(--burgundy) 75%);position:relative;overflow:hidden}
+.wallet::after{content:"";position:absolute;width:140px;height:140px;border-radius:50%;background:rgba(255,255,255,.08);right:-44px;top:-54px}
+.wallet .k{font-size:9px;letter-spacing:.14em;text-transform:uppercase;opacity:.68}
+.wallet .v{font-family:var(--serif);font-size:17px;margin-top:1px}
+.wallet .g{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:12px}
+.feed li{list-style:none;display:flex;gap:9px;padding:7px 0;font-size:11.5px;line-height:1.45;align-items:flex-start}
+.feed .dot{width:6px;height:6px;border-radius:50%;margin-top:5px;flex:none;background:var(--d)}
+.feed time{display:block;font-size:9.5px;color:var(--taupe);margin-top:2px}
+.careful{display:flex;gap:8px;align-items:center;padding:8px 10px;border-radius:var(--r-md);background:#FDF0F1;margin-bottom:6px;border:1px solid #F6DDE0;font-size:11.5px}
+.careful .x{width:17px;height:17px;border-radius:50%;background:var(--err);color:#fff;display:grid;place-items:center;font-size:9px;flex:none}
+.order{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tile{border-radius:var(--r-md);padding:12px 8px;text-align:center;color:#fff;font-size:11px;font-weight:600;cursor:pointer;transition:.2s var(--ease)}
+.tile:hover{transform:translateY(-2px)}
+.tile em{display:block;font-size:19px;font-style:normal;margin-bottom:4px}
+.gcard{border:1px solid var(--border);border-radius:var(--r-lg);padding:13px;background:#fff}
+.conf{display:flex;gap:5px;align-items:center}
+.conf s{flex:1;height:5px;border-radius:3px;background:var(--border-soft)}
+.conf s.f{background:var(--a)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.note{margin-top:12px;padding-top:9px;border-top:1px dashed var(--border);font-size:10.5px;color:var(--taupe);line-height:1.5}
+/* callouts */
+.callout{position:absolute;background:var(--plum);color:#fff;font-size:10px;font-weight:600;padding:3px 8px;
+  border-radius:var(--r-full);top:-9px;right:14px;letter-spacing:.04em;box-shadow:var(--sh);z-index:2}
+
+/* ══════ W31 · FAMILY TREE (shared) ══════ */
+.tree{padding:4px 0}
+.gen{display:flex;justify-content:center;gap:10px;position:relative;flex-wrap:wrap;text-align:left}
+.gen.g1,.gen.g2{margin-bottom:22px}
+.gen.g1::after,.gen.g2::after{content:"";position:absolute;left:50%;bottom:-22px;width:2px;height:22px;background:var(--border)}
+.gen.g2::before{content:"";position:absolute;left:24%;right:24%;top:-11px;height:2px;background:var(--border)}
+.gen.g3::before{content:"";position:absolute;left:34%;right:34%;top:-11px;height:2px;background:var(--border)}
+.gen.g2 .kin::before,.gen.g3 .kin::before{content:"";position:absolute;left:50%;top:-11px;width:2px;height:11px;background:var(--border)}
+.kin{position:relative;background:#fff;border:1px solid var(--border);border-radius:10px;padding:9px 12px 9px 9px;
+  display:flex;align-items:center;gap:9px;min-width:130px;transition:.2s var(--ease);cursor:pointer}
+.kin:hover{border-color:var(--c-kin);box-shadow:var(--sh);transform:translateY(-2px)}
+.kin .fav{width:27px;height:27px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:12.5px;
+  background:var(--c-kin-bg);color:var(--c-kin);font-weight:700;font-family:var(--serif)}
+.kin .nm{font-size:12px;font-weight:700;line-height:1.2}
+.kin .rl{font-size:9.5px;color:var(--taupe);margin-top:2px}
+.kin .bd{margin-left:auto;font-size:9.5px;font-weight:700;color:var(--c-kin);background:var(--c-kin-bg);
+  padding:3px 7px;border-radius:9999px;white-space:nowrap}
+.kin.her{background:linear-gradient(135deg,var(--c-date),var(--burgundy));border-color:transparent;color:#fff}
+.kin.her .fav{background:rgba(255,255,255,.22);color:#fff}
+.kin.her .rl{color:rgba(255,255,255,.72)}
+.kin.her .bd{background:rgba(255,255,255,.2);color:#fff}
+.kin.you{background:var(--champagne);border-style:dashed;border-color:var(--rose)}
+.kin.soon .bd{background:var(--c-date);color:#fff}
+.kin.gap{border-style:dashed;color:var(--taupe)}
+.kin.gap .fav{background:#F6F2EF;color:#CFC5BF}
+.treekey{display:flex;gap:14px;flex-wrap:wrap;margin-top:13px;font-size:10px;color:var(--ink-2)}
+.treekey span{display:flex;align-items:center;gap:5px}
+.treekey i{width:8px;height:8px;border-radius:2.5px;display:inline-block}
+.kinlist div{display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid var(--border-soft)}
+.kinlist div:last-child{border:0}
+.kinlist .av2{width:25px;height:25px;border-radius:50%;background:var(--c-kin-bg);color:var(--c-kin);display:grid;
+  place-items:center;font-size:10.5px;font-weight:700;flex:none;font-family:var(--serif)}
+.kinlist .nm{font-size:11.5px;font-weight:600}
+.kinlist .rl{font-size:9.5px;color:var(--taupe)}
+.kinlist .aw{margin-left:auto;font-size:10.5px;font-weight:700;color:var(--c-kin)}
+</style>
+</head>
+<body>
+
+<div class="doc">
+  <div class="eyebrow">Layout proposal 1 of 5 · profile page + sidebar variant A</div>
+  <h1>Bento <em>mosaic</em></h1>
+  <p>Asymmetric tiles of deliberately unequal size. One hero — days together — anchors the top-left, and everything
+  else is sized by how often you look at it, not by how much data it holds. Because the grid is irregular, the eye
+  gets a path through the page instead of scanning a wall of identical cream rectangles. Best layout for a wide
+  desktop and for a demo: it photographs well and the colour language is visible in a single screenshot.</p>
+  <div class="tags"><s>6-column bento</s><s>one hero figure</s><s>hue = category</s><s>sidebar A · warm rail with live stack</s><s>best for demos</s></div>
+</div>
+
+<div class="app">
+
+  <!-- ── SIDEBAR VARIANT A ── -->
+  <aside>
+    <div class="me"><span class="av">🧔</span><div><div class="n">You</div><div class="s"><i></i>Valentin is listening</div></div></div>
+    <nav>
+      <a href="#"><i>✧</i>Today</a>
+      <a href="#" class="on"><i>♥</i>Samantha</a>
+      <a href="#"><i>☰</i>Conversations<b>3</b></a>
+      <a href="#"><i>🎁</i>Gifts &amp; ideas</a>
+      <a href="#"><i>📅</i>Occasions<b>2</b></a>
+      <a href="#"><i>⚭</i>Her people<b>7</b></a>
+    </nav>
+
+    <div class="side-lbl">Next up</div>
+    <div class="sw">
+      <div class="k">Anniversary · 18 Sep</div>
+      <div class="big">27 <span style="font-size:13px;font-family:var(--sans);opacity:.65">days</span></div>
+      <div class="strip">
+        <s>15</s><s>16</s><s>17</s><s class="ev">18</s><s>19</s><s>20</s><s>21</s>
+      </div>
+      <div class="sub">Book the table by the 11th</div>
+    </div>
+
+    <div class="side-lbl">How well I know her</div>
+    <div class="sw">
+      <div class="big" style="font-size:24px">84%</div>
+      <div class="dots"><s class="f"></s><s class="f"></s><s class="f"></s><s class="f"></s><s></s></div>
+      <div class="sub">11 guesses waiting on you</div>
+    </div>
+
+    <div class="side-lbl">One tap</div>
+    <div class="aq">
+      <s><em>❀</em>Flowers</s><s><em>▤</em>Book</s><s><em>✉</em>Note</s><s><em>♫</em>Playlist</s>
+    </div>
+
+    <div class="foot"><span>⚙</span><span>Settings</span><span style="margin-left:auto">v2</span></div>
+  </aside>
+
+  <!-- ── MAIN ── -->
+  <main>
+    <header class="top">
+      <span class="back">←</span>
+      <span class="hero-av">👩</span>
+      <div>
+        <h1>Samantha</h1>
+        <div class="meta">12 June 1994 <s>·</s> early thirties <s>·</s> Gemini <s>·</s> <span style="color:var(--c-grow);font-weight:600">profile complete</span></div>
+      </div>
+      <div class="tabs"><s class="on">Overview</s><s>Everything I know</s><s>Gifts</s><s>Memories</s></div>
+      <button class="cta">Ask me what's missing</button>
+    </header>
+
+    <div class="bento">
+
+      <!-- HERO -->
+      <div class="hero">
+        <span class="callout">the one hero</span>
+        <div style="display:flex;gap:24px;align-items:flex-start">
+          <div>
+            <div class="num">2,003</div>
+            <div class="lbl">days together</div>
+            <div class="say">Twenty-seven days to your anniversary — and you've already planned a third of it.</div>
+          </div>
+          <div class="ring"><i>84<small style="font-size:12px">%</small></i></div>
+        </div>
+        <div class="strip2">
+          <div><div class="v">18 Sep</div><div class="lbl" style="margin-top:2px">Anniversary</div></div>
+          <div><div class="v">2,100</div><div class="lbl" style="margin-top:2px">Next milestone · 27 Nov</div></div>
+          <div><div class="v">21/21</div><div class="lbl" style="margin-top:2px">Fields known</div></div>
+        </div>
+      </div>
+
+      <!-- calendar -->
+      <div class="b c2" data-tone="date">
+        <div class="h"><div class="t"><i>📅</i>September</div><span class="pill">2</span></div>
+        <div class="cal">
+          <b>M</b><b>T</b><b>W</b><b>T</b><b>F</b><b>S</b><b>S</b>
+          <s class="dim">1</s><s class="dim">2</s><s>3</s><s>4</s><s>5</s><s>6</s><s>7</s>
+          <s>8</s><s>9</s><s>10</s><s class="ev g">11</s><s>12</s><s>13</s><s>14</s>
+          <s>15</s><s>16</s><s>17</s><s class="ev d">18</s><s>19</s><s>20</s><s>21</s>
+          <s class="today">22</s><s>23</s><s>24</s><s>25</s><s>26</s><s>27</s><s>28</s>
+          <s>29</s><s>30</s><s class="dim">1</s><s class="dim">2</s><s class="dim">3</s><s class="dim">4</s><s class="dim">5</s>
+        </div>
+        <div class="note">Rose = the day. Amber = the deadline to act.</div>
+      </div>
+
+      <!-- reminders -->
+      <div class="b c2 tint" data-tone="gift">
+        <div class="h"><div class="t"><i>✓</i>Do this soon</div><span class="pill">3</span></div>
+        <div class="task"><span class="tick">✓</span><div><div style="font-size:12.5px;font-weight:500">Book the restaurant</div><div class="meta">By 11 Sept</div></div></div>
+        <div class="task"><span class="tick"></span><div><div style="font-size:12.5px;font-weight:500">Order the gift</div><div class="meta">By 29 May</div></div></div>
+        <div class="task"><span class="tick done">✓</span><div><div style="font-size:12.5px;font-weight:500;text-decoration:line-through;color:var(--ink-2)">Plan the weekend</div><div class="meta">Done early</div></div></div>
+      </div>
+
+      <!-- timeline -->
+      <div class="b c2" data-tone="date">
+        <div class="h"><div class="t"><i>→</i>What's coming</div></div>
+        <ul class="tl">
+          <li style="--d:var(--c-date)"><span class="away">27d</span><h4>Anniversary</h4><div class="meta">Fri 18 September</div></li>
+          <li style="--d:var(--c-gift)"><span class="away">193d</span><h4>Together since</h4><div class="meta">Wed 3 March</div></li>
+          <li style="--d:var(--taupe)"><span class="away">294d</span><h4>Her birthday</h4><div class="meta">Sat 12 June</div></li>
+        </ul>
+      </div>
+
+      <!-- guesses -->
+      <div class="b c2" data-tone="grow">
+        <div class="h"><div class="t"><i>?</i>Confirm my guesses</div><span class="pill">11</span></div>
+        <div class="gcard">
+          <div style="font-family:var(--serif);font-size:15.5px;line-height:1.4">Indie folk — the kind with close harmonies?</div>
+          <div class="meta" style="margin-top:6px">Inferred, not told to me</div>
+          <div class="conf" style="margin:10px 0"><s class="f"></s><s class="f"></s><s class="f"></s><s></s><s></s><span class="meta">likely</span></div>
+          <div style="display:flex;gap:7px"><button class="btn solid">That's right</button><button class="btn">Not quite</button></div>
+        </div>
+        <div class="note">One at a time — ten more behind it.</div>
+      </div>
+
+      <!-- budget -->
+      <div class="b c2" data-tone="gift">
+        <div class="h"><div class="t"><i>$</i>Gift budget</div><span class="pill">on track</span></div>
+        <svg viewBox="0 0 200 80" style="width:100%;height:74px">
+          <path d="M18 72 A 82 82 0 0 1 182 72" fill="none" stroke="#F1E9E4" stroke-width="14" stroke-linecap="round"/>
+          <path d="M18 72 A 82 82 0 0 1 152 18" fill="none" stroke="#C0873A" stroke-width="14" stroke-linecap="round"/>
+          <text x="100" y="60" text-anchor="middle" font-family="Playfair Display" font-size="27" fill="#2D2024">$310</text>
+          <text x="100" y="75" text-anchor="middle" font-family="Inter" font-size="9.5" fill="#8A7A7E">of $480 planned</text>
+        </svg>
+      </div>
+
+      <!-- careful -->
+      <div class="b c2" data-tone="date">
+        <div class="h"><div class="t" style="color:var(--err)"><i style="background:var(--err)">!</i>Be careful</div></div>
+        <div class="careful"><span class="x">✕</span>Shellfish — allergic</div>
+        <div class="careful"><span class="x">✕</span>No lilies · hay fever</div>
+        <div class="careful"><span class="x">✕</span>Never a surprise party</div>
+      </div>
+
+      <!-- yes list -->
+      <div class="b c2" data-tone="taste">
+        <div class="h"><div class="t"><i>✳</i>Her yes-list</div></div>
+        <div class="chips">
+          <span class="chip on">Northern Italian</span><span class="chip">Brown butter</span><span class="chip on">Indie folk</span>
+          <span class="chip">Peonies</span><span class="chip">Dark chocolate</span><span class="chip on">Kyoto in blossom</span>
+          <span class="chip">Second-hand books</span><span class="chip">Long walks</span>
+        </div>
+        <div class="note">Filled = you confirmed it. Outline = still my guess.</div>
+      </div>
+
+      <!-- sizes -->
+      <div class="b c2" data-tone="fact">
+        <div class="h"><div class="t"><i>▭</i>Sizes</div><span class="pill">tap to copy</span></div>
+        <div class="wallet">
+          <div class="k">Samantha · sizes</div>
+          <div class="g">
+            <div><div class="k">Clothing</div><div class="v">UK 10 / EU 38</div></div>
+            <div><div class="k">Shoe</div><div class="v">UK 6 / EU 39</div></div>
+            <div><div class="k">Ring</div><div class="v">M ½</div></div>
+            <div><div class="k">Note</div><div class="v" style="font-size:12px;font-family:var(--sans)">Sizes up for knits</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- quick order -->
+      <div class="b c2" data-tone="gift">
+        <div class="h"><div class="t"><i>⚡</i>One tap</div></div>
+        <div class="order">
+          <div class="tile" style="background:linear-gradient(140deg,#C4566E,#9B3A52)"><em>❀</em>Peonies</div>
+          <div class="tile" style="background:linear-gradient(140deg,#C0684A,#8E4630)"><em>◉</em>Chocolate</div>
+          <div class="tile" style="background:linear-gradient(140deg,#4E7C86,#33565E)"><em>▤</em>Book a table</div>
+          <div class="tile" style="background:linear-gradient(140deg,#87699A,#5B4370)"><em>✉</em>Note</div>
+        </div>
+      </div>
+
+      <!-- learned lately -->
+      <div class="b c2" data-tone="grow">
+        <div class="h"><div class="t"><i>◷</i>What I learned lately</div></div>
+        <ul class="feed">
+          <li><span class="dot" style="--d:var(--c-taste)"></span><div>Confirmed <b>Northern Italian</b><time>2 hours ago</time></div></li>
+          <li><span class="dot" style="--d:var(--c-date)"></span><div>Moved the anniversary reminder earlier<time>Yesterday</time></div></li>
+          <li><span class="dot" style="--d:var(--c-mood)"></span><div>Guessed <b>indie folk</b><time>Yesterday</time></div></li>
+          <li><span class="dot" style="--d:var(--c-fact)"></span><div>Noted she sizes up for knitwear<time>Last week</time></div></li>
+        </ul>
+      </div>
+
+      <!-- completeness -->
+      <div class="b c2" data-tone="grow">
+        <div class="h"><div class="t"><i>▤</i>Where the holes are</div></div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div><div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:4px"><span>Occasions</span><b style="color:var(--c-date)">6/8</b></div><div class="bar" style="--a:var(--c-date)"><i style="width:75%"></i></div></div>
+          <div><div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:4px"><span>Gifting</span><b style="color:var(--c-gift)">4/6</b></div><div class="bar" style="--a:var(--c-gift)"><i style="width:66%"></i></div></div>
+          <div><div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:4px"><span>Taste</span><b style="color:var(--c-taste)">4/4</b></div><div class="bar" style="--a:var(--c-taste)"><i style="width:100%"></i></div></div>
+          <div><div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:4px"><span>Facts</span><b style="color:var(--c-fact)">3/3</b></div><div class="bar" style="--a:var(--c-fact)"><i style="width:100%"></i></div></div>
+        </div>
+      </div>
+
+      <!-- family tree · W31 -->
+      <div class="b c4" data-tone="kin">
+        <span class="callout">new · W31</span>
+        <div class="h"><div class="t"><i>⚭</i>Her family — who's who</div><span class="pill">7 people · 2 gaps</span></div>
+        <div class="tree">
+          <div class="gen g1">
+            <div class="kin"><span class="fav">M</span><div><div class="nm">Miriam</div><div class="rl">Her mother · "Mimi"</div></div><span class="bd">4 Feb</span></div>
+            <div class="kin"><span class="fav">D</span><div><div class="nm">David</div><div class="rl">Her father</div></div><span class="bd">19 Oct</span></div>
+          </div>
+          <div class="gen g2">
+            <div class="kin soon"><span class="fav">L</span><div><div class="nm">Leah</div><div class="rl">Older sister · Berlin</div></div><span class="bd">9 Sep · 18d</span></div>
+            <div class="kin her"><span class="fav">S</span><div><div class="nm">Samantha</div><div class="rl">Her</div></div><span class="bd">12 Jun</span></div>
+            <div class="kin you"><span class="fav">♥</span><div><div class="nm">You</div><div class="rl">2,003 days</div></div></div>
+            <div class="kin gap"><span class="fav">?</span><div><div class="nm">Brother?</div><div class="rl">Mentioned once — no name</div></div></div>
+          </div>
+          <div class="gen g3">
+            <div class="kin"><span class="fav">N</span><div><div class="nm">Noa</div><div class="rl">Niece · Leah's daughter, 6</div></div><span class="bd">2 Mar</span></div>
+            <div class="kin"><span class="fav" style="background:var(--c-grow-bg);color:var(--c-grow)">🐈</span><div><div class="nm">Biscuit</div><div class="rl">Her cat · since 2021</div></div></div>
+          </div>
+        </div>
+        <div class="treekey">
+          <span><i style="background:var(--c-date)"></i>Her</span>
+          <span><i style="background:var(--rose)"></i>You</span>
+          <span><i style="background:var(--c-kin)"></i>Name &amp; birthday known</span>
+          <span><i style="background:#CFC5BF"></i>Gap — no name yet</span>
+        </div>
+        <div class="note">Dashed cards are people you've mentioned that I can't name — each one is a question worth asking.</div>
+      </div>
+
+      <!-- family birthdays · W32 -->
+      <div class="b c2" data-tone="kin">
+        <div class="h"><div class="t"><i>🎂</i>Their birthdays</div><span class="pill">next in 18d</span></div>
+        <div class="kinlist">
+          <div><span class="av2">L</span><div><div class="nm">Leah</div><div class="rl">Her sister · 9 Sep</div></div><span class="aw">18d</span></div>
+          <div><span class="av2">D</span><div><div class="nm">David</div><div class="rl">Her father · 19 Oct</div></div><span class="aw">58d</span></div>
+          <div><span class="av2">M</span><div><div class="nm">Miriam</div><div class="rl">Her mother · 4 Feb</div></div><span class="aw">166d</span></div>
+          <div><span class="av2">N</span><div><div class="nm">Noa</div><div class="rl">Her niece · 2 Mar</div></div><span class="aw">192d</span></div>
+        </div>
+        <div class="note">Remembering her sister's birthday scores higher than remembering her own.</div>
+      </div>
+
+      <!-- memories -->
+      <div class="b c4" data-tone="mood">
+        <div class="h"><div class="t"><i>◫</i>Memory lane</div><span class="pill">14 saved</span></div>
+        <div style="display:flex;gap:10px">
+          <div style="flex:1;aspect-ratio:4/3;border-radius:var(--r-md);background:linear-gradient(160deg,#C4566E,#8B3A52);display:grid;place-items:end;padding:9px;color:#fff;font-size:11px;font-weight:600">Kyoto, spring</div>
+          <div style="flex:1;aspect-ratio:4/3;border-radius:var(--r-md);background:linear-gradient(160deg,#C0873A,#8A5D22);display:grid;place-items:end;padding:9px;color:#fff;font-size:11px;font-weight:600">The first flat</div>
+          <div style="flex:1;aspect-ratio:4/3;border-radius:var(--r-md);background:linear-gradient(160deg,#87699A,#5B4370);display:grid;place-items:end;padding:9px;color:#fff;font-size:11px;font-weight:600">That gig</div>
+          <div style="flex:1;aspect-ratio:4/3;border-radius:var(--r-md);background:linear-gradient(160deg,#4E7C86,#33565E);display:grid;place-items:end;padding:9px;color:#fff;font-size:11px;font-weight:600">Coast trip</div>
+        </div>
+      </div>
+
+      <!-- prompts -->
+      <div class="b c2 tint" data-tone="grow">
+        <div class="h"><div class="t"><i>✎</i>Worth asking next</div></div>
+        <div style="display:grid;gap:7px">
+          <div style="padding:10px 12px;border-radius:var(--r-md);background:#fff;border:1px solid var(--border);font-size:12px">How does she feel about surprises?</div>
+          <div style="padding:10px 12px;border-radius:var(--r-md);background:#fff;border:1px solid var(--border);font-size:12px">Any flower she actively dislikes?</div>
+          <div style="padding:10px 12px;border-radius:var(--r-md);background:#fff;border:1px solid var(--border);font-size:12px">Best gift you ever gave her?</div>
+        </div>
+        <div class="note">Never an empty state — always a deeper question.</div>
+      </div>
+
+    </div>
+  </main>
+</div>
+</body>
+</html>

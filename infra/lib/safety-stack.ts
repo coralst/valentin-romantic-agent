@@ -78,9 +78,17 @@ export class SafetyStack extends cdk.Stack {
          * remember and the first two it asks for — its subject matter rather than
          * incidental PII, and already stored under their owner's own key.
          *
+         * ADDRESS is absent for the same reason, and it was the worse offender:
+         * Bedrock reads a bare place name as an address, so "she's been saving
+         * for Kyoto" was BLOCKed, and so were Paris, Rome, Seattle, a favourite
+         * restaurant on Rue Saint-Denis, and the word "France". Date planning is
+         * half of what this agent does and every date has a place in it, so the
+         * entity can't be blocked without blocking the feature. A street address
+         * the user volunteers is stored under their own key, as her name is.
+         *
          * The genuinely dangerous identifiers below stay BLOCKed: nothing about
-         * remembering a name is a reason to carry a card number, an SSN, a home
-         * address or an AWS key.
+         * remembering a name or a city is a reason to carry a card number, an
+         * SSN, a phone number or an AWS key.
          */
         piiEntitiesConfig: [
           { type: 'CREDIT_DEBIT_CARD_NUMBER', action: 'BLOCK' },

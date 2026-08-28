@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Concept 2 — Capability rail with flyouts</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+  .rail { width: 64px; }
+  .group-label {
+    font-size: 8.5px; letter-spacing: .14em; text-transform: uppercase;
+    color: rgba(255,255,255,.42); margin: 8px 0 2px; font-weight: 700;
+  }
+  .flyout {
+    position: absolute; left: 64px; top: 56px; bottom: 0; width: 268px;
+    background: #fff; border-right: 1px solid var(--border); z-index: 4;
+    display: none; flex-direction: column; box-shadow: 18px 0 40px rgba(92,36,52,.10);
+  }
+  .flyout.show { display: flex; animation: pop .22s cubic-bezier(0,0,.2,1); }
+  @keyframes pop { from { opacity: 0; transform: translateX(-10px); } }
+  .flyout h3 {
+    font-family: var(--serif); font-size: 16px; margin: 0; padding: 16px 16px 4px; color: var(--deep-plum);
+  }
+  .flyout .hint { padding: 0 16px 12px; font-size: 11.5px; color: var(--text-secondary); line-height: 1.5; }
+  .flyout .list { overflow: auto; padding: 0 8px 12px; }
+  .row {
+    display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 10px;
+    font-size: 12.5px; cursor: pointer;
+  }
+  .row:hover { background: var(--cream); }
+  .row .ic { width: 26px; height: 26px; border-radius: 8px; background: var(--champagne); display: grid; place-items: center; font-size: 13px; }
+  .row .sub { font-size: 10.5px; color: var(--text-secondary); }
+  .row .sw {
+    margin-left: auto; width: 32px; height: 18px; border-radius: 999px; background: #E6DCD8; position: relative; transition: background .2s;
+  }
+  .row .sw::after { content:''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .2s; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+  .row.on .sw { background: var(--success); }
+  .row.on .sw::after { transform: translateX(14px); }
+  .divider { height: 1px; background: var(--border-subtle); margin: 8px 12px; }
+  .flyout .foot { margin-top: auto; border-top: 1px solid var(--border-subtle); padding: 12px 16px; font-size: 11.5px; color: var(--text-secondary); }
+  .flyout .foot a { color: var(--burgundy); font-weight: 600; text-decoration: none; }
+  .note {
+    position: absolute; right: 22px; bottom: 22px; width: 250px; background: var(--deep-plum); color: #fff;
+    font-size: 11.5px; line-height: 1.55; padding: 12px 14px; border-radius: 12px; opacity: .93;
+  }
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <a href="index.html">← all concepts</a>
+  <a href="concept-1-fanout.html">1 · Fan-out canvas</a>
+  <a class="here" href="concept-2-capability-rail.html">2 · Capability rail</a>
+  <a href="concept-3-wiring-board.html">3 · Wiring board</a>
+  <a href="concept-4-orbit.html">4 · Orbit / constellation</a>
+</div>
+
+<div class="concept-header">
+  <span class="tag">Concept 2</span>
+  <h1>Capability rail — grouped icons + hover flyouts</h1>
+  <p>Fixes the "three mystery glyphs" problem first: the rail becomes three labelled bands — <b>Talk</b>, <b>Know</b>, <b>Act</b> — and each icon opens a narrow flyout instead of a full drawer. Integrations live under <b>Act</b> with a connected-count badge. Cheapest concept to build; it reuses the existing 56px rail and adds one panel. Click the icons.</p>
+</div>
+
+<div class="frame">
+  <nav class="rail">
+    <div class="avatar">🌹</div>
+
+    <div class="group-label">TALK</div>
+    <button class="rail-btn" data-panel="chats"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span class="tip">New chat</span></button>
+    <button class="rail-btn" data-panel="history"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2Z"/></svg><span class="tip">Conversations</span></button>
+
+    <div class="group-label">KNOW</div>
+    <button class="rail-btn" data-panel="profile"><svg viewBox="0 0 24 24"><path d="M20.8 8.6a5 5 0 0 0-8.8-2.6A5 5 0 0 0 3.2 8.6c0 4.3 8.8 10 8.8 10s8.8-5.7 8.8-10Z"/></svg><span class="tip">Her profile</span></button>
+    <button class="rail-btn" data-panel="occasions"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg><span class="tip">Occasions</span><span class="badge">2</span></button>
+
+    <div class="group-label">ACT</div>
+    <button class="rail-btn active" data-panel="integrations">
+      <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="2.4"/><circle cx="19" cy="5" r="2.2"/><circle cx="19" cy="12" r="2.2"/><circle cx="19" cy="19" r="2.2"/><path d="M7.4 12h9.4M7.2 11.2 16.9 5.6M7.2 12.8l9.7 5.6"/></svg>
+      <span class="badge">4</span><span class="tip">Integrations</span>
+    </button>
+    <button class="rail-btn" data-panel="arch"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M17.5 14v7M14 17.5h7"/></svg><span class="dot-live"></span><span class="tip">Live architecture</span></button>
+
+    <div class="rail-spacer"></div>
+    <button class="rail-btn" data-panel="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg><span class="tip">Settings</span></button>
+  </nav>
+
+  <div class="stage">
+    <div class="topbar">
+      <div><div class="title">Valentin</div><div class="sub">Planning · anniversary in 12 days</div></div>
+    </div>
+    <div class="chat">
+      <div class="bubble agent">She mentioned wanting sushi somewhere quiet. Want me to hold a table?</div>
+      <div class="bubble user">Yes, Friday 8pm.</div>
+      <div class="bubble agent">Held — Sasaki, 8pm Friday. Calendar blocked, ride set for 7:40.</div>
+    </div>
+    <div class="composer"><span>Tell Valentin something about her…</span><span>➤</span></div>
+    <div class="note"><b>Why grouped labels:</b> the rail currently has 3 unlabeled glyphs. TALK / KNOW / ACT tells a first-time viewer what the agent is made of in one glance — useful in a demo.</div>
+  </div>
+
+  <!-- flyouts -->
+  <aside class="flyout show" id="p-integrations">
+    <h3>Integrations</h3>
+    <div class="hint">Anything switched on becomes a tool Valentin may call — with your spending and privacy limits attached.</div>
+    <div class="list">
+      <div class="row on"><span class="ic">🍣</span><span>OpenTable<br><span class="sub">Reserve, up to 4 seats</span></span><span class="sw"></span></div>
+      <div class="row on"><span class="ic">📅</span><span>Google Calendar<br><span class="sub">Read + create events</span></span><span class="sw"></span></div>
+      <div class="row on"><span class="ic">💐</span><span>Flower delivery<br><span class="sub">Max $80 per order</span></span><span class="sw"></span></div>
+      <div class="row on"><span class="ic">🎵</span><span>Spotify<br><span class="sub">Create playlists</span></span><span class="sw"></span></div>
+      <div class="divider"></div>
+      <div class="row"><span class="ic">🛒</span><span>Amazon Fresh<br><span class="sub">Not connected</span></span><span class="sw"></span></div>
+      <div class="row"><span class="ic">🚗</span><span>Ride booking<br><span class="sub">Not connected</span></span><span class="sw"></span></div>
+      <div class="row"><span class="ic">✈️</span><span>Travel<br><span class="sub">Not connected</span></span><span class="sw"></span></div>
+    </div>
+    <div class="foot">4 of 7 connected · <a href="concept-1-fanout.html">See the map ›</a></div>
+  </aside>
+
+  <aside class="flyout" id="p-history">
+    <h3>Conversations</h3>
+    <div class="hint">Grouped by recency, same store as today's session sidebar.</div>
+    <div class="list">
+      <div class="row"><span class="ic">💬</span><span>Anniversary dinner<br><span class="sub">2 min ago</span></span></div>
+      <div class="row"><span class="ic">💬</span><span>Gift ideas — books<br><span class="sub">Yesterday</span></span></div>
+      <div class="row"><span class="ic">💬</span><span>Her birthday, June<br><span class="sub">Last week</span></span></div>
+    </div>
+  </aside>
+
+  <aside class="flyout" id="p-occasions">
+    <h3>Occasions</h3>
+    <div class="hint">Dates Valentin watches so he can start planning before you ask.</div>
+    <div class="list">
+      <div class="row on"><span class="ic">🥂</span><span>Anniversary<br><span class="sub">In 12 days · planning</span></span></div>
+      <div class="row on"><span class="ic">🎂</span><span>Her birthday<br><span class="sub">In 3 months</span></span></div>
+    </div>
+  </aside>
+
+  <aside class="flyout" id="p-profile">
+    <h3>Her profile</h3>
+    <div class="hint">What he has learned, with the message each fact came from.</div>
+    <div class="list">
+      <div class="row"><span class="ic">🍣</span><span>Loves quiet sushi places<br><span class="sub">from "she mentioned…"</span></span></div>
+      <div class="row"><span class="ic">🌷</span><span>Tulips, not roses<br><span class="sub">confidence: high</span></span></div>
+      <div class="row"><span class="ic">📚</span><span>Reads literary fiction<br><span class="sub">confidence: medium</span></span></div>
+    </div>
+  </aside>
+
+  <aside class="flyout" id="p-arch">
+    <h3>Live architecture</h3>
+    <div class="hint">The AWS call path for the message you just sent.</div>
+    <div class="list">
+      <div class="row"><span class="ic">⚡</span><span>API Gateway → ECS<br><span class="sub">42 ms</span></span></div>
+      <div class="row"><span class="ic">🧠</span><span>Bedrock · Claude<br><span class="sub">1.2 s · 840 tokens</span></span></div>
+      <div class="row"><span class="ic">🗄️</span><span>DynamoDB write<br><span class="sub">11 ms</span></span></div>
+    </div>
+  </aside>
+
+  <aside class="flyout" id="p-settings">
+    <h3>Settings</h3>
+    <div class="hint">Tone, guardrails, and spend limits.</div>
+    <div class="list">
+      <div class="row on"><span class="ic">🛡️</span><span>Guardrails<br><span class="sub">Strict</span></span><span class="sw"></span></div>
+      <div class="row on"><span class="ic">💳</span><span>Spend cap<br><span class="sub">$150 / month</span></span><span class="sw"></span></div>
+    </div>
+  </aside>
+
+  <aside class="flyout" id="p-chats">
+    <h3>New chat</h3>
+    <div class="hint">Start fresh — the profile carries over, the conversation does not.</div>
+  </aside>
+</div>
+
+<script>
+const btns = document.querySelectorAll('.rail-btn[data-panel]');
+btns.forEach(b => b.addEventListener('click', () => {
+  const id = 'p-' + b.dataset.panel;
+  const open = document.querySelector('.flyout.show');
+  btns.forEach(x => x.classList.remove('active'));
+  if (open && open.id === id) { open.classList.remove('show'); return; }
+  if (open) open.classList.remove('show');
+  document.getElementById(id).classList.add('show');
+  b.classList.add('active');
+}));
+document.querySelectorAll('.row').forEach(r => r.addEventListener('click', () => {
+  if (r.querySelector('.sw')) r.classList.toggle('on');
+}));
+</script>
+</body>
+</html>

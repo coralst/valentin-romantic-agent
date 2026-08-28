@@ -16,8 +16,12 @@
     "ddb-local:start": "docker run -d --rm -p 8000:8000 --name valentin-ddb-local amazon/dynamodb-local -jar DynamoDBLocal.jar -inMemory -sharedDb",
     "ddb-local:stop": "docker stop valentin-ddb-local",
     "lint": "tsc --noEmit",
+    "verify:local": "bash scripts/verify-local.sh",
     "deploy:dev": "bash scripts/deploy.sh dev",
+    "deploy:frontend": "bash scripts/deploy.sh dev --scope=frontend",
+    "deploy:backend": "bash scripts/deploy.sh dev --scope=backend",
     "deploy:prod": "bash scripts/deploy.sh prod",
+    "rollback": "bash scripts/rollback.sh dev",
     "teardown": "bash scripts/teardown.sh"
   },
   "dependencies": {

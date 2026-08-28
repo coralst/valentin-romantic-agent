@@ -55,9 +55,16 @@ export interface BedrockClient {
  */
 const DEFAULT_MODEL_ID = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0';
 
-/** Map ChatMessage array to Bedrock Converse API message format.
- *  Bedrock requires conversations to start with a user message,
- *  so we skip any leading agent/assistant messages. */
+/**
+ * Map ChatMessage array to Bedrock Converse API message format.
+ *
+ * Bedrock requires conversations to start with a user message, so we skip any
+ * leading agent/assistant messages.
+ *
+ * Scoping the guardrail to the newest user turn is `guardNewestUserTurn`'s job,
+ * not this one's: it is only legal alongside a `guardrailConfig`, and this
+ * function has no way of knowing whether one was built.
+ */
 function toBedrockMessages(messages: ChatMessage[]): Message[] {
   // Drop leading assistant messages — Bedrock requires user-first
   const startIdx = messages.findIndex((m) => m.sender === 'user');
@@ -67,6 +74,37 @@ function toBedrockMessages(messages: ChatMessage[]): Message[] {
     role: msg.sender === 'user' ? 'user' as const : 'assistant' as const,
     content: [{ text: msg.content }],
   }));
+}
+
+/**
+ * The policies a guardrail intervention actually fired on, as a flat list like
+ * `['pii:ADDRESS', 'filter:SEXUAL', 'topic:off-topic']`.
+ *
+ * `trace: 'enabled'` was set on every request from the start, but nothing ever
+ * read the trace back. An intervention therefore reached the user as a refusal
+ * with no recorded cause, and the only way to find out that Bedrock was reading
+ * "Kyoto" as a street address was to replay the transcript by hand against
+ * `ApplyGuardrail`. One log line makes the next false positive self-explaining.
+ */
+function firedPolicies(response: ConverseCommandOutput): string[] {
+  const guardrail = response.trace?.guardrail;
+  if (!guardrail) return [];
+
+  const assessments = [
+    ...Object.values(guardrail.inputAssessment ?? {}),
+    ...Object.values(guardrail.outputAssessments ?? {}).flat(),
+  ];
+
+  const fired = assessments.flatMap((assessment) => [
+    ...(assessment.sensitiveInformationPolicy?.piiEntities ?? []).map(
+      (entity) => `pii:${entity.type}`,
+    ),
+    ...(assessment.contentPolicy?.filters ?? []).map((filter) => `filter:${filter.type}`),
+    ...(assessment.topicPolicy?.topics ?? []).map((topic) => `topic:${topic.name}`),
+    ...(assessment.wordPolicy?.customWords ?? []).map((word) => `word:${word.match}`),
+  ]);
+
+  return [...new Set(fired)];
 }
 
 /**
@@ -146,6 +184,11 @@ function buildGuardrailConfig(): GuardrailConfiguration | undefined {
  *
  * A no-op when no guardrail is configured: `guardContent` is only legal alongside
  * a `guardrailConfig`, and local development runs without one.
+ *
+ * The last *user* turn rather than the last turn outright. A caller passing
+ * history that ends on an assistant message would otherwise leave the request
+ * untagged, and untagged means Bedrock silently reverts to screening every block
+ * — the whole transcript, her profile included, on every turn.
  */
 function guardNewestUserTurn(
   messages: Message[],
@@ -153,20 +196,24 @@ function guardNewestUserTurn(
 ): Message[] {
   if (!guardrail || messages.length === 0) return messages;
 
-  const last = messages[messages.length - 1];
-  if (last.role !== 'user') return messages;
+  let lastUserIdx = -1;
+  messages.forEach((msg, i) => {
+    if (msg.role === 'user') lastUserIdx = i;
+  });
+  if (lastUserIdx === -1) return messages;
 
-  return [
-    ...messages.slice(0, -1),
-    {
-      ...last,
-      content: (last.content ?? []).map((block) =>
-        'text' in block && typeof block.text === 'string'
-          ? { guardContent: { text: { text: block.text } } }
-          : block,
-      ),
-    },
-  ];
+  return messages.map((msg, i) =>
+    i === lastUserIdx
+      ? {
+          ...msg,
+          content: (msg.content ?? []).map((block) =>
+            'text' in block && typeof block.text === 'string'
+              ? { guardContent: { text: { text: block.text } } }
+              : block,
+          ),
+        }
+      : msg,
+  );
 }
 
 /**
@@ -257,6 +304,15 @@ export class AwsBedrockClient implements BedrockClient {
     const startedAt = Date.now();
     try {
       const response = await this.client.send(command);
+      // Logged here rather than at the two call sites that handle the block, so
+      // no future caller can add a third and lose the only record of the cause.
+      if (response.stopReason === 'guardrail_intervened') {
+        logger.warn('bedrock.guardrail_intervened', {
+          sessionId,
+          operation,
+          policies: firedPolicies(response),
+        });
+      }
       logger.info('bedrock.converse', {
         sessionId,
         operation,

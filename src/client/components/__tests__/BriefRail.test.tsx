@@ -195,11 +195,15 @@ describe('BriefRail — the who header', () => {
     expect(image).toHaveAttribute('src', '/samantha-portrait.svg');
   });
 
-  it('calls the drawing a drawing, and never offers to change a file that does not exist', () => {
+  it('names the cameo for what it does now: open her profile', () => {
     renderRail([{ fieldId: 'partner_name', value: 'Samantha' }]);
-    // "Change her photo" would be a lie: there is no uploaded file to replace,
-    // and the click opens an *add* picker.
-    expect(screen.getByTestId('brief-cameo')).toHaveAttribute('aria-label', 'Add her photo');
+    // It used to open a file picker, which is not what a click on a face asks
+    // for. Uploading a photo lives on the dossier's own avatar.
+    expect(screen.getByTestId('brief-cameo')).toHaveAttribute(
+      'aria-label',
+      "Open Samantha's full profile",
+    );
+    expect(screen.queryByTestId('brief-photo-input')).not.toBeInTheDocument();
   });
 });
 

@@ -1,6 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { CardBoard, spanAllStyle, spanTwoStyle } from '../CardBoard';
+import {
+  BOARD_HALF,
+  BOARD_QUARTER,
+  BOARD_THIRD,
+  BOARD_TWO_THIRDS,
+  CardBoard,
+  span,
+  spanAllStyle,
+} from '../CardBoard';
 
 describe('CardBoard', () => {
   it('keeps align-items: start, so a short card never stretches to a taller sibling', () => {
@@ -17,15 +25,18 @@ describe('CardBoard', () => {
     expect(board.style.alignContent).toBe('start');
   });
 
-  it('lays out three equal columns that can shrink below their content', () => {
+  it('lays out twelve equal columns that can shrink below their content', () => {
+    // Twelve, not three: the command-centre board needs a card to be able to take
+    // a quarter, a third, a half or two-thirds of the row, which is the density
+    // variation the flat three-column board could not express.
     render(
       <CardBoard>
         <div>a</div>
       </CardBoard>,
     );
     const board = screen.getByTestId('dossier-board');
-    expect(board.style.gridTemplateColumns).toBe('repeat(3, minmax(0, 1fr))');
-    expect(board).toHaveAttribute('data-columns', '3');
+    expect(board.style.gridTemplateColumns).toBe('repeat(12, minmax(0, 1fr))');
+    expect(board).toHaveAttribute('data-columns', '12');
   });
 
   it('collapses to one column on mobile', () => {
@@ -51,8 +62,17 @@ describe('CardBoard', () => {
     expect(board.style.minHeight).toMatch(/^0(px)?$/);
   });
 
-  it('exports the mockup’s two span helpers', () => {
-    expect(spanTwoStyle.gridColumn).toBe('span 2');
+  it('spans by column count, and the named widths divide twelve exactly', () => {
+    expect(span(BOARD_TWO_THIRDS).gridColumn).toBe('span 8');
+    expect(span(BOARD_HALF).gridColumn).toBe('span 6');
+    expect(span(BOARD_THIRD).gridColumn).toBe('span 4');
+    expect(span(BOARD_QUARTER).gridColumn).toBe('span 3');
     expect(spanAllStyle.gridColumn).toBe('1 / -1');
+
+    // If one of these stopped dividing 12, that card would leave a ragged gutter
+    // at the end of its row rather than failing visibly.
+    for (const width of [BOARD_QUARTER, BOARD_THIRD, BOARD_HALF, BOARD_TWO_THIRDS]) {
+      expect(12 % width === 0 || 12 % (12 - width) === 0).toBe(true);
+    }
   });
 });

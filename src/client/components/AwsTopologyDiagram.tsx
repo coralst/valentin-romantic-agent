@@ -95,12 +95,22 @@ const NODE_STATE_STYLES: Record<NodeState, React.CSSProperties> = {
   muted: {
     borderColor: '#E2DCD8',
     background: '#F4EFEC',
-    opacity: 0.34,
+    opacity: 0.26,
     filter: 'grayscale(1)',
   },
-  // S3 is `dimmed` in the model and idles here: drawing it faint is more honest
-  // than omitting it, and it lets the room see *why* it stays dark.
-  idle: { borderColor: '#E5D9D2', background: colors.surface, opacity: 0.4 },
+  /*
+   * On the selected engine, with nothing flowing through it yet.
+   *
+   * FULL OPACITY, and that is the fix for the thing this looked like: idle used to
+   * be `opacity: 0.4` against muted's 0.34, so selecting an engine barely changed
+   * anything — the whole diagram read as faded all the time, and the half you had
+   * just asked for was as ghostly as the half you had not. A resource that exists
+   * and is wired up is *there*; that it happens not to be carrying a request this
+   * second is said by its border and background, which is what `done`, `pass` and
+   * `lit` also vary. Fade is reserved for the two things fade should mean here:
+   * the other engine, and a resource this flow genuinely does not touch.
+   */
+  idle: { borderColor: '#E5D9D2', background: colors.surface },
   done: { borderColor: '#DFC4CB', background: '#FEF7F8' },
   pass: { borderColor: '#9FD9CE', background: '#F1FBF8' },
   lit: {
@@ -114,6 +124,20 @@ const NODE_STATE_STYLES: Record<NodeState, React.CSSProperties> = {
     boxShadow: '0 5px 16px rgba(14, 155, 132, 0.18)',
   },
 };
+
+/**
+ * The extra fade for a node the model marks `dimmed` — S3, and only S3.
+ *
+ * This is what the old blanket `idle: { opacity: 0.4 }` was reaching for and got
+ * wrong: `dimmed` is a property of one *node* (S3 serves the page load and takes
+ * no part in a chat turn), not of the idle *state* that twelve others share.
+ * Drawing it faint is more honest than omitting it, and it lets the room see why
+ * it stays dark while everything around it lights up.
+ *
+ * Not greyscaled, because grey is already spoken for: grey means "the other
+ * engine". S3 keeps its colour and merely recedes.
+ */
+const DIMMED_NODE_STYLE: React.CSSProperties = { opacity: 0.5 };
 
 /**
  * The service tile's size.
@@ -221,6 +245,10 @@ function NodeCard({
         style={{
           ...cardStyle,
           ...NODE_STATE_STYLES[state],
+          // Only while it is genuinely doing nothing: the moment a page-load flow
+          // routes through S3 it lights like anything else, and a card that stayed
+          // half-faded while carrying traffic would be reporting the wrong thing.
+          ...(node.dimmed && state === 'idle' ? DIMMED_NODE_STYLE : null),
           // The two Fargate services are what sit inside the VPC; the dashed
           // border says so on the card as well as via the surrounding box.
           borderStyle: node.inVpc ? 'dashed' : 'solid',
@@ -458,7 +486,13 @@ export function AwsTopologyDiagram({
                   strokeWidth={active ? 3.5 : 2.5}
                   strokeLinejoin="round"
                   strokeLinecap="round"
-                  opacity={active ? 1 : 0.45}
+                  // Not faded when idle. An idle connector is already drawn in
+                  // `FLOW_COLORS.idle`, the same porcelain as a card's border, so
+                  // the 0.45 that used to sit on top of that was a second fade over
+                  // a colour that had already said "quiet" — and on the selected
+                  // engine it left the wiring almost invisible. The `<g>` above
+                  // still fades the other engine's links as a whole.
+                  opacity={1}
                   strokeDasharray={active ? MARCHING_ANTS.dashArray : undefined}
                   style={
                     // Reduced motion drops the movement and keeps the colour: the

@@ -107,6 +107,66 @@ describe('AwsTopologyDiagram', () => {
     });
   });
 
+  /**
+   * How much of the diagram is faded, and when.
+   *
+   * The regression these guard: idle used to carry `opacity: 0.4` against muted's
+   * 0.34, so every card was faded all the time and picking an engine barely
+   * changed the picture. Fade now means one of exactly two things — the engine you
+   * are not looking at, and S3, which takes no part in a chat turn.
+   */
+  describe('fade', () => {
+    /** The card itself, which is the element the state styles land on. */
+    function card(id: string): HTMLElement {
+      return screen.getByTestId(`aws-node-${id}`).firstElementChild as HTMLElement;
+    }
+
+    it('does not fade an idle node on the selected engine', () => {
+      render(<AwsTopologyDiagram engine="agentcore" />);
+      for (const node of AWS_NODES) {
+        if (!isNodeInEngine(node.id, 'agentcore') || node.dimmed) continue;
+        expect(card(node.id).style.opacity, node.id).toBe('');
+      }
+    });
+
+    it('fades the other engine hard enough to be unmistakable', () => {
+      render(<AwsTopologyDiagram engine="agentcore" />);
+      const other = AWS_NODES.filter((node) => node.engine === 'valentin');
+      expect(other.length).toBeGreaterThan(0);
+      for (const node of other) {
+        expect(Number(card(node.id).style.opacity), node.id).toBeLessThan(0.3);
+        expect(card(node.id).style.filter, node.id).toBe('grayscale(1)');
+      }
+    });
+
+    it('fades only the node the model marks dimmed, and never greys it', () => {
+      // Grey is spoken for: it means "the other engine". S3 keeps its colour.
+      render(<AwsTopologyDiagram />);
+      const dimmed = AWS_NODES.filter((node) => node.dimmed);
+      expect(dimmed.map((node) => node.id)).toEqual(['s3']);
+      expect(Number(card('s3').style.opacity)).toBeLessThan(1);
+      expect(card('s3').style.filter).toBe('');
+    });
+
+    it('stops dimming S3 the moment traffic actually reaches it', () => {
+      // A page-load flow does route through S3, and a card that stayed half-faded
+      // while carrying a request would be reporting the wrong thing.
+      render(<AwsTopologyDiagram litNode="s3" />);
+      expect(card('s3').style.opacity).toBe('');
+    });
+
+    it("draws the selected engine's idle connectors at full strength", () => {
+      // They are already stroked in the pale idle colour; a second fade on top is
+      // what made the wiring on the half you asked for nearly invisible.
+      render(<AwsTopologyDiagram engine="agentcore" />);
+      for (const segment of AWS_SEGMENTS) {
+        if (!isSegmentInEngine(segment, 'agentcore')) continue;
+        const path = screen.getByTestId(`aws-segment-${segment.id}`);
+        expect(path.getAttribute('opacity'), segment.id).toBe('1');
+      }
+    });
+  });
+
   describe('durations', () => {
     it('shows a measured duration on its node', () => {
       render(

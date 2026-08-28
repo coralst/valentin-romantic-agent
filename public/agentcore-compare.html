@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Valentin — as built vs. on AgentCore</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+<style>
+  /* Deliberately mirrors the Live Architecture drawer's palette and card
+     geometry (src/client/components/AwsTopologyDiagram.tsx) so this reads as the
+     same artefact rather than a second, competing diagram. Values are copied,
+     not re-invented: #FAF4F0 canvas, #E5D9D2 hairline, #8C2F45 claret. */
+  :root {
+    --canvas: #FAF4F0;
+    --surface: #FFFFFF;
+    --hairline: #E5D9D2;
+    --ink: #2A2226;
+    --claret: #8C2F45;
+    --muted: #A3959C;
+    --dim: #756A70;
+    --vpc: #8C4FFF;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 34px 30px 60px;
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: 'Inter', 'Helvetica Neue', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  header { max-width: 1180px; margin: 0 auto 26px; }
+  h1 { font-size: 21px; font-weight: 700; margin: 0 0 5px; letter-spacing: -0.01em; }
+  .sub { font-size: 11.5px; color: var(--dim); line-height: 1.5; margin: 0; }
+  .sub b { color: var(--claret); font-weight: 600; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 14px; align-items: center; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 9.5px; color: var(--dim); }
+
+  /* --- chips: same idiom as the WAF chip on the CloudFront card --- */
+  .chip {
+    display: inline-block; font-size: 8.5px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; border-radius: 3px; padding: 1px 5px; white-space: nowrap;
+  }
+  .chip-waf       { color: #DD344C; border: 1px solid #F3C0C6; }
+  .chip-agentcore { color: #01A88D; border: 1px solid #A8E5DA; background: #F1FBF8; }
+  .chip-unchanged { color: #8E8189; border: 1px solid #E5D9D2; background: #FBF7F5; }
+  .chip-yours     { color: #ED7100; border: 1px solid #FBD9BB; background: #FFF7F0; }
+
+  .board { max-width: 1180px; margin: 0 auto; display: flex; gap: 0; align-items: flex-start; }
+
+  /* Shared tier gutter. The whole point of the layout: one row of labels owned
+     by neither panel, so Fargate and AgentCore Runtime sit on the same line and
+     the swap is readable without counting boxes. */
+  .gutter { width: 84px; flex-shrink: 0; position: relative; height: 762px; margin-top: 46px; }
+  .tier {
+    position: absolute; right: 12px; text-align: right; width: 72px;
+    font-size: 8.5px; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted); line-height: 1.3;
+  }
+
+  .panel { flex: 1; min-width: 0; }
+  .panel-head { height: 46px; }
+  .panel-title { font-size: 12.5px; font-weight: 700; letter-spacing: 0.02em; }
+  .panel-note { font-size: 9.5px; color: var(--muted); margin-top: 2px; }
+  .panel-title .tag {
+    font-size: 8.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+    padding: 2px 6px; border-radius: 3px; margin-left: 7px; vertical-align: 1px;
+  }
+  .tag-built { background: var(--claret); color: #fff; }
+  .tag-sketch { background: #FBF7F5; color: var(--dim); border: 1px solid var(--hairline); }
+
+  .canvas { position: relative; width: 430px; height: 762px; }
+  .canvas svg { position: absolute; left: 0; top: 0; overflow: visible; }
+
+  /* --- node card: geometry lifted from cardStyle in AwsTopologyDiagram.tsx --- */
+  .card {
+    position: absolute; background: var(--surface); border: 1.5px solid var(--hairline);
+    border-radius: 11px; display: flex; gap: 9px; align-items: flex-start; padding: 9px 10px;
+  }
+  .card.dimmed { opacity: 0.4; }
+  .card.vpc { border-style: dashed; }
+  .tile { width: 26px; height: 26px; border-radius: 6px; flex-shrink: 0; }
+  .body { min-width: 0; flex: 1; }
+  .service { font-size: 11.5px; font-weight: 700; color: var(--ink); line-height: 1.25; }
+  .resource { font-size: 10.5px; font-weight: 600; color: var(--claret); line-height: 1.3; margin-top: 2px; overflow-wrap: break-word; }
+  .caption { font-size: 9.5px; color: var(--muted); line-height: 1.4; margin-top: 2px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+
+  .edge-label {
+    position: absolute; font-size: 8.5px; font-weight: 600; color: var(--dim);
+    background: var(--canvas); padding: 0 4px; white-space: nowrap; transform: translateX(-50%);
+  }
+
+  /* The VPC box, drawn only on the left. Its absence on the right is the point. */
+  .vpc-box {
+    position: absolute; border: 2px dashed var(--vpc); border-radius: 12px;
+    background: rgba(140, 79, 255, 0.045);
+  }
+  .vpc-box span {
+    position: absolute; top: -9px; left: 12px; background: var(--canvas); padding: 0 6px;
+    font-size: 8.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--vpc); white-space: nowrap;
+  }
+  .no-vpc {
+    position: absolute; font-size: 9px; font-weight: 600; color: var(--muted);
+    font-style: italic; line-height: 1.4;
+  }
+
+  /* --- ledgers --- */
+  .ledgers { max-width: 1180px; margin: 30px auto 0; display: flex; gap: 22px; padding-left: 84px; }
+  .ledger { flex: 1; background: var(--surface); border: 1px solid var(--hairline); border-radius: 11px; padding: 14px 16px; }
+  .ledger h3 {
+    font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--muted); margin: 0 0 8px;
+  }
+  .ledger h3 + ul { margin-top: 0; }
+  .ledger ul { margin: 0 0 0 0; padding: 0; list-style: none; }
+  .ledger li { font-size: 10.5px; line-height: 1.6; color: var(--ink); padding-left: 13px; position: relative; }
+  .ledger li::before { content: '·'; position: absolute; left: 3px; color: var(--claret); font-weight: 700; }
+  .ledger .split { margin-top: 13px; }
+
+  .delta { max-width: 1180px; margin: 22px auto 0; padding-left: 84px; }
+  .delta-inner { background: var(--surface); border: 1px solid var(--hairline); border-radius: 11px; padding: 15px 18px; }
+  .delta h3 {
+    font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--muted); margin: 0 0 10px;
+  }
+  .delta-row { display: grid; grid-template-columns: 1fr 22px 1fr; gap: 10px; align-items: baseline; padding: 5px 0; border-top: 1px solid #F2EAE6; }
+  .delta-row:first-of-type { border-top: none; }
+  .delta-from { font-size: 10.5px; color: var(--dim); text-align: right; }
+  .delta-arrow { font-size: 11px; color: var(--claret); text-align: center; font-weight: 700; }
+  .delta-to { font-size: 10.5px; color: var(--ink); font-weight: 600; }
+
+  .foot { max-width: 1180px; margin: 22px auto 0; padding-left: 84px; font-size: 9.5px; color: var(--muted); line-height: 1.6; }
+  .foot b { color: var(--dim); font-weight: 600; }
+
+  @media (max-width: 1120px) {
+    .board { flex-wrap: wrap; }
+    .gutter { display: none; }
+    .panel { flex: 1 1 430px; }
+    .ledgers, .delta, .foot { padding-left: 0; flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Valentin — as built vs. on AgentCore</h1>
+  <p class="sub">
+    Same request, same model, two runtimes. The left column is what is deployed today; the right column is
+    <b>a schematic sketch, not a verified deployment</b> — every value on the left was read from live AWS and the CDK,
+    nothing on the right has been provisioned.
+    Rows are aligned so each swap reads across: <b>Fargate → AgentCore Runtime</b>, <b>DynamoDB → AgentCore Memory</b>.
+  </p>
+  <div class="legend">
+    <span class="legend-item"><span class="chip chip-unchanged">unchanged</span> identical in both</span>
+    <span class="legend-item"><span class="chip chip-agentcore">agentcore</span> managed by AWS</span>
+    <span class="legend-item"><span class="chip chip-yours">your code</span> still yours to write</span>
+    <span class="legend-item"><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="#8C2F45" stroke-width="2.5" stroke-dasharray="7 5"/></svg> request path</span>
+    <span class="legend-item"><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="#C9BDB6" stroke-width="2" stroke-dasharray="3 4"/></svg> telemetry, off the request path</span>
+  </div>
+</header>
+
+<div class="board">
+  <div class="gutter" id="gutter"></div>
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">As built<span class="tag tag-built">deployed</span></div>
+      <div class="panel-note">ECS Fargate · ALB · VPC · you operate the loop</div>
+    </div>
+    <div class="canvas" id="left"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">If built on AgentCore<span class="tag tag-sketch">schematic</span></div>
+      <div class="panel-note">Runtime · Memory · Observability · AWS operates the loop</div>
+    </div>
+    <div class="canvas" id="right"></div>
+  </div>
+</div>
+
+<div class="ledgers">
+  <div class="ledger">
+    <h3>What you operate — as built</h3>
+    <ul>
+      <li>ALB, listener, target group, sticky sessions</li>
+      <li>Fargate service + task definition, always on</li>
+      <li>VPC, 2 AZ, interface + gateway endpoints</li>
+      <li>DynamoDB table, pk/sk, GSI1</li>
+      <li><code>ws-gateway.ts</code> — the WebSocket loop</li>
+      <li><code>conversation-memory.ts</code> — 4096-token context window</li>
+      <li><code>preference-extractor.ts</code> — extraction + category mapping</li>
+      <li><code>span-bridge.ts</code>, retry-once, session lifecycle</li>
+    </ul>
+  </div>
+  <div class="ledger">
+    <h3>What AWS operates — on AgentCore</h3>
+    <ul>
+      <li>Session isolation, one microVM per session</li>
+      <li>Scaling, including scale to zero between sessions</li>
+      <li>Memory writes, extraction and retrieval</li>
+      <li>Trace, session and trajectory collection</li>
+    </ul>
+    <h3 class="split">What is still yours</h3>
+    <ul>
+      <li>The agent itself — a Strands agent, your code</li>
+      <li><code>prompts.ts</code> — Valentin's persona, unchanged</li>
+      <li>The model choice, held fixed for the comparison</li>
+      <li>CloudFront, S3 and the React SPA</li>
+    </ul>
+  </div>
+</div>
+
+<div class="delta">
+  <div class="delta-inner">
+    <h3>The swap, line by line</h3>
+    <div class="delta-row"><div class="delta-from">WebSocket gateway you wrote</div><div class="delta-arrow">→</div><div class="delta-to">HTTP response streaming</div></div>
+    <div class="delta-row"><div class="delta-from">Hand-rolled 4096-token window</div><div class="delta-arrow">→</div><div class="delta-to">Managed short + long-term memory</div></div>
+    <div class="delta-row"><div class="delta-from">Extraction you wrote and test</div><div class="delta-arrow">→</div><div class="delta-to">Managed extraction you configure</div></div>
+    <div class="delta-row"><div class="delta-from">Sticky sessions on an always-on task</div><div class="delta-arrow">→</div><div class="delta-to">Per-session microVM, scale to zero</div></div>
+    <div class="delta-row"><div class="delta-from">ALB + VPC + 2 AZ + endpoints</div><div class="delta-arrow">→</div><div class="delta-to">Nothing to run</div></div>
+    <div class="delta-row"><div class="delta-from">Amazon Bedrock, Claude Sonnet 4.5</div><div class="delta-arrow">=</div><div class="delta-to">Amazon Bedrock, Claude Sonnet 4.5 — held fixed</div></div>
+  </div>
+</div>
+
+<p class="foot">
+  <b>Read the last row first.</b> The model is identical on both sides, which is what makes any latency or cost delta
+  attributable to the orchestration layer rather than to a different model.
+  <br />
+  <b>AgentCore Identity is drawn as a hop it is not.</b> Inbound auth is configuration on the runtime, not a network
+  box; it earns a card here only because it is the thing that lets the browser reach the runtime without holding AWS
+  credentials.
+  <br />
+  <b>Gateway is absent on purpose.</b> It exists to expose tools, and Valentin has none yet — drawing it would sketch
+  an architecture for an agent that does not exist.
+</p>
+
+<script>
+  /* ---------------------------------------------------------------------------
+     Model, then view — the same split the app makes between aws-architecture.ts
+     and aws-diagram-layout.ts. Rows are shared by both panels, which is what
+     guarantees the two columns stay aligned: a card cannot drift off its tier
+     because it does not own its y.
+     --------------------------------------------------------------------------- */
+
+  const TIERS = [
+    { label: 'Client',        y: 29 },
+    { label: 'Edge',          y: 159 },
+    { label: 'Origin',        y: 298 },
+    { label: 'Compute',       y: 428 },
+    { label: 'AI · Data',     y: 566 },
+    { label: 'Telemetry',     y: 704 },
+  ];
+
+  /* Heights here are FIXED, not minimums, and that is load-bearing: every
+     connector path below is authored against these exact bottoms, so a card that
+     grew to fit its text would leave its outbound line emerging from inside
+     itself. An earlier pass used min-height and did exactly that — CloudFront
+     measured 101px against an assumed 82 and both origin connectors started
+     19px up inside the card.
+     Each row carries ~5px of headroom over its tallest measured content across
+     BOTH panels, so the same numbers hold for either column. */
+  const BOX = {
+    r1:      { x: 110, y: 0,   w: 210, h: 70 },
+    r2:      { x: 100, y: 112, w: 230, h: 106 },
+    r3left:  { x: 0,   y: 260, w: 200, h: 88 },
+    r3right: { x: 230, y: 260, w: 200, h: 88 },
+    r4:      { x: 90,  y: 390, w: 250, h: 88 },
+    r5left:  { x: 0,   y: 520, w: 200, h: 104 },
+    r5right: { x: 230, y: 520, w: 200, h: 104 },
+    r6:      { x: 90,  y: 666, w: 250, h: 88 },
+  };
+
+  const TILE = {
+    ink:    '#232F3E',
+    network:'linear-gradient(135deg,#A16BFF,#8C4FFF)',
+    storage:'linear-gradient(135deg,#8FBF2A,#7AA116)',
+    compute:'linear-gradient(135deg,#FF9A3E,#ED7100)',
+    ml:     'linear-gradient(135deg,#21C8AC,#01A88D)',
+    core:   'linear-gradient(135deg,#3FD9BE,#01A88D)',
+    db:     'linear-gradient(135deg,#7A9DFF,#527FFF)',
+    mgmt:   'linear-gradient(135deg,#F5559B,#E7157B)',
+  };
+
+  /* Glyphs are our own constants, stroked white on a 24×24 viewBox — same
+     contract as AWS_NODE_VISUALS. */
+  const GLYPH = {
+    browser: '<rect x="2.5" y="4" width="19" height="13" rx="1.5" /><path d="M8 20h8M12 17v3" />',
+    cloudfront: '<circle cx="12" cy="12" r="8.2" /><ellipse cx="12" cy="12" rx="3.4" ry="8.2" /><path d="M3.9 9.4h16.2M3.9 14.6h16.2" />',
+    s3: '<path d="M4.5 5.5h15l-1.7 13a1.4 1.4 0 0 1-1.4 1.2H7.6a1.4 1.4 0 0 1-1.4-1.2L4.5 5.5Z" /><path d="M3.4 5.5h17.2" />',
+    alb: '<circle cx="5" cy="12" r="2.1" /><circle cx="19" cy="6.5" r="2.1" /><circle cx="19" cy="17.5" r="2.1" /><path d="M7.1 11.2 16.9 7.2M7.1 12.8l9.8 4" />',
+    fargate: '<rect x="3" y="3.5" width="7.5" height="7.5" rx="1" /><rect x="13.5" y="3.5" width="7.5" height="7.5" rx="1" /><rect x="3" y="13" width="7.5" height="7.5" rx="1" /><rect x="13.5" y="13" width="7.5" height="7.5" rx="1" />',
+    bedrock: '<path d="M12 3 3.2 7.6 12 12.2l8.8-4.6L12 3Z" /><path d="M3.2 12.3 12 16.9l8.8-4.6M3.2 16.6 12 21.2l8.8-4.6" />',
+    dynamodb: '<ellipse cx="12" cy="5.8" rx="7.4" ry="2.9" /><path d="M4.6 5.8v12.4c0 1.6 3.3 2.9 7.4 2.9s7.4-1.3 7.4-2.9V5.8" /><path d="M4.6 12c0 1.6 3.3 2.9 7.4 2.9s7.4-1.3 7.4-2.9" />',
+    cloudwatch: '<circle cx="12" cy="12" r="8.5" /><path d="M6.5 12.4h2.4l1.7-3.6 2.1 6.3 1.5-2.7h3.3" />',
+    identity: '<circle cx="9.2" cy="9.2" r="4.3" /><path d="M12.4 12.4 20 20M16.6 15.6l2.4-2.4" />',
+    runtime: '<rect x="2.8" y="4" width="18.4" height="16" rx="2.6" /><path d="M2.8 9.2h18.4M8.6 14.6h6.8" /><circle cx="6" cy="6.6" r="0.85" />',
+    memory: '<path d="M11.4 4.6c-2.5 0-4.4 1.9-4.4 4.2 0 .8.2 1.5.6 2.1-.6.7-1 1.6-1 2.6 0 2.3 1.9 4.1 4.2 4.1h.6V4.6Z" /><path d="M12.6 4.6c2.5 0 4.4 1.9 4.4 4.2 0 .8-.2 1.5-.6 2.1.6.7 1 1.6 1 2.6 0 2.3-1.9 4.1-4.2 4.1h-.6M12 4.6v13.1M12 20.4v-2.7" />',
+  };
+
+  const CHIP = {
+    waf:       { cls: 'chip-waf',       text: 'AWS WAF · 2000 req/IP' },
+    unchanged: { cls: 'chip-unchanged', text: 'unchanged' },
+    agentcore: { cls: 'chip-agentcore', text: 'agentcore' },
+    yours:     { cls: 'chip-yours',     text: 'your code' },
+  };
+
+  /* ---- the two topologies ------------------------------------------------ */
+
+  const LEFT_NODES = [
+    { box: 'r1', tile: TILE.ink, glyph: GLYPH.browser, service: 'Browser', resource: 'React 19 SPA',
+      caption: 'use-websocket.ts · sticky WS', chips: [] },
+    { box: 'r2', tile: TILE.network, glyph: GLYPH.cloudfront, service: 'Amazon CloudFront', resource: 'E6OHMQWNEQL6M',
+      caption: 'd26dwovftfq9oe.cloudfront.net', chips: ['waf', 'unchanged'] },
+    { box: 'r3left', tile: TILE.network, glyph: GLYPH.alb, service: 'Application Load Balancer', resource: 'valentin-alb-dev',
+      caption: 'sticky 1 h · idle 3600 s', chips: [] },
+    { box: 'r3right', tile: TILE.storage, glyph: GLYPH.s3, service: 'Amazon S3', resource: 'valentin-static-dev',
+      caption: 'OAC · CACHING_OPTIMIZED', chips: ['unchanged'], dimmed: true },
+    { box: 'r4', tile: TILE.compute, glyph: GLYPH.fargate, service: 'Amazon ECS · AWS Fargate', resource: 'valentin-service-dev',
+      caption: '256 CPU · 512 MiB · :3001 · always on', chips: ['yours'], vpc: true },
+    { box: 'r5left', tile: TILE.ml, glyph: GLYPH.bedrock, service: 'Amazon Bedrock', resource: 'Claude Sonnet 4.5',
+      caption: 'Converse API · VPC endpoint', chips: ['unchanged'] },
+    { box: 'r5right', tile: TILE.db, glyph: GLYPH.dynamodb, service: 'Amazon DynamoDB', resource: 'ValentinTable-dev',
+      caption: 'pk/sk · GSI1 · on-demand', chips: [] },
+    { box: 'r6', tile: TILE.mgmt, glyph: GLYPH.cloudwatch, service: 'Amazon CloudWatch', resource: 'Valentin-dev dashboard',
+      caption: 'logs · span-bridge.ts · hand-wired', chips: [] },
+  ];
+
+  const RIGHT_NODES = [
+    { box: 'r1', tile: TILE.ink, glyph: GLYPH.browser, service: 'Browser', resource: 'React 19 SPA',
+      caption: 'HTTP streaming · no ws-gateway', chips: [] },
+    { box: 'r2', tile: TILE.network, glyph: GLYPH.cloudfront, service: 'Amazon CloudFront', resource: 'E6OHMQWNEQL6M',
+      caption: 'd26dwovftfq9oe.cloudfront.net', chips: ['waf', 'unchanged'] },
+    { box: 'r3left', tile: TILE.core, glyph: GLYPH.identity, service: 'AgentCore Identity', resource: 'inbound auth',
+      caption: 'Cognito JWT · config, not a hop', chips: ['agentcore'] },
+    { box: 'r3right', tile: TILE.storage, glyph: GLYPH.s3, service: 'Amazon S3', resource: 'valentin-static-dev',
+      caption: 'OAC · CACHING_OPTIMIZED', chips: ['unchanged'], dimmed: true },
+    { box: 'r4', tile: TILE.core, glyph: GLYPH.runtime, service: 'AgentCore Runtime', resource: 'valentin-agent · Strands',
+      caption: 'per-session microVM · scales to zero', chips: ['agentcore', 'yours'] },
+    { box: 'r5left', tile: TILE.ml, glyph: GLYPH.bedrock, service: 'Amazon Bedrock', resource: 'Claude Sonnet 4.5',
+      caption: 'Converse API · same modelId', chips: ['unchanged'] },
+    { box: 'r5right', tile: TILE.core, glyph: GLYPH.memory, service: 'AgentCore Memory', resource: 'valentin-memory',
+      caption: 'short + long term · auto extraction', chips: ['agentcore'] },
+    { box: 'r6', tile: TILE.mgmt, glyph: GLYPH.cloudwatch, service: 'AgentCore Observability', resource: 'CloudWatch GenAI',
+      caption: 'traces · sessions · trajectories', chips: ['agentcore'] },
+  ];
+
+  /* Connector paths are authored once and shared: the topology is the same
+     *shape* on both sides, which is exactly the argument the diagram makes.
+     Only the labels differ.
+
+     Every elbow turns at bottom + 21, the midpoint of the uniform 42px row gap,
+     which is why the labels can share one offset rule instead of six. */
+  const SEGMENTS = [
+    { path: 'M215,70 L215,106',                       head: '215,112 209,103 221,103', lx: 215, ly: 84 },
+    { path: 'M215,218 L215,239 L100,239 L100,254',    head: '100,260 94,251 106,251',  lx: 157, ly: 233 },
+    { path: 'M215,218 L215,239 L330,239 L330,254',    head: '330,260 324,251 336,251', lx: 272, ly: 233 },
+    { path: 'M100,348 L100,369 L215,369 L215,384',    head: '215,390 209,381 221,381', lx: 157, ly: 363 },
+    { path: 'M215,478 L215,499 L100,499 L100,514',    head: '100,520 94,511 106,511',  lx: 157, ly: 493 },
+    { path: 'M215,478 L215,499 L330,499 L330,514',    head: '330,520 324,511 336,511', lx: 272, ly: 493 },
+  ];
+
+  /* Telemetry is drawn separately, dashed and pale, because it is not on the
+     request path — the same reason the drawer's span bridge is "deliberately not
+     load-bearing". It threads the 30px gutter between the AI · Data cards, and
+     starts below the compute elbow at y=499 so it reads as passing behind. */
+  const TELEMETRY = { path: 'M215,503 L215,660', head: '215,666 209,657 221,657' };
+
+  const LEFT_LABELS  = ['HTTPS', '/api/* · /ws', 'default behavior *', 'target group :3001', 'VPC interface endpoint', 'VPC gateway endpoint'];
+  const RIGHT_LABELS = ['HTTPS', '/api/* · JWT', 'default behavior *', 'InvokeAgentRuntime', 'Converse · unchanged', 'CreateEvent · Retrieve'];
+
+  /* ---- view -------------------------------------------------------------- */
+
+  function tileSvg(glyph) {
+    return '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7">' + glyph + '</svg>';
+  }
+
+  function cardHtml(node) {
+    const box = BOX[node.box];
+    const chips = node.chips.map((key) => {
+      const chip = CHIP[key];
+      return '<span class="chip ' + chip.cls + '">' + chip.text + '</span>';
+    }).join('');
+
+    return '<div class="card' + (node.dimmed ? ' dimmed' : '') + (node.vpc ? ' vpc' : '') + '"'
+      + ' style="left:' + box.x + 'px;top:' + box.y + 'px;width:' + box.w + 'px;height:' + box.h + 'px">'
+      + '<div class="tile" style="background:' + node.tile + '" aria-hidden="true">' + tileSvg(node.glyph) + '</div>'
+      + '<div class="body">'
+      + '<div class="service">' + node.service + '</div>'
+      + '<div class="resource">' + node.resource + '</div>'
+      + '<div class="caption">' + node.caption + '</div>'
+      + (chips ? '<div class="chips">' + chips + '</div>' : '')
+      + '</div></div>';
+  }
+
+  function connectorsSvg() {
+    const request = SEGMENTS.map((segment) =>
+      '<path d="' + segment.path + '" fill="none" stroke="#8C2F45" stroke-width="2.5"'
+      + ' stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="7 5" opacity="0.75" />'
+      + '<polygon points="' + segment.head + '" fill="#8C2F45" />'
+    ).join('');
+
+    const telemetry =
+      '<path d="' + TELEMETRY.path + '" fill="none" stroke="#C9BDB6" stroke-width="2"'
+      + ' stroke-dasharray="3 4" stroke-linecap="round" />'
+      + '<polygon points="' + TELEMETRY.head + '" fill="#C9BDB6" />';
+
+    return '<svg width="430" height="762" aria-hidden="true">' + request + telemetry + '</svg>';
+  }
+
+  function labelsHtml(labels) {
+    return SEGMENTS.map((segment, index) =>
+      '<div class="edge-label" style="left:' + segment.lx + 'px;top:' + segment.ly + 'px">' + labels[index] + '</div>'
+    ).join('');
+  }
+
+  function renderPanel(elementId, nodes, labels, options) {
+    /* The box hugs the compute card (390–478) with 12px above and 6px below,
+       stopping short of the AI · Data labels at y=493. Its caption sits at
+       left:150 rather than the drawer's left:12 because at 12 it collided with
+       the `target group :3001` label directly above it. */
+    const vpc = options.vpc
+      ? '<div class="vpc-box" style="left:78px;top:378px;width:274px;height:106px">'
+        + '<span style="left:150px">valentin-vpc-dev · 2 AZ</span></div>'
+      : '<div class="no-vpc" style="left:0px;top:396px;width:74px;text-align:right">no VPC<br />no subnets<br />no ALB</div>';
+
+    document.getElementById(elementId).innerHTML =
+      connectorsSvg() + vpc + nodes.map(cardHtml).join('') + labelsHtml(labels);
+  }
+
+  document.getElementById('gutter').innerHTML = TIERS.map((tier) =>
+    '<div class="tier" style="top:' + tier.y + 'px">' + tier.label + '</div>'
+  ).join('');
+
+  renderPanel('left', LEFT_NODES, LEFT_LABELS, { vpc: true });
+  renderPanel('right', RIGHT_NODES, RIGHT_LABELS, { vpc: false });
+</script>
+
+</body>
+</html>

@@ -1,5 +1,7 @@
 import type { ChatMessage } from '../../shared/interfaces/message';
+import type { Person } from '../../shared/interfaces/person';
 import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
+import type { Task } from '../../shared/interfaces/task';
 import type { ServerEvent } from '../../shared/interfaces/ws-events';
 import type { AgentOrchestratorInterface } from '../agent/agent-orchestrator';
 
@@ -71,6 +73,30 @@ export class EventRouter {
     this.emit({
       type: 'preference_update',
       payload: { preference, isNew },
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Emit a person_update event to the client.
+   *
+   * The session id is passed in rather than read off the record: a `Person` is
+   * stored under a session partition and does not carry the id (see
+   * `ws-events.ts`), and the broadcast path needs it to pick a socket.
+   */
+  emitPersonUpdate(sessionId: string, person: Person, isNew: boolean): void {
+    this.emit({
+      type: 'person_update',
+      payload: { sessionId, person, isNew },
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  /** Emit a task_update event to the client */
+  emitTaskUpdate(sessionId: string, task: Task, isNew: boolean): void {
+    this.emit({
+      type: 'task_update',
+      payload: { sessionId, task, isNew },
       timestamp: new Date().toISOString(),
     });
   }

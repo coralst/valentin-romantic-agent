@@ -1,5 +1,7 @@
 import type { ChatMessage } from './message';
+import type { Person } from './person';
 import type { PreferenceWithHistory } from './preference';
+import type { Task } from './task';
 
 /** Generic WebSocket message envelope */
 export interface WsEnvelope<T extends string, P> {
@@ -82,6 +84,18 @@ export type ServerEvent =
   | WsEnvelope<'typing_start', { sessionId: string }>
   | WsEnvelope<'typing_stop', { sessionId: string }>
   | WsEnvelope<'preference_update', { preference: PreferenceWithHistory; isNew: boolean }>
+  /**
+   * Someone in her life was learned from the conversation.
+   *
+   * `sessionId` sits at the top level rather than inside `person`, unlike
+   * `preference_update`: a `Person` has no session on it, because it is stored
+   * under the session's partition and a copy of the id on the record would be a
+   * second place for it to be wrong. `resolveBroadcastSessionId` reads the top
+   * level first, so this is the shape that reaches the right socket.
+   */
+  | WsEnvelope<'person_update', { sessionId: string; person: Person; isNew: boolean }>
+  /** Something the user said he would do was learned from the conversation. */
+  | WsEnvelope<'task_update', { sessionId: string; task: Task; isNew: boolean }>
   | WsEnvelope<'connection_status', { status: 'connected' | 'reconnecting' | 'disconnected' }>
   | WsEnvelope<'session_init', { sessionId: string; welcomeMessage: ChatMessage }>
   | WsEnvelope<'error', { code: string; message: string }>

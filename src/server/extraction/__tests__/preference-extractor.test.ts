@@ -81,13 +81,21 @@ describe('PreferenceExtractor', () => {
   let bedrock: BedrockClient;
   let storage: StorageInterface;
   let onUpdate: ReturnType<typeof vi.fn>;
+  let onPerson: ReturnType<typeof vi.fn>;
+  let onTask: ReturnType<typeof vi.fn>;
   let extractor: PreferenceExtractor;
 
   beforeEach(() => {
     bedrock = createMockBedrock();
     storage = createMockStorage();
     onUpdate = vi.fn();
-    extractor = new PreferenceExtractor(bedrock, storage, onUpdate);
+    onPerson = vi.fn();
+    onTask = vi.fn();
+    extractor = new PreferenceExtractor(bedrock, storage, {
+      onPreference: onUpdate,
+      onPerson,
+      onTask,
+    });
   });
 
   it('extracts preferences from mocked Bedrock response', async () => {

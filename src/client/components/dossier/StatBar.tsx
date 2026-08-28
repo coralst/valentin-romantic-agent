@@ -1,5 +1,6 @@
 import { colors, insets, radii, typography } from '../../design-system/tokens';
 import { toneInk, type AccentTone } from './accent-tones';
+import { dossierType } from './dossier-icons';
 
 /**
  * One figure on the command bar: a number, what it counts, and its family.
@@ -69,9 +70,9 @@ const labelStyle: React.CSSProperties = {
   display: 'block',
   marginTop: 4,
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.eyebrow,
+  fontSize: dossierType.small,
   fontWeight: typography.weights.medium,
-  letterSpacing: '0.18em',
+  letterSpacing: '0.14em',
   textTransform: 'uppercase',
   // Not `inkFaint`: this sits on plum, where the light ink ramp inverts.
   color: 'rgba(251, 239, 241, 0.6)',
@@ -81,7 +82,7 @@ const noteStyle: React.CSSProperties = {
   display: 'block',
   marginTop: 3,
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.caption,
+  fontSize: dossierType.small,
   color: 'rgba(251, 239, 241, 0.72)',
 };
 

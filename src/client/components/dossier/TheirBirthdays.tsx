@@ -3,6 +3,7 @@ import { displayName, type Person } from '../../../shared/interfaces/person';
 import { upcomingBirthdays } from '../../utils/people-derivation';
 import { cardEmptyStyle, cardHeadStyle, cardTitleStyle, FIELD_HAIRLINE } from './board-tones';
 import { toneCountStyle, toneGlyphStyle, tonedCardStyle } from './accent-tones';
+import { DossierIcon, dossierType } from './dossier-icons';
 
 /**
  * Their birthdays — her people, soonest first.
@@ -33,14 +34,14 @@ const initialStyle: React.CSSProperties = {
   background: '#F9EDF3',
   color: '#A05A7A',
   fontFamily: typography.headingFontFamily,
-  fontSize: typography.px.small,
+  fontSize: dossierType.small,
   lineHeight: 1,
 };
 
 const nameStyle: React.CSSProperties = {
   display: 'block',
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.small,
+  fontSize: dossierType.small,
   fontWeight: typography.weights.semibold,
   color: colors.ink,
 };
@@ -49,7 +50,7 @@ const whoStyle: React.CSSProperties = {
   display: 'block',
   marginTop: 1,
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.caption,
+  fontSize: dossierType.small,
   color: colors.inkMuted,
 };
 
@@ -57,7 +58,7 @@ const awayStyle: React.CSSProperties = {
   flex: 'none',
   marginLeft: 'auto',
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.labelLoose,
+  fontSize: dossierType.small,
   fontWeight: typography.weights.semibold,
   color: '#A05A7A',
   whiteSpace: 'nowrap',
@@ -104,9 +105,9 @@ export function TheirBirthdays({
   return (
     <section style={tonedCardStyle('kin')} data-testid="dossier-their-birthdays">
       <div style={cardHeadStyle}>
-        <i style={toneGlyphStyle('kin')} aria-hidden="true">
-          &#9737;
-        </i>
+        <span style={toneGlyphStyle('kin')} aria-hidden="true">
+          <DossierIcon name="cake" size={16} />
+        </span>
         <h2 style={cardTitleStyle}>Their birthdays</h2>
         {next && <span style={toneCountStyle('kin')}>next {formatAway(next.daysUntil)}</span>}
       </div>

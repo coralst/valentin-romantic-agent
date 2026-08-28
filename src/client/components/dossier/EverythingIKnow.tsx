@@ -15,6 +15,7 @@ import {
   CARD_HAIRLINE,
   FIELD_HAIRLINE,
 } from './board-tones';
+import { dossierType } from './dossier-icons';
 
 interface EverythingIKnowProps {
   getFieldValue: (fieldId: string) => ProfileFieldValue | null;
@@ -90,9 +91,9 @@ const sectionLabelStyle: React.CSSProperties = {
   minWidth: 0,
   margin: 0,
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.eyebrowWide,
+  fontSize: dossierType.small,
   fontWeight: typography.weights.medium,
-  letterSpacing: '0.2em',
+  letterSpacing: '0.14em',
   textTransform: 'uppercase',
   color: colors.inkMuted,
 };
@@ -101,7 +102,7 @@ const sectionCountStyle: React.CSSProperties = {
   flex: 'none',
   fontStyle: 'normal',
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.caption,
+  fontSize: dossierType.small,
   color: colors.inkFaint,
   whiteSpace: 'nowrap',
 };
@@ -130,7 +131,7 @@ const dividedRowStyle: React.CSSProperties = {
 const unknownLabelStyle: React.CSSProperties = {
   flex: '1 0 100%',
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.caption,
+  fontSize: dossierType.small,
   letterSpacing: '0.04em',
   color: colors.inkFaint,
 };
@@ -140,7 +141,7 @@ const unknownValueStyle: React.CSSProperties = {
   flex: 1,
   minWidth: 0,
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.smallLoose,
+  fontSize: dossierType.small,
   fontWeight: typography.weights.normal,
   fontStyle: 'italic',
   color: colors.inkFaint,

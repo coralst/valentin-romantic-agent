@@ -1,6 +1,7 @@
 import { colors, insets, layout, radii, typography } from '../../design-system/tokens';
 import { PartnerAvatar } from '../PartnerAvatar';
 import { CARD_HAIRLINE } from './board-tones';
+import { dossierType } from './dossier-icons';
 
 interface IdentityHeaderProps {
   /** Her name, or null before it is known. */
@@ -62,7 +63,7 @@ const backStyle: React.CSSProperties = {
   boxShadow: 'inset 0 0 0 1px rgba(140, 47, 69, 0.22)',
   color: colors.claret,
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.bodyLarge,
+  fontSize: dossierType.body,
   lineHeight: 1,
 };
 
@@ -83,13 +84,24 @@ const nameStyle: React.CSSProperties = {
 const subtitleStyle: React.CSSProperties = {
   margin: '2px 0 0',
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.small,
+  fontSize: dossierType.small,
   color: colors.inkMuted,
 };
 
 const meterStyle: React.CSSProperties = {
   flex: 'none',
-  width: layout.meterWidth,
+  /*
+   * Sized by its own label rather than by `layout.meterWidth`.
+   *
+   * That token is the brief rail's measurement and was set for a 10px label; at the
+   * dossier's 15px floor the words wrapped onto the ticks, and pinning it to a
+   * bigger fixed number just moved the failure — "21 of 21" then slid under the
+   * CTA. `width: auto` with `flex: none` lets the label row state its own width and
+   * the ticks fill whatever that comes to, so no length of copy can clip. The
+   * minimum keeps the ticks from collapsing to a stub on a short profile.
+   */
+  width: 'auto',
+  minWidth: layout.meterWidth,
 };
 
 /** Mobile: the meter takes the full row under the name rather than a fixed 176px. */
@@ -115,17 +127,21 @@ const meterRowStyle: React.CSSProperties = {
  */
 const meterLabelStyle: React.CSSProperties = {
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.eyebrow,
+  fontSize: dossierType.small,
   fontWeight: typography.weights.medium,
-  letterSpacing: '0.2em',
+  letterSpacing: '0.14em',
   textTransform: 'uppercase',
   color: colors.inkFaint,
+  // The label and the count share one baseline row; wrapped, the second line sits
+  // on the ticks. The identity block beside it is `flex: 1`, so the room this asks
+  // for comes out of the whitespace after her name and not out of the name itself.
+  whiteSpace: 'nowrap',
 };
 
 const meterCountStyle: React.CSSProperties = {
   flex: 'none',
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.small,
+  fontSize: dossierType.small,
   fontWeight: typography.weights.medium,
   color: colors.claret,
   whiteSpace: 'nowrap',
@@ -158,7 +174,7 @@ const askAllStyle: React.CSSProperties = {
   background: colors.claret,
   color: colors.textOnAccent,
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.smallLoose,
+  fontSize: dossierType.small,
   fontWeight: typography.weights.medium,
   boxShadow: '0 6px 16px rgba(140, 47, 69, 0.26)',
   whiteSpace: 'nowrap',

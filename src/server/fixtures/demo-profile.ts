@@ -213,7 +213,12 @@ export const DEMO_PROFILE_PREFERENCES: readonly ExtractedPreference[] = [
     category: 'gifts',
     key: 'surprise preference',
     fieldId: 'surprise_preference',
-    value: 'Loves Surprises',
+    // 'Prefers to Choose' rather than 'Loves Surprises', which is the only
+    // registry value that raises a caution. `KeepInMind` returns null on an
+    // empty caution list, so with the cheerful option seeded the card was
+    // unreachable from the demo path in both the brief rail and the dossier
+    // board — the one widget a complete profile could never show.
+    value: 'Prefers to Choose',
     confidence: 0.83,
   },
 ] as const;

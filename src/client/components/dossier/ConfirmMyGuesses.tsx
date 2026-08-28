@@ -12,6 +12,7 @@ import {
   insetRing,
   paleCardStyle,
 } from './board-tones';
+import { dossierType } from './dossier-icons';
 
 /**
  * A discovered value Valentin is not confident enough to state as fact.
@@ -112,7 +113,7 @@ const guessStyle: React.CSSProperties = {
 
 const questionStyle: React.CSSProperties = {
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.body,
+  fontSize: dossierType.small,
   fontWeight: typography.weights.medium,
   color: colors.ink,
 };
@@ -128,14 +129,14 @@ const questionStyle: React.CSSProperties = {
 const provenanceStyle: React.CSSProperties = {
   margin: '3px 0 0',
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.label,
+  fontSize: dossierType.small,
   lineHeight: 1.45,
   color: colors.inkMuted,
 };
 
 const confidenceStyle: React.CSSProperties = {
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.micro,
+  fontSize: dossierType.small,
   fontWeight: typography.weights.medium,
   letterSpacing: '0.1em',
   textTransform: 'uppercase',
@@ -146,7 +147,7 @@ const confidenceStyle: React.CSSProperties = {
 const remainingStyle: React.CSSProperties = {
   margin: '2px 0 0',
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.label,
+  fontSize: dossierType.small,
   color: colors.inkFaint,
 };
 
@@ -163,7 +164,7 @@ const buttonBaseStyle: React.CSSProperties = {
   borderRadius: radii.pill,
   padding: '7px 14px',
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.label,
+  fontSize: dossierType.small,
   fontWeight: typography.weights.medium,
 };
 

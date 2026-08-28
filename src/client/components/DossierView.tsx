@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePreferencesContext } from '../context/preferences-context';
 import { useProfileStoreContext } from '../context/profile-store-context';
 import { useChatContext } from '../context/chat-context';
@@ -28,7 +28,10 @@ import {
   spanAllStyle,
 } from './dossier/CardBoard';
 import { StatBar, type Stat } from './dossier/StatBar';
-import { DossierTabs, type DossierTab, type TabDefinition } from './dossier/DossierTabs';
+import { SectionRail, type DossierSection } from './dossier/SectionRail';
+import { SectionHead } from './dossier/SectionHead';
+import { HerSizes } from './dossier/HerSizes';
+import { dossierType } from './dossier/dossier-icons';
 import { WhatsComing } from './dossier/WhatsComing';
 import { KeepInMindCard } from './dossier/KeepInMindCard';
 import { ConfirmMyGuesses, deriveGuesses, type Guess } from './dossier/ConfirmMyGuesses';
@@ -48,8 +51,8 @@ import { countGaps } from '../utils/people-derivation';
  */
 
 /**
- * The shell: a column flexbox whose first child is pinned and whose second
- * scrolls (`full-profile.html:21-22`).
+ * The shell: a column flexbox whose header and stat bar are pinned and whose body
+ * row fills the rest.
  *
  * `minWidth` / `minHeight: 0` because this is a grid child of the window and a
  * grid item's default `min-*: auto` sizes it to content — without them the board
@@ -65,12 +68,37 @@ const shellStyle: React.CSSProperties = {
   background: colors.porcelain,
 };
 
+/**
+ * The rail and the board, side by side.
+ *
+ * The rail is a *sibling* of the scroll container rather than a sticky child of
+ * it. Both work visually, but a sibling cannot be scrolled away by a stray
+ * `scrollIntoView`, needs no `top` offset tuning against the board's padding, and
+ * keeps the board's scrollbar hard against the window edge where the eye expects
+ * it. `minHeight: 0` for the usual reason: the board's `overflowY: auto` is only
+ * honoured if its flex parent refuses to grow to content.
+ */
+const bodyRowStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'row',
+  flex: 1,
+  minHeight: 0,
+  minWidth: 0,
+};
+
+/** Mobile stacks: the rail becomes a horizontal strip above the board. */
+const mobileBodyStyle: React.CSSProperties = {
+  ...bodyRowStyle,
+  flexDirection: 'column',
+};
+
 /** `.vsay` — Valentin's line at the foot of the board (`full-profile.html:222`). */
 const sayStyle: React.CSSProperties = {
   ...spanAllStyle,
   display: 'flex',
   alignItems: 'center',
-  gap: 13,
+  gap: 14,
+  marginTop: 8,
   padding: `${insets.tight}px ${insets.snug}px`,
   borderRadius: radii.card,
   background: colors.vitrineSayGradient,
@@ -88,8 +116,8 @@ const mobileSayStyle: React.CSSProperties = {
 };
 
 const sayCrestStyle: React.CSSProperties = {
-  width: 34,
-  height: 34,
+  width: 38,
+  height: 38,
   flex: 'none',
   borderRadius: radii.pill,
   overflow: 'hidden',
@@ -107,17 +135,17 @@ const sayBodyStyle: React.CSSProperties = { flex: 1, minWidth: 0 };
 
 const sayEyebrowStyle: React.CSSProperties = {
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.eyebrow,
+  fontSize: dossierType.eyebrow,
   fontWeight: typography.weights.semibold,
-  letterSpacing: '0.22em',
+  letterSpacing: '0.14em',
   textTransform: 'uppercase',
-  color: 'rgba(122, 92, 34, 0.8)',
+  color: 'rgba(122, 92, 34, 0.85)',
 };
 
 const sayTextStyle: React.CSSProperties = {
   margin: '4px 0 0',
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.smallLoose,
+  fontSize: dossierType.body,
   lineHeight: 1.5,
   color: colors.ink,
 };
@@ -127,12 +155,12 @@ const sayButtonStyle: React.CSSProperties = {
   border: 'none',
   cursor: 'pointer',
   borderRadius: radii.pill,
-  padding: '9px 15px',
+  padding: '11px 18px',
   background: colors.claret,
   color: colors.textOnAccent,
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.labelLoose,
-  fontWeight: typography.weights.medium,
+  fontSize: dossierType.small,
+  fontWeight: typography.weights.semibold,
   whiteSpace: 'nowrap',
 };
 
@@ -153,6 +181,12 @@ interface DossierViewProps {
  * (`deriveOccasions`, `deriveCautions`, `rankUnfilledFields`), so the two
  * surfaces cannot disagree about what is known, what is next or what is
  * dangerous. The dossier adds editing and settling; it does not add facts.
+ *
+ * ONE PAGE, NO TABS, as of this revision. `DossierTabs` and the `shows(...)` gate
+ * are gone; every section is mounted and in the flow, and `SectionRail` navigates
+ * rather than filters. The reasoning is in `dossier/SectionRail.tsx` — briefly:
+ * the tabs hid four fifths of the board at all times, broke ⌘F, and reported which
+ * tab you had pressed rather than where you were.
  */
 export function DossierView({ isMobile = false }: DossierViewProps) {
   const { state: preferencesState } = usePreferencesContext();
@@ -164,6 +198,9 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
   const { state: chatState, dispatch: chatDispatch } = useChatContext();
   const discovery = useOptionalDiscoveryContext();
   const { closeDossier } = useViewContext();
+
+  /** The board's scrolling element — the section rail's observer root. */
+  const boardRef = useRef<HTMLDivElement | null>(null);
 
   /**
    * Escape closes the dossier, which also returns focus to her portrait in the brief.
@@ -332,14 +369,7 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
   const peopleList = people?.state.people ?? [];
   const peopleGaps = countGaps(peopleList);
 
-  /**
-   * Which tab is showing, and who is being edited.
-   *
-   * Local state, not the URL and not a context: the dossier is already a
-   * non-routed sibling of the chat column (see the note above), and a tab you
-   * left on last time is not something you want restored three days later.
-   */
-  const [activeTab, setActiveTab] = useState<DossierTab>('overview');
+  /** Who is being edited. Local state — see the note on the old `activeTab`. */
   const [editing, setEditing] = useState<
     { person: Person | null; generation: PersonGeneration } | null
   >(null);
@@ -398,21 +428,68 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
     return list;
   }, [togetherDays, nextOccasion, filled, total, peopleList.length, peopleGaps]);
 
-  const tabs = useMemo<TabDefinition[]>(
-    () => [
-      { id: 'overview', label: 'Overview', tone: 'date' },
-      { id: 'known', label: 'Everything I know', count: filled, tone: 'fact' },
-      { id: 'gifts', label: 'To do', count: guesses.length + gaps.length, tone: 'gift' },
-      { id: 'people', label: 'Her people', count: peopleList.length, tone: 'kin' },
-      { id: 'memories', label: 'Mentioned', count: allPreferences.length, tone: 'mood' },
-    ],
-    [filled, guesses.length, gaps.length, peopleList.length, allPreferences.length],
+  /** How many of the three sizes are on file — the rail's count for that section. */
+  const knownSizes = ['clothing_size', 'shoe_size', 'ring_size'].filter(
+    (fieldId) => getFieldValue(fieldId) !== null,
+  ).length;
+
+  /*
+   * Which sections have anything in them.
+   *
+   * A rail entry that scrolls to a heading with nothing under it is worse than no
+   * entry at all, so the empty ones are dropped from the rail AND from the board
+   * together — one predicate, used twice, so the two can never disagree.
+   *
+   * Most sections are always shown, because each has a real empty state that says
+   * something true: an add button on the tree, `Ask` pills on the unknown sizes,
+   * and — the one worth being deliberate about — "nothing yet" on `Also mentioned`,
+   * whose whole job is to make an empty extraction pile distinguishable from a
+   * broken one. Those stay.
+   *
+   * `confirm` and `ask` are the exceptions: `ConfirmMyGuesses` literally returns
+   * `null` with no guesses, so its heading would stand over nothing, and a "worth
+   * asking next" heading with nothing under it is a promise the board is not
+   * keeping.
+   */
+  const isShown = useMemo<Record<string, boolean>>(
+    () => ({
+      'right-now': true,
+      sizes: true,
+      people: true,
+      confirm: guesses.length > 0,
+      ask: gaps.length > 0,
+      file: true,
+      mentioned: true,
+    }),
+    [guesses.length, gaps.length],
   );
 
-  /** Every tab shows the overview's cards too when it is the overview. */
-  const shows = useCallback(
-    (...tabsShowingIt: DossierTab[]) => tabsShowingIt.includes(activeTab),
-    [activeTab],
+  /**
+   * The rail's entries, in board order.
+   *
+   * Order matters twice over: it is the reading order of the board, and
+   * `SectionRail`'s scroll-spy resolves a tie by taking the *last* of these that
+   * is in view, which is only "the one you scrolled to" if this matches the DOM.
+   *
+   * The labels are shorter than the headings they point at — "What I know" for
+   * "Everything I know", "To confirm" for "Confirm my guesses". A rail entry is a
+   * place name, not a sentence, and at 17px in a 238px column the full headings
+   * ellipsised. A label that ends in "…" tells you no more than the tab bar did.
+   */
+  const sections = useMemo<DossierSection[]>(
+    () =>
+      (
+        [
+          { id: 'right-now', label: 'Right now', icon: 'heart', count: null },
+          { id: 'sizes', label: 'Her sizes', icon: 'ruler', count: knownSizes },
+          { id: 'people', label: 'Her people', icon: 'people', count: peopleList.length },
+          { id: 'confirm', label: 'To confirm', icon: 'check', count: guesses.length },
+          { id: 'ask', label: 'Worth asking', icon: 'ask', count: gaps.length },
+          { id: 'file', label: 'What I know', icon: 'book', count: filled },
+          { id: 'mentioned', label: 'Also mentioned', icon: 'quote', count: allPreferences.length },
+        ] as DossierSection[]
+      ).filter((section) => isShown[section.id]),
+    [knownSizes, peopleList.length, guesses.length, gaps.length, filled, allPreferences.length, isShown],
   );
 
   const savePerson = useCallback(
@@ -466,28 +543,32 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
 
       <StatBar stats={stats} isMobile={isMobile} />
 
-      <DossierTabs
-        tabs={tabs}
-        active={activeTab}
-        onSelect={setActiveTab}
-        isMobile={isMobile}
-      />
+      <div style={isMobile ? mobileBodyStyle : bodyRowStyle}>
+        <SectionRail sections={sections} scrollRef={boardRef} isMobile={isMobile} />
 
-      <CardBoard isMobile={isMobile}>
-        {/*
-         * The wide span is earned, not fixed.
-         *
-         * Found in the partial-profile screenshots, which the 18/18 demo seed hides:
-         * with no dates known, `What's coming` is a single line of prose, and
-         * spanning it across two-thirds of the board left a ~330px void beneath it,
-         * because a grid row is still as tall as its tallest member no matter how
-         * the items are aligned within it. Empty, it takes one column like
-         * everything else and the short cards simply sit at the top of their own
-         * columns — which is what `align-items: start` is for. Populated, it needs
-         * the width for the spine, the dates and the act-by chips, so it takes it
-         * back.
-         */}
-        {shows('overview', 'gifts') && (
+        <CardBoard isMobile={isMobile} scrollRef={boardRef}>
+          {/* ---------------------------------------------- Right now */}
+          <SectionHead
+            id="right-now"
+            title="Right now"
+            icon="heart"
+            note="The dates with consequences, and the one thing to know before you act on them."
+            isMobile={isMobile}
+          />
+
+          {/*
+           * The wide span is earned, not fixed.
+           *
+           * Found in the partial-profile screenshots, which the 21/21 demo seed hides:
+           * with no dates known, `What's coming` is a single line of prose, and
+           * spanning it across two-thirds of the board left a ~330px void beneath it,
+           * because a grid row is still as tall as its tallest member no matter how
+           * the items are aligned within it. Empty, it takes one column like
+           * everything else and the short cards simply sit at the top of their own
+           * columns — which is what `align-items: start` is for. Populated, it needs
+           * the width for the spine, the dates and the act-by chips, so it takes it
+           * back.
+           */}
           <div
             style={
               isMobile
@@ -500,22 +581,44 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
           >
             <WhatsComing occasions={occasions} />
           </div>
-        )}
 
-        {shows('overview', 'gifts') && (
           <div style={isMobile ? undefined : span(BOARD_THIRD)}>
             <KeepInMindCard cautions={cautions} />
           </div>
-        )}
 
-        {/*
-         * Her people, on the overview as well as on their own tab.
-         *
-         * The tree is the widest card on the board because it is a *diagram*: at a
-         * third of the width its three rows wrap into an unreadable stack, which
-         * loses the only thing a drawing gives you over a list.
-         */}
-        {shows('overview', 'people') && (
+          {/* ---------------------------------------------- Her sizes */}
+          <SectionHead
+            id="sizes"
+            title="Her sizes"
+            icon="ruler"
+            count={knownSizes}
+            note="Promoted out of the field list, because these are the three you look up standing in a shop."
+            isMobile={isMobile}
+          />
+
+          <div style={isMobile ? undefined : span(BOARD_HALF)}>
+            <HerSizes getFieldValue={getFieldValue} onAsk={askAbout} isMobile={isMobile} />
+          </div>
+
+          {/* ---------------------------------------------- Her people */}
+          <SectionHead
+            id="people"
+            title="Her people"
+            icon="people"
+            count={peopleList.length}
+            note={
+              peopleGaps > 0
+                ? `Three generations. ${peopleGaps} ${peopleGaps === 1 ? 'name I have' : 'names I have'} not caught yet.`
+                : 'Three generations — her elders, her own, and anyone younger.'
+            }
+            isMobile={isMobile}
+          />
+
+          {/*
+           * The tree is the widest card on the board because it is a *diagram*: at a
+           * third of the width its three rows wrap into an unreadable stack, which
+           * loses the only thing a drawing gives you over a list.
+           */}
           <div style={isMobile ? undefined : span(BOARD_TWO_THIRDS)}>
             <FamilyTree
               people={peopleList}
@@ -527,9 +630,7 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
               onAskAboutGap={askAboutPerson}
             />
           </div>
-        )}
 
-        {shows('overview', 'people') && (
           <div style={isMobile ? undefined : span(BOARD_THIRD)}>
             <TheirBirthdays
               people={peopleList}
@@ -538,43 +639,69 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
               }
             />
           </div>
-        )}
 
-        {editing && (
-          <div style={isMobile ? undefined : span(BOARD_HALF)}>
-            <PersonEditor
-              person={editing.person}
-              generation={editing.generation}
-              onSave={savePerson}
-              onCancel={() => setEditing(null)}
-              onRemove={editing.person ? removePerson : undefined}
+          {editing && (
+            <div style={isMobile ? undefined : span(BOARD_HALF)}>
+              <PersonEditor
+                person={editing.person}
+                generation={editing.generation}
+                onSave={savePerson}
+                onCancel={() => setEditing(null)}
+                onRemove={editing.person ? removePerson : undefined}
+              />
+            </div>
+          )}
+
+          {/* ---------------------------------------------- Confirm guesses */}
+          {isShown.confirm && (
+            <SectionHead
+              id="confirm"
+              title="Confirm my guesses"
+              icon="check"
+              count={guesses.length}
+              note="I inferred these from how you talk about her. One tap each and they stop being guesses."
+              isMobile={isMobile}
             />
-          </div>
-        )}
+          )}
 
-        {shows('overview', 'gifts') && (
-          <div style={isMobile ? undefined : span(BOARD_THIRD)}>
-            <ConfirmMyGuesses
-              guesses={guesses}
-              onConfirm={confirmGuess}
-              onReject={rejectGuess}
+          {isShown.confirm && (
+            <div style={isMobile ? undefined : span(BOARD_HALF)}>
+              <ConfirmMyGuesses
+                guesses={guesses}
+                onConfirm={confirmGuess}
+                onReject={rejectGuess}
+              />
+            </div>
+          )}
+
+          {/* ---------------------------------------------- Worth asking */}
+          {isShown.ask && (
+            <SectionHead
+              id="ask"
+              title="Worth asking next"
+              icon="ask"
+              count={gaps.length}
+              note="Ranked by how much each answer would change what I can suggest."
+              isMobile={isMobile}
             />
-          </div>
-        )}
+          )}
 
-        {shows('overview', 'gifts') && (
-          <div style={isMobile ? undefined : span(BOARD_THIRD)}>
-            <WorthAskingNext gaps={gaps} onAsk={(gap) => askAbout(gap.label)} />
-          </div>
-        )}
+          {isShown.ask && (
+            <div style={isMobile ? undefined : span(BOARD_HALF)}>
+              <WorthAskingNext gaps={gaps} onAsk={(gap) => askAbout(gap.label)} />
+            </div>
+          )}
 
-        {shows('memories') && (
-          <div style={isMobile ? undefined : span(BOARD_HALF)}>
-            <AlsoMentioned preferences={allPreferences} />
-          </div>
-        )}
+          {/* ---------------------------------------------- Everything I know */}
+          <SectionHead
+            id="file"
+            title="Everything I know"
+            icon="book"
+            count={filled}
+            note="Every field on file. Click a value to correct me; click Ask and I'll raise it in conversation."
+            isMobile={isMobile}
+          />
 
-        {shows('overview', 'known') && (
           <div style={isMobile ? undefined : spanAllStyle}>
             <EverythingIKnow
               getFieldValue={getFieldValue}
@@ -585,28 +712,48 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
               isMobile={isMobile}
             />
           </div>
-        )}
 
-        {topGap && shows('overview') && (
-          <div style={isMobile ? mobileSayStyle : sayStyle} data-testid="dossier-say">
-            <div style={sayCrestStyle}>
-              <img src="/logo.png" alt="" style={sayCrestImageStyle} />
+          {/* ---------------------------------------------- Also mentioned */}
+          {isShown.mentioned && (
+            <SectionHead
+              id="mentioned"
+              title="Also mentioned"
+              icon="quote"
+              count={allPreferences.length}
+              note="Things you said that I could not file against a field, kept verbatim in case they matter."
+              isMobile={isMobile}
+            />
+          )}
+
+          {isShown.mentioned && (
+            <div style={isMobile ? undefined : span(BOARD_HALF)}>
+              <AlsoMentioned preferences={allPreferences} />
             </div>
-            <div style={sayBodyStyle}>
-              <span style={sayEyebrowStyle}>Valentin suggests</span>
-              <p style={sayTextStyle}>{topGap.reason}</p>
+          )}
+
+          {/* Valentin's closing line. Not a section: it is a single sentence, and a
+              rail entry pointing at one sentence would be noise. */}
+          {topGap && (
+            <div style={isMobile ? mobileSayStyle : sayStyle} data-testid="dossier-say">
+              <div style={sayCrestStyle}>
+                <img src="/logo.png" alt="" style={sayCrestImageStyle} />
+              </div>
+              <div style={sayBodyStyle}>
+                <span style={sayEyebrowStyle}>Valentin suggests</span>
+                <p style={sayTextStyle}>{topGap.reason}</p>
+              </div>
+              <button
+                type="button"
+                style={sayButtonStyle}
+                onClick={() => askAbout(topGap.label)}
+                data-testid="dossier-say-ask"
+              >
+                Let&rsquo;s talk about it
+              </button>
             </div>
-            <button
-              type="button"
-              style={sayButtonStyle}
-              onClick={() => askAbout(topGap.label)}
-              data-testid="dossier-say-ask"
-            >
-              Let&rsquo;s talk about it
-            </button>
-          </div>
-        )}
-      </CardBoard>
+          )}
+        </CardBoard>
+      </div>
     </div>
   );
 }

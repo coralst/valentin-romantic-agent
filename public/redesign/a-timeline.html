@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A · Timeline spine — Samantha</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+  /* CONCEPT A — TIMELINE SPINE
+     Organising principle: time. Everything Valentin knows is hung off one
+     vertical chronology, because the only question with a deadline is "what is
+     coming and when". Tabs disappear because time is a single axis: you scroll
+     it instead of switching it. Fitts's law is served by one long scroll target;
+     recognition-over-recall by dated markers rather than category names. */
+
+  .page { max-width: 940px; margin: 0 auto; padding: 0 28px 140px; }
+
+  /* ---- Hero ---- */
+  .hero { padding: 64px 0 40px; display: flex; gap: 28px; align-items: flex-end; }
+  .avatar {
+    width: 108px; height: 108px; border-radius: 50%; flex: none;
+    background: linear-gradient(150deg, #9B3A52 0%, #C4566E 100%);
+    color: var(--cream); display: grid; place-items: center;
+    font-family: var(--display); font-size: 44px; line-height: 1;
+    box-shadow: 0 12px 32px rgba(140, 47, 69, 0.28);
+  }
+  .hero h1 { font-size: var(--t-hero); line-height: 1.02; }
+  .hero .sub { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 12px;
+               font-size: var(--t-body); color: var(--ink-muted); }
+  .hero .sub span { display: inline-flex; align-items: center; gap: 7px; }
+
+  /* ---- Progress ribbon: one number, not four ---- */
+  .ribbon {
+    display: flex; align-items: center; gap: 20px;
+    padding: 20px 26px; border-radius: var(--r-pill);
+    background: var(--paper); box-shadow: var(--shadow-card); margin-bottom: 52px;
+  }
+  .ribbon .big { font-family: var(--display); font-size: 32px; line-height: 1; }
+  .ribbon .lbl { font-size: var(--t-sm); color: var(--ink-muted); }
+  .bar { flex: 1; height: 10px; border-radius: 99px; background: var(--border); overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 100%; background: var(--claret); }
+
+  /* ---- The spine ---- */
+  .spine { position: relative; padding-left: 76px; }
+  .spine::before {
+    content: ''; position: absolute; left: 27px; top: 10px; bottom: 10px; width: 2px;
+    background: linear-gradient(var(--claret) 0%, var(--blush) 60%, transparent 100%);
+  }
+  .node { position: relative; margin-bottom: 40px; }
+  .node .dot {
+    position: absolute; left: -76px; top: 0;
+    width: 56px; height: 56px; border-radius: 50%;
+    display: grid; place-items: center;
+    background: var(--paper); color: var(--claret);
+    box-shadow: 0 0 0 2px var(--border), var(--shadow-card);
+  }
+  .node.urgent .dot { background: var(--claret); color: var(--cream); box-shadow: 0 0 0 5px rgba(140,47,69,.14); }
+  .node.caution .dot { color: var(--gold); box-shadow: 0 0 0 2px rgba(176,140,79,.4), var(--shadow-card); }
+
+  .when { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .when h2 { font-size: var(--t-xl); }
+  .countdown {
+    font-size: var(--t-sm); font-weight: 600; letter-spacing: .02em;
+    padding: 5px 13px; border-radius: var(--r-pill);
+    background: var(--blush); color: var(--claret-deep);
+  }
+  .node.urgent .countdown { background: var(--claret); color: var(--cream); }
+  .date { font-size: var(--t-body); color: var(--ink-muted); margin-top: 4px; }
+
+  .deadline {
+    display: inline-flex; align-items: center; gap: 10px; margin-top: 16px;
+    font-size: var(--t-body); font-weight: 500;
+  }
+  .deadline b { color: var(--claret); }
+
+  .actions { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 13px 20px; border-radius: var(--r-pill);
+    font-size: var(--t-body); font-weight: 500;
+  }
+  .btn-primary { background: var(--claret); color: var(--cream); box-shadow: 0 8px 20px rgba(140,47,69,.24); }
+  .btn-ghost { background: var(--paper); color: var(--ink); box-shadow: var(--shadow-card); }
+
+  /* ---- Cards that hang off a node ---- */
+  .card {
+    background: var(--paper); border-radius: var(--r-md); padding: 24px 26px;
+    box-shadow: var(--shadow-card); margin-top: 18px;
+  }
+  .card.warn { background: #FFF6EC; box-shadow: inset 0 0 0 1.5px rgba(176,140,79,.32); }
+  .card h3 { font-size: var(--t-lg); margin-bottom: 6px; }
+  .card p { color: var(--ink-muted); }
+
+  .people { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; }
+  .chip {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 18px 12px 12px; border-radius: var(--r-pill);
+    background: var(--cream); box-shadow: inset 0 0 0 1.5px var(--border);
+  }
+  .chip .ini {
+    width: 40px; height: 40px; border-radius: 50%; flex: none; display: grid; place-items: center;
+    background: var(--blush); color: var(--claret-deep); font-weight: 600; font-size: var(--t-body);
+  }
+  .chip.gap { background: transparent; box-shadow: inset 0 0 0 2px var(--border); border-style: dashed; }
+  .chip.gap .ini { background: transparent; box-shadow: inset 0 0 0 2px var(--border); color: var(--ink-faint); }
+  .chip .nm { font-weight: 600; font-size: var(--t-body); }
+  .chip .rel { font-size: var(--t-sm); color: var(--ink-muted); }
+  .chip .bday { font-size: var(--t-sm); color: var(--claret); font-weight: 600; }
+
+  /* ---- Knowledge: definition list, not a card grid ---- */
+  .know { margin-top: 20px; }
+  .know-group + .know-group { margin-top: 28px; }
+  .know-group > h4 {
+    display: flex; align-items: center; gap: 10px; font-size: var(--t-md);
+    font-weight: 600; color: var(--claret); margin-bottom: 12px;
+  }
+  .rows { background: var(--paper); border-radius: var(--r-md); box-shadow: var(--shadow-card); overflow: hidden; }
+  .row {
+    display: grid; grid-template-columns: 190px 1fr auto; gap: 18px; align-items: baseline;
+    padding: 17px 24px;
+  }
+  .row + .row { box-shadow: inset 0 1.5px 0 var(--border-subtle); }
+  .row:hover { background: var(--cream); }
+  .row dt { font-size: var(--t-sm); color: var(--ink-muted); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+  .row dd { font-size: var(--t-body); }
+  .row .conf { font-size: var(--t-sm); color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+
+  .todo { display: grid; gap: 12px; margin-top: 6px; }
+  .todo-item {
+    display: flex; align-items: center; gap: 16px; padding: 16px 20px;
+    background: var(--paper); border-radius: var(--r-md); box-shadow: var(--shadow-card);
+  }
+  .todo-item .q { flex: 1; font-size: var(--t-body); }
+  .yn { display: flex; gap: 8px; }
+  .yn button { padding: 9px 16px; border-radius: var(--r-pill); font-size: var(--t-sm); font-weight: 600; }
+  .yn .y { background: var(--claret); color: var(--cream); }
+  .yn .n { background: var(--cream); color: var(--ink-muted); box-shadow: inset 0 0 0 1.5px var(--border); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="hero">
+    <div class="avatar" aria-hidden="true">S</div>
+    <div>
+      <h1>Samantha</h1>
+      <div class="sub">
+        <span><svg class="i-sm i"><use href="icons.svg#heart"/></svg> 1,805 days together</span>
+        <span><svg class="i-sm i"><use href="icons.svg#cake"/></svg> 12 June 1994 · Gemini</span>
+        <span><svg class="i-sm i"><use href="icons.svg#pin"/></svg> Met at a pottery class</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="ribbon">
+    <div>
+      <div class="big">21<span style="color:var(--ink-faint)">/21</span></div>
+      <div class="lbl">Everything I know</div>
+    </div>
+    <div class="bar"><i></i></div>
+    <div style="text-align:right">
+      <div class="big">11</div>
+      <div class="lbl">guesses to confirm</div>
+    </div>
+  </div>
+
+  <div class="spine">
+
+    <section class="node urgent">
+      <div class="dot"><svg class="i i-lg"><use href="icons.svg#heart"/></svg></div>
+      <div class="when">
+        <h2>Anniversary</h2>
+        <span class="countdown">in 21 days</span>
+      </div>
+      <div class="date">Friday 18 September · your fifth</div>
+      <div class="deadline">
+        <svg class="i"><use href="icons.svg#clock"/></svg>
+        Book by <b>11 September</b> to have anything shipped in time
+      </div>
+      <div class="actions">
+        <button class="btn btn-primary"><svg class="i-sm i"><use href="icons.svg#chat"/></svg> Plan this with Valentin</button>
+        <button class="btn btn-ghost"><svg class="i-sm i"><use href="icons.svg#gift"/></svg> Gift ideas from her wish list</button>
+      </div>
+      <div class="card warn">
+        <h3 style="display:flex;align-items:center;gap:10px;color:var(--gold)">
+          <svg class="i"><use href="icons.svg#alert"/></svg> She prefers to choose
+        </h3>
+        <p>Ask first. A surprise would land as pressure, not delight.</p>
+      </div>
+    </section>
+
+    <section class="node">
+      <div class="dot"><svg class="i i-lg"><use href="icons.svg#cake"/></svg></div>
+      <div class="when"><h2>Ruth's birthday</h2><span class="countdown">in 73 days</span></div>
+      <div class="date">9 November · her mother</div>
+      <div class="card">
+        <p>Remembering her mother's birthday lands harder than remembering her own. Ruth goes by Ruthie and calls on Sundays.</p>
+      </div>
+    </section>
+
+    <section class="node">
+      <div class="dot"><svg class="i i-lg"><use href="icons.svg#calendar"/></svg></div>
+      <div class="when"><h2>Together since</h2><span class="countdown">in 187 days</span></div>
+      <div class="date">Wednesday 3 March · plan by 28 February</div>
+    </section>
+
+    <section class="node">
+      <div class="dot"><svg class="i i-lg"><use href="icons.svg#cake"/></svg></div>
+      <div class="when"><h2>Nadia's birthday</h2><span class="countdown">in 206 days</span></div>
+      <div class="date">22 March · her older sister, the one she tells things to first</div>
+    </section>
+
+    <section class="node">
+      <div class="dot"><svg class="i i-lg"><use href="icons.svg#sparkle"/></svg></div>
+      <div class="when"><h2>Her birthday</h2><span class="countdown">in 288 days</span></div>
+      <div class="date">Saturday 12 June · order by 29 May</div>
+    </section>
+
+    <section class="node caution">
+      <div class="dot"><svg class="i i-lg"><use href="icons.svg#users"/></svg></div>
+      <div class="when"><h2>Her people</h2></div>
+      <div class="date">Four names. One I still haven't caught.</div>
+      <div class="people">
+        <div class="chip"><span class="ini">R</span><span><span class="nm">Ruth</span><br><span class="rel">Her mother</span></span><span class="bday">9 Nov</span></div>
+        <div class="chip"><span class="ini">N</span><span><span class="nm">Nadia</span><br><span class="rel">Older sister</span></span><span class="bday">22 Mar</span></div>
+        <div class="chip"><span class="ini">T</span><span><span class="nm">Tom</span><br><span class="rel">Her closest friend</span></span></div>
+        <div class="chip gap"><span class="ini">?</span><span><span class="nm" style="color:var(--ink-faint)">Name unknown</span><br><span class="rel">Nadia's husband</span></span></div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-ghost"><svg class="i-sm i"><use href="icons.svg#ask"/></svg> Ask her what he's called</button>
+      </div>
+    </section>
+
+    <section class="node">
+      <div class="dot"><svg class="i i-lg"><use href="icons.svg#target"/></svg></div>
+      <div class="when"><h2>Worth confirming</h2><span class="countdown">11 guesses</span></div>
+      <div class="date">I inferred these. One tap each and they stop being guesses.</div>
+      <div class="todo">
+        <div class="todo-item">
+          <svg class="i" style="color:var(--gold)"><use href="icons.svg#quote"/></svg>
+          <span class="q">She'd rather have one good thing than three nice ones.</span>
+          <span class="yn"><button class="y">Right</button><button class="n">Not quite</button></span>
+        </div>
+        <div class="todo-item">
+          <svg class="i" style="color:var(--gold)"><use href="icons.svg#quote"/></svg>
+          <span class="q">Flowers only if they're not roses.</span>
+          <span class="yn"><button class="y">Right</button><button class="n">Not quite</button></span>
+        </div>
+        <div class="todo-item" style="justify-content:center;color:var(--claret);font-weight:600">
+          <svg class="i-sm i"><use href="icons.svg#arrow"/></svg> 9 more
+        </div>
+      </div>
+    </section>
+
+    <section class="node">
+      <div class="dot"><svg class="i i-lg"><use href="icons.svg#book"/></svg></div>
+      <div class="when"><h2>Everything I know</h2><span class="countdown">21 of 21</span></div>
+      <div class="date">Her whole file, in plain rows. Tap any line to correct me.</div>
+
+      <div class="know">
+        <div class="know-group">
+          <h4><svg class="i-sm i"><use href="icons.svg#heart"/></svg> Basics &amp; the two of you</h4>
+          <dl class="rows">
+            <div class="row"><dt>Nickname</dt><dd>Sam</dd><span class="conf">91%</span></div>
+            <div class="row"><dt>Love language</dt><dd>Quality time</dd><span class="conf">92%</span></div>
+            <div class="row"><dt>How we met</dt><dd>A rainy Sunday pottery class where you both made the same lopsided mug</dd><span class="conf">89%</span></div>
+            <div class="row"><dt>Zodiac</dt><dd>Gemini</dd><span class="conf">86%</span></div>
+          </dl>
+        </div>
+
+        <div class="know-group">
+          <h4><svg class="i-sm i"><use href="icons.svg#palette"/></svg> What she loves</h4>
+          <dl class="rows">
+            <div class="row"><dt>Food</dt><dd>Northern Italian — anything with brown butter and sage</dd><span class="conf">93%</span></div>
+            <div class="row"><dt>Music</dt><dd>Indie folk, the kind with close harmonies</dd><span class="conf">84%</span></div>
+            <div class="row"><dt>Hobbies</dt><dd>Pottery · sunrise trail runs · watercolour sketching · bread baking</dd><span class="conf">90%</span></div>
+            <div class="row"><dt>Dream trip</dt><dd>Kyoto during cherry blossom season</dd><span class="conf">87%</span></div>
+            <div class="row"><dt>Colour</dt><dd>Deep sage green</dd><span class="conf">96%</span></div>
+            <div class="row"><dt>Scent</dt><dd>Warm and woody — fig, cedar, a little vanilla</dd><span class="conf">79%</span></div>
+            <div class="row"><dt>Style</dt><dd>Relaxed and tactile — linen, oversized knits, one good silk scarf</dd><span class="conf">81%</span></div>
+          </dl>
+        </div>
+
+        <div class="know-group">
+          <h4><svg class="i-sm i"><use href="icons.svg#ruler"/></svg> Sizes &amp; gifting</h4>
+          <dl class="rows">
+            <div class="row"><dt>Clothing</dt><dd>UK 10 / EU 38 — sizes up for knitwear</dd><span class="conf">90%</span></div>
+            <div class="row"><dt>Shoes</dt><dd>UK 6 / EU 39</dd><span class="conf">94%</span></div>
+            <div class="row"><dt>Ring</dt><dd>UK M (US 6)</dd><span class="conf">82%</span></div>
+            <div class="row"><dt>Budget</dt><dd>Around $80 for everyday gestures, more for milestones</dd><span class="conf">78%</span></div>
+            <div class="row"><dt>Wish list</dt><dd>Ceramic glaze set · linen apron · hardback poetry anthology · trail shoes</dd><span class="conf">85%</span></div>
+          </dl>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<nav class="chooser">
+  <a href="a-timeline.html" aria-current="page">A · Timeline</a>
+  <a href="b-bento.html">B · Bento</a>
+  <a href="c-focus.html">C · Focus rail</a>
+  <a href="d-editorial.html">D · Editorial</a>
+  <a href="e-triage.html">E · Triage</a>
+  <a href="sidebars.html">Sidebars</a>
+</nav>
+</body>
+</html>

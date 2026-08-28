@@ -87,16 +87,14 @@ describe('DossierView board layout', () => {
     expect(screen.getByTestId('dossier-whats-coming-slot').style.gridColumn).toBe('span 8');
   });
 
-  it('shows the zero-state copy for the cards a partial profile leaves empty', async () => {
+  it('shows the zero-state copy for the cards a partial profile leaves empty', () => {
     renderDossier([{ fieldId: 'partner_name', value: 'Samantha' }]);
-    // "Also mentioned" lives on the Memories tab now, so reach it the way a user
-    // would. It still has an empty state rather than vanishing, because its
-    // absence would otherwise be indistinguishable from dropped extractions.
-    await userEvent.click(screen.getByTestId('dossier-tab-memories'));
+    // No clicking to get here any more: every section is mounted, so the empty
+    // state is simply on the page. It still renders rather than vanishing, because
+    // its absence would be indistinguishable from dropped extractions.
     expect(screen.getByTestId('dossier-also-mentioned-empty')).toBeInTheDocument();
     // "Confirm my guesses" and "Keep in mind" render nothing at all: a prompt
     // with no question in it, and a warning with nothing to warn about.
-    await userEvent.click(screen.getByTestId('dossier-tab-overview'));
     expect(screen.queryByTestId('dossier-guesses')).not.toBeInTheDocument();
     expect(screen.queryByTestId('dossier-keep-in-mind')).not.toBeInTheDocument();
   });
@@ -125,15 +123,63 @@ describe('DossierView board layout', () => {
     expect(bar).toHaveTextContent('How well I know her');
   });
 
-  it('filters the board by tab rather than showing everything at once', async () => {
+  /*
+   * The replacement for the old "filters the board by tab" test, inverted.
+   *
+   * That test asserted the thing the redesign exists to undo: clicking `Everything
+   * I know` used to unmount the family tree. Now nothing unmounts, so what is worth
+   * pinning is that the tree, the field list and her sizes are all on one page at
+   * once — the pair of facts the panel is most often opened for.
+   */
+  it('shows every section at once rather than filtering the board', () => {
     renderDossier([{ fieldId: 'partner_name', value: 'Samantha' }]);
     expect(screen.getByTestId('dossier-family-tree')).toBeInTheDocument();
-
-    await userEvent.click(screen.getByTestId('dossier-tab-known'));
-    expect(screen.getByTestId('dossier-tab-known')).toHaveAttribute('aria-selected', 'true');
-    // Her people is a different tab, so its cards are gone — that is the point of
-    // the overview staying short.
-    expect(screen.queryByTestId('dossier-family-tree')).not.toBeInTheDocument();
     expect(screen.getByTestId('dossier-everything')).toBeInTheDocument();
+    expect(screen.getByTestId('dossier-her-sizes')).toBeInTheDocument();
+    expect(screen.getByTestId('dossier-their-birthdays')).toBeInTheDocument();
+  });
+
+  it('gives the rail one entry per heading actually on the board, and no more', () => {
+    renderDossier([{ fieldId: 'partner_name', value: 'Samantha' }]);
+
+    const railIds = screen
+      .getAllByTestId(/^dossier-section-link-/)
+      .map((entry) => entry.dataset.testid?.replace('dossier-section-link-', ''));
+    const headingIds = screen
+      .getAllByTestId('dossier-section-head')
+      .map((head) => head.dataset.sectionId);
+
+    // Same set, same order. A rail entry whose heading is missing scrolls nowhere,
+    // and a heading with no entry is unreachable from the rail — both are the same
+    // bug, and this is the assertion that catches either.
+    expect(railIds).toEqual(headingIds);
+
+    // Nothing has been guessed from an empty chat, so `Confirm my guesses` is not
+    // one of them: `ConfirmMyGuesses` returns null with no guesses, which would
+    // leave its heading standing over an empty row.
+    expect(railIds).not.toContain('confirm');
+    expect(railIds).toContain('sizes');
+  });
+
+  it('jumps to a section instead of hiding the others when the rail is pressed', async () => {
+    renderDossier([{ fieldId: 'partner_name', value: 'Samantha' }]);
+
+    // jsdom performs no layout, so `scrollIntoView` is not implemented — the point
+    // being asserted is that the rail *navigates*: it calls scroll, marks itself
+    // current, and leaves every card mounted.
+    const heading = screen
+      .getAllByTestId('dossier-section-head')
+      .find((head) => head.dataset.sectionId === 'file');
+    const scrollIntoView = vi.fn();
+    heading!.scrollIntoView = scrollIntoView;
+
+    await userEvent.click(screen.getByTestId('dossier-section-link-file'));
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+    expect(screen.getByTestId('dossier-section-link-file')).toHaveAttribute(
+      'aria-current',
+      'true',
+    );
+    expect(screen.getByTestId('dossier-family-tree')).toBeInTheDocument();
   });
 });

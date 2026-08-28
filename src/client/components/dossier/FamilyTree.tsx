@@ -13,6 +13,7 @@ import {
 } from '../../utils/people-derivation';
 import { cardEmptyStyle, cardHeadStyle, cardTitleStyle } from './board-tones';
 import { toneCountStyle, toneGlyphStyle, tonedCardStyle } from './accent-tones';
+import { DossierIcon, dossierType } from './dossier-icons';
 
 /**
  * Her family, drawn.
@@ -114,7 +115,7 @@ const initialStyle: React.CSSProperties = {
   background: '#F9EDF3',
   color: '#A05A7A',
   fontFamily: typography.headingFontFamily,
-  fontSize: typography.px.small,
+  fontSize: dossierType.small,
   lineHeight: 1,
 };
 
@@ -127,7 +128,7 @@ const herInitialStyle: React.CSSProperties = {
 const nameStyle: React.CSSProperties = {
   display: 'block',
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.small,
+  fontSize: dossierType.small,
   fontWeight: typography.weights.semibold,
   lineHeight: 1.25,
   overflow: 'hidden',
@@ -139,7 +140,7 @@ const roleStyle: React.CSSProperties = {
   display: 'block',
   marginTop: 1,
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.caption,
+  fontSize: dossierType.small,
   color: colors.inkMuted,
   overflow: 'hidden',
   textOverflow: 'ellipsis',
@@ -155,7 +156,7 @@ const dateStyle: React.CSSProperties = {
   flex: 'none',
   marginLeft: 'auto',
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.micro,
+  fontSize: dossierType.small,
   fontWeight: typography.weights.medium,
   letterSpacing: '0.06em',
   color: colors.inkFaint,
@@ -170,7 +171,7 @@ const legendStyle: React.CSSProperties = {
   paddingTop: 11,
   borderTop: `1px dashed ${colors.linenShade}`,
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.caption,
+  fontSize: dossierType.small,
   color: colors.inkMuted,
 };
 
@@ -193,7 +194,7 @@ const addStyle: React.CSSProperties = {
   background: 'transparent',
   color: colors.claret,
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.caption,
+  fontSize: dossierType.small,
   fontWeight: typography.weights.medium,
   justifyContent: 'center',
 };
@@ -248,9 +249,9 @@ export function FamilyTree({
   return (
     <section style={tonedCardStyle('kin')} data-testid="dossier-family-tree">
       <div style={cardHeadStyle}>
-        <i style={toneGlyphStyle('kin')} aria-hidden="true">
-          &#9901;
-        </i>
+        <span style={toneGlyphStyle('kin')} aria-hidden="true">
+          <DossierIcon name="people" size={16} />
+        </span>
         <h2 style={cardTitleStyle}>Her people</h2>
         <span style={toneCountStyle('kin')}>
           {people.length === 0

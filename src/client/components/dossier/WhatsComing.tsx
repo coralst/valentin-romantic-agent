@@ -12,6 +12,7 @@ import {
   GOLD_INK,
   insetRing,
 } from './board-tones';
+import { dossierType } from './dossier-icons';
 
 interface WhatsComingProps {
   occasions: Occasion[];
@@ -102,14 +103,14 @@ const labelStyle: React.CSSProperties = {
 
 const dateStyle: React.CSSProperties = {
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.small,
+  fontSize: dossierType.small,
   color: colors.inkMuted,
 };
 
 const countdownStyle: React.CSSProperties = {
   marginLeft: 'auto',
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.label,
+  fontSize: dossierType.small,
   fontWeight: typography.weights.medium,
   color: colors.inkFaint,
   whiteSpace: 'nowrap',
@@ -143,13 +144,13 @@ const actByStyle: React.CSSProperties = {
 const actByIconStyle: React.CSSProperties = {
   fontStyle: 'normal',
   color: colors.gold,
-  fontSize: typography.px.tiny,
+  fontSize: dossierType.small,
   lineHeight: 1,
 };
 
 const actByLabelStyle: React.CSSProperties = {
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.labelLoose,
+  fontSize: dossierType.small,
   fontWeight: typography.weights.medium,
   color: GOLD_INK,
 };
@@ -157,7 +158,7 @@ const actByLabelStyle: React.CSSProperties = {
 const actByAheadStyle: React.CSSProperties = {
   fontStyle: 'normal',
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.caption,
+  fontSize: dossierType.small,
   color: goldInk(0.65),
 };
 

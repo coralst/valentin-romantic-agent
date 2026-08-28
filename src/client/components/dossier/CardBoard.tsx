@@ -4,6 +4,17 @@ interface CardBoardProps {
   children?: React.ReactNode;
   /** Collapses to a single column. Driven by `AppLayout`'s `isMobile`. */
   isMobile?: boolean;
+  /**
+   * The scrolling element itself, handed back to the caller.
+   *
+   * `SectionRail`'s scroll-spy needs this exact node as its `IntersectionObserver`
+   * root: the board scrolls, not the window, so an observer with the default
+   * viewport root would report every section as visible forever and the rail's
+   * highlight would never move. Exposed as a ref rather than by having the rail
+   * search the DOM for `[data-testid="dossier-board"]`, which would make a test id
+   * load-bearing for behaviour.
+   */
+  scrollRef?: React.Ref<HTMLDivElement>;
 }
 
 /**
@@ -91,9 +102,10 @@ export const spanAllStyle: React.CSSProperties = { gridColumn: '1 / -1' };
  * Scrolling lives here rather than on the shell so the identity header above it
  * can stay pinned.
  */
-export function CardBoard({ children, isMobile = false }: CardBoardProps) {
+export function CardBoard({ children, isMobile = false, scrollRef }: CardBoardProps) {
   return (
     <div
+      ref={scrollRef}
       style={isMobile ? mobileBoardStyle : boardStyle}
       data-testid="dossier-board"
       data-columns={isMobile ? 1 : 12}

@@ -9,6 +9,7 @@ import {
   cardTitleStyle,
   CARD_HAIRLINE,
 } from './board-tones';
+import { dossierType } from './dossier-icons';
 
 interface WorthAskingNextProps {
   /** Already ranked by `field-payoff.ts`; this component does not reorder. */
@@ -54,7 +55,7 @@ const rankStyle: React.CSSProperties = {
   background: colors.claret,
   color: colors.textOnAccent,
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.label,
+  fontSize: dossierType.small,
   fontWeight: typography.weights.medium,
   lineHeight: 1,
 };
@@ -67,7 +68,7 @@ const bodyStyle: React.CSSProperties = {
 const labelStyle: React.CSSProperties = {
   display: 'block',
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.smallLoose,
+  fontSize: dossierType.small,
   fontWeight: typography.weights.medium,
   color: colors.ink,
 };
@@ -75,7 +76,7 @@ const labelStyle: React.CSSProperties = {
 const reasonStyle: React.CSSProperties = {
   margin: '1px 0 0',
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.caption,
+  fontSize: dossierType.small,
   lineHeight: 1.4,
   color: colors.inkMuted,
 };

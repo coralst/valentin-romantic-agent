@@ -10,6 +10,7 @@ import {
   WARN_GROUND,
   WARN_HEADING_INK,
 } from './board-tones';
+import { dossierType } from './dossier-icons';
 
 interface KeepInMindCardProps {
   cautions: Caution[];
@@ -71,7 +72,7 @@ const bodyStyle: React.CSSProperties = {
 const titleStyle: React.CSSProperties = {
   display: 'block',
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.body,
+  fontSize: dossierType.small,
   fontWeight: typography.weights.medium,
   color: colors.ink,
 };
@@ -79,7 +80,7 @@ const titleStyle: React.CSSProperties = {
 const consequenceStyle: React.CSSProperties = {
   margin: '2px 0 0',
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.label,
+  fontSize: dossierType.small,
   lineHeight: 1.4,
   color: colors.inkMuted,
 };

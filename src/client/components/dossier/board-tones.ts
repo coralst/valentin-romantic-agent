@@ -1,4 +1,5 @@
 import { colors, radii, typography } from '../../design-system/tokens';
+import { dossierType } from './dossier-icons';
 
 /**
  * The translucent inks and shared surfaces the dossier board is built from.
@@ -71,7 +72,9 @@ export function insetRing(color: string): string {
 export const cardStyle: React.CSSProperties = {
   background: colors.sand,
   borderRadius: radii.card,
-  padding: '16px 18px 18px',
+  // Padding grew with the type below. At 16/18 the 17px body sat 2px off the
+  // card's edge optically and the cards read as cramped rather than as calm.
+  padding: '18px 20px 20px',
   boxShadow: '0 1px 3px rgba(42, 34, 38, 0.05)',
   // A grid item's default `min-width: auto` sizes it to its widest unbreakable
   // child, which lets one long extracted value force the whole 3-column board
@@ -86,29 +89,40 @@ export const paleCardStyle: React.CSSProperties = {
   boxShadow: insetRing(colors.linenShade),
 };
 
-/** The wide-tracked uppercase eyebrow every card is introduced by (`:78-79`). */
+/**
+ * The uppercase eyebrow every card is introduced by (`:78-79`).
+ *
+ * WAS 10px AT 0.24em IN `inkFaint`, which is where the "small font" complaint
+ * actually came from: every card on the board is titled with this style, so one
+ * 10px setting made the entire surface read as fine print. Now 15px — the
+ * dossier's floor — at 0.14em, because tracking that wide is a device for making
+ * *tiny* type readable and at 15px it just pulls the words apart. `inkMuted`
+ * rather than `inkFaint` for the same reason: `inkFaint` on sand is about 2.3:1,
+ * which was survivable on a decorative 10px label and is not on a real heading.
+ */
 export const cardTitleStyle: React.CSSProperties = {
   flex: 1,
   minWidth: 0,
   margin: 0,
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.tiny,
-  fontWeight: typography.weights.medium,
-  letterSpacing: '0.24em',
+  fontSize: dossierType.eyebrow,
+  fontWeight: typography.weights.semibold,
+  letterSpacing: '0.14em',
   textTransform: 'uppercase',
-  color: colors.inkFaint,
+  color: colors.inkMuted,
 };
 
 /** The claret-on-petal count pill beside a card title (`:80-81`). */
 export const cardCountStyle: React.CSSProperties = {
   flex: 'none',
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.caption,
-  fontWeight: typography.weights.medium,
+  fontSize: dossierType.small,
+  fontWeight: typography.weights.semibold,
+  fontVariantNumeric: 'tabular-nums',
   color: colors.claret,
   background: colors.petal,
   borderRadius: radii.pill,
-  padding: '3px 9px',
+  padding: '3px 10px',
   whiteSpace: 'nowrap',
 };
 
@@ -128,10 +142,11 @@ export const askPillStyle: React.CSSProperties = {
   background: colors.petal,
   color: colors.claret,
   borderRadius: radii.pill,
-  padding: '5px 11px',
+  // 5/11 was sized for 10.5px type; a 15px label in that box has no room to sit.
+  padding: '7px 14px',
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.caption,
-  fontWeight: typography.weights.medium,
+  fontSize: dossierType.small,
+  fontWeight: typography.weights.semibold,
   whiteSpace: 'nowrap',
 };
 
@@ -139,7 +154,7 @@ export const askPillStyle: React.CSSProperties = {
 export const cardEmptyStyle: React.CSSProperties = {
   margin: 0,
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.labelLoose,
+  fontSize: dossierType.body,
   lineHeight: 1.5,
   color: colors.inkMuted,
 };

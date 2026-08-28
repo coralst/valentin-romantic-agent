@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dossier redesign — five directions</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+  body { background: var(--cream); }
+  .page { max-width: 1080px; margin: 0 auto; padding: 70px 32px 120px; }
+  h1 { font-size: 52px; line-height: 1.05; }
+  .lede { font-size: var(--t-md); color: var(--ink-muted); max-width: 60ch; margin: 16px 0 12px; }
+  .fixes { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 46px; }
+  .fixes span { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px;
+                border-radius: var(--r-pill); background: var(--paper); box-shadow: var(--shadow-card);
+                font-size: var(--t-sm); font-weight: 500; }
+  .fixes svg { color: var(--claret); }
+
+  .list { display: grid; gap: 18px; }
+  a.card {
+    display: grid; grid-template-columns: 74px 1fr auto; gap: 24px; align-items: center;
+    padding: 28px 30px; border-radius: var(--r-lg); background: var(--paper);
+    box-shadow: var(--shadow-card); text-decoration: none; color: inherit;
+  }
+  a.card:hover { box-shadow: var(--shadow-lift); transform: translateY(-2px); }
+  a.card { transition: box-shadow .18s ease, transform .18s ease; }
+  .letter {
+    width: 74px; height: 74px; border-radius: 24px; display: grid; place-items: center;
+    font-family: var(--display); font-size: 34px; color: var(--cream);
+    background: linear-gradient(150deg,#9B3A52,#C4566E);
+  }
+  a.card h2 { font-size: var(--t-xl); }
+  a.card p { font-size: var(--t-body); color: var(--ink-muted); margin-top: 5px; max-width: 62ch; }
+  a.card .tags { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  a.card .tags i {
+    font-style: normal; font-size: var(--t-sm); padding: 5px 12px; border-radius: var(--r-pill);
+    background: var(--cream); color: var(--ink-muted); box-shadow: inset 0 0 0 1.5px var(--border);
+  }
+  a.card .go { color: var(--claret); }
+  .rec { box-shadow: inset 0 0 0 2px var(--claret), var(--shadow-card); }
+  .rec .letter { background: linear-gradient(150deg,#6B1F32,#8C2F45); }
+  .badge { display: inline-flex; align-items: center; gap: 7px; font-size: var(--t-sm); font-weight: 700;
+           color: var(--claret); letter-spacing: .04em; text-transform: uppercase; margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Her dossier, five ways</h1>
+  <p class="lede">Same real data — Samantha, 21 of 21 fields, four people, eleven guesses — laid out five
+     different ways. Every one is a single page with no tabs, icon-led, and nothing below 15px.</p>
+  <div class="fixes">
+    <span><svg class="i-sm i"><use href="icons.svg#check"/></svg> No tabs — nothing hidden behind a click</span>
+    <span><svg class="i-sm i"><use href="icons.svg#check"/></svg> 17px body, 15px floor</span>
+    <span><svg class="i-sm i"><use href="icons.svg#check"/></svg> One icon per section</span>
+    <span><svg class="i-sm i"><use href="icons.svg#check"/></svg> One clear next action</span>
+  </div>
+
+  <div class="list">
+    <a class="card" href="a-timeline.html">
+      <span class="letter">A</span>
+      <div>
+        <h2>Timeline spine</h2>
+        <p>One vertical chronology. Everything hangs off a date, because the only facts with
+           consequences are the ones with deadlines. You scroll time instead of switching tabs.</p>
+        <div class="tags"><i>Calmest</i><i>Deadline-first</i><i>Long scroll</i></div>
+      </div>
+      <svg class="i i-lg go"><use href="icons.svg#arrow"/></svg>
+    </a>
+
+    <a class="card" href="b-bento.html">
+      <span class="letter">B</span>
+      <div>
+        <h2>Bento board</h2>
+        <p>A 12-column bento where tile size <em>is</em> priority — the anniversary gets a quarter of the
+           screen, her ring size gets a row. Closest to what you have now, minus the tabs.</p>
+        <div class="tags"><i>Most familiar</i><i>Glanceable</i><i>Big numerals</i></div>
+      </div>
+      <svg class="i i-lg go"><use href="icons.svg#arrow"/></svg>
+    </a>
+
+    <a class="card rec" href="c-focus.html">
+      <span class="letter">C</span>
+      <div>
+        <span class="badge"><svg class="i-sm i"><use href="icons.svg#sparkle"/></svg> My recommendation</span>
+        <h2>Focus rail</h2>
+        <p>Keeps the tab bar's speed and deletes its cost: a sticky icon rail that <em>jumps</em> rather than
+           filters, highlighting itself from scroll position. Nothing hidden, ⌘F works, and it tells you
+           where you are — the one thing the old tabs never did.</p>
+        <div class="tags"><i>Scales to 30 widgets</i><i>Scroll-spy</i><i>Best for a demo</i></div>
+      </div>
+      <svg class="i i-lg go"><use href="icons.svg#arrow"/></svg>
+    </a>
+
+    <a class="card" href="d-editorial.html">
+      <span class="letter">D</span>
+      <div>
+        <h2>Editorial</h2>
+        <p>A magazine profile, not a CRM record. Drop cap, prose sentences, the facts pushed into a
+           marginal file column. Most distinctive and most on-brand; least dense.</p>
+        <div class="tags"><i>Most emotional</i><i>20px body</i><i>Slowest to scan</i></div>
+      </div>
+      <svg class="i i-lg go"><use href="icons.svg#arrow"/></svg>
+    </a>
+
+    <a class="card" href="e-triage.html">
+      <span class="letter">E</span>
+      <div>
+        <h2>Triage columns</h2>
+        <p>Three standing columns by intent — <em>Do something · Know her · Help me learn</em> — because
+           every visit is one of three jobs, and the old tabs cut across all three. Everything on screen
+           at once.</p>
+        <div class="tags"><i>Densest</i><i>Zero scrolling to answer</i><i>Needs a wide screen</i></div>
+      </div>
+      <svg class="i i-lg go"><use href="icons.svg#arrow"/></svg>
+    </a>
+    <a class="card" href="sidebars.html">
+      <span class="letter">▮</span>
+      <div>
+        <h2>The right sidebar, five ways</h2>
+        <p>One matching profile-rail proposal per concept above, at its true 306px — so the rail and the board
+           read as the same product instead of two designs sharing a window.</p>
+        <div class="tags"><i>All five side by side</i><i>Keeps today's seven regions</i></div>
+      </div>
+      <svg class="i i-lg go"><use href="icons.svg#arrow"/></svg>
+    </a>
+  </div>
+</div>
+</body>
+</html>

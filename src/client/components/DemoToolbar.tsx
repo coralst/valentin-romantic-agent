@@ -6,6 +6,8 @@ import { useProfileStoreContext } from '../context/profile-store-context';
 import { useOptionalAuthContext } from '../context/auth-context';
 import { PREFERENCE_CATEGORIES } from '../../shared/constants/categories';
 import { seedDemoSession, fetchSessionPreferences, resetSession } from '../utils/demo-session-api';
+import { savePeopleToStorage, newPersonId } from '../hooks/use-people-store';
+import { DEMO_PEOPLE } from '../fixtures/demo-people';
 import { colors, typography, radii, insets, layout, animation } from '../design-system/tokens';
 import type { StoredSession } from '../hooks/use-session-store';
 import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
@@ -173,6 +175,21 @@ export function DemoToolbar({ children }: DemoToolbarProps) {
     try {
       const { sessionId, preferenceCount } = await seedDemoSession();
       const preferences = await fetchSessionPreferences(sessionId);
+      /*
+       * Her people are written straight to storage, before the switch.
+       *
+       * They are not preferences and the server never sees them — `usePeopleStore`
+       * keys its own `localStorage` entry by session id and `RESTORE`s from it
+       * when the id changes. Seeding here means that restore finds them, so the
+       * family tree arrives populated with the rest of the profile instead of
+       * sitting at "nobody yet" against a 21-of-21 brief. Writing after the
+       * switch would race the restore and lose.
+       */
+      const stamp = new Date().toISOString();
+      savePeopleToStorage(
+        sessionId,
+        DEMO_PEOPLE.map((person) => ({ ...person, id: newPersonId(), updatedAt: stamp })),
+      );
       // Adopt then switch, so SessionSyncer sees a real session change and
       // rehydrates chat + preferences for us.
       adoptSession(buildDemoSession(sessionId, preferences));

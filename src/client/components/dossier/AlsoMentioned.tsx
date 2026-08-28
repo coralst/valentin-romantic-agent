@@ -13,6 +13,7 @@ import {
   cardStyle,
   cardTitleStyle,
 } from './board-tones';
+import { dossierType } from './dossier-icons';
 
 /**
  * ==========================================================================
@@ -90,7 +91,7 @@ interface AlsoMentionedProps {
 const noteStyle: React.CSSProperties = {
   margin: '0 0 11px',
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.label,
+  fontSize: dossierType.small,
   lineHeight: 1.45,
   color: colors.inkMuted,
 };

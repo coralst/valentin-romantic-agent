@@ -20,6 +20,15 @@ import type { ServerEvent } from '../../shared/interfaces/ws-events';
  * Deliberately absent: Cognito, valentin-photos-dev, valentin-frontend-dev, the
  * Guardrail, and the monitoring stack. All are deployed but unreferenced by
  * `src/` — drawing them would be a diagram of the account, not of the request.
+ *
+ * TWO ENGINES
+ *
+ * The same conversation runs on two engines behind the one ALB, so the diagram
+ * holds both and the drawer shows one at a time with the other shaded:
+ *   engine A  valentin-service-dev   the hand-built Bedrock pipeline
+ *   engine B  valentin-ac-proxy-dev  Bedrock AgentCore Runtime · Memory · Gateway
+ * Browser, CloudFront, S3 and the ALB carry no engine: they are genuinely shared,
+ * and greying them out when you switch would claim a difference that isn't there.
  */
 
 /** Stable identifier for an AWS resource in the diagram. */
@@ -30,7 +39,22 @@ export type AwsNodeId =
   | 'alb'
   | 'fargate'
   | 'bedrock'
-  | 'dynamodb';
+  | 'dynamodb'
+  | 'ac-proxy'
+  | 'ac-runtime'
+  | 'ac-memory'
+  | 'ac-gateway'
+  | 'ac-dynamodb';
+
+/**
+ * Which engine a resource belongs to.
+ *
+ * Also the value the server reports as `engine` on `/api/config`, so the label in
+ * the drawer and the label on the process are the same word.
+ */
+export type ArchitectureEngine = 'valentin' | 'agentcore';
+
+export const ARCHITECTURE_ENGINES: readonly ArchitectureEngine[] = ['valentin', 'agentcore'];
 
 /** Which column the node occupies, left to right, following the request. */
 export type AwsTier = 'client' | 'edge' | 'origin' | 'compute' | 'data';
@@ -53,6 +77,13 @@ export interface AwsNode {
   dimmed?: boolean;
   /** Inside `valentin-vpc-dev`'s private subnets — drawn with a dashed border. */
   inVpc?: boolean;
+  /**
+   * The engine this resource belongs to. Absent means shared by both, which is
+   * the honest answer for everything from the browser down to the ALB.
+   */
+  engine?: ArchitectureEngine;
+  /** Inside the Bedrock AgentCore boundary — drawn inside its own dashed box. */
+  inAgentCore?: boolean;
 }
 
 export const AWS_NODES: readonly AwsNode[] = [
@@ -92,6 +123,7 @@ export const AWS_NODES: readonly AwsNode[] = [
     caption: '256 CPU · 512 MiB · :3001',
     tier: 'compute',
     inVpc: true,
+    engine: 'valentin',
   },
   {
     id: 'bedrock',
@@ -99,6 +131,7 @@ export const AWS_NODES: readonly AwsNode[] = [
     resourceName: 'Claude Sonnet 4.5',
     caption: 'Converse API · VPC endpoint',
     tier: 'data',
+    engine: 'valentin',
   },
   {
     id: 'dynamodb',
@@ -106,12 +139,130 @@ export const AWS_NODES: readonly AwsNode[] = [
     resourceName: 'ValentinTable-dev',
     caption: 'pk/sk · GSI1 · on-demand',
     tier: 'data',
+    engine: 'valentin',
+  },
+
+  // --- Engine B. Same image as `fargate`, same task size, same table. ---
+  {
+    id: 'ac-proxy',
+    service: 'Amazon ECS · AWS Fargate',
+    resourceName: 'valentin-ac-proxy-dev',
+    // The size is identical on purpose: a proxy on a smaller task would show up
+    // as worse latency that had nothing to do with AgentCore.
+    caption: '256 CPU · 512 MiB · AGENT_ENGINE=agentcore',
+    tier: 'compute',
+    inVpc: true,
+    engine: 'agentcore',
+  },
+  {
+    id: 'ac-runtime',
+    service: 'AgentCore Runtime',
+    resourceName: 'valentin_agent_dev',
+    // The model call happens *inside* the Runtime, so Bedrock is named here
+    // rather than drawn: the proxy's role has no bedrock:InvokeModel, and a
+    // Bedrock node on this side would be one we can never light up.
+    caption: 'Strands · Claude Sonnet 4.5 · arm64',
+    tier: 'compute',
+    engine: 'agentcore',
+    inAgentCore: true,
+  },
+  {
+    id: 'ac-memory',
+    service: 'AgentCore Memory',
+    resourceName: 'valentin_memory_dev',
+    caption: 'managed preference extraction',
+    tier: 'data',
+    engine: 'agentcore',
+    inAgentCore: true,
+  },
+  {
+    id: 'ac-gateway',
+    service: 'AgentCore Gateway',
+    resourceName: 'valentin-gateway-dev',
+    caption: 'MCP · Lambda target · 3 tools',
+    tier: 'data',
+    engine: 'agentcore',
+    inAgentCore: true,
+  },
+  {
+    id: 'ac-dynamodb',
+    service: 'Amazon DynamoDB',
+    resourceName: 'ValentinTable-dev',
+    // Drawn twice, and it is the same table both times. Duplicating the node is
+    // how a tree says "same resource, different path": engine A writes it from
+    // the task, engine B reaches it through the Gateway's Lambda target.
+    caption: 'same table · via valentin-profile-tools-dev',
+    tier: 'data',
+    engine: 'agentcore',
   },
 ] as const;
 
 /** Lookup by id. */
 export function awsNode(id: AwsNodeId): AwsNode | undefined {
   return AWS_NODES.find((node) => node.id === id);
+}
+
+/**
+ * Is this resource part of the engine currently being shown?
+ *
+ * Shared resources answer true for both engines — that is the whole point of
+ * `engine` being optional. The drawer shades everything this returns false for,
+ * so the shared spine never dims and the room can see that the two engines
+ * really do arrive through the same edge.
+ */
+export function isNodeInEngine(id: AwsNodeId, engine: ArchitectureEngine): boolean {
+  const node = awsNode(id);
+  if (!node) return false;
+  return node.engine === undefined || node.engine === engine;
+}
+
+/** True when a connector joins two resources the given engine actually uses. */
+export function isSegmentInEngine(segment: AwsSegment, engine: ArchitectureEngine): boolean {
+  return isNodeInEngine(segment.from, engine) && isNodeInEngine(segment.to, engine);
+}
+
+/**
+ * Engine A's resource, and engine B's counterpart doing the same job.
+ *
+ * Used to translate a route or a span from one side to the other. Bedrock has no
+ * entry on purpose: engine B's model call happens inside the Runtime, so a
+ * Bedrock span from engine B does not exist and inventing a node for it would be
+ * drawing a call we cannot measure. It maps to the Runtime instead, which is
+ * where that latency is actually observable from the proxy.
+ */
+const AGENTCORE_COUNTERPART: Readonly<Partial<Record<AwsNodeId, AwsNodeId>>> = {
+  fargate: 'ac-proxy',
+  bedrock: 'ac-runtime',
+  dynamodb: 'ac-dynamodb',
+};
+
+/**
+ * The same map read backwards.
+ *
+ * Derived rather than authored so the two can never disagree. `ac-memory` and
+ * `ac-gateway` have no engine-A counterpart and therefore no entry: engine A does
+ * its own memory and calls its tools in-process, so translating them would have to
+ * invent a resource.
+ */
+const VALENTIN_COUNTERPART: Readonly<Partial<Record<AwsNodeId, AwsNodeId>>> = Object.fromEntries(
+  Object.entries(AGENTCORE_COUNTERPART).map(([valentinId, agentcoreId]) => [
+    agentcoreId,
+    valentinId,
+  ]),
+);
+
+/**
+ * The node that plays `id`'s role on the given engine. Shared nodes map to themselves.
+ *
+ * Translates in both directions, because callers hand it ids from either side —
+ * a stale `litNode` from the engine you just switched away from, or an authored
+ * route that only names engine A. Anything with no counterpart is returned
+ * unchanged rather than guessed at; `isNodeInEngine` is what decides whether the
+ * result is drawable.
+ */
+export function nodeForEngine(id: AwsNodeId, engine: ArchitectureEngine): AwsNodeId {
+  const counterpart = engine === 'agentcore' ? AGENTCORE_COUNTERPART : VALENTIN_COUNTERPART;
+  return counterpart[id] ?? id;
 }
 
 /**
@@ -133,6 +284,14 @@ const PARENT: Readonly<Partial<Record<AwsNodeId, AwsNodeId>>> = {
   fargate: 'alb',
   bedrock: 'fargate',
   dynamodb: 'fargate',
+  // The tree forks at the ALB, which is exactly where the deployed system forks:
+  // one listener, two target groups, routed by path and by the
+  // `X-Valentin-Engine` header.
+  'ac-proxy': 'alb',
+  'ac-runtime': 'ac-proxy',
+  'ac-memory': 'ac-runtime',
+  'ac-gateway': 'ac-runtime',
+  'ac-dynamodb': 'ac-gateway',
 };
 
 /**
@@ -145,7 +304,12 @@ export type AwsSegmentId =
   | 'cloudfront-alb'
   | 'alb-fargate'
   | 'fargate-bedrock'
-  | 'fargate-dynamodb';
+  | 'fargate-dynamodb'
+  | 'alb-ac-proxy'
+  | 'ac-proxy-ac-runtime'
+  | 'ac-runtime-ac-memory'
+  | 'ac-runtime-ac-gateway'
+  | 'ac-gateway-ac-dynamodb';
 
 /** A connector in the diagram, always oriented parent → child. */
 export interface AwsSegment {
@@ -158,11 +322,66 @@ export interface AwsSegment {
 
 export const AWS_SEGMENTS: readonly AwsSegment[] = [
   { id: 'browser-cloudfront', from: 'browser', to: 'cloudfront' },
-  { id: 'cloudfront-s3', from: 'cloudfront', to: 's3', label: 'default behavior *' },
-  { id: 'cloudfront-alb', from: 'cloudfront', to: 'alb', label: '/api/* · /ws' },
-  { id: 'alb-fargate', from: 'alb', to: 'fargate', label: 'target group :3001' },
-  { id: 'fargate-bedrock', from: 'fargate', to: 'bedrock', label: 'VPC interface endpoint' },
-  { id: 'fargate-dynamodb', from: 'fargate', to: 'dynamodb', label: 'VPC gateway endpoint' },
+  {
+    id: 'cloudfront-s3',
+    from: 'cloudfront',
+    to: 's3',
+    label: 'default behavior *',
+  },
+  {
+    id: 'cloudfront-alb',
+    from: 'cloudfront',
+    to: 'alb',
+    label: '/api/* · /ws',
+  },
+  {
+    id: 'alb-fargate',
+    from: 'alb',
+    to: 'fargate',
+    label: 'target group :3001',
+  },
+  {
+    id: 'fargate-bedrock',
+    from: 'fargate',
+    to: 'bedrock',
+    label: 'VPC interface endpoint',
+  },
+  {
+    id: 'fargate-dynamodb',
+    from: 'fargate',
+    to: 'dynamodb',
+    label: 'VPC gateway endpoint',
+  },
+  {
+    id: 'alb-ac-proxy',
+    from: 'alb',
+    to: 'ac-proxy',
+    label: '/api/agentcore/* · /ws/agentcore',
+  },
+  {
+    id: 'ac-proxy-ac-runtime',
+    from: 'ac-proxy',
+    to: 'ac-runtime',
+    label: 'InvokeAgentRuntime',
+  },
+  {
+    id: 'ac-runtime-ac-memory',
+    from: 'ac-runtime',
+    to: 'ac-memory',
+    label: 'CreateEvent',
+  },
+  {
+    id: 'ac-runtime-ac-gateway',
+    from: 'ac-runtime',
+    to: 'ac-gateway',
+    label: 'MCP tool call',
+  },
+  {
+    id: 'ac-gateway-ac-dynamodb',
+    from: 'ac-gateway',
+    to: 'ac-dynamodb',
+    label: 'Lambda target',
+  },
 ] as const;
 
 /** Segment joining a node to its parent. Undefined for the root. */
@@ -269,17 +488,23 @@ const EVENT_ROUTES: Readonly<Record<string, { from: AwsNodeId; to: AwsNodeId }>>
  * a refactored server still lists in the feed, it just doesn't animate. This is
  * the property that lets the diagram survive server renames.
  */
-export function awsNodesForEventType(eventType: string): readonly AwsNodeId[] {
+export function awsNodesForEventType(
+  eventType: string,
+  engine: ArchitectureEngine = 'valentin',
+): readonly AwsNodeId[] {
   const route = EVENT_ROUTES[eventType];
   if (!route) return [];
-  return nodesAlongRoute(route.from, route.to);
+  return nodesAlongRoute(nodeForEngine(route.from, engine), nodeForEngine(route.to, engine));
 }
 
 /** The connectors that light up for an event type, with their directions. */
-export function awsHopsForEventType(eventType: string): readonly AwsHop[] {
+export function awsHopsForEventType(
+  eventType: string,
+  engine: ArchitectureEngine = 'valentin',
+): readonly AwsHop[] {
   const route = EVENT_ROUTES[eventType];
   if (!route) return [];
-  return routeBetween(route.from, route.to);
+  return routeBetween(nodeForEngine(route.from, engine), nodeForEngine(route.to, engine));
 }
 
 /**
@@ -289,10 +514,32 @@ export function awsHopsForEventType(eventType: string): readonly AwsHop[] {
  * envelope), so an unrecognised value resolves to `undefined` and the span
  * still renders in the feed under its own service name. A closed union here
  * would turn a server-side rename into a silently missing beat.
+ *
+ * The engine matters because both engines emit the *same* resource ids — engine
+ * B's preference mirror logs `preference.saved` with `resourceId: 'dynamodb'`
+ * exactly as engine A does, since both go through the same store. Without the
+ * translation, engine B's writes would light engine A's DynamoDB node while the
+ * whole engine-A half is shaded out.
  */
-export function awsNodeIdForResource(resourceId: string): AwsNodeId | undefined {
-  return AWS_NODES.find((node) => node.id === resourceId)?.id;
+export function awsNodeIdForResource(
+  resourceId: string,
+  engine: ArchitectureEngine = 'valentin',
+): AwsNodeId | undefined {
+  const direct = AWS_NODES.find((node) => node.id === resourceId)?.id;
+  if (direct) return nodeForEngine(direct, engine);
+  // Ids the server emits that are not node ids. Only engine B produces these,
+  // so they resolve on either engine rather than being gated on the view: a
+  // Memory span arriving while the valentin half is shown is a mislabelled view,
+  // and a beat in the feed is how you find that out.
+  return AGENTCORE_RESOURCE_IDS[resourceId];
 }
+
+/** Server-side resource ids for the AgentCore primitives, which own no node id. */
+const AGENTCORE_RESOURCE_IDS: Readonly<Record<string, AwsNodeId>> = {
+  'agentcore-runtime': 'ac-runtime',
+  'agentcore-memory': 'ac-memory',
+  'agentcore-gateway': 'ac-gateway',
+};
 
 /**
  * A short detail line for an event, safe to project.

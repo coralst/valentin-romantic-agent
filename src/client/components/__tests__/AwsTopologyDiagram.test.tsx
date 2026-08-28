@@ -1,7 +1,14 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { AwsTopologyDiagram } from '../AwsTopologyDiagram';
-import { AWS_NODES, AWS_SEGMENTS, routeBetween } from '../../utils/aws-architecture';
+import {
+  ARCHITECTURE_ENGINES,
+  AWS_NODES,
+  AWS_SEGMENTS,
+  isNodeInEngine,
+  isSegmentInEngine,
+  routeBetween,
+} from '../../utils/aws-architecture';
 import { ELBOWED_SEGMENTS } from '../../utils/aws-diagram-layout';
 
 /**
@@ -46,9 +53,12 @@ describe('AwsTopologyDiagram', () => {
     it('names the real deployed resources, not service names alone', () => {
       render(<AwsTopologyDiagram />);
       // The whole argument for the AWS model over the old module model: a room of
-      // builders reads `ValentinTable-dev` instantly.
-      expect(screen.getByText('ValentinTable-dev')).toBeInTheDocument();
+      // builders reads `ValentinTable-dev` instantly. It appears twice, once per
+      // engine, and that is the point — it is genuinely the same table on both.
+      expect(screen.getAllByText('ValentinTable-dev')).toHaveLength(2);
       expect(screen.getByText('valentin-alb-dev')).toBeInTheDocument();
+      expect(screen.getByText('valentin-ac-proxy-dev')).toBeInTheDocument();
+      expect(screen.getByText('valentin_agent_dev')).toBeInTheDocument();
     });
 
     it('draws the VPC boundary', () => {
@@ -63,10 +73,15 @@ describe('AwsTopologyDiagram', () => {
   });
 
   describe('node state', () => {
-    it('idles every node when nothing is happening', () => {
+    it('idles every node on the selected engine when nothing is happening', () => {
       render(<AwsTopologyDiagram />);
       for (const node of AWS_NODES) {
-        expect(screen.getByTestId(`aws-node-${node.id}`)).toHaveAttribute('data-state', 'idle');
+        // The other engine shades instead of idling — see the engine suite below.
+        const expected = isNodeInEngine(node.id, 'valentin') ? 'idle' : 'muted';
+        expect(screen.getByTestId(`aws-node-${node.id}`), node.id).toHaveAttribute(
+          'data-state',
+          expected,
+        );
       }
     });
 
@@ -81,9 +96,7 @@ describe('AwsTopologyDiagram', () => {
     });
 
     it('marks transited nodes as passed and earlier ones as done', () => {
-      render(
-        <AwsTopologyDiagram litNode="bedrock" passNodes={['alb']} doneNodes={['browser']} />,
-      );
+      render(<AwsTopologyDiagram litNode="bedrock" passNodes={['alb']} doneNodes={['browser']} />);
       expect(screen.getByTestId('aws-node-alb')).toHaveAttribute('data-state', 'pass');
       expect(screen.getByTestId('aws-node-browser')).toHaveAttribute('data-state', 'done');
     });
@@ -233,6 +246,125 @@ describe('AwsTopologyDiagram', () => {
       render(<AwsTopologyDiagram />);
       render(<AwsTopologyDiagram />);
       expect(document.querySelectorAll('#aws-topology-marching-ants')).toHaveLength(1);
+    });
+  });
+
+  describe('engine shading', () => {
+    it('keeps both engines on the canvas, whichever one is selected', () => {
+      // Removing half would hide the comparison, which is the drawer's subject.
+      for (const engine of ARCHITECTURE_ENGINES) {
+        const { unmount } = render(<AwsTopologyDiagram engine={engine} />);
+        for (const node of AWS_NODES) {
+          expect(screen.getByTestId(`aws-node-${node.id}`), node.id).toBeInTheDocument();
+        }
+        unmount();
+      }
+    });
+
+    it('shades every node the selected engine does not use', () => {
+      render(<AwsTopologyDiagram engine="agentcore" />);
+
+      for (const node of AWS_NODES) {
+        const expected = isNodeInEngine(node.id, 'agentcore') ? 'idle' : 'muted';
+        expect(screen.getByTestId(`aws-node-${node.id}`), node.id).toHaveAttribute(
+          'data-state',
+          expected,
+        );
+      }
+    });
+
+    it('leaves the shared spine unshaded on both engines', () => {
+      // Browser through ALB is genuinely shared; dimming it when you switch would
+      // claim a difference the deployment does not have.
+      for (const engine of ARCHITECTURE_ENGINES) {
+        const { unmount } = render(<AwsTopologyDiagram engine={engine} />);
+        for (const id of ['browser', 'cloudfront', 's3', 'alb']) {
+          expect(screen.getByTestId(`aws-node-${id}`), `${id}/${engine}`).not.toHaveAttribute(
+            'data-state',
+            'muted',
+          );
+        }
+        unmount();
+      }
+    });
+
+    it('marks the other engine’s connectors as shaded', () => {
+      render(<AwsTopologyDiagram engine="agentcore" />);
+
+      for (const segment of AWS_SEGMENTS) {
+        const expected = isSegmentInEngine(segment, 'agentcore') ? 'active-engine' : 'muted';
+        expect(screen.getByTestId(`aws-segment-${segment.id}`), segment.id).toHaveAttribute(
+          'data-engine-state',
+          expected,
+        );
+      }
+    });
+
+    it('refuses to light a node left over from the engine just switched away from', () => {
+      // The failure this prevents: flipping to AgentCore while engine A's Bedrock
+      // node is still lit, leaving a shaded card glowing.
+      render(<AwsTopologyDiagram engine="agentcore" litNode="bedrock" />);
+      expect(screen.getByTestId('aws-node-bedrock')).toHaveAttribute('data-state', 'muted');
+    });
+
+    it('refuses to animate a connector on the shaded half', () => {
+      const hops = routeBetween('fargate', 'bedrock');
+      render(<AwsTopologyDiagram engine="agentcore" activeHops={hops} />);
+
+      expect(screen.getByTestId('aws-segment-fargate-bedrock')).toHaveAttribute(
+        'data-direction',
+        'idle',
+      );
+    });
+
+    it('withholds the duration pill from a shaded node', () => {
+      // A measured latency belongs to one engine's turn. Showing engine A's 412 ms
+      // while engine B is on screen would be the most quietly wrong thing here.
+      render(
+        <AwsTopologyDiagram engine="agentcore" durations={{ bedrock: { label: '412 ms' } }} />,
+      );
+      expect(screen.queryByTestId('aws-duration-bedrock')).not.toBeInTheDocument();
+    });
+
+    it('animates engine B’s own hops', () => {
+      const hops = routeBetween('ac-proxy', 'ac-memory');
+      render(<AwsTopologyDiagram engine="agentcore" litNode="ac-memory" activeHops={hops} />);
+
+      expect(screen.getByTestId('aws-node-ac-memory')).toHaveAttribute('data-state', 'lit');
+      expect(screen.getByTestId('aws-segment-ac-runtime-ac-memory')).toHaveAttribute(
+        'data-direction',
+        'downstream',
+      );
+    });
+
+    it('shades the AgentCore boundary until the AgentCore engine is selected', () => {
+      const { unmount } = render(<AwsTopologyDiagram engine="valentin" />);
+      expect(screen.getByTestId('aws-agentcore-box')).toHaveAttribute('data-state', 'muted');
+      unmount();
+
+      render(<AwsTopologyDiagram engine="agentcore" />);
+      expect(screen.getByTestId('aws-agentcore-box')).toHaveAttribute(
+        'data-state',
+        'active-engine',
+      );
+    });
+
+    it('captions each band and highlights the selected one', () => {
+      render(<AwsTopologyDiagram engine="agentcore" />);
+      expect(screen.getByTestId('aws-engine-band-agentcore')).toHaveAttribute(
+        'data-state',
+        'active-engine',
+      );
+      expect(screen.getByTestId('aws-engine-band-valentin')).toHaveAttribute('data-state', 'muted');
+    });
+
+    it('says which engine it is showing in its label, for anyone not looking at it', () => {
+      render(<AwsTopologyDiagram engine="agentcore" />);
+      expect(screen.getByTestId('aws-topology-diagram')).toHaveAttribute(
+        'data-engine',
+        'agentcore',
+      );
+      expect(screen.getByRole('img').getAttribute('aria-label')).toContain('AgentCore');
     });
   });
 });

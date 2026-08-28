@@ -4,15 +4,16 @@ import { AwsFlowFeed, type FeedRow } from './AwsFlowFeed';
 import { useArchitectureDrawer } from '../context/architecture-drawer-context';
 import { useArchitectureMode, type ArchitectureMode } from '../hooks/use-architecture-mode';
 import { useLiveArchitecture } from '../hooks/use-live-architecture';
+import { useArchitectureEngine } from '../hooks/use-architecture-engine';
 import { useFlowPlayback } from '../hooks/use-flow-playback';
 import { PANEL_SLIDE_MS } from '../hooks/use-inspector-focus';
 import {
-  DEFAULT_DEMO_FLOW_ID,
+  defaultDemoFlowIdFor,
   demoFlow,
   demoStepDwellMs,
   frameForStep,
 } from '../utils/aws-demo-flows';
-import type { AwsNodeId } from '../utils/aws-architecture';
+import type { ArchitectureEngine, AwsNodeId } from '../utils/aws-architecture';
 import { colors, typography } from '../design-system/tokens';
 
 /**
@@ -70,6 +71,10 @@ export const DRAWER_COPY = {
   reopen: 'Show the architecture drawer',
   liveMode: 'Live',
   demoMode: 'Demo',
+  /** The engine toggle. Short labels: the band captions carry the full names. */
+  engineGroup: 'Architecture engine',
+  valentinEngine: 'Hand-built',
+  agentcoreEngine: 'AgentCore',
   next: 'Next step',
   previous: 'Previous step',
   restart: 'Restart flow',
@@ -122,59 +127,88 @@ const ghostButtonStyle: React.CSSProperties = {
   color: '#756A70',
 };
 
-function ModeSwitch({
-  mode,
+/**
+ * A two-option segmented control.
+ *
+ * Generic over the value because the header now carries two of them — the data
+ * source and the engine — and two hand-rolled copies would drift apart on the
+ * first styling change, which on a projector is immediately visible.
+ */
+function SegmentedSwitch<T extends string>({
+  value,
+  options,
   onChange,
+  label,
+  testId,
 }: {
-  mode: ArchitectureMode;
-  onChange: (mode: ArchitectureMode) => void;
+  value: T;
+  options: readonly { value: T; label: string }[];
+  onChange: (value: T) => void;
+  label: string;
+  testId?: string;
 }) {
-  const tab = (value: ArchitectureMode, label: string) => {
-    const on = mode === value;
-    return (
-      <button
-        key={value}
-        type="button"
-        onClick={() => onChange(value)}
-        aria-pressed={on}
-        style={{
-          fontSize: 10,
-          fontWeight: 700,
-          letterSpacing: '0.06em',
-          textTransform: 'uppercase',
-          padding: '5px 11px',
-          borderRadius: 7,
-          border: `1px solid ${on ? '#E5D9D2' : 'transparent'}`,
-          background: on ? colors.surface : 'none',
-          color: on ? '#8C2F45' : '#A3959C',
-          cursor: 'pointer',
-          fontFamily: typography.bodyFontFamily,
-        }}
-      >
-        {label}
-      </button>
-    );
-  };
-
   return (
-    <div style={{ display: 'flex', gap: 4, marginLeft: 14 }} role="group" aria-label="Data source">
-      {tab('live', DRAWER_COPY.liveMode)}
-      {tab('demo', DRAWER_COPY.demoMode)}
+    <div
+      style={{ display: 'flex', gap: 4, marginLeft: 14 }}
+      role="group"
+      aria-label={label}
+      data-testid={testId}
+    >
+      {options.map((option) => {
+        const on = value === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onChange(option.value)}
+            aria-pressed={on}
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+              padding: '5px 11px',
+              borderRadius: 7,
+              border: `1px solid ${on ? '#E5D9D2' : 'transparent'}`,
+              background: on ? colors.surface : 'none',
+              color: on ? '#8C2F45' : '#A3959C',
+              cursor: 'pointer',
+              fontFamily: typography.bodyFontFamily,
+            }}
+          >
+            {option.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
 
+const MODE_OPTIONS: readonly { value: ArchitectureMode; label: string }[] = [
+  { value: 'live', label: DRAWER_COPY.liveMode },
+  { value: 'demo', label: DRAWER_COPY.demoMode },
+];
+
+const ENGINE_OPTIONS: readonly { value: ArchitectureEngine; label: string }[] = [
+  { value: 'valentin', label: DRAWER_COPY.valentinEngine },
+  { value: 'agentcore', label: DRAWER_COPY.agentcoreEngine },
+];
+
 export function LiveArchitectureDrawer() {
   const { isOpen, isMounted, open, close } = useArchitectureDrawer();
   const { mode, setMode } = useArchitectureMode();
-  const live = useLiveArchitecture();
+  const { engine, setEngine } = useArchitectureEngine();
+  const live = useLiveArchitecture(true, engine);
 
-  const flow = demoFlow(DEFAULT_DEMO_FLOW_ID);
+  const flow = demoFlow(defaultDemoFlowIdFor(engine));
   const dwellMsForStep = useCallback(
     (index: number) => demoStepDwellMs(flow.steps[index]),
     [flow.steps],
   );
-  const playback = useFlowPlayback({ stepCount: flow.steps.length, dwellMsForStep });
+  const playback = useFlowPlayback({
+    stepCount: flow.steps.length,
+    dwellMsForStep,
+  });
 
   const isDemo = mode === 'demo';
 
@@ -189,6 +223,16 @@ export function LiveArchitectureDrawer() {
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [isOpen, close]);
+
+  // Switching engines starts both sources over. Beats recorded on the other engine
+  // name that engine's nodes, so keeping them would leave the feed describing hops
+  // the diagram is currently shading out.
+  const clearLive = live.clear;
+  const restart = playback.restart;
+  useEffect(() => {
+    clearLive();
+    restart();
+  }, [engine, clearLive, restart]);
 
   const demoFrame = useMemo(
     () => frameForStep(flow.steps, playback.index),
@@ -264,7 +308,14 @@ export function LiveArchitectureDrawer() {
             transform: isOpen ? 'translateY(0)' : 'translateY(100%)',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '14px 20px 10px' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 11,
+              padding: '14px 20px 10px',
+            }}
+          >
             <div>
               <div
                 style={{
@@ -280,9 +331,28 @@ export function LiveArchitectureDrawer() {
               </div>
             </div>
 
-            <ModeSwitch mode={mode} onChange={setMode} />
+            <SegmentedSwitch
+              value={mode}
+              options={MODE_OPTIONS}
+              onChange={setMode}
+              label="Data source"
+            />
+            <SegmentedSwitch
+              value={engine}
+              options={ENGINE_OPTIONS}
+              onChange={setEngine}
+              label={DRAWER_COPY.engineGroup}
+              testId="architecture-engine-switch"
+            />
 
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+            <div
+              style={{
+                marginLeft: 'auto',
+                display: 'flex',
+                gap: 6,
+                alignItems: 'center',
+              }}
+            >
               {/* Step controls belong to demo mode only: live traffic cannot be
                   rewound, and a disabled ◀ beside real events invites the
                   question of why it does nothing. */}
@@ -349,7 +419,7 @@ export function LiveArchitectureDrawer() {
               overflowX: 'auto',
             }}
           >
-            <AwsTopologyDiagram {...diagram} />
+            <AwsTopologyDiagram {...diagram} engine={engine} />
             <AwsFlowFeed
               rows={rows}
               summary={summary}
@@ -391,7 +461,13 @@ export function LiveArchitectureDrawer() {
       >
         <span
           aria-hidden="true"
-          style={{ width: 7, height: 7, borderRadius: '50%', background: '#0E9B84', flexShrink: 0 }}
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: '50%',
+            background: '#0E9B84',
+            flexShrink: 0,
+          }}
         />
         {DRAWER_COPY.title}
         <b style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{stepReadout}</b>
@@ -405,7 +481,12 @@ export function LiveArchitectureDrawer() {
 
 /** Latest measured duration per node, from the live beats that carried one. */
 function liveDurations(
-  beats: readonly { key: string; to: AwsNodeId; durationMs?: number; ok?: boolean }[],
+  beats: readonly {
+    key: string;
+    to: AwsNodeId;
+    durationMs?: number;
+    ok?: boolean;
+  }[],
   currentKey: string | undefined,
 ): Readonly<Partial<Record<AwsNodeId, NodeDuration>>> {
   const durations: Partial<Record<AwsNodeId, NodeDuration>> = {};

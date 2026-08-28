@@ -2,22 +2,53 @@ import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_DEMO_FLOW_ID,
   DEMO_FLOWS,
+  defaultDemoFlowIdFor,
   demoFlow,
   demoStepDwellMs,
   frameForStep,
   type DemoFlowId,
 } from '../aws-demo-flows';
-import { AWS_NODES, routeBetween, type AwsNodeId } from '../aws-architecture';
+import {
+  ARCHITECTURE_ENGINES,
+  AWS_NODES,
+  isNodeInEngine,
+  routeBetween,
+  type AwsNodeId,
+} from '../aws-architecture';
 
 const NODE_IDS = new Set<string>(AWS_NODES.map((node) => node.id));
 
 describe('DEMO_FLOWS', () => {
-  it('ships the three flows the talk needs', () => {
+  it('ships the flows the talk needs, including engine B', () => {
     expect(DEMO_FLOWS.map((flow) => flow.id)).toEqual([
       'page-load',
       'chat-reply',
       'learns-something',
+      'agentcore-learns-something',
     ]);
+  });
+
+  it('opens on a flow whose steps belong to the engine being shown', () => {
+    // A flow is a list of concrete nodes, so playing engine A's script while
+    // engine A is shaded would animate greyed-out cards.
+    for (const engine of ARCHITECTURE_ENGINES) {
+      const flow = demoFlow(defaultDemoFlowIdFor(engine));
+      for (const step of flow.steps) {
+        expect(isNodeInEngine(step.to, engine), `${flow.id}:${step.to}`).toBe(true);
+        expect(isNodeInEngine(step.from, engine), `${flow.id}:${step.from}`).toBe(true);
+      }
+    }
+  });
+
+  it('tells the same story on both engines, beat for beat', () => {
+    // The comparison is only fair if the script is the same on both sides: a
+    // different narrative would let the room read the script as the platform.
+    const engineA = demoFlow('learns-something');
+    const engineB = demoFlow('agentcore-learns-something');
+    const actions = (flow: typeof engineA) => [...new Set(flow.steps.map((step) => step.action))];
+
+    expect(actions(engineB)).toEqual(actions(engineA));
+    expect(engineB.steps[engineB.steps.length - 1].operation).toBe('preference_update');
   });
 
   it('names only real nodes, so no step can invent a resource', () => {
@@ -102,7 +133,11 @@ describe('DEMO_FLOWS', () => {
 
     expect(steps).toHaveLength(9);
     expect(steps[7]).toMatchObject({ to: 'dynamodb', operation: 'PutItem', durationMs: 18 });
-    expect(steps[8]).toMatchObject({ from: 'dynamodb', to: 'browser', operation: 'preference_update' });
+    expect(steps[8]).toMatchObject({
+      from: 'dynamodb',
+      to: 'browser',
+      operation: 'preference_update',
+    });
   });
 
   it('makes two Converse calls in the headline flow, as the server really does', () => {

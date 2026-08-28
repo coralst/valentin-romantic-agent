@@ -103,10 +103,7 @@ export interface AgentCoreRuntime {
   ): Promise<void>;
 
   /** Everything the managed strategy has extracted for this session so far. */
-  recallPreferences(
-    sessionId: string,
-    actorId: string,
-  ): Promise<RememberedPreference[]>;
+  recallPreferences(sessionId: string, actorId: string): Promise<RememberedPreference[]>;
 }
 
 /**
@@ -215,6 +212,18 @@ export class BedrockAgentCoreRuntime implements AgentCoreRuntime {
         ok: true,
       });
 
+      // One line per tool the Runtime says it called, so the Gateway lights in
+      // the drawer instead of being a node that can only ever sit dark.
+      //
+      // No `durationMs`: these calls happen inside the Runtime and arrive here
+      // only as names in the reply, so there is nothing to time from the proxy.
+      // The span bridge leaves the field off and the view shows `—`. Reporting
+      // the turn's own duration here would credit the whole model call to a tool
+      // lookup, which is the reading a room would most easily be misled by.
+      for (const tool of parsed.toolsUsed) {
+        logger.info('agentcore.gateway', { sessionId: turn.sessionId, tool });
+      }
+
       return {
         ...parsed,
         runtimeSessionId: response.runtimeSessionId,
@@ -269,10 +278,7 @@ export class BedrockAgentCoreRuntime implements AgentCoreRuntime {
     }
   }
 
-  async recallPreferences(
-    sessionId: string,
-    actorId: string,
-  ): Promise<RememberedPreference[]> {
+  async recallPreferences(sessionId: string, actorId: string): Promise<RememberedPreference[]> {
     const started = Date.now();
     try {
       // ListMemoryRecords, not RetrieveMemoryRecords: the latter requires a
@@ -288,9 +294,7 @@ export class BedrockAgentCoreRuntime implements AgentCoreRuntime {
       );
 
       const records = (response.memoryRecordSummaries ?? [])
-        .map((summary) =>
-          parseMemoryRecord(summary.memoryRecordId, summary.content?.text),
-        )
+        .map((summary) => parseMemoryRecord(summary.memoryRecordId, summary.content?.text))
         .filter((record): record is RememberedPreference => record !== null);
 
       logger.info('agentcore.memory', {
@@ -458,8 +462,7 @@ export function parseMemoryRecord(
   }
 
   const category = pickCategory(record);
-  const key =
-    firstString(record, ['key', 'field', 'attribute', 'name']) ?? `${category}_note`;
+  const key = firstString(record, ['key', 'field', 'attribute', 'name']) ?? `${category}_note`;
 
   // Defaulted, not invented as 1.0. The managed strategy does not report a
   // confidence, and claiming certainty would make engine B look better than
@@ -480,10 +483,7 @@ export function parseMemoryRecord(
 }
 
 /** The first field present as a non-empty string. */
-function firstString(
-  record: Record<string, unknown>,
-  keys: readonly string[],
-): string | null {
+function firstString(record: Record<string, unknown>, keys: readonly string[]): string | null {
   for (const key of keys) {
     const value = record[key];
     if (typeof value === 'string' && value.trim()) return value.trim();

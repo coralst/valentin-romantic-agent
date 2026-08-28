@@ -1,6 +1,17 @@
-import { AWS_NODES, AWS_SEGMENTS, type AwsHop, type AwsNodeId } from '../utils/aws-architecture';
 import {
+  AWS_NODES,
+  AWS_SEGMENTS,
+  isNodeInEngine,
+  isSegmentInEngine,
+  type ArchitectureEngine,
+  type AwsHop,
+  type AwsNodeId,
+} from '../utils/aws-architecture';
+import {
+  AGENTCORE_BOX,
   AWS_DIAGRAM_CANVAS,
+  AWS_DIAGRAM_SCALE,
+  AWS_ENGINE_BANDS,
   AWS_NODE_BOXES,
   AWS_NODE_VISUALS,
   AWS_TIER_LABELS,
@@ -43,6 +54,12 @@ export interface AwsTopologyDiagramProps {
   /** The current step's hops, which colour and animate their connectors. */
   activeHops?: readonly AwsHop[];
   durations?: Readonly<Partial<Record<AwsNodeId, NodeDuration>>>;
+  /**
+   * Which engine is being shown. The other engine's resources stay on the canvas,
+   * shaded — the comparison is the subject, so removing half of it would hide the
+   * very thing the drawer is for.
+   */
+  engine?: ArchitectureEngine;
 }
 
 const KEYFRAMES_ID = 'aws-topology-marching-ants';
@@ -68,9 +85,18 @@ function ensureKeyframes() {
 }
 
 /** How a node is currently rendered. Mirrors the mockup's card states. */
-type NodeState = 'idle' | 'done' | 'pass' | 'lit' | 'response';
+type NodeState = 'idle' | 'done' | 'pass' | 'lit' | 'response' | 'muted';
 
 const NODE_STATE_STYLES: Record<NodeState, React.CSSProperties> = {
+  // The other engine. Greyscaled rather than just faded, so a shaded Bedrock card
+  // cannot be mistaken for an idle one at the back of a room — colour is the cue
+  // that says "this half is not the one you are looking at".
+  muted: {
+    borderColor: '#E2DCD8',
+    background: '#F4EFEC',
+    opacity: 0.34,
+    filter: 'grayscale(1)',
+  },
   // S3 is `dimmed` in the model and idles here: drawing it faint is more honest
   // than omitting it, and it lets the room see *why* it stays dark.
   idle: { borderColor: '#E5D9D2', background: colors.surface, opacity: 0.4 },
@@ -88,14 +114,23 @@ const NODE_STATE_STYLES: Record<NodeState, React.CSSProperties> = {
   },
 };
 
+/**
+ * The service tile's size.
+ *
+ * Down from 26px: the canvas now carries thirteen cards instead of seven, and the
+ * icon is the part that can shrink without costing legibility — the resource name
+ * underneath it is what a builder in the room actually reads.
+ */
+const ICON_SIZE = 21;
+
 const cardStyle: React.CSSProperties = {
   background: colors.surface,
   border: '1.5px solid #E5D9D2',
-  borderRadius: 11,
+  borderRadius: 10,
   display: 'flex',
-  gap: 9,
+  gap: 8,
   alignItems: 'flex-start',
-  padding: '9px 10px',
+  padding: '8px 9px',
   transition: 'all 280ms cubic-bezier(0.4, 0, 0.2, 1)',
   fontFamily: typography.bodyFontFamily,
 };
@@ -127,7 +162,12 @@ function NodeCard({
 
   return (
     <div
-      style={{ position: 'absolute', left: box.x, top: box.top, width: box.width }}
+      style={{
+        position: 'absolute',
+        left: box.x,
+        top: box.top,
+        width: box.width,
+      }}
       data-testid={`aws-node-${id}`}
       data-state={state}
     >
@@ -135,27 +175,34 @@ function NodeCard({
         style={{
           ...cardStyle,
           ...NODE_STATE_STYLES[state],
-          // Fargate is the only resource inside the VPC; the dashed border says so
-          // on the card as well as via the surrounding box.
+          // The two Fargate services are what sit inside the VPC; the dashed
+          // border says so on the card as well as via the surrounding box.
           borderStyle: node.inVpc ? 'dashed' : 'solid',
         }}
       >
         <div
           aria-hidden="true"
           style={{
-            width: 26,
-            height: 26,
+            width: ICON_SIZE,
+            height: ICON_SIZE,
             borderRadius: 6,
             flexShrink: 0,
             background: visual.tile,
           }}
           // The glyphs are our own constants, not user or network input.
           dangerouslySetInnerHTML={{
-            __html: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7">${visual.glyph}</svg>`,
+            __html: `<svg width="${ICON_SIZE}" height="${ICON_SIZE}" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8">${visual.glyph}</svg>`,
           }}
         />
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 11.5, fontWeight: 700, color: '#2A2226', lineHeight: 1.25 }}>
+          <div
+            style={{
+              fontSize: 11.5,
+              fontWeight: 700,
+              color: '#2A2226',
+              lineHeight: 1.25,
+            }}
+          >
             {node.service}
           </div>
           <div
@@ -170,7 +217,14 @@ function NodeCard({
           >
             {node.resourceName}
           </div>
-          <div style={{ fontSize: 9.5, color: '#A3959C', lineHeight: 1.4, marginTop: 2 }}>
+          <div
+            style={{
+              fontSize: 9.5,
+              color: '#A3959C',
+              lineHeight: 1.4,
+              marginTop: 2,
+            }}
+          >
             {node.caption}
           </div>
           {id === 'cloudfront' && (
@@ -201,11 +255,8 @@ function NodeCard({
                 display: 'inline-block',
                 fontSize: 9.5,
                 fontWeight: 700,
-                background: duration.current === false
-                  ? '#C9A7B0'
-                  : duration.ok
-                    ? colors.success
-                    : '#8C2F45',
+                background:
+                  duration.current === false ? '#C9A7B0' : duration.ok ? colors.success : '#8C2F45',
                 color: colors.textOnAccent,
                 padding: '2px 8px',
                 borderRadius: 20,
@@ -228,6 +279,7 @@ export function AwsTopologyDiagram({
   doneNodes = [],
   activeHops = [],
   durations = {},
+  engine = 'valentin',
 }: AwsTopologyDiagramProps) {
   ensureKeyframes();
   const reduceMotion = prefersReducedMotion();
@@ -237,6 +289,9 @@ export function AwsTopologyDiagram({
     activeHops.find((hop) => hop.segment === segmentId);
 
   const stateFor = (id: AwsNodeId): NodeState => {
+    // Checked first, and it wins: a stale `litNode` left over from the engine you
+    // just switched away from must not keep a shaded card lit.
+    if (!isNodeInEngine(id, engine)) return 'muted';
     if (id === litNode) return litIsResponse ? 'response' : 'lit';
     if (passNodes.includes(id)) return 'pass';
     if (doneNodes.includes(id)) return 'done';
@@ -244,129 +299,234 @@ export function AwsTopologyDiagram({
   };
 
   return (
+    // The scale wrapper. Sized to the *scaled* box so the flex row beside the feed
+    // reserves what is actually painted, not the logical canvas.
     <div
       style={{
-        position: 'relative',
-        width: AWS_DIAGRAM_CANVAS.width,
-        height: AWS_DIAGRAM_CANVAS.height,
+        width: AWS_DIAGRAM_CANVAS.width * AWS_DIAGRAM_SCALE,
+        height: AWS_DIAGRAM_CANVAS.height * AWS_DIAGRAM_SCALE,
         flexShrink: 0,
-        marginTop: 18,
+        marginTop: 14,
       }}
-      data-testid="aws-topology-diagram"
-      role="img"
-      aria-label="AWS architecture: browser through CloudFront, ALB and Fargate to Bedrock and DynamoDB"
+      data-testid="aws-topology-scale"
     >
-      <svg
-        width={AWS_DIAGRAM_CANVAS.width}
-        height={AWS_DIAGRAM_CANVAS.height}
-        style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible' }}
-        aria-hidden="true"
-      >
-        {AWS_SEGMENTS.map((segment) => {
-          const geometry = awsSegmentGeometry(segment.id);
-          const hop = hopFor(segment.id);
-          const active = hop !== undefined;
-          const downstream = hop?.downstream === true;
-          const stroke = active
-            ? downstream
-              ? FLOW_COLORS.request
-              : FLOW_COLORS.response
-            : FLOW_COLORS.idle;
-
-          /** An arrowhead is drawn only when traffic is going that way. */
-          const head = (points: string | undefined, forDownstream: boolean, key: string) => {
-            if (!points) return null;
-            const on = active && downstream === forDownstream;
-            return (
-              <polygon
-                key={key}
-                data-testid={`aws-head-${key}`}
-                data-active={on ? 'true' : 'false'}
-                points={points}
-                fill={on ? stroke : FLOW_COLORS.idle}
-                opacity={on ? 1 : 0}
-              />
-            );
-          };
-
-          return (
-            <g key={segment.id}>
-              <path
-                data-testid={`aws-segment-${segment.id}`}
-                data-direction={active ? (downstream ? 'downstream' : 'upstream') : 'idle'}
-                d={geometry.path}
-                fill="none"
-                stroke={stroke}
-                strokeWidth={active ? 3.5 : 2.5}
-                strokeLinejoin="round"
-                strokeLinecap="round"
-                opacity={active ? 1 : 0.45}
-                strokeDasharray={active ? MARCHING_ANTS.dashArray : undefined}
-                style={
-                  // Reduced motion drops the movement and keeps the colour: the
-                  // objection is to things moving, not to knowing the direction.
-                  active && !reduceMotion
-                    ? {
-                        animation: `aws-ants-${downstream ? 'downstream' : 'upstream'} ${MARCHING_ANTS.durationMs}ms linear infinite`,
-                      }
-                    : undefined
-                }
-              />
-              {head(geometry.downstreamHead, true, `${segment.id}-downstream`)}
-              {head(geometry.upstreamHead, false, `${segment.id}-upstream`)}
-              {head(geometry.midDownstreamHead, true, `${segment.id}-mid-downstream`)}
-              {head(geometry.midUpstreamHead, false, `${segment.id}-mid-upstream`)}
-            </g>
-          );
-        })}
-      </svg>
-
       <div
-        data-testid="aws-vpc-box"
         style={{
-          position: 'absolute',
-          left: AWS_VPC_BOX.left,
-          top: AWS_VPC_BOX.top,
-          width: AWS_VPC_BOX.width,
-          height: AWS_VPC_BOX.height,
-          border: '2px dashed #8C4FFF',
-          borderRadius: 12,
-          background: 'rgba(140, 79, 255, 0.045)',
+          position: 'relative',
+          width: AWS_DIAGRAM_CANVAS.width,
+          height: AWS_DIAGRAM_CANVAS.height,
+          transform: `scale(${AWS_DIAGRAM_SCALE})`,
+          transformOrigin: 'top left',
         }}
+        data-testid="aws-topology-diagram"
+        data-engine={engine}
+        role="img"
+        aria-label={
+          engine === 'agentcore'
+            ? 'AWS architecture, AgentCore engine: browser through CloudFront and the ALB to the proxy task, then AgentCore Runtime, Memory and Gateway'
+            : 'AWS architecture, hand-built engine: browser through CloudFront, ALB and Fargate to Bedrock and DynamoDB'
+        }
       >
-        <span
+        <svg
+          width={AWS_DIAGRAM_CANVAS.width}
+          height={AWS_DIAGRAM_CANVAS.height}
+          style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible' }}
+          aria-hidden="true"
+        >
+          {AWS_SEGMENTS.map((segment) => {
+            const geometry = awsSegmentGeometry(segment.id);
+            const inEngine = isSegmentInEngine(segment, engine);
+            // A connector on the other engine is never active, even if a stale hop
+            // still names it: the shaded half must not animate behind the live one.
+            const hop = inEngine ? hopFor(segment.id) : undefined;
+            const active = hop !== undefined;
+            const downstream = hop?.downstream === true;
+            const stroke = active
+              ? downstream
+                ? FLOW_COLORS.request
+                : FLOW_COLORS.response
+              : FLOW_COLORS.idle;
+
+            /** An arrowhead is drawn only when traffic is going that way. */
+            const head = (points: string | undefined, forDownstream: boolean, key: string) => {
+              if (!points) return null;
+              const on = active && downstream === forDownstream;
+              return (
+                <polygon
+                  key={key}
+                  data-testid={`aws-head-${key}`}
+                  data-active={on ? 'true' : 'false'}
+                  points={points}
+                  fill={on ? stroke : FLOW_COLORS.idle}
+                  opacity={on ? 1 : 0}
+                />
+              );
+            };
+
+            return (
+              <g key={segment.id} opacity={inEngine ? 1 : 0.3}>
+                <path
+                  data-testid={`aws-segment-${segment.id}`}
+                  data-direction={active ? (downstream ? 'downstream' : 'upstream') : 'idle'}
+                  data-engine-state={inEngine ? 'active-engine' : 'muted'}
+                  d={geometry.path}
+                  fill="none"
+                  stroke={stroke}
+                  strokeWidth={active ? 3.5 : 2.5}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  opacity={active ? 1 : 0.45}
+                  strokeDasharray={active ? MARCHING_ANTS.dashArray : undefined}
+                  style={
+                    // Reduced motion drops the movement and keeps the colour: the
+                    // objection is to things moving, not to knowing the direction.
+                    active && !reduceMotion
+                      ? {
+                          animation: `aws-ants-${downstream ? 'downstream' : 'upstream'} ${MARCHING_ANTS.durationMs}ms linear infinite`,
+                        }
+                      : undefined
+                  }
+                />
+                {head(geometry.downstreamHead, true, `${segment.id}-downstream`)}
+                {head(geometry.upstreamHead, false, `${segment.id}-upstream`)}
+                {head(geometry.midDownstreamHead, true, `${segment.id}-mid-downstream`)}
+                {head(geometry.midUpstreamHead, false, `${segment.id}-mid-upstream`)}
+              </g>
+            );
+          })}
+        </svg>
+
+        <div
+          data-testid="aws-vpc-box"
           style={{
             position: 'absolute',
-            top: -9,
-            left: 12,
-            background: '#FAF4F0',
-            padding: '0 6px',
-            fontSize: 8.5,
-            fontWeight: 700,
-            letterSpacing: '0.06em',
-            textTransform: 'uppercase',
-            color: '#8C4FFF',
-            whiteSpace: 'nowrap',
+            left: AWS_VPC_BOX.left,
+            top: AWS_VPC_BOX.top,
+            width: AWS_VPC_BOX.width,
+            height: AWS_VPC_BOX.height,
+            border: '2px dashed #8C4FFF',
+            borderRadius: 12,
+            background: 'rgba(140, 79, 255, 0.045)',
           }}
         >
-          {AWS_VPC_BOX.label}
-        </span>
-      </div>
-
-      {AWS_TIER_LABELS.map((tier) => (
-        <div key={tier.label} style={{ ...tierLabelStyle, left: tier.x }}>
-          {tier.label}
+          <span
+            style={{
+              position: 'absolute',
+              top: -9,
+              left: 12,
+              background: '#FAF4F0',
+              padding: '0 6px',
+              fontSize: 8.5,
+              fontWeight: 700,
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+              color: '#8C4FFF',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {AWS_VPC_BOX.label}
+          </span>
         </div>
-      ))}
 
-      {AWS_NODES.map((node) => (
-        <NodeCard
-          key={node.id}
-          id={node.id}
-          state={stateFor(node.id)}
-          duration={durations[node.id]}
-        />
-      ))}
+        <div
+          data-testid="aws-agentcore-box"
+          data-state={engine === 'agentcore' ? 'active-engine' : 'muted'}
+          style={{
+            position: 'absolute',
+            left: AGENTCORE_BOX.left,
+            top: AGENTCORE_BOX.top,
+            width: AGENTCORE_BOX.width,
+            height: AGENTCORE_BOX.height,
+            border: '2px dashed #01A88D',
+            borderRadius: 12,
+            background: 'rgba(1, 168, 141, 0.05)',
+            opacity: engine === 'agentcore' ? 1 : 0.28,
+            filter: engine === 'agentcore' ? undefined : 'grayscale(1)',
+            transition: 'all 280ms cubic-bezier(0.4, 0, 0.2, 1)',
+          }}
+        >
+          <span
+            style={{
+              position: 'absolute',
+              top: -9,
+              left: 12,
+              background: '#FAF4F0',
+              padding: '0 6px',
+              fontSize: 8.5,
+              fontWeight: 700,
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+              color: '#01A88D',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {AGENTCORE_BOX.label}
+          </span>
+        </div>
+
+        {AWS_TIER_LABELS.map((tier) => (
+          <div key={tier.label} style={{ ...tierLabelStyle, left: tier.x }}>
+            {tier.label}
+          </div>
+        ))}
+
+        {AWS_ENGINE_BANDS.map((band) => {
+          const selected = band.engine === engine;
+          return (
+            <div
+              key={band.engine}
+              data-testid={`aws-engine-band-${band.engine}`}
+              data-state={selected ? 'active-engine' : 'muted'}
+              style={{
+                position: 'absolute',
+                left: band.x,
+                top: band.top,
+                width: band.width,
+                fontFamily: typography.bodyFontFamily,
+                opacity: selected ? 1 : 0.4,
+                transition: 'opacity 280ms cubic-bezier(0.4, 0, 0.2, 1)',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                  color: selected ? '#8C2F45' : '#A3959C',
+                }}
+              >
+                {band.label}
+              </div>
+              <div
+                style={{
+                  fontSize: 9,
+                  // The env var, set in monospace because that is what it is.
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                  color: '#A3959C',
+                  marginTop: 2,
+                }}
+              >
+                {band.sub}
+              </div>
+            </div>
+          );
+        })}
+
+        {AWS_NODES.map((node) => {
+          const state = stateFor(node.id);
+          return (
+            <NodeCard
+              key={node.id}
+              id={node.id}
+              state={state}
+              // A pill on a shaded card would be a latency reading for a turn that
+              // isn't the one on screen.
+              duration={state === 'muted' ? undefined : durations[node.id]}
+            />
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import type { AwsNodeId } from './aws-architecture';
+import type { ArchitectureEngine, AwsNodeId } from './aws-architecture';
 import { routeBetween } from './aws-architecture';
 import type { AwsCategory } from './aws-diagram-layout';
 
@@ -61,7 +61,8 @@ export interface DemoFlow {
   steps: readonly ResolvedDemoStep[];
 }
 
-export type DemoFlowId = 'page-load' | 'chat-reply' | 'learns-something';
+export type DemoFlowId =
+  'page-load' | 'chat-reply' | 'learns-something' | 'agentcore-learns-something';
 
 /**
  * Fill in each step's origin: a flow is a continuous journey, so a step starts
@@ -219,6 +220,135 @@ const LEARNS_SOMETHING: readonly DemoStep[] = [
   },
 ];
 
+/**
+ * The same story on engine B.
+ *
+ * Step-for-step the same beats as `LEARNS_SOMETHING` — that is the point of it
+ * existing. A demo that walked engine B through a *different* narrative would let
+ * the room read a difference in the script as a difference in the platform.
+ *
+ * The durations are authored and deliberately larger than engine A's on the two
+ * hops that genuinely add work: `InvokeAgentRuntime` is a second network call
+ * wrapping the model call, and a tool goes out over MCP to a Lambda instead of
+ * calling the SDK in-process. Live mode measures the real numbers.
+ */
+const AGENTCORE_LEARNS_SOMETHING: readonly DemoStep[] = [
+  {
+    to: 'browser',
+    service: 'Browser',
+    operation: 'send_message',
+    detail: 'ws frame · /ws/agentcore',
+    category: 'network',
+    actor: 'User',
+    action: 'sends a message in chat',
+  },
+  {
+    to: 'cloudfront',
+    service: 'CloudFront',
+    operation: 'ws-frame',
+    detail: '/ws/agentcore · CACHING_DISABLED',
+    category: 'network',
+    durationMs: 2,
+    actor: 'User',
+    action: 'sends a message in chat',
+  },
+  {
+    to: 'alb',
+    service: 'ALB',
+    operation: 'forward',
+    detail: 'second target group',
+    category: 'network',
+    durationMs: 1,
+    actor: 'User',
+    action: 'sends a message in chat',
+  },
+  {
+    to: 'ac-proxy',
+    service: 'Proxy',
+    operation: 'typing_start',
+    detail: 'AGENT_ENGINE=agentcore',
+    category: 'compute',
+    durationMs: 1,
+    actor: 'Valentin',
+    action: 'writes a reply',
+  },
+  {
+    to: 'ac-runtime',
+    service: 'Runtime',
+    operation: 'InvokeAgentRuntime',
+    detail: 'Strands agent · session id preserved',
+    category: 'ml',
+    durationMs: 486,
+    actor: 'Valentin',
+    action: 'writes a reply',
+  },
+  {
+    to: 'ac-gateway',
+    service: 'Gateway',
+    operation: 'get_partner_profile',
+    detail: 'MCP tool call',
+    category: 'ml',
+    durationMs: 94,
+    actor: 'Valentin',
+    action: 'writes a reply',
+  },
+  {
+    to: 'ac-dynamodb',
+    service: 'DynamoDB',
+    operation: 'Query',
+    detail: 'via valentin-profile-tools-dev',
+    category: 'database',
+    durationMs: 21,
+    ok: true,
+    actor: 'Valentin',
+    action: 'writes a reply',
+  },
+  {
+    from: 'ac-runtime',
+    to: 'browser',
+    service: 'Browser',
+    operation: 'agent_message',
+    detail: 'reply streamed',
+    category: 'network',
+    actor: 'Valentin',
+    action: 'writes a reply',
+  },
+  {
+    from: 'ac-runtime',
+    to: 'ac-memory',
+    service: 'Memory',
+    operation: 'CreateEvent',
+    detail: 'managed preference extraction',
+    category: 'ml',
+    durationMs: 37,
+    ok: true,
+    actor: 'Valentin',
+    action: 'learns something new',
+  },
+  {
+    from: 'ac-gateway',
+    to: 'ac-dynamodb',
+    service: 'DynamoDB',
+    operation: 'PutItem',
+    detail: 'PREF#music',
+    category: 'database',
+    durationMs: 19,
+    ok: true,
+    actor: 'Valentin',
+    action: 'learns something new',
+  },
+  {
+    from: 'ac-dynamodb',
+    to: 'browser',
+    service: 'Browser',
+    operation: 'preference_update',
+    detail: 'new · music',
+    category: 'network',
+    actor: 'Valentin',
+    action: 'learns something new',
+  },
+];
+
 export const DEMO_FLOWS: readonly DemoFlow[] = [
   {
     id: 'page-load',
@@ -240,10 +370,27 @@ export const DEMO_FLOWS: readonly DemoFlow[] = [
     synopsis: 'The reply, then a second Converse call that extracts and stores a preference.',
     steps: resolve(LEARNS_SOMETHING),
   },
+  {
+    id: 'agentcore-learns-something',
+    title: 'Valentin learns something · AgentCore',
+    synopsis: 'The same beats through AgentCore Runtime, a Gateway tool call and Memory.',
+    steps: resolve(AGENTCORE_LEARNS_SOMETHING),
+  },
 ] as const;
 
 /** Default flow: the one the whole talk is built around. */
 export const DEFAULT_DEMO_FLOW_ID: DemoFlowId = 'learns-something';
+
+/**
+ * The flow to open on for a given engine.
+ *
+ * Needed because a flow's steps name concrete nodes: playing engine A's script
+ * while the engine-A half of the diagram is shaded would animate greyed-out cards,
+ * which reads as a rendering bug rather than as a comparison.
+ */
+export function defaultDemoFlowIdFor(engine: ArchitectureEngine): DemoFlowId {
+  return engine === 'agentcore' ? 'agentcore-learns-something' : DEFAULT_DEMO_FLOW_ID;
+}
 
 export function demoFlow(id: DemoFlowId): DemoFlow {
   const found = DEMO_FLOWS.find((flow) => flow.id === id);
@@ -284,7 +431,8 @@ export function frameForStep(steps: readonly ResolvedDemoStep[], index: number):
   const current = Math.min(index, steps.length - 1);
 
   const done: AwsNodeId[] = [];
-  const durations: Partial<Record<AwsNodeId, { label: string; ok: boolean; current: boolean }>> = {};
+  const durations: Partial<Record<AwsNodeId, { label: string; ok: boolean; current: boolean }>> =
+    {};
   let litNode: AwsNodeId | undefined;
   let litIsResponse = false;
   let activeHops: ReturnType<typeof routeBetween> = [];

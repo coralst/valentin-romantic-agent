@@ -1,8 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import {
+  ARCHITECTURE_ENGINES,
   AWS_NODES,
   AWS_SEGMENTS,
   awsNode,
+  isNodeInEngine,
+  isSegmentInEngine,
+  nodeForEngine,
   awsNodeIdForResource,
   awsNodesForEventType,
   awsHopsForEventType,
@@ -46,9 +50,24 @@ describe('AWS_NODES', () => {
     expect(dimmed).toEqual(['s3']);
   });
 
-  it('places only Fargate inside the VPC boundary', () => {
+  it('places both Fargate services, and nothing else, inside the VPC boundary', () => {
     const inVpc = AWS_NODES.filter((node) => node.inVpc).map((node) => node.id);
-    expect(inVpc).toEqual(['fargate']);
+    expect(inVpc).toEqual(['fargate', 'ac-proxy']);
+  });
+
+  it('marks the three AgentCore primitives, and only those, as managed', () => {
+    // `ac-dynamodb` must stay out: the table is ours, reached through a Lambda we
+    // own, and drawing it inside the AgentCore boundary would credit the platform
+    // with the one piece of that path we wrote.
+    const managed = AWS_NODES.filter((node) => node.inAgentCore).map((node) => node.id);
+    expect(managed).toEqual(['ac-runtime', 'ac-memory', 'ac-gateway']);
+  });
+
+  it('leaves everything up to the ALB shared, and tags everything past it', () => {
+    // The shared spine is what makes the comparison fair: both engines really do
+    // arrive through the same edge, so neither half may claim it.
+    const shared = AWS_NODES.filter((node) => node.engine === undefined).map((node) => node.id);
+    expect(shared).toEqual(['browser', 'cloudfront', 's3', 'alb']);
   });
 
   it('resolves nodes by id and returns undefined for strangers', () => {
@@ -256,5 +275,99 @@ describe('describeAwsEvent', () => {
   it('returns empty for a payload-less or unknown event', () => {
     expect(describeAwsEvent({ type: 'pong', payload: undefined })).toBe('');
     expect(describeAwsEvent({ type: 'mystery', payload: {} })).toBe('');
+  });
+});
+
+describe('engine membership', () => {
+  it('counts the shared spine as part of both engines', () => {
+    for (const id of ['browser', 'cloudfront', 's3', 'alb'] as AwsNodeId[]) {
+      expect(isNodeInEngine(id, 'valentin'), id).toBe(true);
+      expect(isNodeInEngine(id, 'agentcore'), id).toBe(true);
+    }
+  });
+
+  it('excludes each engine from the other', () => {
+    expect(isNodeInEngine('fargate', 'agentcore')).toBe(false);
+    expect(isNodeInEngine('bedrock', 'agentcore')).toBe(false);
+    expect(isNodeInEngine('ac-runtime', 'valentin')).toBe(false);
+    expect(isNodeInEngine('ac-dynamodb', 'valentin')).toBe(false);
+  });
+
+  it('excludes a connector as soon as either end is on the other engine', () => {
+    const albToProxy = AWS_SEGMENTS.find((segment) => segment.id === 'alb-ac-proxy')!;
+    const albToFargate = AWS_SEGMENTS.find((segment) => segment.id === 'alb-fargate')!;
+
+    // `alb` is shared, so a segment is only shared when *both* ends are.
+    expect(isSegmentInEngine(albToProxy, 'agentcore')).toBe(true);
+    expect(isSegmentInEngine(albToProxy, 'valentin')).toBe(false);
+    expect(isSegmentInEngine(albToFargate, 'valentin')).toBe(true);
+    expect(isSegmentInEngine(albToFargate, 'agentcore')).toBe(false);
+  });
+
+  it('leaves every segment claimed by at least one engine', () => {
+    // The property that makes the shading total: no connector may fall through and
+    // render for neither engine.
+    for (const segment of AWS_SEGMENTS) {
+      const claimed =
+        Number(isSegmentInEngine(segment, 'valentin')) +
+        Number(isSegmentInEngine(segment, 'agentcore'));
+      expect(claimed, segment.id).toBeGreaterThan(0);
+    }
+  });
+
+  it('maps a resource to its counterpart on the other engine', () => {
+    expect(nodeForEngine('fargate', 'agentcore')).toBe('ac-proxy');
+    expect(nodeForEngine('bedrock', 'agentcore')).toBe('ac-runtime');
+    expect(nodeForEngine('dynamodb', 'agentcore')).toBe('ac-dynamodb');
+    // Shared resources, and engine A itself, map to themselves.
+    expect(nodeForEngine('alb', 'agentcore')).toBe('alb');
+    expect(nodeForEngine('bedrock', 'valentin')).toBe('bedrock');
+  });
+
+  it('translates back the other way too, so a stale id from either side resolves', () => {
+    expect(nodeForEngine('ac-proxy', 'valentin')).toBe('fargate');
+    expect(nodeForEngine('ac-runtime', 'valentin')).toBe('bedrock');
+    expect(nodeForEngine('ac-dynamodb', 'valentin')).toBe('dynamodb');
+  });
+
+  it('never maps a node onto one the target engine does not have, bar the two with no counterpart', () => {
+    const stranded: string[] = [];
+
+    for (const node of AWS_NODES) {
+      for (const engine of ARCHITECTURE_ENGINES) {
+        if (!isNodeInEngine(nodeForEngine(node.id, engine), engine)) {
+          stranded.push(`${node.id}/${engine}`);
+        }
+      }
+    }
+
+    // Engine A does its own memory and calls its tools in-process, so these two
+    // genuinely have nothing to translate to. They are returned unchanged and the
+    // view shades them — which is honest — rather than being mapped to a
+    // resource engine A does not have.
+    expect(stranded).toEqual(['ac-memory/valentin', 'ac-gateway/valentin']);
+  });
+
+  it('routes an engine-B event down engine B, without touching engine A', () => {
+    const nodes = awsNodesForEventType('agent_message', 'agentcore');
+    expect(nodes).toContain('ac-runtime');
+    expect(nodes).not.toContain('bedrock');
+    expect(nodes).not.toContain('fargate');
+
+    const hops = awsHopsForEventType('agent_message', 'agentcore');
+    expect(hops.map((hop) => hop.segment)).toContain('ac-proxy-ac-runtime');
+  });
+
+  it('sends a shared resource id to the selected engine, not to engine A by default', () => {
+    // Why the engine argument exists at all: engine B mirrors preferences through
+    // the same store, so it emits `resourceId: 'dynamodb'` exactly as engine A does.
+    expect(awsNodeIdForResource('dynamodb')).toBe('dynamodb');
+    expect(awsNodeIdForResource('dynamodb', 'agentcore')).toBe('ac-dynamodb');
+  });
+
+  it('resolves the AgentCore primitives, which own no matching node id', () => {
+    expect(awsNodeIdForResource('agentcore-runtime', 'agentcore')).toBe('ac-runtime');
+    expect(awsNodeIdForResource('agentcore-memory', 'agentcore')).toBe('ac-memory');
+    expect(awsNodeIdForResource('agentcore-gateway', 'agentcore')).toBe('ac-gateway');
   });
 });

@@ -167,6 +167,10 @@ const OWNERSHIP = [
   ['src/client/main.tsx', 'frontend-dev'],
   ['src/client/vite-env.d.ts', 'frontend-dev'],
   ['src/server/', 'backend-dev'],
+  // The Strands agent that runs inside the AgentCore Runtime. Python, and its own
+  // image, but it is engine B's agent turn — the same work `src/server/agent/`
+  // does for engine A, so the same lane owns both sides of the comparison.
+  ['agentcore/', 'backend-dev'],
   ['src/shared/', 'system-architect'],
   ['e2e/', 'qa-agent'],
   ['playwright.config.ts', 'qa-agent'],

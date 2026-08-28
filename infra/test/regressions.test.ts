@@ -18,6 +18,7 @@ import { ComputeStack } from '../lib/compute-stack';
 import { AuthStack } from '../lib/auth-stack';
 import { MonitoringStack } from '../lib/monitoring-stack';
 import { AgentCoreStack } from '../lib/agentcore-stack';
+import { CdnStack } from '../lib/cdn-stack';
 
 const config = getConfig('dev');
 
@@ -26,6 +27,7 @@ let monitoringTemplate: Template;
 let dataTemplate: Template;
 let safetyTemplate: Template;
 let agentCoreTemplate: Template;
+let cdnTemplate: Template;
 
 beforeAll(() => {
   const app = new cdk.App();
@@ -68,6 +70,13 @@ beforeAll(() => {
     env: stackEnv,
   });
 
+  const cdn = new CdnStack(app, 'Cdn', {
+    config,
+    alb: compute.loadBalancer,
+    accessLogBucket: data.accessLogBucket,
+    env: stackEnv,
+  });
+
   const monitoring = new MonitoringStack(app, 'Mon', {
     config,
     loadBalancer: compute.loadBalancer,
@@ -82,6 +91,7 @@ beforeAll(() => {
   dataTemplate = Template.fromStack(data);
   safetyTemplate = Template.fromStack(safety);
   agentCoreTemplate = Template.fromStack(agentCore);
+  cdnTemplate = Template.fromStack(cdn);
 });
 
 /** The guardrail's denied-topic list, keyed by topic name. */
@@ -605,5 +615,45 @@ describe('agentcore engine B', () => {
     for (const group of Object.values(groups)) {
       expect((group as any).Properties.RetentionInDays).toBe(config.logRetention);
     }
+  });
+});
+
+describe('CloudFront reaches both engines', () => {
+  /** The distribution's cache behaviors, keyed by path pattern. */
+  function behaviors(): Record<string, any> {
+    const distributions = cdnTemplate.findResources('AWS::CloudFront::Distribution');
+    const dist = Object.values<any>(distributions)[0].Properties.DistributionConfig;
+    return Object.fromEntries(
+      (dist.CacheBehaviors ?? []).map((b: any) => [b.PathPattern, b]),
+    );
+  }
+
+  it('has a behavior for the AgentCore socket', () => {
+    // `/ws` is an exact pattern, not a prefix, so without its own entry
+    // `/ws/agentcore` falls through to the S3 default behavior and the upgrade
+    // comes back as a cached 403 rather than as anything diagnosable.
+    expect(Object.keys(behaviors()).sort()).toEqual(['/api/*', '/ws', '/ws/agentcore']);
+  });
+
+  it('gives the two sockets identical treatment', () => {
+    // The frames are the same on both; the path exists only so the ALB can pick
+    // a target group. A difference here would be measured as an engine result.
+    const all = behaviors();
+    const baseline = all['/ws'];
+    const agentcore = all['/ws/agentcore'];
+    // toEqual throughout: the policy ids synth as `{ Ref: ... }` objects, which
+    // are structurally identical but not the same object.
+    expect(agentcore.CachePolicyId).toEqual(baseline.CachePolicyId);
+    expect(agentcore.OriginRequestPolicyId).toEqual(baseline.OriginRequestPolicyId);
+    expect(agentcore.AllowedMethods).toEqual(baseline.AllowedMethods);
+    expect(agentcore.TargetOriginId).toEqual(baseline.TargetOriginId);
+    expect(agentcore.ViewerProtocolPolicy).toEqual(baseline.ViewerProtocolPolicy);
+  });
+
+  it('needs no extra behavior for engine B HTTP routes', () => {
+    // `/api/*` already covers `/api/agentcore/*`, and ALL_VIEWER forwards the
+    // `X-Valentin-Engine` header the third listener rule matches on.
+    expect(behaviors()['/api/*']).toBeDefined();
+    expect(behaviors()['/api/agentcore/*']).toBeUndefined();
   });
 });

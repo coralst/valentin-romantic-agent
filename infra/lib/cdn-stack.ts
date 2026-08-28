@@ -159,6 +159,26 @@ export class CdnStack extends cdk.Stack {
           allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
           originRequestPolicy: wsOriginRequestPolicy,
         },
+        /*
+         * Engine B's socket. Needed as its own behavior because `/ws` above is an
+         * exact path pattern, not a prefix, so without this the AgentCore socket
+         * would fall through to the default behavior — the S3 origin, with
+         * CACHING_OPTIMIZED and GET/HEAD only — and the upgrade would come back
+         * as a cached 403 rather than as anything diagnosable.
+         *
+         * Identical settings to `/ws` on purpose: the frames are the same and the
+         * path exists only so the ALB can pick a target group. Engine B's HTTP
+         * routes need no entry at all, since `/api/*` already covers
+         * `/api/agentcore/*` and forwards every header, which is what carries
+         * `X-Valentin-Engine` to the listener rule.
+         */
+        '/ws/agentcore': {
+          origin: albOrigin,
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          cachePolicy: noCachePolicy,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+          originRequestPolicy: wsOriginRequestPolicy,
+        },
       },
       defaultRootObject: 'index.html',
       errorResponses: [

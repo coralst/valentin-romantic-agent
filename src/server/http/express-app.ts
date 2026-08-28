@@ -8,6 +8,7 @@ import { config } from '../config';
 import type { DemoLoginService } from '../auth/demo-login';
 import { storageUserId } from '../auth/demo-login';
 import { describePersonas } from '../fixtures/demo-personas';
+import { DEFAULT_ENGINE, type AgentEngine } from '../agent/engine';
 
 /** Structured log sink, so the two entry points keep their own formats */
 export type LogFn = (
@@ -23,6 +24,13 @@ export interface ExpressAppDeps {
   /** Live connection count, for the health payload */
   connectionCount: () => number;
   log: LogFn;
+  /**
+   * Which engine this task serves, for `/api/config` to report.
+   *
+   * Optional so the existing app tests need no new argument; absent reads as
+   * engine A, which is what an untouched deployment is.
+   */
+  engine?: AgentEngine;
   /**
    * Backs the one-click demo button. Omitted in tests that only care about the
    * authenticated surface; the route then reports 503 rather than 404, since
@@ -181,6 +189,16 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
       clientId: config.cognito.spaClientId ?? null,
       demoAvailable: Boolean(deps.demoLogin),
       demoPersonas: describePersonas(),
+      /*
+       * Which engine actually answered, not which one the caller routed to.
+       *
+       * The two matter separately. A browser reaching `/ws/agentcore` knows what
+       * it *asked* for, but `resolveEngine` downgrades to engine A when the
+       * AgentCore wiring is missing — and a comparison that labelled those
+       * answers "AgentCore" would be reporting engine A's numbers under engine
+       * B's name. This is the value the label should come from.
+       */
+      engine: deps.engine ?? DEFAULT_ENGINE,
     });
   });
 

@@ -25,6 +25,26 @@ interface UseWebSocketOptions {
   preferencesDispatch: React.Dispatch<PreferencesAction>;
   sessionId: string | null;
   url?: string;
+  /**
+   * Which backend to open the socket against. Defaults to engine A.
+   *
+   * Selects a *path*, because that is what the ALB routes on: `/ws` reaches the
+   * baseline service and `/ws/agentcore` reaches the AgentCore proxy. The frames
+   * are identical either way, so nothing else in this hook branches on it.
+   *
+   * The engine that actually answered is whatever `GET /api/config` reports, not
+   * this — a deployment missing its AgentCore wiring downgrades server-side, and
+   * a label taken from here would then be wrong. See `server/agent/engine.ts`.
+   */
+  engine?: WsEngine;
+}
+
+/** The two backends a socket can be opened against. */
+export type WsEngine = 'valentin' | 'agentcore';
+
+/** The socket path that reaches a given engine through the ALB. */
+export function webSocketPathFor(engine: WsEngine = 'valentin'): string {
+  return engine === 'agentcore' ? '/ws/agentcore' : '/ws';
 }
 
 
@@ -109,6 +129,7 @@ export function useWebSocket({
   preferencesDispatch,
   sessionId,
   url,
+  engine,
 }: UseWebSocketOptions): UseWebSocketReturn {
   const [connectionStatus, setConnectionStatus] = useState<
     'connected' | 'reconnecting' | 'disconnected'
@@ -165,11 +186,10 @@ export function useWebSocket({
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const wsUrl = url ?? (
-    window.location.protocol === 'https:'
-      ? `wss://${window.location.host}/ws`
-      : `ws://${window.location.host}/ws`
-  );
+  const wsUrl = url ?? (() => {
+    const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    return `${scheme}://${window.location.host}${webSocketPathFor(engine)}`;
+  })();
 
   const clearTimers = useCallback(() => {
     if (reconnectTimerRef.current) {

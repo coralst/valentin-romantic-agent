@@ -24,6 +24,15 @@ export interface RuntimeAuthConfig {
    * personas, hence optional.
    */
   demoPersonas?: DemoPersonaSummary[];
+  /**
+   * Which backend answered this request — `'valentin'` or `'agentcore'`.
+   *
+   * The engine that *ran*, not the one the request was routed to: a deployment
+   * without the AgentCore wiring downgrades server-side, so anything labelling a
+   * measurement must read it from here rather than inferring it from the URL.
+   * Optional, since a deployment predating two engines omits it.
+   */
+  engine?: 'valentin' | 'agentcore';
 }
 
 /** One selectable demo profile, as `/api/config` advertises it */

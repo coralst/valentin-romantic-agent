@@ -112,7 +112,7 @@ describe('GET /api/config', () => {
     expect(body).not.toContain('demoClientId');
   });
 
-  it('returns exactly the five documented keys', async () => {
+  it('returns exactly the six documented keys', async () => {
     // The landing page reads this before it has a token. Anything added here is
     // public, so the key list is asserted rather than merely matched.
     const body = (await (await get('/api/config')).json()) as object;
@@ -123,7 +123,15 @@ describe('GET /api/config', () => {
       'cognitoDomain',
       'demoAvailable',
       'demoPersonas',
+      // Which of the two backends answered. Public, and safely so: it names an
+      // engine, not any of its wiring.
+      'engine',
     ]);
+  });
+
+  it('reports engine A when the app was built without an engine', async () => {
+    const { engine } = (await (await get('/api/config')).json()) as { engine: string };
+    expect(engine).toBe('valentin');
   });
 
   it('advertises the demo personas, with counts but no values', async () => {

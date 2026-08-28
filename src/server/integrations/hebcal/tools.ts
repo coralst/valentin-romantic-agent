@@ -4,7 +4,9 @@ import {
   hebrewAnniversaries,
   hebrewDateOf,
   isDuringShabbat,
+  parseInZone,
   shabbatWindow,
+  timeZoneOf,
   upcomingHolidays,
   type Occasion,
 } from './client';
@@ -19,15 +21,23 @@ import {
  * on it.
  */
 
-/** Parse a date the model supplied, tolerating the ways it writes them. */
-function parseDate(value: unknown): Date | null {
+/**
+ * Parse a date the model supplied, in the timezone of the city being asked about.
+ *
+ * The model writes wall-clock times without an offset, and it means them locally:
+ * "dinner at 20:00" is 20:00 in Tel Aviv regardless of where the container runs.
+ * `parseInZone` resolves them there rather than in the process timezone — see its
+ * doc for the production failure that motivated it. A string that *does* carry an
+ * offset or a `Z` is already unambiguous and is honoured as written.
+ */
+function parseDate(value: unknown, timeZone: string): Date | null {
   if (typeof value !== 'string' || value.trim() === '') return null;
-  // `YYYY-MM-DD` alone parses as UTC midnight, which in Israel is the previous
-  // civil day for anyone west of the line. Anchoring to local noon keeps the
-  // date the model wrote from sliding by one.
-  const bare = /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
-  const parsed = new Date(bare ? `${value.trim()}T12:00:00` : value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  const explicit = /(?:Z|[+-]\d{2}:?\d{2})$/.test(value.trim());
+  if (explicit) {
+    const parsed = new Date(value.trim());
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  return parseInZone(value, timeZone);
 }
 
 /** One line per occasion, in the order the agent should mention them. */
@@ -72,7 +82,9 @@ export const checkShabbatTool: AgentTool = {
   requiresConfirmation: false,
   async execute(input) {
     const city = typeof input.city === 'string' ? input.city : undefined;
-    const when = parseDate(input.when);
+    // The city's zone, not the process's — `timeZoneOf` falls back exactly as
+    // `shabbatWindow` does, so both halves of the answer agree on which city.
+    const when = parseDate(input.when, timeZoneOf(city));
     const reference = when ?? new Date();
     const window = shabbatWindow(reference, city);
 
@@ -84,8 +96,12 @@ export const checkShabbatTool: AgentTool = {
     }
 
     if (window.candleLighting) {
+      // Past tense when the reference instant is already inside the window. The
+      // pair always describes one Shabbat, so "began … ends" is coherent where
+      // "begins … ends" would read as a forecast of something under way.
+      const verb = window.inProgress ? 'began' : 'begins';
       notes.push(
-        `Shabbat begins ${window.candleLighting.localDate} at ${window.candleLighting.localTime}`,
+        `Shabbat ${verb} ${window.candleLighting.localDate} at ${window.candleLighting.localTime}`,
       );
     }
     if (window.havdalah) {
@@ -167,7 +183,9 @@ export const hebrewOccasionsTool: AgentTool = {
 
     const holidays = upcomingHolidays(now, daysAhead);
 
-    const original = parseDate(input.anniversary_date);
+    // No city argument on this tool, so the default — the anniversary is a date in
+    // the couple's own calendar, and they are in Israel.
+    const original = parseDate(input.anniversary_date, timeZoneOf());
     const title =
       typeof input.anniversary_title === 'string' && input.anniversary_title.trim()
         ? input.anniversary_title.trim()

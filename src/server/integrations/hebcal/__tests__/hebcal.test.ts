@@ -3,6 +3,7 @@ import {
   hebrewAnniversaries,
   hebrewDateOf,
   isDuringShabbat,
+  parseInZone,
   resolveCity,
   shabbatWindow,
   upcomingHolidays,
@@ -41,6 +42,39 @@ describe('resolveCity', () => {
   });
 });
 
+/*
+ * These assert absolute instants, so they hold in every process timezone — which is
+ * the entire point. The rest of the suite passed on a laptop in Israel while the
+ * production container, running UTC, resolved the model's "18:00" two hours late and
+ * across Havdalah. Asserting against `.toISOString()` is what makes the process
+ * timezone stop being an input.
+ */
+describe('parseInZone', () => {
+  it('reads a wall-clock time as Israeli local, whatever the process timezone', () => {
+    // 18:00 in Tel Aviv in February is 16:00Z — Israel is on IST, UTC+2.
+    expect(parseInZone('2026-02-14T18:00', 'Asia/Jerusalem')?.toISOString()).toBe(
+      '2026-02-14T16:00:00.000Z',
+    );
+  });
+
+  it('accounts for DST rather than assuming a fixed offset', () => {
+    // Late June is IDT, UTC+3, so the same wall clock is an hour earlier in UTC.
+    expect(parseInZone('2026-06-24T18:00', 'Asia/Jerusalem')?.toISOString()).toBe(
+      '2026-06-24T15:00:00.000Z',
+    );
+  });
+
+  it('anchors a bare date to local noon, so no offset can move the day', () => {
+    expect(parseInZone('2026-02-14', 'Asia/Jerusalem')?.toISOString()).toBe(
+      '2026-02-14T10:00:00.000Z',
+    );
+  });
+
+  it('returns null for something that is not a date at all', () => {
+    expect(parseInZone('next Saturday', 'Asia/Jerusalem')).toBeNull();
+  });
+});
+
 describe('shabbatWindow', () => {
   it('gives Tel Aviv candle lighting and Havdalah for Valentine week 2026', () => {
     const window = shabbatWindow(new Date('2026-02-12T09:00:00+02:00'));
@@ -58,6 +92,42 @@ describe('shabbatWindow', () => {
 
     // Not next week's: someone asking mid-Shabbat wants tonight.
     expect(window.havdalah?.localDate).toBe('2026-02-14');
+  });
+
+  /*
+   * The regression the test above did not catch. It asserted the Havdalah alone,
+   * which was always right; the defect was in the *pair*. Asked mid-Shabbat, the
+   * candle lighting came from next Friday while the Havdalah came from tonight, and
+   * the tool rendered both into one sentence — a window closing six days before it
+   * opened. Both halves were individually correct, so only asserting them together
+   * catches it. A Saturday-night dinner in Israel is asked about during Shabbat
+   * more often than not, so this is the common path, not an edge case.
+   */
+  it('pairs the candle lighting with the Havdalah of the same Shabbat, mid-Shabbat', () => {
+    const window = shabbatWindow(new Date('2026-02-14T18:00:00+02:00'));
+
+    expect(window.candleLighting?.localDate).toBe('2026-02-13');
+    expect(window.havdalah?.localDate).toBe('2026-02-14');
+    expect(new Date(window.candleLighting!.at).getTime()).toBeLessThan(
+      new Date(window.havdalah!.at).getTime(),
+    );
+    expect(window.inProgress).toBe(true);
+    // Anchored to this Shabbat's portion, not last week's — the search range
+    // reaches two days back, so the first Parashat in it can be the wrong one.
+    expect(window.parsha).toContain('Mishpatim');
+  });
+
+  it('is not in progress when asked before candle lighting', () => {
+    const window = shabbatWindow(new Date('2026-02-12T09:00:00+02:00'));
+    expect(window.inProgress).toBe(false);
+  });
+
+  it('is not in progress when asked after Havdalah', () => {
+    const window = shabbatWindow(new Date('2026-02-14T21:00:00+02:00'));
+    // Past Havdalah the answer is next weekend, so the pair moves forward whole.
+    expect(window.candleLighting?.localDate).toBe('2026-02-20');
+    expect(window.havdalah?.localDate).toBe('2026-02-21');
+    expect(window.inProgress).toBe(false);
   });
 
   it('reports times in the city\'s own timezone across the DST boundary', () => {
@@ -193,6 +263,35 @@ describe('check_shabbat tool', () => {
     // but misleading answer about a Saturday.
     expect((result.data as { duringShabbat: null }).duringShabbat).toBeNull();
     expect(result.summary).toContain('Havdalah');
+  });
+
+  /*
+   * The sentence, not just the data. The two moments are rendered into one line, so
+   * an incoherent pair reaches the model as prose — and the model will repeat it to
+   * the couple. Asserting the ordering of the dates *inside the summary* is what
+   * makes that unrepresentable.
+   */
+  it('reads as one coherent Shabbat when asked mid-Shabbat', async () => {
+    const result = await checkShabbatTool.execute(
+      { city: 'Tel Aviv', when: '2026-02-14T18:00' },
+      CTX,
+    );
+
+    expect(result.summary).toContain('Shabbat began 2026-02-13');
+    expect(result.summary).toContain('2026-02-14');
+    expect(result.summary).not.toContain('Shabbat begins');
+    expect(result.summary.indexOf('2026-02-13')).toBeLessThan(
+      result.summary.indexOf('(Havdalah'),
+    );
+  });
+
+  it('says "begins" when Shabbat has not started yet', async () => {
+    const result = await checkShabbatTool.execute(
+      { city: 'Tel Aviv', when: '2026-02-12T09:00' },
+      CTX,
+    );
+
+    expect(result.summary).toContain('Shabbat begins 2026-02-13');
   });
 
   it('says out loud when it substituted a city', async () => {

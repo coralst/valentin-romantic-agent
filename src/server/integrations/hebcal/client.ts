@@ -88,6 +88,14 @@ export interface ShabbatWindow {
   havdalah: ShabbatMoment | null;
   /** This week's Torah portion, for a warmer sentence. */
   parsha: string | null;
+  /**
+   * True when `from` itself falls inside the window returned.
+   *
+   * The caller needs this to choose a tense — "Shabbat began at 18:32 and ends at
+   * 19:37" rather than "begins". Without it a mid-Shabbat answer reads as a
+   * forecast of something already happening.
+   */
+  inProgress: boolean;
 }
 
 /**
@@ -116,6 +124,80 @@ function inZone(at: Date, timeZone: string): { localDate: string; localTime: str
 }
 
 /**
+ * A timezone's offset from UTC, in ms, at a given instant.
+ *
+ * Derived by formatting the instant in the zone and diffing against the same
+ * fields read as UTC, because there is no API that just tells you. Israel
+ * observes DST, so this is a function of the instant and not a constant.
+ */
+function zoneOffsetMs(at: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(at);
+  const n = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? '0');
+  const asUtc = Date.UTC(
+    n('year'),
+    n('month') - 1,
+    n('day'),
+    n('hour') === 24 ? 0 : n('hour'),
+    n('minute'),
+    n('second'),
+  );
+  // Second precision is all `formatToParts` gives, so drop the sub-second part of
+  // `at` before diffing or the offset comes out a few hundred ms off a whole minute.
+  return asUtc - Math.floor(at.getTime() / 1000) * 1000;
+}
+
+/**
+ * Interpret a wall-clock string as a time *in `timeZone`*, not in the process's.
+ *
+ * This is load-bearing, and it is the second bug the live probe pointed at. The
+ * model writes Israeli wall-clock times — "2026-02-14T18:00" means half past six
+ * in Tel Aviv — but `new Date(...)` on an offsetless string resolves it against
+ * whatever timezone the container happens to run in. In production that is UTC,
+ * two hours behind Israel, so an 18:00 Saturday question arrived as 20:00 Israel:
+ * across Havdalah at 18:03, and therefore answered about *next* weekend. The tests
+ * only passed at all because a laptop in Israel is accidentally correct.
+ *
+ * Solved by guessing the instant as if the fields were UTC, then correcting by the
+ * zone's offset at that guess. Applied twice because the first correction can land
+ * on the far side of a DST transition, where the offset it used no longer holds;
+ * a second pass converges, and Israel's transitions are at 02:00, nowhere near
+ * candle lighting.
+ */
+export function parseInZone(fields: string, timeZone: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/.exec(fields.trim());
+  if (!match) return null;
+  const [, y, mo, d, h, mi] = match;
+  // A bare date anchors to local noon: no hour was named, and midnight would put
+  // the day at risk from any offset at all.
+  const guess = Date.UTC(
+    Number(y),
+    Number(mo) - 1,
+    Number(d),
+    h === undefined ? 12 : Number(h),
+    mi === undefined ? 0 : Number(mi),
+  );
+  if (Number.isNaN(guess)) return null;
+
+  let at = new Date(guess - zoneOffsetMs(new Date(guess), timeZone));
+  at = new Date(guess - zoneOffsetMs(at, timeZone));
+  return Number.isNaN(at.getTime()) ? null : at;
+}
+
+/** The timezone a city is in, for callers that only need to parse a time. */
+export function timeZoneOf(city?: string): string {
+  return resolveCity(city).location.getTimeZone();
+}
+
+/**
  * The instant a timed event happens, or null when it has no clock time.
  *
  * Candle lighting and Havdalah are `TimedEvent`s and carry `eventTime`; the
@@ -127,6 +209,20 @@ function timeOf(event: Event): Date | null {
   return event instanceof TimedEvent ? event.eventTime : null;
 }
 
+/**
+ * `YYYY-MM-DD` from a `Date`'s own calendar fields, with no timezone conversion.
+ *
+ * For an `HDate`'s `greg()`, which is midnight in whatever timezone the process
+ * happens to run in. Pushing that through `Intl` in Asia/Jerusalem would shift the
+ * day for any runtime east of Israel — the process timezone is not information
+ * about the Torah portion.
+ */
+function civilDay(at: Date): string {
+  const month = String(at.getMonth() + 1).padStart(2, '0');
+  const day = String(at.getDate()).padStart(2, '0');
+  return `${at.getFullYear()}-${month}-${day}`;
+}
+
 function moment(at: Date, timeZone: string): ShabbatMoment {
   return { at: at.toISOString(), ...inZone(at, timeZone) };
 }
@@ -134,15 +230,31 @@ function moment(at: Date, timeZone: string): ShabbatMoment {
 /**
  * The Shabbat that contains or next follows `from`.
  *
- * The window is eight days wide so that asking on a Saturday afternoon still
- * finds that evening's Havdalah rather than skipping to next week.
+ * **The pair must describe one Shabbat.** An earlier version took the first
+ * candle lighting *and* the first Havdalah at or after `from`, independently,
+ * which is right before Shabbat and wrong during it: asked on Saturday at 18:00
+ * it paired next Friday's candle lighting with tonight's Havdalah, and the tool
+ * rendered "Shabbat begins 2026-09-11 at 18:32 and ends 2026-09-05 at 19:37" — a
+ * window closing six days before it opens, handed straight to the model. It was a
+ * live probe that surfaced it, not a unit test, because both halves were
+ * individually correct.
+ *
+ * So Havdalah anchors the answer: take the first one at or after `from`, then take
+ * the candle lighting that *precedes* it. Before Shabbat that is the upcoming one
+ * and nothing changes; during Shabbat it is the one that already happened, which
+ * is the honest answer to "when does this Shabbat end". A Saturday-night dinner in
+ * Israel is asked about during Shabbat more often than not.
+ *
+ * The search starts two days before `from` so that preceding candle lighting is in
+ * range at all, and runs eight days past it so a Sunday question still finds the
+ * coming weekend.
  */
 export function shabbatWindow(from: Date, city?: string): ShabbatWindow {
   const { location, name, fellBack } = resolveCity(city);
   const timeZone = location.getTimeZone();
 
   const events = HebrewCalendar.calendar({
-    start: from,
+    start: new Date(from.getTime() - 2 * 86_400_000),
     end: new Date(from.getTime() + 8 * 86_400_000),
     location,
     candlelighting: true,
@@ -150,22 +262,42 @@ export function shabbatWindow(from: Date, city?: string): ShabbatWindow {
     sedrot: true,
   });
 
-  // Timed events carry `eventTime`; the untimed ones (the parsha) do not. The
-  // first candle lighting at or after `from` is the one we want — an earlier one
-  // in the window belongs to a Shabbat that has already begun.
-  const timedAfter = (desc: string): Date | null => {
-    for (const event of events) {
-      if (event.getDesc() !== desc) continue;
-      const at = timeOf(event);
-      if (at && at.getTime() >= from.getTime()) return at;
-    }
-    return null;
-  };
+  /** Timed events of one kind, in order. The parsha is untimed and excluded. */
+  const timed = (desc: string): Date[] =>
+    events
+      .filter((event) => event.getDesc() === desc)
+      .map(timeOf)
+      .filter((at): at is Date => at !== null);
 
-  const candle = timedAfter('Candle lighting');
-  const havdalah = timedAfter('Havdalah');
+  const havdalah = timed('Havdalah').find((at) => at.getTime() >= from.getTime()) ?? null;
+
+  // The candle lighting belonging to that Havdalah: the last one before it. With
+  // no Havdalah to anchor to, fall back to the next candle lighting rather than
+  // returning nothing — a half-answer still keeps the agent off a Friday night.
+  const candles = timed('Candle lighting');
+  const candle = havdalah
+    ? ([...candles].reverse().find((at) => at.getTime() < havdalah.getTime()) ?? null)
+    : (candles.find((at) => at.getTime() >= from.getTime()) ?? null);
+
+  const inProgress =
+    candle !== null &&
+    havdalah !== null &&
+    from.getTime() >= candle.getTime() &&
+    from.getTime() < havdalah.getTime();
+
+  // Anchored to the Havdalah's own day, not to the first Parashat in the range —
+  // the range now reaches two days back, so "first" can be last week's portion.
+  const parshaDay = havdalah ? inZone(havdalah, timeZone).localDate : null;
   const parsha =
-    events.find((e) => e.getDesc().startsWith('Parashat'))?.render('en') ?? null;
+    (parshaDay
+      ? events.find(
+          (event) =>
+            event.getDesc().startsWith('Parashat') && civilDay(event.getDate().greg()) === parshaDay,
+        )
+      : undefined
+    )?.render('en') ??
+    events.find((event) => event.getDesc().startsWith('Parashat'))?.render('en') ??
+    null;
 
   return {
     city: name,
@@ -173,6 +305,7 @@ export function shabbatWindow(from: Date, city?: string): ShabbatWindow {
     candleLighting: candle ? moment(candle, timeZone) : null,
     havdalah: havdalah ? moment(havdalah, timeZone) : null,
     parsha,
+    inProgress,
   };
 }
 

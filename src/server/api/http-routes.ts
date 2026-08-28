@@ -6,12 +6,18 @@ import { DEMO_SEED_SOURCE_MESSAGE_ID } from '../fixtures/demo-profile';
 import { resolvePersona } from '../fixtures/demo-personas';
 import type { DemoConversation } from '../fixtures/demo-personas';
 import { isPartnerNamePreference } from '../extraction/partner-name';
-import { integrationReadiness } from '../integrations';
+import { buildToolRegistry, integrationReadiness } from '../integrations';
 import type { IntegrationStatusResponse } from '../../shared/interfaces/integrations';
 import {
   INTEGRATION_IDS,
   INTEGRATION_LABELS,
 } from '../../shared/interfaces/integrations';
+import {
+  applyIntegrationCredentials,
+  clearIntegrationCredentials,
+  isConnectable,
+} from '../integrations/credentials';
+import { buildAuthUrl } from '../integrations/google/oauth';
 
 /** Simple framework-agnostic request representation */
 export interface HttpRequest {
@@ -136,15 +142,83 @@ export function createHttpRoutes(storage: StorageInterface) {
      * someone reorders that function.
      */
     async listIntegrations(): Promise<HttpResponse> {
+      return { status: 200, body: this.readinessBody() };
+    },
+
+    /**
+     * POST /integrations/:id/connect — hand this deployment a credential.
+     *
+     * The response is the same readiness list `listIntegrations` returns, plus a
+     * sentence to show. That shape is deliberate: the caller needs to re-render
+     * from the truth rather than assume its own request succeeded, and returning
+     * readiness here saves a follow-up GET that could race the rebuild.
+     *
+     * Nothing in the response echoes what was sent. A route that confirmed a
+     * credential by quoting it back would put a secret in the browser's network
+     * log for no gain — the visitor typed it, they do not need it read aloud.
+     */
+    async connectIntegration(id: string, body: unknown): Promise<HttpResponse> {
+      if (!isConnectable(id)) {
+        return { status: 404, body: { error: 'No such connectable integration' } };
+      }
+      const fields = (body ?? {}) as Record<string, unknown>;
+      const result = await applyIntegrationCredentials(id, fields);
+      if (!result.ok) {
+        return { status: result.status, body: { error: result.message } };
+      }
+
+      // Pick up tools for whatever just became configured. Without this the
+      // panel would say "live" while the model still had no tool to call.
+      buildToolRegistry();
+      return {
+        status: 200,
+        body: { message: result.message, ...(this.readinessBody() as object) },
+      };
+    },
+
+    /**
+     * POST /integrations/:id/disconnect — take a credential away again.
+     *
+     * Rebuilds the registry too, so the tools actually disappear. A model still
+     * holding a tool for a disconnected service would call it and fail, which
+     * reads to the user as a broken integration rather than an absent one.
+     */
+    async disconnectIntegration(id: string): Promise<HttpResponse> {
+      if (!isConnectable(id)) {
+        return { status: 404, body: { error: 'No such connectable integration' } };
+      }
+      clearIntegrationCredentials(id);
+      buildToolRegistry();
+      return {
+        status: 200,
+        body: { message: 'Disconnected.', ...(this.readinessBody() as object) },
+      };
+    },
+
+    /**
+     * GET /integrations/google/auth-url — where to send the visitor to consent.
+     *
+     * Returns the URL rather than a redirect because the panel opens it in a
+     * popup: a 302 from `fetch` would be followed by the fetch itself and the
+     * consent screen would never be seen by anyone.
+     */
+    async googleAuthUrl(): Promise<HttpResponse> {
+      const result = buildAuthUrl();
+      return result.ok
+        ? { status: 200, body: { url: result.url } }
+        : { status: result.status, body: { error: result.message } };
+    },
+
+    /** The readiness payload, shared by the list and both connect routes. */
+    readinessBody(): IntegrationStatusResponse {
       const ready = integrationReadiness();
-      const body: IntegrationStatusResponse = {
+      return {
         integrations: INTEGRATION_IDS.map((id) => ({
           id,
           label: INTEGRATION_LABELS[id],
           configured: ready[id],
         })),
       };
-      return { status: 200, body };
     },
 
     /** POST /session — create a new session */

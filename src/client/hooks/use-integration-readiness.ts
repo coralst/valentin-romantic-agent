@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type {
   IntegrationId,
   IntegrationStatusResponse,
@@ -14,9 +14,11 @@ import { apiGetJson } from '../utils/api-client';
  * anything, and conflating them produces the one claim this UI must never make —
  * a row reading "Connected" for a service whose credentials were never set.
  *
- * Read once on mount. Readiness is a property of the server process, fixed at boot
- * by which environment variables exist, so polling it would be a request per
- * interval for an answer that cannot change.
+ * Read on mount, and again on demand. It used to be fetch-once, on the grounds
+ * that readiness was fixed at boot by which environment variables existed — that
+ * stopped being true when credentials became something the panel can hand over
+ * at runtime. Still not polled: it changes only as a result of an action taken in
+ * this UI, so the action refetches and nothing else needs to.
  */
 
 export type ReadinessState = 'loading' | 'loaded' | 'unavailable';
@@ -27,11 +29,27 @@ export interface IntegrationReadiness {
   configured: Partial<Record<IntegrationId, boolean>>;
 }
 
-export function useIntegrationReadiness(): IntegrationReadiness {
+/** The hook's return: the data, plus the means to ask again. */
+export interface IntegrationReadinessHandle extends IntegrationReadiness {
+  /**
+   * Refetch. Safe to call from a completed request's `.then` — a refresh that
+   * lands after unmount is dropped rather than warned about.
+   *
+   * Deliberately not on {@link IntegrationReadiness} itself, which stays a plain
+   * data shape so `capabilityReadiness` and every test fixture can keep building
+   * one from two fields.
+   */
+  refresh: () => void;
+}
+
+export function useIntegrationReadiness(): IntegrationReadinessHandle {
   const [readiness, setReadiness] = useState<IntegrationReadiness>({
     state: 'loading',
     configured: {},
   });
+  const [nonce, setNonce] = useState(0);
+
+  const refresh = useCallback(() => setNonce((n) => n + 1), []);
 
   useEffect(() => {
     let live = true;
@@ -60,9 +78,11 @@ export function useIntegrationReadiness(): IntegrationReadiness {
     return () => {
       live = false;
     };
-  }, []);
+    // `nonce` is the refetch trigger. Not `readiness` — depending on the value we
+    // set here would loop.
+  }, [nonce]);
 
-  return readiness;
+  return { ...readiness, refresh };
 }
 
 /** How ready a capability is, once its backing services are known. */

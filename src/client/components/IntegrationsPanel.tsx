@@ -13,6 +13,7 @@ import {
 } from '../hooks/use-integration-readiness';
 import { INTEGRATION_LABELS } from '../../shared/interfaces/integrations';
 import { IntegrationConsentSheet } from './IntegrationConsentSheet';
+import { useIntegrationConnect } from '../hooks/use-integration-connect';
 
 /**
  * "What Valentin can reach": the agent at the hub, every capability fanning out
@@ -370,6 +371,9 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
     useIntegrations();
   const readiness = useIntegrationReadiness();
   const [pending, setPending] = useState<PendingGrant | null>(null);
+  // `readiness.refresh` is stable (a useCallback over a setState), so this does
+  // not re-subscribe on every render.
+  const credentials = useIntegrationConnect(readiness.refresh);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: FALLBACK_WIDTH, height: FALLBACK_HEIGHT });
@@ -407,6 +411,9 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
   }, [onClose]);
 
   const open = (service: IntegrationService) => {
+    // Clear any status left from the last capability's attempt: an error about
+    // WhatsApp has no business appearing when someone opens Travel.
+    credentials.reset();
     setPending({ service, mode: isConnected(service.id) ? 'manage' : 'connect' });
   };
 
@@ -631,6 +638,14 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
               : undefined
           }
           onCancel={() => setPending(null)}
+          readiness={readiness}
+          connectStatus={credentials.status}
+          onConnectCredentials={(id, fields) => {
+            void credentials.connect(id, fields);
+          }}
+          onForgetCredentials={(id) => {
+            void credentials.disconnect(id);
+          }}
         />
       )}
     </section>

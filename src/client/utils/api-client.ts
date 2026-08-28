@@ -65,3 +65,51 @@ export async function apiPostJson<T>(
   if (!response.ok) throw new Error(describeFailure(response.status));
   return (await response.json()) as T;
 }
+
+/**
+ * POST where the server's own `error` sentence is the useful one.
+ *
+ * Separate from {@link apiPostJson} rather than a change to it, because the two
+ * want opposite things. `describeFailure` deliberately flattens a status into
+ * something calm enough for a projector — "the server could not complete it" —
+ * which is right when the visitor can do nothing about it. But the integration
+ * connect routes fail for reasons the visitor *can* act on, and only the server
+ * knows which: a rejected key, an unreachable provider, a redirect URI that does
+ * not match. Flattening "Amadeus rejected these credentials" into "the server
+ * responded with 400" would throw away the entire answer.
+ *
+ * Falls back to `describeFailure` when the body carries no `error` string, so a
+ * route that has not been written to explain itself still produces something
+ * readable rather than "undefined".
+ */
+export async function apiPostJsonExplained<T>(
+  path: string,
+  body?: unknown,
+): Promise<T> {
+  const response = await apiFetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+
+  // Read the body once, as text, because a failed response may not be JSON at
+  // all — a proxy 502 is HTML — and calling .json() on that throws a parse error
+  // that would mask the status the caller actually needs.
+  const raw = await response.text();
+  let parsed: unknown;
+  try {
+    parsed = raw ? JSON.parse(raw) : undefined;
+  } catch {
+    parsed = undefined;
+  }
+
+  if (!response.ok) {
+    const message = (parsed as { error?: unknown } | undefined)?.error;
+    throw new Error(
+      typeof message === 'string' && message.trim()
+        ? message
+        : describeFailure(response.status),
+    );
+  }
+  return parsed as T;
+}

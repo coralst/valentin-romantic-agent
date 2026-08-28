@@ -404,6 +404,106 @@ describe('GET /api/integrations', () => {
   });
 });
 
+/*
+ * Credential intake. These are the routes that accept a secret, so what is tested
+ * is mostly what they *refuse*: an unknown service, an unauthenticated caller, and
+ * — for the OAuth callback, which cannot be authenticated at all — a `state` that
+ * this server did not mint.
+ *
+ * No test here supplies a real credential, and none should. The provider probe is
+ * a live network call by design, so a test that exercised the happy path would
+ * either need real keys in CI or a mocked `fetch` proving only that a mock was
+ * called. The parts worth pinning are reachable without either.
+ */
+describe('credential intake', () => {
+  function postJson(path: string, body: unknown, token?: string) {
+    return fetch(`${baseUrl}${path}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it('refuses to connect a service that is not connectable', async () => {
+    // Hebcal is arithmetic and Ontopo needs no auth, so neither has anything to
+    // connect. A 404 rather than a 400 because the *route* does not exist for
+    // them, and inventing a credential slot would imply one could matter.
+    for (const id of ['hebcal', 'ontopo', 'not-a-service']) {
+      const res = await postJson(`/api/integrations/${id}/connect`, {}, 'grace');
+      expect(res.status).toBe(404);
+    }
+  });
+
+  it('rejects a connect with missing fields before contacting anyone', async () => {
+    const res = await postJson('/api/integrations/amadeus/connect', {}, 'grace');
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: string };
+    // Names what is missing, since the visitor can act on that.
+    expect(body.error).toMatch(/clientId|API key|both/i);
+  });
+
+  it('requires a token to hand over or withdraw a credential', async () => {
+    expect((await postJson('/api/integrations/amadeus/connect', {})).status).toBe(401);
+    expect((await postJson('/api/integrations/amadeus/disconnect', {})).status).toBe(401);
+    expect((await get('/api/integrations/google/auth-url')).status).toBe(401);
+  });
+
+  it('will not build a Google consent URL with no OAuth client saved', async () => {
+    const saved = config.integrations.googleClientId;
+    config.integrations.googleClientId = undefined;
+    try {
+      const res = await get('/api/integrations/google/auth-url', 'grace');
+      expect(res.status).toBe(400);
+      // Not a bare failure: it says what to do first.
+      expect(((await res.json()) as { error: string }).error).toMatch(/client id/i);
+    } finally {
+      config.integrations.googleClientId = saved;
+    }
+  });
+
+  /*
+   * The callback is the one unauthenticated route that can change what this
+   * server holds, so `state` is the whole of its security. These three assert
+   * that an attacker-supplied redirect gets nowhere.
+   */
+  describe('the Google OAuth callback', () => {
+    it('is reachable without a token, because Google has none to send', async () => {
+      // A 400 and not a 401: it ran, and refused on the state.
+      const res = await get('/api/integrations/google/callback?code=x&state=forged');
+      expect(res.status).toBe(400);
+    });
+
+    it('refuses a state this server did not mint, and stores nothing', async () => {
+      const before = config.integrations.googleRefreshToken;
+      const res = await get('/api/integrations/google/callback?code=stolen&state=forged');
+      expect(res.status).toBe(400);
+      expect(await res.text()).toMatch(/expired or was not started here/i);
+      // The code is never exchanged, so nothing can have been written.
+      expect(config.integrations.googleRefreshToken).toBe(before);
+    });
+
+    it('reports a declined consent as a closeable page, not an error', async () => {
+      const res = await get('/api/integrations/google/callback?error=access_denied');
+      expect(res.status).toBe(400);
+      const html = await res.text();
+      expect(html).toMatch(/cancelled/i);
+      expect(html).toMatch(/close this window/i);
+    });
+
+    it('never puts a credential in the page it renders', async () => {
+      // The code is in the query string, so the obvious mistake is echoing it
+      // back into the "something went wrong" text.
+      const html = await (
+        await get('/api/integrations/google/callback?code=SECRET-CODE-123&state=forged')
+      ).text();
+      expect(html).not.toContain('SECRET-CODE-123');
+    });
+  });
+});
+
 describe('the session list', () => {
   it('shows a caller only their own sessions', async () => {
     await post('/api/session/seed', 'carol');

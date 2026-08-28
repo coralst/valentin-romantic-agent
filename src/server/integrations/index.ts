@@ -45,6 +45,21 @@ export function integrationReadiness(): Record<IntegrationId, boolean> {
 }
 
 /**
+ * The one live registry, refilled in place rather than replaced.
+ *
+ * Identity matters here. `createServer` reads this once at boot and hands the
+ * same reference to every orchestrator it builds, so a *new* map returned from a
+ * later rebuild would be invisible to all of them — a service connected through
+ * the panel would report "live" in the UI while the model still had no tool for
+ * it. Clearing and refilling the existing map means every holder sees the change
+ * with no plumbing, no restart, and no change to `ToolSupport`.
+ *
+ * Everything outside this module receives it as a `ReadonlyMap`, which is the
+ * true contract: this module owns the contents, and no one else may write.
+ */
+const activeRegistry = new Map<string, AgentTool>();
+
+/**
  * The tools this process can actually offer the model.
  *
  * Credential-gated per service, and that gating is the honesty of the whole
@@ -56,6 +71,11 @@ export function integrationReadiness(): Record<IntegrationId, boolean> {
  * treats as "no tools at all" and answers with a plain single-shot call —
  * Bedrock rejects a `toolConfig` with an empty tool list, so that branch is
  * required, not an optimisation.
+ *
+ * Safe to call repeatedly: credentials can now arrive at runtime through
+ * `POST /api/integrations/:id/connect`, and that route calls this to pick them
+ * up. Registration is derived wholly from `integrationReadiness()`, so a rebuild
+ * is idempotent for unchanged credentials.
  */
 export function buildToolRegistry(): ToolRegistry {
   const ready = integrationReadiness();
@@ -74,14 +94,18 @@ export function buildToolRegistry(): ToolRegistry {
   if (ready.gmail) tools.push(...gmailTools);
   if (ready.whatsapp) tools.push(...whatsappTools);
 
-  const registry = new Map(tools.map((tool) => [tool.name, tool]));
+  // Cleared first, so a *disconnect* actually removes tools. Refilling without
+  // clearing would leave the old ones registered and let the model keep calling
+  // a service whose credentials were just taken away.
+  activeRegistry.clear();
+  for (const tool of tools) activeRegistry.set(tool.name, tool);
 
   logger.info('integrations.registered', {
-    tools: registry.size,
+    tools: activeRegistry.size,
     services: Object.entries(ready)
       .filter(([, isReady]) => isReady)
       .map(([id]) => id),
   });
 
-  return registry;
+  return activeRegistry;
 }

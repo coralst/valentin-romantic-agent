@@ -144,16 +144,34 @@ const FIELD_GUIDANCE_LINES = PROFILE_FIELD_IDS.map(
  * caution, and there is no allergy field in the registry. So `field` is optional: set
  * it when the fact belongs to a profile field, omit it when the fact is real but
  * off-registry.
+ *
+ * ## Three arrays, one tool
+ *
+ * `people` and `tasks` are here rather than in two tools of their own because
+ * `extractWithTool` forces `toolChoice` to a single named tool: a second and third
+ * tool would mean a second and third Bedrock call on every user turn, tripling the
+ * latency and cost of extraction to read the same sentence three times. One
+ * schema with three arrays gets the model to sort the turn once, which is also
+ * how it avoids filing "her sister Nadia's birthday is in March" as both a person
+ * and a `birthday` preference — the arrays are described in terms of each other.
+ *
+ * All three are optional. Most turns fill none of them, and an empty array is the
+ * normal answer.
  */
 export const EXTRACT_PREFERENCES_TOOL = {
   name: 'extract_preferences',
   description:
-    'Extract spouse/partner preferences mentioned in the conversation message. Only extract preferences that are clearly stated or strongly implied.\n\n' +
-    'For each preference, set "field" to the profile field it belongs to, choosing from this list:\n' +
+    'Extract what the conversation says about the user\'s partner, the people in her life, and what the user has to do. Only extract what is clearly stated or strongly implied.\n\n' +
+    'PREFERENCES — facts about her. For each, set "field" to the profile field it belongs to, choosing from this list:\n' +
     FIELD_GUIDANCE_LINES +
     '\n\nIf the fact is real but does not belong to any field above (an allergy, a dislike, something to avoid), omit "field" and give it a descriptive "key" instead.\n\n' +
     'Emit ONE preference per distinct fact. Never split a single fact across two preferences — ' +
-    '"she\'s turning 32 in June" is one birthday preference with the value "June (turning 32)", not an age preference plus a month preference.',
+    '"she\'s turning 32 in June" is one birthday preference with the value "June (turning 32)", not an age preference plus a month preference.\n\n' +
+    'PEOPLE — someone in HER life: her mother, her sister, her uncle, her cat. Not the user, and not her. ' +
+    'A relative mentioned without a name is still a person: record the relationship and leave "name" out, because "her brother, whose name I never caught" is exactly the thing worth remembering. ' +
+    'A birthday belonging to a relative goes on that person, never in a preference — the "birthday" field is HERS alone.\n\n' +
+    'TASKS — something the USER has said he will do or should do: book a table, buy the glaze set, ask her about a date. ' +
+    'Only when he commits or asks for a reminder, never for something he has already done, and never for advice you are merely offering in reply.',
   input_schema: {
     type: 'object',
     properties: {
@@ -191,6 +209,68 @@ export const EXTRACT_PREFERENCES_TOOL = {
             },
           },
           required: ['category', 'key', 'value', 'confidence'],
+        },
+      },
+      people: {
+        type: 'array',
+        description:
+          'People in her life mentioned in this message. Empty on most turns.',
+        items: {
+          type: 'object',
+          properties: {
+            name: {
+              type: 'string',
+              description:
+                'What they are called. OMIT when the message names a relative without naming them.',
+            },
+            relationship: {
+              type: 'string',
+              description:
+                'How they are related to her, in the user\'s own words: "her mother", "her older sister", "her uncle on her father\'s side".',
+            },
+            generation: {
+              type: 'string',
+              enum: ['grandparent', 'elder', 'peer', 'younger'],
+              description:
+                'Which rung of her family they sit on: grandparent, elder (her parents, aunts and uncles), peer (siblings, cousins, friends of her own age), younger (children, nieces, nephews, pets).',
+            },
+            birthday: {
+              type: 'string',
+              description:
+                'Their birthday as YYYY-MM-DD when the year is known, otherwise omit it. Never guess a year.',
+            },
+            note: {
+              type: 'string',
+              description:
+                'Anything worth remembering about them: "goes by Mimi", "do not mention the illness".',
+            },
+          },
+          required: ['relationship', 'generation'],
+        },
+      },
+      tasks: {
+        type: 'array',
+        description:
+          'Things the user has to do, from this message. Empty on most turns.',
+        items: {
+          type: 'object',
+          properties: {
+            title: {
+              type: 'string',
+              description:
+                'The line as he would read it back: "Book the Italian place for the 18th".',
+            },
+            due: {
+              type: 'string',
+              description:
+                'YYYY-MM-DD when he named a date. Omit for "sometime" — never invent a deadline.',
+            },
+            note: {
+              type: 'string',
+              description: 'Why it matters, or what to say when he does it.',
+            },
+          },
+          required: ['title'],
         },
       },
     },

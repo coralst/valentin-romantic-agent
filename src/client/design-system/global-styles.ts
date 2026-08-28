@@ -114,6 +114,51 @@ export const globalStyles = `@import url('https://fonts.googleapis.com/css2?fami
     to { stroke-dashoffset: -32; }
   }
 
+  /*
+   * Her file's top band: two halves that become one column when the *board* is
+   * narrow, not when the window is.
+   *
+   * A container query rather than a media query, and that is the whole reason
+   * these two rules cannot be inline styles. Whether the calendar and the to-do
+   * list fit side by side depends on the board's own measure, which is not a
+   * function of window width. Measured in a real browser, at this shell's widths:
+   *
+   *   1600 window, list showing  ->  796px of board
+   *   1440 window, list showing  ->  768px
+   *   1300 window, list showing  ->  628px
+   *   1180 window, list showing  ->  508px
+   *   1180 window, list hidden   ->  734px
+   *
+   * Note the third and the last: a *narrower* window gives the board *more* room
+   * once the conversation list gives up its 226px, so a viewport breakpoint gets
+   * that pair backwards every time — stacking the wide board and splitting the
+   * narrow one. e2e/tests/responsive-layout.spec.ts drives exactly those two.
+   *
+   * 720px is the threshold, and it is chosen from those measurements rather than
+   * from taste: it is the largest number that still splits the 734px case, and 734
+   * is the widest the board gets on a laptop screen. Below 720 each half is under
+   * 350px, which puts a four-week calendar's day cells near 45px — about as narrow
+   * as a two-digit date and its markers can be set.
+   *
+   * The mockup's own comment said 830. 830 is wrong here: the mockup's shell was
+   * wider than the real one, so it stacked the pair at every window this app can
+   * actually be opened at, which is not the approved layout.
+   */
+  .dossier-board { container-type: inline-size; }
+
+  .dossier-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+    /* stretch, not the board's usual start: these two are a deliberate pair, and
+       a ragged step at the top of the board is what the bands replaced. */
+    align-items: stretch;
+  }
+
+  @container (max-width: 720px) {
+    .dossier-pair { grid-template-columns: 1fr; }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     [style*="integration-panel-in"],
     [style*="integration-sheet-rise"],

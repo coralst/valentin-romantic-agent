@@ -1,4 +1,8 @@
+import { randomUUID } from 'crypto';
 import type { ChatMessage } from '../../shared/interfaces/message';
+import { DEFAULT_GENERATION, isPersonGeneration } from '../../shared/interfaces/person';
+import type { Person } from '../../shared/interfaces/person';
+import type { Task } from '../../shared/interfaces/task';
 import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
 import type { StorageInterface, ExtractedPreference } from '../persistence/storage-interface';
 import type { BedrockClient } from '../agent/bedrock-client';
@@ -14,9 +18,43 @@ export type OnPreferenceUpdate = (
   isNew: boolean,
 ) => void;
 
+/**
+ * What the extractor tells the outside world it learned.
+ *
+ * An object rather than three positional callbacks: two of the three are new, and
+ * a constructor with three optional function parameters is the shape where an
+ * argument eventually gets passed in the wrong slot. Every field is optional
+ * because extraction must work with nobody listening — `DemoLoginService` seeds
+ * through the same graph with no socket attached.
+ */
+export interface ExtractionListeners {
+  onPreference?: OnPreferenceUpdate;
+  /** Someone in her life, learned from the turn. */
+  onPerson?: (sessionId: string, person: Person, isNew: boolean) => void;
+  /** Something he said he would do, learned from the turn. */
+  onTask?: (sessionId: string, task: Task, isNew: boolean) => void;
+}
+
 /** Interface for the preference extraction pipeline */
 export interface PreferenceExtractorInterface {
   extract(message: ChatMessage, history: ChatMessage[]): Promise<void>;
+}
+
+/** Raw person shape returned by the Bedrock tool-use call */
+interface RawExtractedPerson {
+  /** Absent when the message named a relative without naming them. */
+  name?: string;
+  relationship?: string;
+  generation?: string;
+  birthday?: string;
+  note?: string;
+}
+
+/** Raw task shape returned by the Bedrock tool-use call */
+interface RawExtractedTask {
+  title?: string;
+  due?: string;
+  note?: string;
 }
 
 /** Raw preference shape returned by the Bedrock tool-use call */
@@ -88,12 +126,92 @@ export function mergeSplitFacts(
   return [...byField.values(), ...passthrough];
 }
 
+/** Longest a name, relationship, title or note may be, in characters */
+const TEXT_LIMIT = 200;
+
+/** Trim, cap, and collapse blank to null — the same rule the HTTP routes use. */
+function cleanText(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed.slice(0, TEXT_LIMIT) : null;
+}
+
+/** An ISO date, or null. Never a guess: a bad date is worse than no date. */
+function cleanDate(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : null;
+}
+
+/** Case- and space-insensitive, for matching a restated fact to a stored one. */
+function normalise(value: string | null): string {
+  return (value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * What to do with a freshly extracted person: update someone, add someone, or
+ * neither.
+ *
+ * `ambiguous` is the third answer and the one that makes this a type instead of a
+ * `Person | undefined`. "Her sister is coming Tuesday", when two named sisters are
+ * already on the tree, identifies neither of them — and both of the obvious
+ * fallbacks are wrong. Writing a new unnamed "Sister?" card puts a gap on the
+ * board next to two people who fill it, and picking the first sister invents a
+ * fact. Doing nothing loses nothing: her having a sister is already recorded.
+ */
+export type PersonMatch =
+  | { kind: 'update'; person: Person }
+  | { kind: 'insert' }
+  | { kind: 'ambiguous' };
+
+/**
+ * Decide which stored person a freshly extracted one is.
+ *
+ * Named candidate:
+ * 1. Same name — "Nadia" said twice is one sister, however differently the
+ *    relationship was phrased the second time.
+ * 2. Otherwise, a person on the same relationship whom we could not name: this is
+ *    how "her brother" followed later by "her brother Tom" fills the gap in place
+ *    instead of drawing a second brother beside it. Filling a gap is the single
+ *    most likely edit this feature will ever see, so it happens by itself.
+ * 3. Otherwise a new person. She is allowed two sisters, and merging Talia into
+ *    Nadia because both are "her sister" would delete one of them.
+ *
+ * Unnamed candidate: the sole holder of that relationship, whether or not we know
+ * their name — and `ambiguous` when there is more than one.
+ */
+export function matchPerson(
+  existing: readonly Person[],
+  candidate: { name: string | null; relationship: string },
+): PersonMatch {
+  const name = normalise(candidate.name);
+  const relationship = normalise(candidate.relationship);
+  const sameRelationship = existing.filter(
+    (person) => normalise(person.relationship) === relationship,
+  );
+
+  if (!name) {
+    if (sameRelationship.length === 1) {
+      return { kind: 'update', person: sameRelationship[0] };
+    }
+    return sameRelationship.length === 0
+      ? { kind: 'insert' }
+      : { kind: 'ambiguous' };
+  }
+
+  const byName = existing.find((person) => normalise(person.name) === name);
+  if (byName) return { kind: 'update', person: byName };
+
+  const gap = sameRelationship.find((person) => normalise(person.name) === '');
+  return gap ? { kind: 'update', person: gap } : { kind: 'insert' };
+}
+
 /** Extracts structured preferences from conversation messages via Bedrock tool-use */
 export class PreferenceExtractor implements PreferenceExtractorInterface {
   constructor(
     private readonly bedrockClient: BedrockClient,
     private readonly storage: StorageInterface,
-    private readonly onPreferenceUpdate: OnPreferenceUpdate | null,
+    private readonly listeners: ExtractionListeners | null,
   ) {}
 
   async extract(
@@ -101,6 +219,8 @@ export class PreferenceExtractor implements PreferenceExtractorInterface {
     history: ChatMessage[],
   ): Promise<void> {
     let rawPreferences: RawExtractedPreference[];
+    let rawPeople: RawExtractedPerson[];
+    let rawTasks: RawExtractedTask[];
 
     try {
       const toolResponse = await this.bedrockClient.extractWithTool(
@@ -111,8 +231,14 @@ export class PreferenceExtractor implements PreferenceExtractorInterface {
 
       const input = toolResponse.input as {
         preferences?: RawExtractedPreference[];
+        people?: RawExtractedPerson[];
+        tasks?: RawExtractedTask[];
       };
       rawPreferences = input.preferences ?? [];
+      // Absent on most turns, and absent entirely from a stubbed tool response
+      // that predates these arrays — hence `?? []` rather than a required field.
+      rawPeople = Array.isArray(input.people) ? input.people : [];
+      rawTasks = Array.isArray(input.tasks) ? input.tasks : [];
     } catch (err) {
       console.error(
         `[preference-extractor] Extraction failed for message ${message.id}:`,
@@ -143,6 +269,54 @@ export class PreferenceExtractor implements PreferenceExtractorInterface {
         // Continue processing remaining preferences
       }
     }
+
+    // Sequential, and after the preferences, for a reason: both processors read
+    // the session's current people or tasks to decide whether this is the same
+    // relative restated. Run concurrently, two mentions of "her brother" in one
+    // turn would both read the empty list and both insert.
+    for (const raw of rawPeople) {
+      try {
+        await this.processPerson(raw, message);
+      } catch (err) {
+        this.reportFailure(
+          `Failed to process person "${raw.name ?? raw.relationship ?? '?'}"`,
+          message,
+          err,
+        );
+      }
+    }
+
+    for (const raw of rawTasks) {
+      try {
+        await this.processTask(raw, message);
+      } catch (err) {
+        this.reportFailure(
+          `Failed to process task "${raw.title ?? '?'}"`,
+          message,
+          err,
+        );
+      }
+    }
+  }
+
+  /**
+   * Log one failed item and carry on.
+   *
+   * Same discipline the preference loop has always had: one unusable entry must
+   * not cost the rest of the turn, and extraction must never surface to the
+   * person having the conversation.
+   */
+  private reportFailure(
+    summary: string,
+    message: ChatMessage,
+    err: unknown,
+  ): void {
+    const wrapped = new ExtractionError(summary, {
+      messageId: message.id,
+      sessionId: message.sessionId,
+      cause: err instanceof Error ? err.message : String(err),
+    });
+    console.error(`[preference-extractor] ${wrapped.message}`, wrapped.context);
   }
 
   private async processPreference(
@@ -240,8 +414,102 @@ export class PreferenceExtractor implements PreferenceExtractorInterface {
     }
 
     // Notify listeners
-    if (this.onPreferenceUpdate) {
-      this.onPreferenceUpdate(result, isNew);
+    this.listeners?.onPreference?.(result, isNew);
+  }
+
+  /**
+   * Persist one person the turn revealed.
+   *
+   * `relationship` is the only required field, because it is the only one that
+   * makes the record worth keeping: "her brother" with no name is a card worth
+   * drawing, and a name with no relationship is a word.
+   */
+  private async processPerson(
+    raw: RawExtractedPerson,
+    message: ChatMessage,
+  ): Promise<void> {
+    const relationship = cleanText(raw.relationship);
+    if (!relationship) return;
+
+    const name = cleanText(raw.name);
+    // An unrecognised rung falls back rather than dropping the person: which row
+    // she is drawn on is a detail, and losing an entire relative over a bad enum
+    // value is not.
+    const generation = isPersonGeneration(raw.generation)
+      ? raw.generation
+      : DEFAULT_GENERATION;
+    if (raw.generation && !isPersonGeneration(raw.generation)) {
+      console.warn(
+        `[preference-extractor] unknown generation "${raw.generation}" for ` +
+          `"${relationship}" — filing on the ${DEFAULT_GENERATION} rung`,
+      );
     }
+
+    const existing = await this.storage.getPeopleBySession(message.sessionId);
+    const outcome = matchPerson(existing, { name, relationship });
+    if (outcome.kind === 'ambiguous') {
+      console.warn(
+        `[preference-extractor] "${relationship}" matches more than one person ` +
+          'and the turn named nobody — leaving the tree alone',
+      );
+      return;
+    }
+    const match = outcome.kind === 'update' ? outcome.person : undefined;
+
+    const person: Person = {
+      id: match?.id ?? randomUUID(),
+      // A gap that has just been named keeps its new name; a person restated
+      // without their name keeps the one we already had, because "her sister
+      // said..." is not an instruction to forget she is Nadia.
+      name: name ?? match?.name ?? null,
+      relationship,
+      generation,
+      birthday: cleanDate(raw.birthday) ?? match?.birthday ?? null,
+      note: cleanText(raw.note) ?? match?.note ?? null,
+      // Even when it updates a row the user typed by hand: this write came out of
+      // a conversation, and that is what the badge on the card reports.
+      source: 'discovered',
+      updatedAt: new Date().toISOString(),
+    };
+
+    const saved = await this.storage.savePerson(message.sessionId, person);
+    this.listeners?.onPerson?.(message.sessionId, saved, !match);
+  }
+
+  /**
+   * Persist one thing he said he would do.
+   *
+   * Matched on the title, so restating the same intention next turn updates the
+   * row rather than adding a second one — a to-do list that grows a duplicate
+   * every time he mentions the booking is a list he stops reading.
+   *
+   * `done` is never set from here. Ticking is his act, and a model that decided a
+   * task was finished because he talked about it would erase the one piece of
+   * state on this board that only he can write.
+   */
+  private async processTask(
+    raw: RawExtractedTask,
+    message: ChatMessage,
+  ): Promise<void> {
+    const title = cleanText(raw.title);
+    if (!title) return;
+
+    const existing = await this.storage.getTasksBySession(message.sessionId);
+    const match = existing.find((task) => normalise(task.title) === normalise(title));
+
+    const now = new Date().toISOString();
+    const task: Task = {
+      id: match?.id ?? randomUUID(),
+      title,
+      due: cleanDate(raw.due) ?? match?.due ?? null,
+      note: cleanText(raw.note) ?? match?.note ?? null,
+      done: match?.done ?? false,
+      source: 'discovered',
+      createdAt: match?.createdAt ?? now,
+      updatedAt: now,
+    };
+
+    const saved = await this.storage.saveTask(message.sessionId, task);
+    this.listeners?.onTask?.(message.sessionId, saved, !match);
   }
 }

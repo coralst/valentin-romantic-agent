@@ -160,8 +160,19 @@ export function createServer(deps: ServerDeps = {}) {
     // orchestrator that is built from the extractor, so one of the three edges
     // has to be closed late. This is that edge.
     let eventRouter: EventRouter | null = null;
-    const extractor = new PreferenceExtractor(bedrockClient, store, (pref, isNew) => {
-      eventRouter?.emitPreferenceUpdate(pref, isNew);
+    const extractor = new PreferenceExtractor(bedrockClient, store, {
+      onPreference: (pref, isNew) => {
+        eventRouter?.emitPreferenceUpdate(pref, isNew);
+      },
+      // Pushed for the same reason preferences are: the family tree and the
+      // to-do list are on screen while he is talking, and a card that only
+      // appears after a reload reads as the app not having listened.
+      onPerson: (sessionId, person, isNew) => {
+        eventRouter?.emitPersonUpdate(sessionId, person, isNew);
+      },
+      onTask: (sessionId, task, isNew) => {
+        eventRouter?.emitTaskUpdate(sessionId, task, isNew);
+      },
     });
 
     const orchestrator = new AgentOrchestrator(

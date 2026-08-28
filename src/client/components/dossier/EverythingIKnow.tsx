@@ -15,6 +15,25 @@ import {
   CARD_HAIRLINE,
   FIELD_HAIRLINE,
 } from './board-tones';
+import { DossierIcon, dossierType, type DossierIconName } from './dossier-icons';
+
+/**
+ * One icon per section, carried onto every row in it.
+ *
+ * The complaint that started this redesign was "no icons", and it was about this
+ * card specifically: eighteen true things in a column of key/value pairs reads as
+ * a form, and nobody reads a form. An icon per row is what makes it a list of
+ * facts about a person. Keyed on the section rather than the field so a new field
+ * inherits a sensible mark instead of arriving unmarked.
+ */
+const SECTION_ICONS: Readonly<Record<string, DossierIconName>> = {
+  basics: 'heart',
+  relationship: 'people',
+  interests: 'music',
+  style: 'palette',
+  sizes: 'ruler',
+  gifts: 'gift',
+};
 
 interface EverythingIKnowProps {
   getFieldValue: (fieldId: string) => ProfileFieldValue | null;
@@ -26,6 +45,14 @@ interface EverythingIKnowProps {
   onAsk?: (field: ProfileFieldDefinition) => void;
   /** Collapses `columns: 3` to 1. Driven by `AppLayout`'s `isMobile`. */
   isMobile?: boolean;
+  /**
+   * The four tiles that sit above the field list, inside this card.
+   *
+   * A slot rather than four imports, because what belongs up there is a
+   * composition decision — which four of her facts deserve a picture — and that
+   * belongs to the board, not to the card that holds the rest of them.
+   */
+  tiles?: React.ReactNode;
 }
 
 /**
@@ -59,6 +86,31 @@ const mobileColumnsStyle: React.CSSProperties = {
   columnGap: 0,
 };
 
+/**
+ * The four tiles, across the card.
+ *
+ * `minmax(176px, 1fr)`, and the number is measured rather than chosen. The card
+ * has about 756px of inner measure on the widest board this shell produces (796px
+ * — see the container-query note in `global-styles.ts`), and four tiles need
+ * `4 × w + 3 × 13` of it. The mockup said 200, which needs 839px and so wrapped to
+ * three columns here, orphaning "Her week" onto a row of its own with two thirds of
+ * the band empty beside it. 176 needs 743 and fits, and still collapses to three
+ * across on the middle board width rather than squeezing four into 588px.
+ */
+const tilesStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(176px, 1fr))',
+  gap: 13,
+  marginBottom: 16,
+};
+
+/** One tile per row on a phone: four 200px columns in 375px do not exist. */
+const mobileTilesStyle: React.CSSProperties = {
+  ...tilesStyle,
+  gridTemplateColumns: 'minmax(0, 1fr)',
+  gap: 10,
+};
+
 const sectionStyle: React.CSSProperties = {
   // Without this a section's heading can be orphaned at the foot of one column
   // with its fields at the head of the next.
@@ -90,9 +142,9 @@ const sectionLabelStyle: React.CSSProperties = {
   minWidth: 0,
   margin: 0,
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.eyebrowWide,
+  fontSize: dossierType.small,
   fontWeight: typography.weights.medium,
-  letterSpacing: '0.2em',
+  letterSpacing: '0.14em',
   textTransform: 'uppercase',
   color: colors.inkMuted,
 };
@@ -101,7 +153,7 @@ const sectionCountStyle: React.CSSProperties = {
   flex: 'none',
   fontStyle: 'normal',
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.caption,
+  fontSize: dossierType.small,
   color: colors.inkFaint,
   whiteSpace: 'nowrap',
 };
@@ -130,7 +182,7 @@ const dividedRowStyle: React.CSSProperties = {
 const unknownLabelStyle: React.CSSProperties = {
   flex: '1 0 100%',
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.caption,
+  fontSize: dossierType.small,
   letterSpacing: '0.04em',
   color: colors.inkFaint,
 };
@@ -140,7 +192,7 @@ const unknownValueStyle: React.CSSProperties = {
   flex: 1,
   minWidth: 0,
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.smallLoose,
+  fontSize: dossierType.small,
   fontWeight: typography.weights.normal,
   fontStyle: 'italic',
   color: colors.inkFaint,
@@ -158,6 +210,33 @@ const unknownValueStyle: React.CSSProperties = {
  */
 const filledRowStyle: React.CSSProperties = {
   padding: '3px 0',
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: 10,
+};
+
+/**
+ * The row's mark, in the claret used for every icon on this board.
+ *
+ * `marginTop` rather than `alignItems: 'center'`: a row whose value wraps to two
+ * lines would centre the icon against the middle of the pair, which reads as
+ * belonging to neither line.
+ */
+const rowIconStyle: React.CSSProperties = {
+  flex: 'none',
+  display: 'flex',
+  marginTop: 10,
+  color: colors.claretLight,
+};
+
+/** Everything after the mark — the label, the value and the control. */
+const rowBodyStyle: React.CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  display: 'flex',
+  alignItems: 'center',
+  flexWrap: 'wrap',
+  gap: 10,
 };
 
 const dividedFilledRowStyle: React.CSSProperties = {
@@ -182,6 +261,7 @@ export function EverythingIKnow({
   highlightedFieldIds,
   onAsk,
   isMobile = false,
+  tiles,
 }: EverythingIKnowProps) {
   const sections = [...PROFILE_FIELD_SECTIONS].sort((a, b) => a.order - b.order);
 
@@ -197,11 +277,23 @@ export function EverythingIKnow({
   return (
     <section style={cardStyle} data-testid="dossier-everything">
       <div style={cardHeadStyle}>
-        <h2 style={cardTitleStyle}>Everything I know</h2>
+        <span style={{ color: colors.claret, display: 'flex' }} aria-hidden="true">
+          <DossierIcon name="book" size={18} />
+        </span>
+        <h2 style={cardTitleStyle}>Everything I know about her</h2>
         <span style={cardCountStyle}>
           {filled} of {total}
         </span>
       </div>
+
+      {tiles && (
+        <div
+          style={isMobile ? mobileTilesStyle : tilesStyle}
+          data-testid="dossier-tiles"
+        >
+          {tiles}
+        </div>
+      )}
 
       <div
         style={isMobile ? mobileColumnsStyle : columnsStyle}
@@ -210,6 +302,7 @@ export function EverythingIKnow({
         {sections.map((section, sectionIndex) => {
           const fields = getFieldsBySection(section.id);
           const sectionFilled = fields.filter((f) => getFieldValue(f.id) !== null).length;
+          const icon = SECTION_ICONS[section.id] ?? 'book';
 
           return (
             <div
@@ -219,6 +312,9 @@ export function EverythingIKnow({
               data-section-id={section.id}
             >
               <div style={sectionHeadStyle}>
+                <span style={{ color: colors.claret, display: 'flex' }} aria-hidden="true">
+                  <DossierIcon name={SECTION_ICONS[section.id] ?? 'book'} size={16} />
+                </span>
                 <h3 style={sectionLabelStyle}>{section.label}</h3>
                 <em style={sectionCountStyle}>
                   {sectionFilled} of {fields.length}
@@ -242,16 +338,21 @@ export function EverythingIKnow({
                       data-field-id={field.id}
                       data-known="false"
                     >
-                      <span style={unknownLabelStyle}>{field.label}</span>
-                      <span style={unknownValueStyle}>Not yet known</span>
-                      <button
-                        type="button"
-                        style={askPillStyle}
-                        onClick={() => onAsk?.(field)}
-                        aria-label={`Ask about her ${field.label.toLowerCase()}`}
-                      >
-                        Ask
-                      </button>
+                      <span style={rowIconStyle} aria-hidden="true">
+                        <DossierIcon name={icon} size={16} />
+                      </span>
+                      <span style={rowBodyStyle}>
+                        <span style={unknownLabelStyle}>{field.label}</span>
+                        <span style={unknownValueStyle}>Not yet known</span>
+                        <button
+                          type="button"
+                          style={askPillStyle}
+                          onClick={() => onAsk?.(field)}
+                          aria-label={`Ask about her ${field.label.toLowerCase()}`}
+                        >
+                          Ask
+                        </button>
+                      </span>
                     </div>
                   );
                 }
@@ -264,13 +365,18 @@ export function EverythingIKnow({
                     data-field-id={field.id}
                     data-known="true"
                   >
-                    <ProfileField
-                      definition={field}
-                      value={value}
-                      onSave={(next) => onSaveField(field.id, next)}
-                      onClear={() => onClearField(field.id)}
-                      isHighlighted={highlightedFieldIds?.has(field.id) ?? false}
-                    />
+                    <span style={rowIconStyle} aria-hidden="true">
+                      <DossierIcon name={icon} size={16} />
+                    </span>
+                    <span style={rowBodyStyle}>
+                      <ProfileField
+                        definition={field}
+                        value={value}
+                        onSave={(next) => onSaveField(field.id, next)}
+                        onClear={() => onClearField(field.id)}
+                        isHighlighted={highlightedFieldIds?.has(field.id) ?? false}
+                      />
+                    </span>
                   </div>
                 );
               })}

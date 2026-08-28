@@ -2,6 +2,8 @@ import React, { createContext, useContext } from 'react';
 import { useWebSocket } from '../hooks/use-websocket';
 import { useChatContext } from './chat-context';
 import { usePreferencesContext } from './preferences-context';
+import { useOptionalPeopleContext } from './people-context';
+import { useOptionalTasksContext } from './tasks-context';
 
 interface WebSocketContextValue {
   sendMessage: (content: string) => void;
@@ -15,10 +17,21 @@ const WebSocketContext = createContext<WebSocketContextValue | null>(null);
 export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const { state, dispatch: chatDispatch } = useChatContext();
   const { dispatch: preferencesDispatch } = usePreferencesContext();
+  /*
+   * Optional on purpose. `PeopleProvider` and `TasksProvider` sit above this one
+   * in `App` so that `person_update` and `task_update` have somewhere to land,
+   * but plenty of tests mount the socket without either — and a connection that
+   * refused to open without a family tree attached would have the dependency
+   * backwards.
+   */
+  const people = useOptionalPeopleContext();
+  const tasks = useOptionalTasksContext();
 
   const { sendMessage, connectionStatus, lastError } = useWebSocket({
     chatDispatch,
     preferencesDispatch,
+    peopleDispatch: people?.dispatch,
+    tasksDispatch: tasks?.dispatch,
     sessionId: state.sessionId,
   });
 

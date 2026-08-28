@@ -1,4 +1,5 @@
-import { useReducer, useEffect, useCallback } from 'react';
+import { useReducer, useEffect, useCallback, useRef } from 'react';
+import { apiDelete, apiGetJson, apiPutJson } from '../utils/api-client';
 
 /** Value stored for a profile field */
 export interface ProfileFieldValue {
@@ -200,17 +201,118 @@ export function saveToStorage(sessionId: string, state: ProfileStoreState): stri
   }
 }
 
-/** Hook wrapping useReducer with localStorage persistence */
-export function useProfileStore(sessionId: string | null) {
-  const [state, dispatch] = useReducer(profileStoreReducer, initialState);
+/**
+ * Read the corrections he has typed back from the server.
+ *
+ * The route answers `Record<fieldId, string>` — a stored `MANUAL#` row is the
+ * value and nothing else — so the source and the timestamp are reconstructed
+ * here. `updatedAt` is honest to within one hydration: where the cache holds the
+ * same value, its original stamp is kept rather than being reset to now, so "you
+ * told me this in June" does not become "you told me this just now" on reload.
+ */
+export async function fetchManualValues(
+  sessionId: string,
+  cached: Record<string, ProfileFieldValue> = {},
+): Promise<Record<string, ProfileFieldValue>> {
+  const { manualValues } = await apiGetJson<{ manualValues: Record<string, string> }>(
+    `/api/session/${encodeURIComponent(sessionId)}/manual`,
+  );
 
-  // Restore from localStorage on mount or sessionId change
+  const now = new Date().toISOString();
+  const restored: Record<string, ProfileFieldValue> = {};
+  for (const [fieldId, value] of Object.entries(manualValues ?? {})) {
+    if (typeof value !== 'string') continue;
+    const previous = cached[fieldId];
+    restored[fieldId] = {
+      value,
+      source: 'manual',
+      updatedAt: previous?.value === value ? previous.updatedAt : now,
+    };
+  }
+  return restored;
+}
+
+/** Write one correction. */
+export async function pushManualValue(
+  sessionId: string,
+  fieldId: string,
+  value: string,
+): Promise<void> {
+  await apiPutJson(
+    `/api/session/${encodeURIComponent(sessionId)}/manual/${encodeURIComponent(fieldId)}`,
+    { value },
+  );
+}
+
+/** Take one correction back. */
+export async function clearManualValueOnServer(
+  sessionId: string,
+  fieldId: string,
+): Promise<void> {
+  await apiDelete(
+    `/api/session/${encodeURIComponent(sessionId)}/manual/${encodeURIComponent(fieldId)}`,
+  );
+}
+
+/**
+ * The profile store: reducer, server-backed corrections, cached locally.
+ *
+ * What lives where, and why:
+ * - **Manual values** are on the server. A correction that never left the
+ *   browser was the bug: he fixes her ring size on his phone and Valentin is
+ *   still wrong about it on his laptop.
+ * - **Her photo** stays in `localStorage`. It is a data URL, not a profile
+ *   field, and there is no `MANUAL#` row shaped to hold half a megabyte of
+ *   base64.
+ * - **Discovered values** are neither: they are ingested from the preferences,
+ *   which are already stored, so persisting them here would be a second copy
+ *   that can disagree with the first.
+ * - **Rejections** are in memory for the session. Their whole job is to stop
+ *   ingestion re-offering a guess he just declined, and that is a fact about
+ *   this sitting.
+ */
+export function useProfileStore(sessionId: string | null) {
+  const [state, localDispatch] = useReducer(profileStoreReducer, initialState);
+
+  /** The corrections as the reducer last left them — see `usePeopleStore`. */
+  const manualRef = useRef(state.manualValues);
+  manualRef.current = state.manualValues;
+
+  // Cache first (the photo, and last-known corrections), then the server.
   useEffect(() => {
     if (!sessionId) return;
+
     const stored = loadFromStorage(sessionId);
     if (stored) {
-      dispatch({ type: 'RESTORE', state: stored });
+      localDispatch({ type: 'RESTORE', state: stored });
     }
+
+    let live = true;
+    void fetchManualValues(sessionId, stored?.manualValues ?? {})
+      .then((manualValues) => {
+        if (live) {
+          localDispatch({
+            type: 'RESTORE',
+            // The photo is not on the server, so it is carried through from the
+            // cache rather than being dropped by this second RESTORE.
+            state: { partnerPhoto: stored?.partnerPhoto ?? null, manualValues },
+          });
+        }
+      })
+      .catch((err: unknown) => {
+        if (live) {
+          localDispatch({
+            type: 'STORAGE_ERROR',
+            message: `Showing your corrections from this device — ${
+              err instanceof Error ? err.message : 'the server did not answer'
+            }`,
+          });
+        }
+      });
+
+    return () => {
+      live = false;
+    };
   }, [sessionId]);
 
   // Save to localStorage on every state change (debounced by React batching)
@@ -218,9 +320,58 @@ export function useProfileStore(sessionId: string | null) {
     if (!sessionId) return;
     const error = saveToStorage(sessionId, state);
     if (error) {
-      dispatch({ type: 'STORAGE_ERROR', message: error });
+      localDispatch({ type: 'STORAGE_ERROR', message: error });
     }
   }, [sessionId, state.partnerPhoto, state.manualValues]);
+
+  /**
+   * Reduce now, write to the server after.
+   *
+   * Optimistic for the same reason the people store is: typing her bra size and
+   * waiting on a round trip before the field shows it reads as a dropped
+   * keystroke.
+   */
+  const dispatch = useCallback(
+    (action: ProfileStoreAction) => {
+      localDispatch(action);
+      if (!sessionId) return;
+
+      const fail = (err: unknown) =>
+        localDispatch({
+          type: 'STORAGE_ERROR',
+          message: `Could not save your correction — ${
+            err instanceof Error ? err.message : 'the server did not answer'
+          }`,
+        });
+
+      switch (action.type) {
+        case 'SET_MANUAL_VALUE':
+          void pushManualValue(sessionId, action.fieldId, action.value).catch(fail);
+          break;
+
+        case 'CLEAR_MANUAL_VALUE':
+          void clearManualValueOnServer(sessionId, action.fieldId).catch(fail);
+          break;
+
+        case 'CLEAR_ALL_VALUES':
+          // Only the corrections are the server's to forget. The preferences
+          // behind the discovered values are cleared by the reset route, and the
+          // photo goes with the cache.
+          void Promise.all(
+            Object.keys(manualRef.current).map((fieldId) =>
+              clearManualValueOnServer(sessionId, fieldId),
+            ),
+          ).catch(fail);
+          break;
+
+        // The photo, the discovered values and the rejections are all local by
+        // design — see the note on this hook.
+        default:
+          break;
+      }
+    },
+    [sessionId],
+  );
 
   /** Get the effective value for a field (manual takes priority over discovered) */
   const getFieldValue = useCallback(

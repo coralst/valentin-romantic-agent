@@ -10,6 +10,7 @@ import {
   animation,
 } from '../design-system/tokens';
 import { useSessionContext } from '../context/session-context';
+import { useOptionalViewContext } from '../context/view-context';
 import { SessionEntry } from './SessionEntry';
 import { ArchitectureToggle } from './ArchitectureToggle';
 
@@ -184,6 +185,48 @@ const noticeDismissStyle: React.CSSProperties = {
   fontSize: typography.px.control,
 };
 
+/**
+ * "Her file", pinned above the conversations.
+ *
+ * Her file now opens *in the chat column* rather than replacing the whole shell,
+ * which leaves the list on screen beside it — and a list where nothing is
+ * selected, while a board is clearly on screen, reads as the app having lost
+ * track of where you are. So it is a thread: pinned, always first, selected
+ * whenever the board is up.
+ *
+ * Not a `SessionEntry`: it has no transcript, no message count, no last-activity
+ * line, and it can be neither renamed nor deleted. Reusing the row would mean
+ * making all five of those optional to say one thing.
+ */
+const herFileRowStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: spacing.xs,
+  width: '100%',
+  textAlign: 'left',
+  cursor: 'pointer',
+  border: 'none',
+  borderRadius: radii.kv,
+  padding: `9px ${spacing.xs + 2}px`,
+  marginBottom: 4,
+  fontFamily: typography.bodyFontFamily,
+  fontSize: typography.px.body,
+  transition: `background-color ${animation.durations.fast}ms ${animation.easing.easeInOut}`,
+};
+
+const herFileActiveStyle: React.CSSProperties = {
+  ...herFileRowStyle,
+  backgroundColor: colors.champagne,
+  color: colors.claret,
+  fontWeight: typography.weights.medium,
+};
+
+const herFileIdleStyle: React.CSSProperties = {
+  ...herFileRowStyle,
+  backgroundColor: 'transparent',
+  color: colors.inkMuted,
+};
+
 interface SessionSidebarProps {
   isMobile: boolean;
 }
@@ -200,6 +243,14 @@ export function SessionSidebar({ isMobile }: SessionSidebarProps) {
   } = useSessionContext();
 
   const { sessions, activeSessionId, sidebarOpen, loading, error, notice } = state;
+
+  /*
+   * Optional, like `BriefRail`'s: this column is mounted on its own in unit
+   * tests, and a conversation list that crashed without the surface state would
+   * be the wrong trade for a pinned row.
+   */
+  const view = useOptionalViewContext();
+  const isHerFile = view?.surface === 'dossier';
 
   // Close mobile sidebar on Escape
   useEffect(() => {
@@ -254,7 +305,9 @@ export function SessionSidebar({ isMobile }: SessionSidebarProps) {
       <SessionEntry
         key={session.id}
         session={session}
-        isActive={session.id === activeSessionId}
+        // While her file is up, the conversation is not what you are looking at,
+        // so two rows must not both claim to be selected.
+        isActive={!isHerFile && session.id === activeSessionId}
         onSelect={handleSelect}
         onDelete={handleDelete}
         onRename={handleRename}
@@ -318,6 +371,22 @@ export function SessionSidebar({ isMobile }: SessionSidebarProps) {
         + New conversation
       </button>
       {renderMessage()}
+      {view && (
+        <button
+          type="button"
+          style={isHerFile ? herFileActiveStyle : herFileIdleStyle}
+          onClick={() => {
+            if (isHerFile) view.returnToChat();
+            else view.openDossier();
+            if (isMobile) setSidebarOpen(false);
+          }}
+          aria-current={isHerFile ? 'true' : undefined}
+          data-testid="her-file-thread"
+        >
+          <span aria-hidden="true">◆</span>
+          Her file
+        </button>
+      )}
       <div style={sessionListStyle} data-testid="session-list">
         {renderList()}
       </div>

@@ -383,6 +383,170 @@ describe('the session list', () => {
   });
 });
 
+describe('her people, his tasks and his corrections over HTTP', () => {
+  function send(path: string, method: string, token: string, body?: unknown) {
+    return fetch(`${baseUrl}${path}`, {
+      method,
+      headers: {
+        authorization: `Bearer ${token}`,
+        ...(body ? { 'content-type': 'application/json' } : {}),
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+  }
+
+  async function ownSession(token: string): Promise<string> {
+    const { sessionId } = (await (await post('/api/session', token)).json()) as {
+      sessionId: string;
+    };
+    return sessionId;
+  }
+
+  it('round trips a person through the real route table', async () => {
+    // Registered as its own path rather than being folded into the session PATCH,
+    // and over a socket rather than by calling the handler, because the failure
+    // this guards is a route-ordering one: '/api/session/:id' would swallow
+    // '/api/session/:id/people' if it were registered first.
+    const sessionId = await ownSession('ivan');
+
+    const created = await send(`/api/session/${sessionId}/people`, 'POST', 'ivan', {
+      name: 'Leah',
+      relationship: 'Older sister',
+      generation: 'peer',
+      birthday: '1988-09-09',
+    });
+    expect(created.status).toBe(200);
+
+    const { people } = (await (
+      await get(`/api/session/${sessionId}/people`, 'ivan')
+    ).json()) as { people: { name: string; birthday: string }[] };
+    expect(people).toHaveLength(1);
+    expect(people[0]).toMatchObject({ name: 'Leah', birthday: '1988-09-09' });
+  });
+
+  it('deletes a person by id', async () => {
+    const sessionId = await ownSession('ivan');
+    const created = await send(`/api/session/${sessionId}/people`, 'POST', 'ivan', {
+      relationship: 'Brother',
+    });
+    const { person } = (await created.json()) as { person: { id: string } };
+
+    const removed = await send(
+      `/api/session/${sessionId}/people/${person.id}`,
+      'DELETE',
+      'ivan',
+    );
+    expect(removed.status).toBe(200);
+
+    const { people } = (await (
+      await get(`/api/session/${sessionId}/people`, 'ivan')
+    ).json()) as { people: unknown[] };
+    expect(people).toEqual([]);
+  });
+
+  it('ticks a task and the tick survives a fresh read', async () => {
+    const sessionId = await ownSession('ivan');
+    const created = await send(`/api/session/${sessionId}/tasks`, 'POST', 'ivan', {
+      title: 'Book somewhere for the anniversary',
+      due: '2026-09-11',
+    });
+    const { task } = (await created.json()) as { task: Record<string, unknown> };
+
+    await send(`/api/session/${sessionId}/tasks`, 'POST', 'ivan', {
+      ...task,
+      done: true,
+    });
+
+    const { tasks } = (await (
+      await get(`/api/session/${sessionId}/tasks`, 'ivan')
+    ).json()) as { tasks: { done: boolean }[] };
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].done).toBe(true);
+  });
+
+  it('stores and clears a manual correction', async () => {
+    const sessionId = await ownSession('ivan');
+
+    const put = await send(
+      `/api/session/${sessionId}/manual/bra_size`,
+      'PUT',
+      'ivan',
+      { value: '34B' },
+    );
+    expect(put.status).toBe(200);
+
+    const stored = (await (
+      await get(`/api/session/${sessionId}/manual`, 'ivan')
+    ).json()) as { manualValues: Record<string, string> };
+    expect(stored.manualValues).toEqual({ bra_size: '34B' });
+
+    await send(`/api/session/${sessionId}/manual/bra_size`, 'DELETE', 'ivan');
+
+    const cleared = (await (
+      await get(`/api/session/${sessionId}/manual`, 'ivan')
+    ).json()) as { manualValues: Record<string, string> };
+    expect(cleared.manualValues).toEqual({});
+  });
+
+  it('serves the whole dossier in one session detail read', async () => {
+    // The board needs all of it to draw a single frame; four separate fetches
+    // would show it filling in visible stages.
+    const sessionId = await ownSession('ivan');
+    await send(`/api/session/${sessionId}/people`, 'POST', 'ivan', {
+      relationship: 'Sister',
+      name: 'Leah',
+    });
+    await send(`/api/session/${sessionId}/tasks`, 'POST', 'ivan', {
+      title: 'Draft the card',
+    });
+    await send(`/api/session/${sessionId}/manual/bra_size`, 'PUT', 'ivan', {
+      value: '34B',
+    });
+
+    const detail = (await (await get(`/api/session/${sessionId}`, 'ivan')).json()) as {
+      people: unknown[];
+      tasks: unknown[];
+      manualValues: Record<string, string>;
+    };
+    expect(detail.people).toHaveLength(1);
+    expect(detail.tasks).toHaveLength(1);
+    expect(detail.manualValues).toEqual({ bra_size: '34B' });
+  });
+
+  it("hides another caller's people, tasks and corrections", async () => {
+    const sessionId = await ownSession('ivan');
+    await send(`/api/session/${sessionId}/people`, 'POST', 'ivan', {
+      relationship: 'Sister',
+      name: 'Leah',
+    });
+
+    // 404, not an empty list: the key names the caller, so a session belonging to
+    // someone else simply misses, and saying "no people" would imply it existed.
+    expect((await get(`/api/session/${sessionId}/people`, 'judy')).status).toBe(404);
+    expect((await get(`/api/session/${sessionId}/tasks`, 'judy')).status).toBe(404);
+    expect((await get(`/api/session/${sessionId}/manual`, 'judy')).status).toBe(404);
+  });
+
+  it('requires a token like every other /api route', async () => {
+    const sessionId = await ownSession('ivan');
+
+    expect((await get(`/api/session/${sessionId}/people`)).status).toBe(401);
+    expect((await get(`/api/session/${sessionId}/tasks`)).status).toBe(401);
+  });
+
+  it('rejects a field id the registry does not have', async () => {
+    const sessionId = await ownSession('ivan');
+
+    const res = await send(
+      `/api/session/${sessionId}/manual/favourite_dinosaur`,
+      'PUT',
+      'ivan',
+      { value: 'Stegosaurus' },
+    );
+    expect(res.status).toBe(400);
+  });
+});
+
 describe('renaming and deleting a conversation', () => {
   function send(path: string, method: string, token: string, body?: unknown) {
     return fetch(`${baseUrl}${path}`, {

@@ -3,6 +3,7 @@ import { PROFILE_FIELD_IDS } from '../../../shared/constants/profile-fields';
 import {
   buildSystemPrompt,
   partnerNameFrom,
+  EXTRACT_PREFERENCES_TOOL,
   VALENTIN_SYSTEM_PROMPT,
   type KnownFact,
 } from '../prompts';
@@ -104,5 +105,64 @@ describe('buildSystemPrompt', () => {
     const prompt = buildSystemPrompt([{ key: 'hobbies', fieldId: 'hobbies', value: 'pottery' }]);
     expect(prompt).toMatch(/GOAL 2 is live/);
     expect(prompt).toContain('his partner');
+  });
+});
+
+/**
+ * The tool schema is the contract between the model and
+ * `preference-extractor.ts`. These pin the parts the extractor reads by name — a
+ * renamed array or a widened enum would not fail to compile, it would just
+ * silently stop recording her family.
+ */
+describe('EXTRACT_PREFERENCES_TOOL', () => {
+  const properties = EXTRACT_PREFERENCES_TOOL.input_schema.properties as Record<
+    string,
+    Record<string, unknown>
+  >;
+
+  it('asks for people and tasks alongside the preferences', () => {
+    expect(Object.keys(properties).sort()).toEqual(['people', 'preferences', 'tasks']);
+  });
+
+  it('requires only preferences, so a quiet turn is a valid answer', () => {
+    // Most turns mention nobody and commit to nothing. Requiring all three would
+    // push the model to invent a relative to fill the array.
+    expect(EXTRACT_PREFERENCES_TOOL.input_schema.required).toEqual(['preferences']);
+  });
+
+  it('needs a relationship and a rung for a person, but not a name', () => {
+    const person = properties.people.items as { required: string[]; properties: object };
+    expect(person.required).toEqual(['relationship', 'generation']);
+    // The nullable name is the point of the feature: "her brother, whose name I
+    // never caught" has to be recordable.
+    expect(person.required).not.toContain('name');
+  });
+
+  it('offers exactly the four rungs the tree draws', () => {
+    const person = properties.people.items as {
+      properties: { generation: { enum: string[] } };
+    };
+    expect([...person.properties.generation.enum].sort()).toEqual([
+      'elder',
+      'grandparent',
+      'peer',
+      'younger',
+    ]);
+  });
+
+  it('needs only a title for a task, and never asks the model for `done`', () => {
+    const task = properties.tasks.items as {
+      required: string[];
+      properties: Record<string, unknown>;
+    };
+    expect(task.required).toEqual(['title']);
+    // Ticking is his act. A model that could set `done` could erase it.
+    expect(Object.keys(task.properties)).not.toContain('done');
+  });
+
+  it('tells the model that a relative’s birthday is not her birthday', () => {
+    // The one confusion that would put her sister's date in the field the
+    // countdown reads as hers.
+    expect(EXTRACT_PREFERENCES_TOOL.description).toMatch(/never in a preference/);
   });
 });

@@ -51,8 +51,9 @@ afterEach(() => {
 
 /*
  * The dossier is a surface swap inside the same window, not a route and not a
- * portal — see `context/view-context.tsx`. These tests pin that: the icon rail
- * survives the swap, the chat shell's columns do not, and focus comes home.
+ * portal — see `context/view-context.tsx`. These tests pin that: the swap changes
+ * what the *chat column* shows and nothing else, the list and the brief stay put,
+ * both controls that reach it are two-way, and focus comes home.
  */
 describe('dossier surface routing', () => {
   it('starts on the chat shell, never in the dossier', () => {
@@ -71,13 +72,21 @@ describe('dossier surface routing', () => {
     await user.click(screen.getByTestId('brief-cameo'));
     expect(screen.getByTestId('app-layout')).toHaveAttribute('data-surface', 'dossier');
     expect(screen.getByTestId('dossier-view')).toBeInTheDocument();
-    // The portrait went with the brief, so nothing on screen claims to be a
-    // pressed toggle — the dossier's own ← is the way back.
-    expect(screen.queryByTestId('brief-cameo')).not.toBeInTheDocument();
+    // The portrait is still there beside the board it opened, and says so — so it
+    // is a two-way control, pressed while her file is up.
+    expect(screen.getByTestId('brief-cameo')).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByTestId('dossier-back')).toBeInTheDocument();
+
+    await user.click(screen.getByTestId('brief-cameo'));
+    expect(screen.getByTestId('app-layout')).toHaveAttribute('data-surface', 'chat');
   });
 
-  it('replaces the chat shell’s columns but keeps the icon rail', async () => {
+  /*
+   * Her file opens *in the chat column*. It used to take columns 2–4 with it,
+   * which cost the user the conversation list and the rail that says what is
+   * coming next — the two things most worth reading beside the board.
+   */
+  it('takes only the chat column, leaving the list and the brief mounted', async () => {
     const user = userEvent.setup();
     renderApp();
     await user.click(screen.getByTestId('brief-cameo'));
@@ -85,17 +94,39 @@ describe('dossier surface routing', () => {
     // A portal would duplicate the rail and fight the window's overflow/radius.
     expect(screen.getAllByTestId('icon-rail')).toHaveLength(1);
     expect(screen.queryByTestId('chat-panel')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('brief-rail')).not.toBeInTheDocument();
+    expect(screen.getByTestId('brief-rail')).toBeInTheDocument();
+    expect(screen.getByTestId('session-sidebar')).toBeInTheDocument();
+    // The window keeps its shape across the swap: nothing under the cursor moves.
     expect(screen.getByTestId('app-window').style.gridTemplateColumns).toBe(
-      '76px minmax(0, 1fr)',
+      '76px 226px minmax(0, 1fr) 306px',
     );
   });
 
-  it('opens from the brief footer’s "Full profile →"', async () => {
+  it('shows her file as the selected thread in the conversation list', async () => {
     const user = userEvent.setup();
     renderApp();
-    await user.click(screen.getByRole('button', { name: /Full profile/ }));
+    const thread = screen.getByTestId('her-file-thread');
+    expect(thread).not.toHaveAttribute('aria-current');
+
+    await user.click(thread);
     expect(screen.getByTestId('dossier-view')).toBeInTheDocument();
+    expect(screen.getByTestId('her-file-thread')).toHaveAttribute('aria-current', 'true');
+
+    // And it is the way back out, like every other row in the list.
+    await user.click(screen.getByTestId('her-file-thread'));
+    expect(screen.queryByTestId('dossier-view')).not.toBeInTheDocument();
+  });
+
+  /*
+   * There were two doors into her file and now there are three, none of which is
+   * the brief's old footer link. The tally footer that carried it is deleted —
+   * "21 of 21 known" was a score for the app, not a fact about her — so the ways
+   * in are her portrait, the pinned thread in the conversation list, and the ◆.
+   */
+  it('has no "Full profile" link left in the brief, because the tally is gone', () => {
+    renderApp();
+    expect(screen.queryByRole('button', { name: /Full profile/ })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('brief-tally')).not.toBeInTheDocument();
   });
 
   /*

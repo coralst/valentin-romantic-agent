@@ -4,10 +4,12 @@ import {
   CreateTableCommand,
   DeleteTableCommand,
 } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBStore } from '../dynamodb-store';
+import type { Person } from '../../../shared/interfaces/person';
 import type { StorageInterface } from '../storage-interface';
-import { META_SK, prefSk, sessionPk } from '../keys';
+import type { Task } from '../../../shared/interfaces/task';
+import { META_SK, manualSk, personSk, prefSk, sessionPk, taskSk } from '../keys';
 
 /**
  * Contract tests for the DynamoDB store, run against **DynamoDB Local**.
@@ -447,6 +449,256 @@ describe.runIf(available)('DynamoDBStore (contract, DynamoDB Local)', () => {
       await alice.clearSession(cleared);
 
       expect(await alice.getPreferencesBySession(kept)).toHaveLength(1);
+    });
+  });
+
+  // --- The one-page dossier's item types ---
+
+  describe('people, tasks and manual values', () => {
+    function person(overrides: Partial<Person> = {}): Person {
+      return {
+        id: 'p1',
+        name: 'Leah',
+        relationship: 'Older sister',
+        generation: 'peer',
+        birthday: null,
+        note: null,
+        source: 'manual',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        ...overrides,
+      };
+    }
+
+    function task(overrides: Partial<Task> = {}): Task {
+      return {
+        id: 't1',
+        title: 'Book somewhere for the anniversary',
+        due: '2026-09-11',
+        note: null,
+        done: false,
+        source: 'discovered',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        ...overrides,
+      };
+    }
+
+    it('round trips a person through the real engine', async () => {
+      const sessionId = await alice.createSession();
+
+      await alice.savePerson(sessionId, person({ birthday: '1988-09-09', note: 'Lives in Haifa' }));
+
+      const [read] = await alice.getPeopleBySession(sessionId);
+      expect(read).toMatchObject({
+        id: 'p1',
+        name: 'Leah',
+        relationship: 'Older sister',
+        generation: 'peer',
+        birthday: '1988-09-09',
+        note: 'Lives in Haifa',
+      });
+    });
+
+    it('keeps a null name, which is how a gap is recorded', async () => {
+      // DocumentClient is configured with removeUndefinedValues, so this asserts
+      // that a *null* really survives the trip rather than vanishing like an
+      // undefined would. A vanished gap is a dashed node the tree never draws.
+      const sessionId = await alice.createSession();
+
+      await alice.savePerson(sessionId, person({ name: null, relationship: 'Uncle' }));
+
+      expect((await alice.getPeopleBySession(sessionId))[0].name).toBeNull();
+    });
+
+    it('writes a batch of people larger than the 25-item BatchWriteItem limit', async () => {
+      const sessionId = await alice.createSession();
+      const many = Array.from({ length: 30 }, (_, i) =>
+        person({ id: `p${i}`, name: `Person ${i}` }),
+      );
+
+      await alice.savePeopleBatch(sessionId, many);
+
+      expect(await alice.getPeopleBySession(sessionId)).toHaveLength(30);
+    });
+
+    it('does not inflate preferenceCount with a family', async () => {
+      const sessionId = await alice.createSession();
+
+      await alice.savePeopleBatch(sessionId, [person(), person({ id: 'p2', name: 'Noa' })]);
+
+      expect((await alice.getSession(sessionId))!.preferenceCount).toBe(0);
+    });
+
+    it('a second write of a person id is a rename, not a duplicate', async () => {
+      const sessionId = await alice.createSession();
+
+      await alice.savePerson(sessionId, person({ name: null }));
+      await alice.savePerson(sessionId, person({ name: 'Nadia' }));
+
+      const people = await alice.getPeopleBySession(sessionId);
+      expect(people).toHaveLength(1);
+      expect(people[0].name).toBe('Nadia');
+    });
+
+    it('reads back a generation an older build never wrote', async () => {
+      // Stored rows predate `grandparent`. Anything unrecognised lands on `elder`
+      // rather than being dropped — a rung off beats a missing relative.
+      const sessionId = await alice.createSession();
+      await docClient.send(
+        new PutCommand({
+          TableName: TABLE_NAME,
+          Item: {
+            pk: sessionPk('alice', sessionId),
+            sk: personSk('legacy'),
+            id: 'legacy',
+            name: 'Ruth',
+            relationship: 'Mother',
+            generation: 'ancestor',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+            entityType: 'Person',
+          },
+        }),
+      );
+
+      expect((await alice.getPeopleBySession(sessionId))[0].generation).toBe('elder');
+    });
+
+    it('remembers a ticked task', async () => {
+      const sessionId = await alice.createSession();
+      await alice.saveTask(sessionId, task());
+
+      await alice.saveTask(sessionId, task({ done: true }));
+
+      const tasks = await alice.getTasksBySession(sessionId);
+      expect(tasks).toHaveLength(1);
+      expect(tasks[0].done).toBe(true);
+    });
+
+    it('reads a task row with no `done` attribute as open', async () => {
+      // Not merely defensive: a row missing the attribute must not present as
+      // done, or the list silently forgets work he has not finished.
+      const sessionId = await alice.createSession();
+      await docClient.send(
+        new PutCommand({
+          TableName: TABLE_NAME,
+          Item: {
+            pk: sessionPk('alice', sessionId),
+            sk: taskSk('legacy'),
+            id: 'legacy',
+            title: 'Draft the card',
+            source: 'manual',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+            entityType: 'Task',
+          },
+        }),
+      );
+
+      expect((await alice.getTasksBySession(sessionId))[0].done).toBe(false);
+    });
+
+    it('deletes one task and leaves the rest', async () => {
+      const sessionId = await alice.createSession();
+      await alice.saveTasksBatch(sessionId, [task(), task({ id: 't2', title: 'Draft the card' })]);
+
+      await alice.deleteTask(sessionId, 't2');
+
+      expect((await alice.getTasksBySession(sessionId)).map((t) => t.id)).toEqual(['t1']);
+    });
+
+    it('keeps a manual correction and the preference it overrides in separate rows', async () => {
+      // The point of MANUAL# existing at all. One row would make the later writer
+      // win, so a re-extraction would quietly overwrite the user's own answer.
+      const sessionId = await alice.createSession();
+      await alice.setManualValue(sessionId, 'bra_size', '34B');
+      await alice.savePreference({
+        sessionId,
+        category: 'gifts',
+        fieldId: 'bra_size',
+        key: 'bra size',
+        value: '36C',
+        confidence: 0.6,
+        sourceMessageId: 'm1',
+      });
+
+      expect((await alice.getManualValues(sessionId)).bra_size).toBe('34B');
+      expect((await alice.getPreferencesBySession(sessionId))[0].value).toBe('36C');
+    });
+
+    it('clears one manual value without touching the others', async () => {
+      const sessionId = await alice.createSession();
+      await alice.setManualValue(sessionId, 'bra_size', '34B');
+      await alice.setManualValue(sessionId, 'shoe_size', 'UK 6');
+
+      await alice.clearManualValue(sessionId, 'bra_size');
+
+      expect(await alice.getManualValues(sessionId)).toEqual({ shoe_size: 'UK 6' });
+    });
+
+    it('clearSession sweeps all three, keeping the session alive', async () => {
+      const sessionId = await alice.createSession();
+      await alice.savePerson(sessionId, person());
+      await alice.saveTask(sessionId, task());
+      await alice.setManualValue(sessionId, 'bra_size', '34B');
+
+      await alice.clearSession(sessionId);
+
+      expect(await alice.getPeopleBySession(sessionId)).toEqual([]);
+      expect(await alice.getTasksBySession(sessionId)).toEqual([]);
+      expect(await alice.getManualValues(sessionId)).toEqual({});
+      expect(await alice.getSession(sessionId)).not.toBeNull();
+    });
+
+    it('deleteSession leaves no person row behind', async () => {
+      // An item outliving its session is unreachable forever after: nothing will
+      // query that partition again, so it is storage nobody can see or bill for.
+      const sessionId = await alice.createSession();
+      await alice.savePerson(sessionId, person());
+
+      await alice.deleteSession(sessionId);
+
+      const result = await docClient.send(
+        new GetCommand({
+          TableName: TABLE_NAME,
+          Key: { pk: sessionPk('alice', sessionId), sk: personSk('p1') },
+        }),
+      );
+      expect(result.Item).toBeUndefined();
+    });
+
+    it('hides people, tasks and corrections from another user', async () => {
+      const sessionId = await alice.createSession();
+      await alice.savePerson(sessionId, person());
+      await alice.saveTask(sessionId, task());
+      await alice.setManualValue(sessionId, 'bra_size', '34B');
+
+      expect(await bob.getPeopleBySession(sessionId)).toEqual([]);
+      expect(await bob.getTasksBySession(sessionId)).toEqual([]);
+      expect(await bob.getManualValues(sessionId)).toEqual({});
+    });
+
+    it('places each at the key the schema documents', async () => {
+      const sessionId = await alice.createSession();
+      await alice.savePerson(sessionId, person());
+      await alice.saveTask(sessionId, task());
+      await alice.setManualValue(sessionId, 'bra_size', '34B');
+
+      for (const [sk, entityType] of [
+        [personSk('p1'), 'Person'],
+        [taskSk('t1'), 'Task'],
+        [manualSk('bra_size'), 'ManualValue'],
+      ] as const) {
+        const result = await docClient.send(
+          new GetCommand({
+            TableName: TABLE_NAME,
+            Key: { pk: sessionPk('alice', sessionId), sk },
+          }),
+        );
+        expect(result.Item, sk).toBeDefined();
+        expect(result.Item!.entityType).toBe(entityType);
+        // Sparse GSI: only the meta row lists a session.
+        expect(result.Item).not.toHaveProperty('gsi1pk');
+      }
     });
   });
 

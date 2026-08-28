@@ -2,6 +2,18 @@ import { useState, useRef, useEffect } from 'react';
 import type { ProfileFieldDefinition } from '../utils/profile-field-registry';
 import type { ProfileFieldValue } from '../hooks/use-profile-store';
 import { colors, spacing, borderRadius, typography, animation } from '../design-system/tokens';
+import { dossierType } from './dossier/dossier-icons';
+
+/*
+ * The type here is on the dossier's scale, not the global one.
+ *
+ * `ProfileField` lives a directory above `dossier/` for historical reasons, but
+ * `EverythingIKnow` is its only caller — every one of the 21 rows in the board's
+ * biggest card is one of these. At `sizes.xs`/`sizes.sm` (12/14px) that card was
+ * the largest single block of under-floor type left on the board after the sweep
+ * through `dossier/`, so the floor has to reach in here too. Importing upward into
+ * `dossier/` is the honest expression of where this component actually belongs.
+ */
 
 interface ProfileFieldProps {
   definition: ProfileFieldDefinition;
@@ -33,7 +45,7 @@ const labelRowStyle: React.CSSProperties = {
 };
 
 const labelStyle: React.CSSProperties = {
-  fontSize: typography.sizes.xs,
+  fontSize: dossierType.small,
   fontWeight: typography.weights.medium,
   color: colors.textSecondary,
   textTransform: 'uppercase',
@@ -48,7 +60,7 @@ const valueRowStyle: React.CSSProperties = {
 };
 
 const valueStyle: React.CSSProperties = {
-  fontSize: typography.sizes.sm,
+  fontSize: dossierType.body,
   color: colors.text,
   fontWeight: typography.weights.normal,
 };
@@ -60,15 +72,16 @@ const tentativeStyle: React.CSSProperties = {
 };
 
 const placeholderStyle: React.CSSProperties = {
-  fontSize: typography.sizes.sm,
+  fontSize: dossierType.body,
   color: colors.textSecondary,
   fontStyle: 'italic',
 };
 
 const badgeStyle: React.CSSProperties = {
-  fontSize: '0.625rem',
+  fontSize: dossierType.small,
   fontWeight: typography.weights.semibold,
-  padding: `1px 6px`,
+  // 1/6 was sized for 10px type; a 15px badge in that box has nowhere to sit.
+  padding: `2px 9px`,
   borderRadius: borderRadius.full,
   whiteSpace: 'nowrap',
 };
@@ -88,7 +101,7 @@ const manualBadgeStyle: React.CSSProperties = {
 const editButtonStyle: React.CSSProperties = {
   background: 'none',
   border: 'none',
-  fontSize: typography.sizes.xs,
+  fontSize: dossierType.small,
   color: colors.softBurgundy,
   cursor: 'pointer',
   padding: `2px 6px`,
@@ -106,7 +119,7 @@ const inputContainerStyle: React.CSSProperties = {
 
 const inputStyle: React.CSSProperties = {
   flex: 1,
-  fontSize: typography.sizes.sm,
+  fontSize: dossierType.body,
   fontFamily: typography.bodyFontFamily,
   padding: `4px ${spacing.xs}px`,
   border: `1px solid ${colors.border}`,
@@ -117,7 +130,7 @@ const inputStyle: React.CSSProperties = {
 };
 
 const smallButtonStyle: React.CSSProperties = {
-  fontSize: typography.sizes.xs,
+  fontSize: dossierType.small,
   fontFamily: typography.bodyFontFamily,
   fontWeight: typography.weights.medium,
   padding: `3px 8px`,
@@ -140,7 +153,7 @@ const cancelButtonStyle: React.CSSProperties = {
 };
 
 const errorMsgStyle: React.CSSProperties = {
-  fontSize: typography.sizes.xs,
+  fontSize: dossierType.small,
   color: colors.error,
   marginTop: 2,
 };

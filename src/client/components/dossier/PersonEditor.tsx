@@ -3,6 +3,7 @@ import { colors, radii, typography } from '../../design-system/tokens';
 import type { Person, PersonGeneration } from '../../../shared/interfaces/person';
 import { cardHeadStyle, cardTitleStyle } from './board-tones';
 import { toneGlyphStyle, tonedCardStyle } from './accent-tones';
+import { DossierIcon, dossierType } from './dossier-icons';
 
 /**
  * The form behind every node on the family tree.
@@ -19,9 +20,9 @@ import { toneGlyphStyle, tonedCardStyle } from './accent-tones';
 const labelStyle: React.CSSProperties = {
   display: 'block',
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.eyebrow,
+  fontSize: dossierType.small,
   fontWeight: typography.weights.medium,
-  letterSpacing: '0.16em',
+  letterSpacing: '0.14em',
   textTransform: 'uppercase',
   color: colors.inkFaint,
   marginBottom: 5,
@@ -35,7 +36,7 @@ const inputStyle: React.CSSProperties = {
   border: `1px solid ${colors.linenShade}`,
   background: colors.porcelain,
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.small,
+  fontSize: dossierType.small,
   color: colors.ink,
 };
 
@@ -60,7 +61,7 @@ const saveStyle: React.CSSProperties = {
   background: '#A05A7A',
   color: colors.textOnAccent,
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.labelLoose,
+  fontSize: dossierType.small,
   fontWeight: typography.weights.medium,
 };
 
@@ -72,7 +73,7 @@ const quietStyle: React.CSSProperties = {
   background: 'transparent',
   color: colors.inkMuted,
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.labelLoose,
+  fontSize: dossierType.small,
   fontWeight: typography.weights.medium,
 };
 
@@ -86,12 +87,16 @@ const removeStyle: React.CSSProperties = {
 const hintStyle: React.CSSProperties = {
   margin: '11px 0 0',
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.caption,
+  fontSize: dossierType.small,
   lineHeight: 1.5,
   color: colors.inkMuted,
 };
 
+// Longer than the tree's own labels on purpose: these are the options in a
+// picker, where the user has to choose between them, not headings above rows
+// where the people underneath already say which rung is which.
 const GENERATION_LABELS: Record<PersonGeneration, string> = {
+  grandparent: 'Her grandparents’ generation',
   elder: 'Her parents’ generation',
   peer: 'Her own generation',
   younger: 'Younger — children, nieces, pets',
@@ -174,9 +179,9 @@ export function PersonEditor({
       data-testid="person-editor"
     >
       <div style={cardHeadStyle}>
-        <i style={toneGlyphStyle('kin')} aria-hidden="true">
-          &#9901;
-        </i>
+        <span style={toneGlyphStyle('kin')} aria-hidden="true">
+          <DossierIcon name="people" size={16} />
+        </span>
         <h2 style={cardTitleStyle}>{person ? 'Edit' : 'Add someone'}</h2>
       </div>
 

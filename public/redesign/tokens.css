@@ -1,0 +1,85 @@
+/* Shared foundation for the five dossier redesign concepts.
+   Palette and type lifted verbatim from src/client/design-system/tokens.ts so the
+   mockups can be judged on layout rather than on colour drift. */
+@import url('https://fonts.googleapis.com/css2?family=Gloock&family=Outfit:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --claret: #8C2F45;
+  --claret-light: #B14A62;
+  --claret-deep: #6B1F32;
+  --gold: #B08C4F;
+  --gold-light: #C09A5E;
+  --blush: #F2D4D8;
+  --cream: #FFF9F5;
+  --paper: #FFFFFF;
+  --ink: #2A2226;
+  --ink-muted: #756A70;
+  --ink-faint: #A3959C;
+  --border: #EDE6E0;
+  --border-subtle: #F2ECE7;
+  --sage: #7C8C6B;
+
+  --display: 'Gloock', 'Playfair Display', Georgia, serif;
+  --body: 'Outfit', 'Inter', system-ui, sans-serif;
+
+  /* Type scale — every step is >= 15px. The old board's 11px eyebrows and 13px
+     card body were the single biggest legibility complaint. */
+  --t-hero: 56px;
+  --t-xl: 34px;
+  --t-lg: 24px;
+  --t-md: 19px;
+  --t-body: 17px;
+  --t-sm: 15px;
+
+  --r-lg: 28px;
+  --r-md: 18px;
+  --r-sm: 12px;
+  --r-pill: 999px;
+
+  --shadow-card: 0 1px 2px rgba(42, 34, 38, 0.04), 0 8px 24px rgba(42, 34, 38, 0.06);
+  --shadow-lift: 0 2px 4px rgba(42, 34, 38, 0.06), 0 18px 48px rgba(42, 34, 38, 0.10);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--body);
+  font-size: var(--t-body);
+  line-height: 1.55;
+  color: var(--ink);
+  background: #EFE7E0;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, .display { font-family: var(--display); font-weight: 400; letter-spacing: -0.01em; }
+
+/* Icons: 24px stroke set, currentColor. Inline <svg> via <use> so every concept
+   draws from one sprite and icon weight stays consistent across all five. */
+.i { width: 24px; height: 24px; flex: none; stroke: currentColor; fill: none;
+     stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.i-lg { width: 30px; height: 30px; }
+.i-sm { width: 19px; height: 19px; }
+
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* Focus visible everywhere — the old board relied on the browser default over a
+   cream fill, which was effectively invisible. */
+:focus-visible { outline: 3px solid var(--claret-light); outline-offset: 3px; border-radius: 6px; }
+
+button { font: inherit; color: inherit; cursor: pointer; border: none; background: none; }
+
+.chooser {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: 22px; z-index: 90;
+  display: flex; gap: 6px; align-items: center;
+  padding: 8px; border-radius: var(--r-pill);
+  background: rgba(28, 22, 25, 0.92); backdrop-filter: blur(14px);
+  box-shadow: var(--shadow-lift);
+}
+.chooser a {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 16px; border-radius: var(--r-pill);
+  font-size: var(--t-sm); font-weight: 500; color: rgba(255, 249, 245, 0.72);
+  text-decoration: none; white-space: nowrap;
+}
+.chooser a:hover { color: #fff; background: rgba(255, 255, 255, 0.10); }
+.chooser a[aria-current='page'] { color: var(--ink); background: var(--cream); }

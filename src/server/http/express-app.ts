@@ -265,6 +265,65 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
     ),
   );
 
+  // --- Her people, his tasks, his corrections ---
+  //
+  // All three used to live in localStorage, so the family tree and the to-do
+  // ticks vanished on a new device and a hand-typed correction never left the
+  // browser. These are the routes that make them real.
+
+  app.get(
+    '/api/session/:id/people',
+    scoped(deps, (routes, req) => routes.getSessionPeople(pathParam(req, 'id'))),
+  );
+
+  app.post(
+    '/api/session/:id/people',
+    scoped(deps, (routes, req) => routes.savePerson(pathParam(req, 'id'), req.body)),
+  );
+
+  app.delete(
+    '/api/session/:id/people/:personId',
+    scoped(deps, (routes, req) =>
+      routes.deletePerson(pathParam(req, 'id'), pathParam(req, 'personId')),
+    ),
+  );
+
+  app.get(
+    '/api/session/:id/tasks',
+    scoped(deps, (routes, req) => routes.getSessionTasks(pathParam(req, 'id'))),
+  );
+
+  app.post(
+    '/api/session/:id/tasks',
+    scoped(deps, (routes, req) => routes.saveTask(pathParam(req, 'id'), req.body)),
+  );
+
+  app.delete(
+    '/api/session/:id/tasks/:taskId',
+    scoped(deps, (routes, req) =>
+      routes.deleteTask(pathParam(req, 'id'), pathParam(req, 'taskId')),
+    ),
+  );
+
+  app.get(
+    '/api/session/:id/manual',
+    scoped(deps, (routes, req) => routes.getManualValues(pathParam(req, 'id'))),
+  );
+
+  app.put(
+    '/api/session/:id/manual/:fieldId',
+    scoped(deps, (routes, req) =>
+      routes.setManualValue(pathParam(req, 'id'), pathParam(req, 'fieldId'), req.body),
+    ),
+  );
+
+  app.delete(
+    '/api/session/:id/manual/:fieldId',
+    scoped(deps, (routes, req) =>
+      routes.clearManualValue(pathParam(req, 'id'), pathParam(req, 'fieldId')),
+    ),
+  );
+
   // Registered last of the /api/session routes, so the more specific patterns
   // above are matched first.
   app.get(

@@ -164,4 +164,48 @@ describe('EventRouter', () => {
       expect(emitter.events[0].type).toBe('preference_update');
     });
   });
+
+  describe('person and task emission', () => {
+    it('puts the session id at the top of a person_update payload', () => {
+      // Load-bearing, not cosmetic: `resolveBroadcastSessionId` reads
+      // `payload.sessionId` to pick a socket, and a `Person` does not carry one.
+      // Nested or missing, the event would be dropped before it reached anyone.
+      router.emitPersonUpdate('sess-1', {
+        id: 'person-1',
+        name: 'Nadia',
+        relationship: 'Her sister',
+        generation: 'peer',
+        source: 'discovered',
+        updatedAt: new Date().toISOString(),
+      }, true);
+
+      expect(emitter.events).toHaveLength(1);
+      expect(emitter.events[0].type).toBe('person_update');
+      expect(emitter.events[0].payload).toMatchObject({
+        sessionId: 'sess-1',
+        isNew: true,
+        person: { name: 'Nadia' },
+      });
+    });
+
+    it('emits task_update with the session id and the tick state', () => {
+      const now = new Date().toISOString();
+
+      router.emitTaskUpdate('sess-1', {
+        id: 'task-1',
+        title: 'Book the table',
+        done: false,
+        source: 'discovered',
+        createdAt: now,
+        updatedAt: now,
+      }, false);
+
+      expect(emitter.events[0].type).toBe('task_update');
+      expect(emitter.events[0].payload).toMatchObject({
+        sessionId: 'sess-1',
+        isNew: false,
+        task: { title: 'Book the table', done: false },
+      });
+    });
+  });
 });

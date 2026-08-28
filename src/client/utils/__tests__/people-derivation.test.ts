@@ -55,9 +55,27 @@ describe('groupByGeneration', () => {
     expect(rows.peer.map((p) => p.id)).toEqual(['leah', 'gap']);
   });
 
-  it('keeps every row present even when empty, so the tree can draw three rows', () => {
+  it('keeps every row present even when empty, so the tree can draw four rows', () => {
     const rows = groupByGeneration([]);
-    expect(rows).toEqual({ elder: [], peer: [], younger: [] });
+    expect(rows).toEqual({ grandparent: [], elder: [], peer: [], younger: [] });
+  });
+
+  it('draws grandparents on their own rung, not folded in with her parents', () => {
+    const rows = groupByGeneration([
+      person({ id: 'miriam', name: 'Miriam', generation: 'grandparent' }),
+      person({ id: 'ruth', name: 'Ruth', generation: 'elder' }),
+    ]);
+    expect(rows.grandparent.map((p) => p.id)).toEqual(['miriam']);
+    expect(rows.elder.map((p) => p.id)).toEqual(['ruth']);
+  });
+
+  it('falls back rather than dropping a row written by an older build', () => {
+    // A stored PERSON# row predating `grandparent` has a generation this build
+    // may not recognise. Losing her would be worse than drawing her a rung off.
+    const rows = groupByGeneration([
+      person({ id: 'legacy', generation: 'ancestor' as never }),
+    ]);
+    expect(rows.elder.map((p) => p.id)).toEqual(['legacy']);
   });
 });
 

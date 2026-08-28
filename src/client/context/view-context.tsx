@@ -10,9 +10,11 @@ import React, {
 /**
  * Which of the app's two top-level surfaces is on screen.
  *
- * `chat` is the four-column shell — icon rail, conversation list, chat, brief.
- * `dossier` is the full-page profile control panel, which replaces columns 2–4
- * while keeping the icon rail and the window chrome (`full-profile.html:19`).
+ * Both are the same four-column shell — icon rail, conversation list, chat,
+ * brief. The surface decides only what the *middle* column shows: the transcript,
+ * or her file. It used to replace columns 2–4 with one wide board, which meant
+ * opening her file cost you the conversation list and the rail that says what is
+ * coming next; the board is now a thread beside them.
  */
 export type Surface = 'chat' | 'dossier';
 

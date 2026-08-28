@@ -15,7 +15,10 @@ import type {
   PreferenceHistoryEntry,
   PreferenceWithHistory,
 } from '../../shared/interfaces/preference';
+import { DEFAULT_GENERATION, isPersonGeneration } from '../../shared/interfaces/person';
+import type { Person, PersonGeneration } from '../../shared/interfaces/person';
 import type { SessionData } from '../../shared/interfaces/session';
+import type { Task } from '../../shared/interfaces/task';
 import type {
   PreferenceInput,
   PreferenceRef,
@@ -25,13 +28,19 @@ import type {
   StorageInterface,
 } from './storage-interface';
 import {
+  MANUAL_PREFIX,
   META_SK,
   MSG_PREFIX,
+  PERSON_PREFIX,
   PREF_PREFIX,
+  TASK_PREFIX,
+  manualSk,
   msgSk,
+  personSk,
   prefSk,
   sessionGsi1sk,
   sessionPk,
+  taskSk,
   userGsi1pk,
 } from './keys';
 import { config } from '../config';
@@ -174,8 +183,12 @@ export class DynamoDBStore implements StorageInterface {
   async clearSession(sessionId: string): Promise<void> {
     const prefKeys = await this.collectItemKeys(sessionId, PREF_PREFIX);
     const msgKeys = await this.collectItemKeys(sessionId, MSG_PREFIX);
+    // People, tasks and manual values are as much "what Valentin knows" as the
+    // preferences are. A reset that left her family standing would look to the
+    // user like the reset had failed.
+    const otherKeys = await this.collectOwnedItemKeys(sessionId);
 
-    await this.batchDeleteAll([...prefKeys, ...msgKeys]);
+    await this.batchDeleteAll([...prefKeys, ...msgKeys, ...otherKeys]);
 
     // Zero the counters rather than decrementing, and tolerate a missing session
     // so the documented "no-op for unknown session ids" actually holds.
@@ -189,6 +202,7 @@ export class DynamoDBStore implements StorageInterface {
       sessionId,
       preferencesDeleted: prefKeys.length,
       messagesDeleted: msgKeys.length,
+      recordsDeleted: otherKeys.length,
     });
   }
 
@@ -198,6 +212,7 @@ export class DynamoDBStore implements StorageInterface {
     const keys = [
       ...(await this.collectItemKeys(sessionId, PREF_PREFIX)),
       ...(await this.collectItemKeys(sessionId, MSG_PREFIX)),
+      ...(await this.collectOwnedItemKeys(sessionId)),
       { pk: sessionPk(this.userId, sessionId), sk: META_SK },
     ];
 
@@ -425,6 +440,170 @@ export class DynamoDBStore implements StorageInterface {
     return result.Item ? toPreferenceWithHistory(result.Item) : null;
   }
 
+  // --- Her people ---
+
+  async savePerson(sessionId: string, person: Person): Promise<Person> {
+    const [saved] = await this.savePeopleBatch(sessionId, [person]);
+    return saved;
+  }
+
+  async savePeopleBatch(sessionId: string, people: readonly Person[]): Promise<Person[]> {
+    if (people.length === 0) return [];
+
+    const pk = sessionPk(this.userId, sessionId);
+    const now = new Date().toISOString();
+    const records = people.map<Person>((person) => ({ ...person, updatedAt: now }));
+
+    for (const batch of chunk(records, BATCH_WRITE_LIMIT)) {
+      await this.batchWrite(
+        batch.map((record) => ({
+          PutRequest: {
+            Item: this.withTtl({
+              pk,
+              sk: personSk(record.id),
+              sessionId,
+              ...record,
+              entityType: 'Person',
+            }),
+          },
+        })),
+      );
+    }
+
+    // Touched, but not counted: `preferenceCount` drives "21 of 21" and a family
+    // is not a profile field. Incrementing it would inflate a number the board
+    // reads as field coverage.
+    await this.updateSessionIfExists(sessionId, 'SET lastActivity = :now', { ':now': now });
+
+    logger.info('people.saved', { sessionId, userId: this.userId, count: records.length });
+    return records;
+  }
+
+  async getPeopleBySession(sessionId: string): Promise<Person[]> {
+    const items = await this.queryAll({
+      TableName: this.tableName,
+      KeyConditionExpression: 'pk = :pk AND begins_with(sk, :prefix)',
+      ExpressionAttributeValues: {
+        ':pk': sessionPk(this.userId, sessionId),
+        ':prefix': PERSON_PREFIX,
+      },
+    });
+
+    return items.map(toPerson);
+  }
+
+  async deletePerson(sessionId: string, personId: string): Promise<void> {
+    await this.docClient.send(
+      new DeleteCommand({
+        TableName: this.tableName,
+        Key: { pk: sessionPk(this.userId, sessionId), sk: personSk(personId) },
+      }),
+    );
+  }
+
+  // --- What to do next ---
+
+  async saveTask(sessionId: string, task: Task): Promise<Task> {
+    const [saved] = await this.saveTasksBatch(sessionId, [task]);
+    return saved;
+  }
+
+  async saveTasksBatch(sessionId: string, tasks: readonly Task[]): Promise<Task[]> {
+    if (tasks.length === 0) return [];
+
+    const pk = sessionPk(this.userId, sessionId);
+    const now = new Date().toISOString();
+    const records = tasks.map<Task>((task) => ({ ...task, updatedAt: now }));
+
+    for (const batch of chunk(records, BATCH_WRITE_LIMIT)) {
+      await this.batchWrite(
+        batch.map((record) => ({
+          PutRequest: {
+            Item: this.withTtl({
+              pk,
+              sk: taskSk(record.id),
+              sessionId,
+              ...record,
+              entityType: 'Task',
+            }),
+          },
+        })),
+      );
+    }
+
+    await this.updateSessionIfExists(sessionId, 'SET lastActivity = :now', { ':now': now });
+    return records;
+  }
+
+  async getTasksBySession(sessionId: string): Promise<Task[]> {
+    const items = await this.queryAll({
+      TableName: this.tableName,
+      KeyConditionExpression: 'pk = :pk AND begins_with(sk, :prefix)',
+      ExpressionAttributeValues: {
+        ':pk': sessionPk(this.userId, sessionId),
+        ':prefix': TASK_PREFIX,
+      },
+    });
+
+    return items.map(toTask);
+  }
+
+  async deleteTask(sessionId: string, taskId: string): Promise<void> {
+    await this.docClient.send(
+      new DeleteCommand({
+        TableName: this.tableName,
+        Key: { pk: sessionPk(this.userId, sessionId), sk: taskSk(taskId) },
+      }),
+    );
+  }
+
+  // --- Corrections the user made by hand ---
+
+  async setManualValue(sessionId: string, fieldId: string, value: string): Promise<void> {
+    await this.docClient.send(
+      new PutCommand({
+        TableName: this.tableName,
+        Item: this.withTtl({
+          pk: sessionPk(this.userId, sessionId),
+          sk: manualSk(fieldId),
+          sessionId,
+          fieldId,
+          value,
+          updatedAt: new Date().toISOString(),
+          entityType: 'ManualValue',
+        }),
+      }),
+    );
+  }
+
+  async getManualValues(sessionId: string): Promise<Record<string, string>> {
+    const items = await this.queryAll({
+      TableName: this.tableName,
+      KeyConditionExpression: 'pk = :pk AND begins_with(sk, :prefix)',
+      ExpressionAttributeValues: {
+        ':pk': sessionPk(this.userId, sessionId),
+        ':prefix': MANUAL_PREFIX,
+      },
+    });
+
+    const values: Record<string, string> = {};
+    for (const item of items) {
+      const fieldId = item.fieldId as string | undefined;
+      const value = item.value as string | undefined;
+      if (fieldId && typeof value === 'string') values[fieldId] = value;
+    }
+    return values;
+  }
+
+  async clearManualValue(sessionId: string, fieldId: string): Promise<void> {
+    await this.docClient.send(
+      new DeleteCommand({
+        TableName: this.tableName,
+        Key: { pk: sessionPk(this.userId, sessionId), sk: manualSk(fieldId) },
+      }),
+    );
+  }
+
   // --- Helpers ---
 
   /** Attach the table's `ttl` attribute when this store was given a lifetime */
@@ -480,6 +659,22 @@ export class DynamoDBStore implements StorageInterface {
     });
 
     return items.map((item) => ({ pk: item.pk as string, sk: item.sk as string }));
+  }
+
+  /**
+   * Keys of every person, task and manual value in a session.
+   *
+   * Kept as one helper rather than three call-site queries so that adding a
+   * fourth item type later cannot leave one of the two session sweeps behind —
+   * an item missed by `deleteSession` outlives the session that owned it and is
+   * then unreachable, since nothing will ever query that partition again.
+   */
+  private async collectOwnedItemKeys(sessionId: string): Promise<ItemKey[]> {
+    const keys: ItemKey[] = [];
+    for (const prefix of [PERSON_PREFIX, TASK_PREFIX, MANUAL_PREFIX]) {
+      keys.push(...(await this.collectItemKeys(sessionId, prefix)));
+    }
+    return keys;
   }
 
   /** Delete an unbounded set of keys, chunked to the BatchWriteItem limit */
@@ -575,6 +770,42 @@ function toPreferenceWithHistory(item: Record<string, unknown>): PreferenceWithH
     createdAt: item.createdAt as string,
     updatedAt: item.updatedAt as string,
     history: (item.history as PreferenceHistoryEntry[]) ?? [],
+  };
+}
+
+function toPerson(item: Record<string, unknown>): Person {
+  const generation = item.generation;
+  return {
+    id: item.id as string,
+    // Empty string is not coerced to null here: `isGap` already treats a blank
+    // name as a gap, so both spellings render the same dashed node, and folding
+    // them would lose what was actually written.
+    name: (item.name as string | null | undefined) ?? null,
+    relationship: item.relationship as string,
+    // A row written by an older build can carry a generation this one does not
+    // know. Drawing her a rung off is a smaller loss than dropping her.
+    generation: isPersonGeneration(generation)
+      ? (generation as PersonGeneration)
+      : DEFAULT_GENERATION,
+    birthday: (item.birthday as string | null | undefined) ?? null,
+    note: (item.note as string | null | undefined) ?? null,
+    source: item.source === 'discovered' ? 'discovered' : 'manual',
+    updatedAt: item.updatedAt as string,
+  };
+}
+
+function toTask(item: Record<string, unknown>): Task {
+  return {
+    id: item.id as string,
+    title: item.title as string,
+    due: (item.due as string | null | undefined) ?? null,
+    note: (item.note as string | null | undefined) ?? null,
+    // Anything other than a stored `true` reads as open. A row missing the
+    // attribute must not present as done, or the list silently forgets work.
+    done: item.done === true,
+    source: item.source === 'discovered' ? 'discovered' : 'manual',
+    createdAt: item.createdAt as string,
+    updatedAt: item.updatedAt as string,
   };
 }
 

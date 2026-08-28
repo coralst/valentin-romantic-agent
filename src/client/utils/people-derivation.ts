@@ -1,4 +1,9 @@
-import { isGap, type Person, type PersonGeneration } from '../../shared/interfaces/person';
+import {
+  DEFAULT_GENERATION,
+  isGap,
+  type Person,
+  type PersonGeneration,
+} from '../../shared/interfaces/person';
 
 /** A person plus how far away their next birthday is. */
 export interface UpcomingBirthday {
@@ -10,19 +15,42 @@ export interface UpcomingBirthday {
 const DAY_MS = 86_400_000;
 
 /** The rows the tree draws, top to bottom. */
-export const GENERATION_ORDER: PersonGeneration[] = ['elder', 'peer', 'younger'];
+export const GENERATION_ORDER: PersonGeneration[] = [
+  'grandparent',
+  'elder',
+  'peer',
+  'younger',
+];
+
+/** What each row is called above the cards. */
+export const GENERATION_LABELS: Readonly<Record<PersonGeneration, string>> = {
+  grandparent: 'Grandparents',
+  elder: 'Her parents and their siblings',
+  peer: 'Her generation',
+  younger: 'Younger',
+};
 
 /**
- * Group people into the tree's three rows, named people before gaps.
+ * Group people into the tree's four rows, named people before gaps.
  *
  * Gaps sort last within their row so the tree reads as "here is what I know,
  * and here is what I am missing" rather than interleaving the two.
+ *
+ * An unrecognised `generation` falls back rather than throwing: this reads rows
+ * written by an older version of the app, and a person who arrives with a value
+ * this build has never heard of is still someone in her family.
  */
 export function groupByGeneration(people: Person[]): Record<PersonGeneration, Person[]> {
-  const rows: Record<PersonGeneration, Person[]> = { elder: [], peer: [], younger: [] };
+  const rows: Record<PersonGeneration, Person[]> = {
+    grandparent: [],
+    elder: [],
+    peer: [],
+    younger: [],
+  };
 
   for (const person of people) {
-    rows[person.generation].push(person);
+    const row = rows[person.generation] ?? rows[DEFAULT_GENERATION];
+    row.push(person);
   }
 
   for (const generation of GENERATION_ORDER) {

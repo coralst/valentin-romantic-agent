@@ -175,6 +175,25 @@ export const PROFILE_FIELD_REGISTRY: readonly ProfileFieldDefinition[] = [
       { category: 'hobbies', key: 'interests' },
     ],
   },
+  /*
+   * Her week is a list of "Day@what it is" items, not free prose, because the
+   * board draws it as seven bars — one per weekday. Storing "pottery on
+   * Tuesdays and her mother on Sundays" as a sentence would render as a
+   * sentence, and the whole point of the tile is that you can see at a glance
+   * which evenings are already hers.
+   */
+  {
+    id: 'weekly_rhythm',
+    label: 'Her Week',
+    valueType: 'list',
+    section: 'interests',
+    mappings: [
+      { category: 'hobbies', key: 'weekly rhythm' },
+      { category: 'hobbies', key: 'her week' },
+      { category: 'hobbies', key: 'routine' },
+      { category: 'hobbies', key: 'weekly routine' },
+    ],
+  },
   {
     id: 'travel_destination',
     label: 'Dream Destination',
@@ -207,6 +226,27 @@ export const PROFILE_FIELD_REGISTRY: readonly ProfileFieldDefinition[] = [
       { category: 'personality_traits', key: 'favorite color' },
     ],
   },
+  /*
+   * A palette, not one more colour.
+   *
+   * `favorite_color` answers "what is her colour" and has exactly one value.
+   * What a gift actually needs is the range she wears, in her words — a scarf
+   * in "oat" is safe and a scarf in the one colour she named as her favourite
+   * may be the colour she already owns in six things. Kept as her named shades
+   * rather than hex, because "deep sage" is a decision and #6B7A5E is a guess.
+   */
+  {
+    id: 'color_palette',
+    label: 'Her Palette',
+    valueType: 'list',
+    section: 'style',
+    mappings: [
+      { category: 'gifts', key: 'color palette' },
+      { category: 'gifts', key: 'colour palette' },
+      { category: 'gifts', key: 'palette' },
+      { category: 'gifts', key: 'colors she wears' },
+    ],
+  },
   {
     id: 'fragrance_preference',
     label: 'Fragrance',
@@ -230,14 +270,31 @@ export const PROFILE_FIELD_REGISTRY: readonly ProfileFieldDefinition[] = [
    * resolving it to a specific field would silently file the wrong fact.
    */
   {
+    id: 'bra_size',
+    label: 'מידת חזיה',
+    valueType: 'text',
+    section: 'sizes',
+    mappings: [
+      { category: 'gifts', key: 'bra size' },
+      { category: 'gifts', key: 'cup size' },
+      { category: 'gifts', key: 'lingerie size' },
+    ],
+  },
+  {
+    /*
+     * Labelled "Trousers" rather than "Clothing Size" because the card now
+     * shows three measurements side by side, and next to a bra size and a
+     * shoulder width the generic word reads as though it covered them.
+     */
     id: 'clothing_size',
-    label: 'Clothing Size',
+    label: 'Trousers',
     valueType: 'text',
     section: 'sizes',
     mappings: [
       { category: 'gifts', key: 'clothing size' },
       { category: 'gifts', key: 'dress size' },
       { category: 'gifts', key: 'clothes size' },
+      { category: 'gifts', key: 'trouser size' },
     ],
   },
   {
@@ -261,6 +318,17 @@ export const PROFILE_FIELD_REGISTRY: readonly ProfileFieldDefinition[] = [
       { category: 'gifts', key: 'finger size' },
     ],
   },
+  {
+    id: 'shoulder_width',
+    label: 'Shoulders',
+    valueType: 'text',
+    section: 'sizes',
+    mappings: [
+      { category: 'gifts', key: 'shoulder width' },
+      { category: 'gifts', key: 'shoulders' },
+      { category: 'gifts', key: 'shoulder measurement' },
+    ],
+  },
   // Gifts
   {
     id: 'gift_budget',
@@ -280,6 +348,26 @@ export const PROFILE_FIELD_REGISTRY: readonly ProfileFieldDefinition[] = [
     mappings: [
       { category: 'gifts', key: 'wish list' },
       { category: 'gifts', key: 'wishlist' },
+    ],
+  },
+  /*
+   * The shortlist is his, the wish list is hers.
+   *
+   * They look similar enough to merge and must not be: "she mentioned wanting a
+   * glaze set" is a fact about her, while "I am weighing up the glaze set at
+   * £62" is a decision he is making. The board shows the second against his
+   * budget, and folding them together would price her own words.
+   */
+  {
+    id: 'gift_shortlist',
+    label: 'Gift Shortlist',
+    valueType: 'list',
+    section: 'gifts',
+    mappings: [
+      { category: 'gifts', key: 'gift shortlist' },
+      { category: 'gifts', key: 'shortlist' },
+      { category: 'gifts', key: 'gift ideas' },
+      { category: 'gifts', key: 'considering' },
     ],
   },
   {

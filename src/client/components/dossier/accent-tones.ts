@@ -1,5 +1,6 @@
 import { colors, radii, typography } from '../../design-system/tokens';
 import { cardStyle } from './board-tones';
+import { dossierType } from './dossier-icons';
 
 /**
  * The dossier's semantic accent families — one hue per kind of knowledge.
@@ -108,8 +109,8 @@ export function toneCountStyle(tone: AccentTone): React.CSSProperties {
   return {
     flex: 'none',
     fontFamily: typography.bodyFontFamily,
-    fontSize: typography.px.caption,
-    fontWeight: typography.weights.medium,
+    fontSize: dossierType.small,
+    fontWeight: typography.weights.semibold,
     color: family.ink,
     background: family.tint,
     borderRadius: radii.pill,
@@ -119,26 +120,30 @@ export function toneCountStyle(tone: AccentTone): React.CSSProperties {
 }
 
 /**
- * The small square glyph that opens a card title.
+ * The tinted square that opens a card title, holding the card's icon.
  *
  * Carries the family colour at the start of the line, so the hue is legible even
  * to someone reading the board one card at a time rather than at a glance — and
  * so the grouping survives a monochrome print or a colour-blind reader, who
  * still gets the icon and the title.
+ *
+ * It used to hold a dingbat — `&#9901;`, `&#9737;` — at 10px. Now it is a box for a
+ * `DossierIcon`, which is why it sets `color` and no `fontSize`: the icon strokes
+ * in `currentColor`, so the family ink reaches it without a second prop. 26px
+ * rather than 18 because a 16px stroke icon needs the room, and because an 18px
+ * chip beside a 15px title was the smaller of the two.
  */
 export function toneGlyphStyle(tone: AccentTone): React.CSSProperties {
   const family = ACCENT_TONES[tone];
   return {
     flex: 'none',
-    width: 18,
-    height: 18,
-    borderRadius: 5,
+    width: 26,
+    height: 26,
+    borderRadius: 8,
     display: 'grid',
     placeItems: 'center',
     background: family.tint,
     color: family.ink,
-    fontSize: typography.px.tiny,
-    fontStyle: 'normal',
     lineHeight: 1,
   };
 }

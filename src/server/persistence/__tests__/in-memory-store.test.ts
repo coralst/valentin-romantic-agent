@@ -3,7 +3,9 @@ import * as fc from 'fast-check';
 import { InMemoryStoreFactory } from '../in-memory-store';
 import type { StorageInterface } from '../storage-interface';
 import type { ChatMessage } from '../../../shared/interfaces/message';
+import type { Person } from '../../../shared/interfaces/person';
 import type { PreferenceCategory } from '../../../shared/interfaces/preference';
+import type { Task } from '../../../shared/interfaces/task';
 import { PREFERENCE_CATEGORIES } from '../../../shared/constants/categories';
 
 /**
@@ -438,5 +440,233 @@ describe('session metadata', () => {
 
     expect(await store.getSession(sessionId)).toBeNull();
     expect(await store.getMessagesBySession(sessionId)).toEqual([]);
+  });
+});
+
+// --- People, tasks and manual values ---
+//
+// The three item types the one-page dossier added. Each is exercised for the
+// property its band depends on: a person survives a rename, a task remembers its
+// tick, and a manual correction is separate from the preference it overrides.
+
+describe('her people', () => {
+  function person(overrides: Partial<Person> = {}): Person {
+    return {
+      id: 'p1',
+      name: 'Leah',
+      relationship: 'Older sister',
+      generation: 'peer',
+      birthday: null,
+      note: null,
+      source: 'manual',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  it('round trips a person', async () => {
+    const store = newStore();
+    const sessionId = await store.createSession();
+
+    await store.savePerson(sessionId, person({ birthday: '1988-09-09' }));
+
+    const [read] = await store.getPeopleBySession(sessionId);
+    expect(read).toMatchObject({ name: 'Leah', relationship: 'Older sister', birthday: '1988-09-09' });
+  });
+
+  it('treats a second write of the same id as a rename, not a second person', async () => {
+    // Keyed by id precisely so the most likely edit a family record gets — a
+    // name — does not duplicate the row.
+    const store = newStore();
+    const sessionId = await store.createSession();
+
+    await store.savePerson(sessionId, person({ name: null }));
+    await store.savePerson(sessionId, person({ name: 'Nadia' }));
+
+    const people = await store.getPeopleBySession(sessionId);
+    expect(people).toHaveLength(1);
+    expect(people[0].name).toBe('Nadia');
+  });
+
+  it('keeps a null name rather than coercing it to a string', async () => {
+    // `name: null` is how a gap is recorded, and a gap is what draws the dashed
+    // "ask her" node. Coercing it would silently delete the prompt.
+    const store = newStore();
+    const sessionId = await store.createSession();
+
+    await store.savePerson(sessionId, person({ name: null, relationship: 'Uncle' }));
+
+    expect((await store.getPeopleBySession(sessionId))[0].name).toBeNull();
+  });
+
+  it('falls back rather than storing a generation the tree cannot draw', async () => {
+    const store = newStore();
+    const sessionId = await store.createSession();
+
+    await store.savePerson(sessionId, person({ generation: 'ancestor' as never }));
+
+    expect((await store.getPeopleBySession(sessionId))[0].generation).toBe('elder');
+  });
+
+  it('does not count a person as a profile field', async () => {
+    // preferenceCount drives the board's field coverage. A family is not a field,
+    // and counting one would inflate a number the user reads as "how much I know".
+    const store = newStore();
+    const sessionId = await store.createSession();
+
+    await store.savePeopleBatch(sessionId, [person(), person({ id: 'p2', name: 'Noa' })]);
+
+    expect((await store.getSession(sessionId))!.preferenceCount).toBe(0);
+  });
+
+  it('deletes one person and leaves the rest', async () => {
+    const store = newStore();
+    const sessionId = await store.createSession();
+    await store.savePeopleBatch(sessionId, [person(), person({ id: 'p2', name: 'Noa' })]);
+
+    await store.deletePerson(sessionId, 'p1');
+
+    expect((await store.getPeopleBySession(sessionId)).map((p) => p.id)).toEqual(['p2']);
+  });
+});
+
+describe('his tasks', () => {
+  function task(overrides: Partial<Task> = {}): Task {
+    return {
+      id: 't1',
+      title: 'Book somewhere for the anniversary',
+      due: '2026-09-11',
+      note: null,
+      done: false,
+      source: 'discovered',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  it('remembers a tick across a read', async () => {
+    // The whole reason tasks are stored rather than derived: a derived list has
+    // no memory and would re-offer finished work the next morning.
+    const store = newStore();
+    const sessionId = await store.createSession();
+    await store.saveTask(sessionId, task());
+
+    await store.saveTask(sessionId, task({ done: true }));
+
+    const tasks = await store.getTasksBySession(sessionId);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].done).toBe(true);
+  });
+
+  it('deletes one task', async () => {
+    const store = newStore();
+    const sessionId = await store.createSession();
+    await store.saveTasksBatch(sessionId, [task(), task({ id: 't2', title: 'Draft the card' })]);
+
+    await store.deleteTask(sessionId, 't2');
+
+    expect((await store.getTasksBySession(sessionId)).map((t) => t.id)).toEqual(['t1']);
+  });
+});
+
+describe('manual corrections', () => {
+  it('stores a hand-entered value under its field id', async () => {
+    const store = newStore();
+    const sessionId = await store.createSession();
+
+    await store.setManualValue(sessionId, 'bra_size', '34B');
+    await store.setManualValue(sessionId, 'shoe_size', 'UK 6');
+
+    expect(await store.getManualValues(sessionId)).toEqual({
+      bra_size: '34B',
+      shoe_size: 'UK 6',
+    });
+  });
+
+  it('survives a later extraction of the same field', async () => {
+    // The correction has to win. Storing both in one row would make whichever
+    // landed second the winner, so a re-extraction would overwrite the user.
+    const store = newStore();
+    const sessionId = await store.createSession();
+    await store.setManualValue(sessionId, 'bra_size', '34B');
+
+    await store.savePreference({
+      sessionId,
+      category: 'gifts',
+      fieldId: 'bra_size',
+      key: 'bra size',
+      value: '36C',
+      confidence: 0.6,
+      sourceMessageId: 'm1',
+    });
+
+    expect((await store.getManualValues(sessionId)).bra_size).toBe('34B');
+  });
+
+  it('clearing one lets Valentin’s own guess show again', async () => {
+    const store = newStore();
+    const sessionId = await store.createSession();
+    await store.setManualValue(sessionId, 'bra_size', '34B');
+
+    await store.clearManualValue(sessionId, 'bra_size');
+
+    expect(await store.getManualValues(sessionId)).toEqual({});
+  });
+});
+
+describe('a reset sweeps every item type', () => {
+  it('clearSession removes people, tasks and manual values too', async () => {
+    // A reset that left her family standing would read to the user as a reset
+    // that had failed.
+    const store = newStore();
+    const sessionId = await store.createSession();
+    await store.savePerson(sessionId, {
+      id: 'p1',
+      name: 'Leah',
+      relationship: 'Older sister',
+      generation: 'peer',
+      birthday: null,
+      note: null,
+      source: 'manual',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    await store.saveTask(sessionId, {
+      id: 't1',
+      title: 'Draft the card',
+      due: null,
+      note: null,
+      done: false,
+      source: 'manual',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    await store.setManualValue(sessionId, 'bra_size', '34B');
+
+    await store.clearSession(sessionId);
+
+    expect(await store.getPeopleBySession(sessionId)).toEqual([]);
+    expect(await store.getTasksBySession(sessionId)).toEqual([]);
+    expect(await store.getManualValues(sessionId)).toEqual({});
+    expect(await store.getSession(sessionId)).not.toBeNull();
+  });
+
+  it('does not leak people across users holding the same session id', async () => {
+    const factory = new InMemoryStoreFactory();
+    const alice = factory.forUser('alice');
+    const bob = factory.forUser('bob');
+    const sessionId = await alice.createSession();
+    await alice.savePerson(sessionId, {
+      id: 'p1',
+      name: 'Leah',
+      relationship: 'Older sister',
+      generation: 'peer',
+      birthday: null,
+      note: null,
+      source: 'manual',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    expect(await bob.getPeopleBySession(sessionId)).toEqual([]);
   });
 });

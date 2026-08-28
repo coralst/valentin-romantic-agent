@@ -4,57 +4,72 @@ import { useProfileStoreContext } from '../context/profile-store-context';
 import { useChatContext } from '../context/chat-context';
 import { useOptionalDiscoveryContext } from '../context/discovery-context';
 import { useViewContext } from '../context/view-context';
-import { colors, insets, radii, typography } from '../design-system/tokens';
+import { colors, insets, typography } from '../design-system/tokens';
 import { PREFERENCE_CATEGORIES } from '../../shared/constants/categories';
 import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
-import { PROFILE_FIELD_REGISTRY, getDateFields } from '../utils/profile-field-registry';
-import {
-  deriveOccasions,
-  getDaysUntilOccasion,
-  getNextOccasion,
-} from '../utils/occasion-derivation';
-import { deriveTogetherDays, formatTogetherDays } from '../utils/together-days';
-import { rankUnfilledFields, type FieldGap } from '../utils/field-payoff';
+import { getDateFields } from '../utils/profile-field-registry';
+import { deriveOccasions } from '../utils/occasion-derivation';
+import { rankUnfilledFields } from '../utils/field-payoff';
 import { getAgeBucketFromValue } from '../utils/age-bucket';
 import { formatBirthdayValue } from '../utils/birthday-display';
 import { deriveCautions } from './brief/KeepInMind';
 import { IdentityHeader } from './dossier/IdentityHeader';
-import {
-  BOARD_HALF,
-  BOARD_THIRD,
-  BOARD_TWO_THIRDS,
-  CardBoard,
-  span,
-  spanAllStyle,
-} from './dossier/CardBoard';
-import { StatBar, type Stat } from './dossier/StatBar';
-import { DossierTabs, type DossierTab, type TabDefinition } from './dossier/DossierTabs';
-import { WhatsComing } from './dossier/WhatsComing';
-import { KeepInMindCard } from './dossier/KeepInMindCard';
-import { ConfirmMyGuesses, deriveGuesses, type Guess } from './dossier/ConfirmMyGuesses';
-import { WorthAskingNext } from './dossier/WorthAskingNext';
-import { AlsoMentioned } from './dossier/AlsoMentioned';
+import { HerSizes } from './dossier/HerSizes';
+import { HerPalette } from './dossier/HerPalette';
+import { GiftShortlist } from './dossier/GiftShortlist';
+import { HerWeek } from './dossier/HerWeek';
+import { FourWeekCalendar } from './dossier/FourWeekCalendar';
+import { WhatToDoNext } from './dossier/WhatToDoNext';
+import { DossierIcon, dossierType } from './dossier/dossier-icons';
 import { EverythingIKnow } from './dossier/EverythingIKnow';
 import { FamilyTree } from './dossier/FamilyTree';
-import { TheirBirthdays } from './dossier/TheirBirthdays';
 import { PersonEditor, type PersonDraft } from './dossier/PersonEditor';
+import { AlsoMentioned, groupUnmappedPreferences } from './dossier/AlsoMentioned';
 import { useOptionalPeopleContext } from '../context/people-context';
+import { useOptionalTasksContext } from '../context/tasks-context';
 import type { Person, PersonGeneration } from '../../shared/interfaces/person';
-import { countGaps } from '../utils/people-derivation';
+import {
+  parsePalette,
+  parseShortlist,
+  parseWeeklyRhythm,
+} from '../utils/list-field-parsing';
+import { buildAgenda, buildFourWeeks } from '../utils/four-week-calendar';
 
-/*
- * "17 June 1988 · mid-thirties · Gemini" — the same subtitle the rail builds, from
- * the same guarded formatter. See `birthday-display.ts`.
+/**
+ * Her file: three bands, read top to bottom, widest thing last.
+ *
+ *   1. the next four weeks   |   what to do next     (two halves)
+ *   2. everything I know about her                   (full width)
+ *   3. her family                                    (full width)
+ *
+ * WHY THIS AND NOT THE TRIAGE COLUMNS IT REPLACED. Those columns split one axis —
+ * time — three ways and then swept every timeless fact into a third column that
+ * was, honestly, a junk drawer. Two of the three also duplicated the brief rail,
+ * which already counts the anniversary down. Now there is exactly one countdown in
+ * the window, it lives in the rail, and the board is her portrait instead of a
+ * to-do list wearing a portrait's clothes.
+ *
+ * WHY THE TREE IS LAST AND FULL WIDTH. It is the only thing here with real
+ * structure — four generations and two gaps — and a tree drawn in a third of the
+ * measure is just an indented list. Given the whole width it can draw branches.
+ *
+ * WHERE IT RENDERS. In the chat column, where a conversation renders, with the
+ * conversation list and the brief rail still mounted beside it. It used to replace
+ * columns 2–4 with one wide board, which cost the user both — see the note in
+ * `context/view-context.tsx`.
+ *
+ * Every card reads from the same derivations the brief rail reads from
+ * (`deriveOccasions`, `deriveCautions`, `rankUnfilledFields`), so the two surfaces
+ * cannot disagree about what is known, what is next or what is dangerous. The
+ * board adds editing and settling; it does not add facts.
  */
 
 /**
- * The shell: a column flexbox whose first child is pinned and whose second
- * scrolls (`full-profile.html:21-22`).
+ * The shell: a column flexbox whose header is pinned and whose board scrolls.
  *
  * `minWidth` / `minHeight: 0` because this is a grid child of the window and a
  * grid item's default `min-*: auto` sizes it to content — without them the board
- * grows to its full scroll height and pushes itself out of the window, which is
- * the same bug Stage 3 hit in the chat column.
+ * grows to its full scroll height and pushes itself out of the window.
  */
 const shellStyle: React.CSSProperties = {
   display: 'flex',
@@ -62,98 +77,67 @@ const shellStyle: React.CSSProperties = {
   minWidth: 0,
   minHeight: 0,
   overflow: 'hidden',
-  background: colors.porcelain,
+  /*
+   * The board's ground is `linen`, a shade under the cards on it.
+   *
+   * Not `porcelain`, which is what the chat column uses: the cards *are*
+   * porcelain, and a porcelain board would leave them with nothing to sit on but
+   * their own 1px shadow.
+   */
+  background: colors.linen,
 };
 
-/** `.vsay` — Valentin's line at the foot of the board (`full-profile.html:222`). */
-const sayStyle: React.CSSProperties = {
-  ...spanAllStyle,
+/**
+ * The scrolling board.
+ *
+ * `className="dossier-board"` is load-bearing: it is what makes this element the
+ * container the pair below queries. See `global-styles.ts` — the breakpoint is the
+ * board's own measure, not the window's, because the board's width is not a
+ * function of window width alone.
+ */
+const boardStyle: React.CSSProperties = {
+  flex: 1,
+  minHeight: 0,
+  minWidth: 0,
+  overflowY: 'auto',
+  padding: `18px ${insets.snug}px 30px`,
+};
+
+const mobileBoardStyle: React.CSSProperties = {
+  ...boardStyle,
+  padding: `14px ${insets.tight}px 24px`,
+};
+
+/** The bands themselves: one column, generous gaps, nothing clever. */
+const bandsStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 15,
+};
+
+const ledeStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
-  gap: 13,
-  padding: `${insets.tight}px ${insets.snug}px`,
-  borderRadius: radii.card,
-  background: colors.vitrineSayGradient,
-  boxShadow: `inset 0 0 0 1px rgba(176, 140, 79, 0.28)`,
-  minWidth: 0,
-};
-
-/** Mobile: one column already, so no span — but it keeps its own card styling. */
-const mobileSayStyle: React.CSSProperties = {
-  ...sayStyle,
-  gridColumn: 'auto',
-  flexWrap: 'wrap',
-  gap: 11,
-  padding: `${insets.tight}px`,
-};
-
-const sayCrestStyle: React.CSSProperties = {
-  width: 34,
-  height: 34,
-  flex: 'none',
-  borderRadius: radii.pill,
-  overflow: 'hidden',
-  background: colors.porcelain,
-  boxShadow: '0 1px 5px rgba(74, 24, 38, 0.22)',
-};
-
-const sayCrestImageStyle: React.CSSProperties = {
-  width: '122%',
-  height: '122%',
-  objectFit: 'cover',
-};
-
-const sayBodyStyle: React.CSSProperties = { flex: 1, minWidth: 0 };
-
-const sayEyebrowStyle: React.CSSProperties = {
+  gap: 9,
+  padding: '0 2px 14px',
+  margin: 0,
   fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.eyebrow,
-  fontWeight: typography.weights.semibold,
-  letterSpacing: '0.22em',
-  textTransform: 'uppercase',
-  color: 'rgba(122, 92, 34, 0.8)',
-};
-
-const sayTextStyle: React.CSSProperties = {
-  margin: '4px 0 0',
-  fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.smallLoose,
+  fontSize: dossierType.small,
   lineHeight: 1.5,
+  color: colors.inkMuted,
+};
+
+const ledeLeadStyle: React.CSSProperties = {
+  fontWeight: typography.weights.semibold,
   color: colors.ink,
 };
 
-const sayButtonStyle: React.CSSProperties = {
-  flex: 'none',
-  border: 'none',
-  cursor: 'pointer',
-  borderRadius: radii.pill,
-  padding: '9px 15px',
-  background: colors.claret,
-  color: colors.textOnAccent,
-  fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.labelLoose,
-  fontWeight: typography.weights.medium,
-  whiteSpace: 'nowrap',
-};
+const editorSlotStyle: React.CSSProperties = { maxWidth: 520 };
 
 interface DossierViewProps {
-  /** Collapses the board to one column and stacks the header. */
+  /** Collapses the bands to one column and stacks the header. */
   isMobile?: boolean;
 }
 
-/**
- * The full-page dossier: columns 2–4 of the window, replaced.
- *
- * Not a portal and not a route. It shares the icon rail and the window's own
- * chrome (`full-profile.html:19`), so it is a *sibling* of the chat column in the
- * same grid — see the long note in `context/view-context.tsx` for why a portal
- * and a persisted URL were both rejected.
- *
- * Every card reads from the same derivations the brief rail reads from
- * (`deriveOccasions`, `deriveCautions`, `rankUnfilledFields`), so the two
- * surfaces cannot disagree about what is known, what is next or what is
- * dangerous. The dossier adds editing and settling; it does not add facts.
- */
 export function DossierView({ isMobile = false }: DossierViewProps) {
   const { state: preferencesState } = usePreferencesContext();
   const {
@@ -161,12 +145,12 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
     dispatch: profileDispatch,
     getFieldValue,
   } = useProfileStoreContext();
-  const { state: chatState, dispatch: chatDispatch } = useChatContext();
+  const { dispatch: chatDispatch } = useChatContext();
   const discovery = useOptionalDiscoveryContext();
   const { closeDossier } = useViewContext();
 
   /**
-   * Escape closes the dossier, which also returns focus to her portrait in the brief.
+   * Escape closes her file, which also returns focus to her portrait in the brief.
    *
    * Bound on `document` rather than on the shell, because the user may well be
    * inside a `ProfileField` input three cards down when they give up on it.
@@ -178,11 +162,6 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
   }, [closeDossier]);
-
-  const total = PROFILE_FIELD_REGISTRY.length;
-  const filled = PROFILE_FIELD_REGISTRY.filter(
-    (field) => getFieldValue(field.id) !== null,
-  ).length;
 
   const name = getFieldValue('partner_name')?.value ?? null;
   const birthdayValue = getFieldValue('birthday')?.value ?? null;
@@ -229,15 +208,57 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
     [getFieldValue],
   );
 
-  const guesses = useMemo(
-    () =>
-      deriveGuesses(
-        allPreferences,
-        chatState.messages,
-        (fieldId) => getFieldValue(fieldId)?.source === 'manual',
-        (fieldId) => profileState.rejectedFieldIds.includes(fieldId),
-      ),
-    [allPreferences, chatState.messages, getFieldValue, profileState.rejectedFieldIds],
+  /*
+   * Her people and his list.
+   *
+   * Optional contexts, like the profile store's: `DossierView` is mounted in tests
+   * that provide none of the three, and a board with an empty family tree is a
+   * correct empty state rather than a crash.
+   */
+  const people = useOptionalPeopleContext();
+  const tasks = useOptionalTasksContext();
+  const peopleList = people?.state.people ?? [];
+  const taskList = tasks?.state.tasks ?? [];
+
+  const rhythm = useMemo(
+    () => parseWeeklyRhythm(getFieldValue('weekly_rhythm')?.value),
+    [getFieldValue],
+  );
+
+  const calendar = useMemo(
+    () => buildFourWeeks({ occasions, people: peopleList, tasks: taskList, rhythm }),
+    [occasions, peopleList, taskList, rhythm],
+  );
+
+  const agenda = useMemo(
+    () => buildAgenda({ occasions, people: peopleList, tasks: taskList }),
+    [occasions, peopleList, taskList],
+  );
+
+  /**
+   * The faint-dot legend under the grid, built from her own week.
+   *
+   * Phrased from the entries rather than hardcoded, so a session that never
+   * mentioned pottery does not claim she does any.
+   */
+  const rhythmNote = useMemo(() => {
+    if (rhythm.length === 0) return null;
+    const said = rhythm
+      .filter((entry) => entry.label.length > 0)
+      .slice(0, 2)
+      .map((entry) => entry.label);
+    if (said.length === 0) return null;
+    return `Faint dots — ${said.join(', and ')}.`;
+  }, [rhythm]);
+
+  const palette = useMemo(
+    () => parsePalette(getFieldValue('color_palette')?.value),
+    [getFieldValue],
+  );
+
+  const shortlist = useMemo(
+    () => parseShortlist(getFieldValue('gift_shortlist')?.value),
+    [getFieldValue],
   );
 
   /**
@@ -271,40 +292,6 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
     chatDispatch({ type: 'SET_INPUT', value });
   }, [gaps, chatDispatch]);
 
-  /**
-   * ✓ — promote the guess to a stated fact at the *same* value.
-   *
-   * `SET_MANUAL_VALUE` is what promotes it: manual values win over discovered
-   * ones in `getFieldValue` and are never revisited by ingestion, so the guess
-   * leaves the pile and stays gone.
-   */
-  const confirmGuess = useCallback(
-    (guess: Guess) => {
-      if (!guess.fieldId) return;
-      profileDispatch({
-        type: 'SET_MANUAL_VALUE',
-        fieldId: guess.fieldId,
-        value: guess.value,
-      });
-    },
-    [profileDispatch],
-  );
-
-  /**
-   * ✗ — drop it, so Valentin stops acting on it.
-   *
-   * `CLEAR_DISCOVERED_VALUE`, not `CLEAR_MANUAL_VALUE`: a rejected guess has no
-   * manual value, and clearing the manual slot would *reveal* the discovered
-   * value underneath rather than remove it.
-   */
-  const rejectGuess = useCallback(
-    (guess: Guess) => {
-      if (!guess.fieldId) return;
-      profileDispatch({ type: 'CLEAR_DISCOVERED_VALUE', fieldId: guess.fieldId });
-    },
-    [profileDispatch],
-  );
-
   const saveField = useCallback(
     (fieldId: string, value: string) => {
       profileDispatch({ type: 'SET_MANUAL_VALUE', fieldId, value });
@@ -319,101 +306,10 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
     [profileDispatch],
   );
 
-  const topGap: FieldGap | null = gaps[0] ?? null;
-
-  /*
-   * Her people.
-   *
-   * Optional context, like the profile store's: `DossierView` is mounted in tests
-   * that provide neither, and a board with an empty family tree is a correct
-   * empty state rather than a crash.
-   */
-  const people = useOptionalPeopleContext();
-  const peopleList = people?.state.people ?? [];
-  const peopleGaps = countGaps(peopleList);
-
-  /**
-   * Which tab is showing, and who is being edited.
-   *
-   * Local state, not the URL and not a context: the dossier is already a
-   * non-routed sibling of the chat column (see the note above), and a tab you
-   * left on last time is not something you want restored three days later.
-   */
-  const [activeTab, setActiveTab] = useState<DossierTab>('overview');
+  /** Who is being edited. Local state: it is a mode, not a fact about her. */
   const [editing, setEditing] = useState<
     { person: Person | null; generation: PersonGeneration } | null
   >(null);
-
-  const togetherDays = useMemo(
-    () => deriveTogetherDays(getFieldValue('anniversary')?.value ?? null),
-    [getFieldValue],
-  );
-
-  const nextOccasion = useMemo(() => getNextOccasion(occasions), [occasions]);
-
-  /**
-   * The four figures on the command bar.
-   *
-   * Each one is either a real number or absent — never a zero standing in for
-   * "unknown", which is the difference between "you have been together 0 days"
-   * and "I don't know when you started".
-   */
-  const stats = useMemo<Stat[]>(() => {
-    const list: Stat[] = [];
-
-    if (togetherDays !== null) {
-      list.push({
-        value: formatTogetherDays(togetherDays),
-        label: 'Days together',
-        tone: 'date',
-      });
-    }
-
-    if (nextOccasion) {
-      const days = getDaysUntilOccasion(nextOccasion);
-      list.push({
-        value: days === 0 ? 'Today' : `${days}d`,
-        label: 'Next occasion',
-        tone: 'gift',
-        note: nextOccasion.label,
-      });
-    }
-
-    list.push({
-      value: `${Math.round((filled / Math.max(total, 1)) * 100)}%`,
-      label: 'How well I know her',
-      tone: 'grow',
-      note: `${filled} of ${total} known`,
-    });
-
-    if (peopleList.length > 0) {
-      list.push({
-        value: String(peopleList.length),
-        label: 'Her people',
-        tone: 'kin',
-        note: peopleGaps > 0 ? `${peopleGaps} still unnamed` : null,
-      });
-    }
-
-    return list;
-  }, [togetherDays, nextOccasion, filled, total, peopleList.length, peopleGaps]);
-
-  const tabs = useMemo<TabDefinition[]>(
-    () => [
-      { id: 'overview', label: 'Overview', tone: 'date' },
-      { id: 'known', label: 'Everything I know', count: filled, tone: 'fact' },
-      { id: 'gifts', label: 'To do', count: guesses.length + gaps.length, tone: 'gift' },
-      { id: 'people', label: 'Her people', count: peopleList.length, tone: 'kin' },
-      { id: 'memories', label: 'Mentioned', count: allPreferences.length, tone: 'mood' },
-    ],
-    [filled, guesses.length, gaps.length, peopleList.length, allPreferences.length],
-  );
-
-  /** Every tab shows the overview's cards too when it is the overview. */
-  const shows = useCallback(
-    (...tabsShowingIt: DossierTab[]) => tabsShowingIt.includes(activeTab),
-    [activeTab],
-  );
 
   const savePerson = useCallback(
     (draft: PersonDraft) => {
@@ -452,161 +348,152 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
     [chatDispatch],
   );
 
+  /**
+   * Ticking a row is the one write on this board that is not about her.
+   *
+   * Guarded rather than assumed: without the provider the card still renders its
+   * empty state, and a checkbox that threw on click would be worse than one that
+   * cannot be ticked.
+   */
+  const toggleTask = useCallback(
+    (taskId: string) => {
+      tasks?.toggleTask(taskId);
+    },
+    [tasks],
+  );
+
+  /**
+   * Valentin's line under the list.
+   *
+   * The first open row is the one everything else waits on, so the note says so
+   * rather than repeating the row. Null when the list is empty — a nudge about
+   * nothing is noise.
+   */
+  const fromMe = useMemo(() => {
+    const firstOpen = taskList.find((task) => !task.done);
+    if (!firstOpen) return null;
+    return `Do “${firstOpen.title}” first and the rest gets easier. Most of this list waits on her answer.`;
+  }, [taskList]);
+
+  /**
+   * Whether anything was extracted that no registry field could hold.
+   *
+   * Computed here rather than inside the card so the band can be absent entirely
+   * instead of rendering a heading over an empty state.
+   */
+  const unmapped = useMemo(() => groupUnmappedPreferences(allPreferences), [allPreferences]);
+
+  const tiles = (
+    <>
+      <HerSizes getFieldValue={getFieldValue} onAsk={askAbout} />
+      <HerPalette
+        shades={palette}
+        caution={cautions[0]?.title ?? null}
+        onAsk={() => askAbout('palette')}
+      />
+      <GiftShortlist
+        items={shortlist}
+        budget={getFieldValue('gift_budget')?.value ?? null}
+        onAsk={() => askAbout('gift shortlist')}
+      />
+      <HerWeek entries={rhythm} onAsk={() => askAbout('week')} />
+    </>
+  );
+
   return (
     <div style={shellStyle} data-testid="dossier-view">
       <IdentityHeader
         name={name}
         subtitle={subtitle}
-        filled={filled}
-        total={total}
         onBack={closeDossier}
         onAskAll={askWhatsMissing}
         isMobile={isMobile}
       />
 
-      <StatBar stats={stats} isMobile={isMobile} />
+      <div
+        className="dossier-board"
+        style={isMobile ? mobileBoardStyle : boardStyle}
+        data-testid="dossier-board"
+        data-columns={isMobile ? 1 : 12}
+      >
+        <p style={ledeStyle}>
+          <span style={{ color: colors.claret, display: 'flex' }} aria-hidden="true">
+            <DossierIcon name="book" size={18} />
+          </span>
+          <span>
+            <span style={ledeLeadStyle}>Her file.</span> The four weeks in front of
+            you, what to do about them, everything I know about her, and her family
+            — in that order.
+          </span>
+        </p>
 
-      <DossierTabs
-        tabs={tabs}
-        active={activeTab}
-        onSelect={setActiveTab}
-        isMobile={isMobile}
-      />
-
-      <CardBoard isMobile={isMobile}>
-        {/*
-         * The wide span is earned, not fixed.
-         *
-         * Found in the partial-profile screenshots, which the 18/18 demo seed hides:
-         * with no dates known, `What's coming` is a single line of prose, and
-         * spanning it across two-thirds of the board left a ~330px void beneath it,
-         * because a grid row is still as tall as its tallest member no matter how
-         * the items are aligned within it. Empty, it takes one column like
-         * everything else and the short cards simply sit at the top of their own
-         * columns — which is what `align-items: start` is for. Populated, it needs
-         * the width for the spine, the dates and the act-by chips, so it takes it
-         * back.
-         */}
-        {shows('overview', 'gifts') && (
+        <div style={bandsStyle} data-testid="dossier-bands">
+          {/* Band one. `dossier-pair` is a real class, not an inline style: the
+              two halves stack on a container query, which inline styles cannot
+              express. On mobile they are one column already. */}
           <div
-            style={
-              isMobile
-                ? undefined
-                : occasions.length === 0
-                  ? span(BOARD_THIRD)
-                  : span(BOARD_TWO_THIRDS)
-            }
-            data-testid="dossier-whats-coming-slot"
+            className={isMobile ? undefined : 'dossier-pair'}
+            style={isMobile ? bandsStyle : undefined}
+            data-testid="dossier-band-pair"
           >
-            <WhatsComing occasions={occasions} />
-          </div>
-        )}
-
-        {shows('overview', 'gifts') && (
-          <div style={isMobile ? undefined : span(BOARD_THIRD)}>
-            <KeepInMindCard cautions={cautions} />
-          </div>
-        )}
-
-        {/*
-         * Her people, on the overview as well as on their own tab.
-         *
-         * The tree is the widest card on the board because it is a *diagram*: at a
-         * third of the width its three rows wrap into an unreadable stack, which
-         * loses the only thing a drawing gives you over a list.
-         */}
-        {shows('overview', 'people') && (
-          <div style={isMobile ? undefined : span(BOARD_TWO_THIRDS)}>
-            <FamilyTree
-              people={peopleList}
-              partnerName={name}
-              onSelectPerson={(person) =>
-                setEditing({ person, generation: person.generation })
-              }
-              onAddPerson={(generation) => setEditing({ person: null, generation })}
-              onAskAboutGap={askAboutPerson}
+            <FourWeekCalendar
+              calendar={calendar}
+              agenda={agenda}
+              rhythmNote={rhythmNote}
             />
+            <WhatToDoNext tasks={taskList} onToggle={toggleTask} note={fromMe} />
           </div>
-        )}
 
-        {shows('overview', 'people') && (
-          <div style={isMobile ? undefined : span(BOARD_THIRD)}>
-            <TheirBirthdays
-              people={peopleList}
-              onSelectPerson={(person) =>
-                setEditing({ person, generation: person.generation })
-              }
-            />
-          </div>
-        )}
+          {/* Band two. The four tiles ride inside this card rather than forming a
+              band of their own: they are four of her facts given pictures, and the
+              rest of her facts are directly below them. */}
+          <EverythingIKnow
+            getFieldValue={getFieldValue}
+            onSaveField={saveField}
+            onClearField={clearField}
+            highlightedFieldIds={discovery?.highlightedFieldIds}
+            onAsk={(field) => askAbout(field.label)}
+            isMobile={isMobile}
+            tiles={tiles}
+          />
 
-        {editing && (
-          <div style={isMobile ? undefined : span(BOARD_HALF)}>
-            <PersonEditor
-              person={editing.person}
-              generation={editing.generation}
-              onSave={savePerson}
-              onCancel={() => setEditing(null)}
-              onRemove={editing.person ? removePerson : undefined}
-            />
-          </div>
-        )}
+          {/* Band three. */}
+          <FamilyTree
+            people={peopleList}
+            partnerName={name}
+            partnerBirthday={birthdayValue}
+            onSelectPerson={(person) =>
+              setEditing({ person, generation: person.generation })
+            }
+            onAddPerson={(generation) => setEditing({ person: null, generation })}
+            onAskAboutGap={askAboutPerson}
+          />
 
-        {shows('overview', 'gifts') && (
-          <div style={isMobile ? undefined : span(BOARD_THIRD)}>
-            <ConfirmMyGuesses
-              guesses={guesses}
-              onConfirm={confirmGuess}
-              onReject={rejectGuess}
-            />
-          </div>
-        )}
+          {/*
+            * Last, and quietest — but not dropped.
+            *
+            * The mockup has no card for this, and it is still here, because what it
+            * holds is real extraction output that resolves to no registry field:
+            * `hobbies: "she collects vinyl"` lands in the store with nowhere else on
+            * screen to go. Deleting the card would not simplify the board, it would
+            * silently lose her words. It sits below the tree because it is the least
+            * consequential thing here, and it renders nothing when there is nothing.
+            */}
+          {unmapped.length > 0 && <AlsoMentioned preferences={allPreferences} />}
 
-        {shows('overview', 'gifts') && (
-          <div style={isMobile ? undefined : span(BOARD_THIRD)}>
-            <WorthAskingNext gaps={gaps} onAsk={(gap) => askAbout(gap.label)} />
-          </div>
-        )}
-
-        {shows('memories') && (
-          <div style={isMobile ? undefined : span(BOARD_HALF)}>
-            <AlsoMentioned preferences={allPreferences} />
-          </div>
-        )}
-
-        {shows('overview', 'known') && (
-          <div style={isMobile ? undefined : spanAllStyle}>
-            <EverythingIKnow
-              getFieldValue={getFieldValue}
-              onSaveField={saveField}
-              onClearField={clearField}
-              highlightedFieldIds={discovery?.highlightedFieldIds}
-              onAsk={(field) => askAbout(field.label)}
-              isMobile={isMobile}
-            />
-          </div>
-        )}
-
-        {topGap && shows('overview') && (
-          <div style={isMobile ? mobileSayStyle : sayStyle} data-testid="dossier-say">
-            <div style={sayCrestStyle}>
-              <img src="/logo.png" alt="" style={sayCrestImageStyle} />
+          {editing && (
+            <div style={isMobile ? undefined : editorSlotStyle}>
+              <PersonEditor
+                person={editing.person}
+                generation={editing.generation}
+                onSave={savePerson}
+                onCancel={() => setEditing(null)}
+                onRemove={editing.person ? removePerson : undefined}
+              />
             </div>
-            <div style={sayBodyStyle}>
-              <span style={sayEyebrowStyle}>Valentin suggests</span>
-              <p style={sayTextStyle}>{topGap.reason}</p>
-            </div>
-            <button
-              type="button"
-              style={sayButtonStyle}
-              onClick={() => askAbout(topGap.label)}
-              data-testid="dossier-say-ask"
-            >
-              Let&rsquo;s talk about it
-            </button>
-          </div>
-        )}
-      </CardBoard>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -184,6 +184,90 @@ describe('dispatchServerEvent', () => {
     expect(chatDispatch).not.toHaveBeenCalled();
     expect(preferencesDispatch).not.toHaveBeenCalled();
   });
+
+  /*
+   * The two boards that fill in mid-turn. Both are on screen while he is talking
+   * — her file is a thread in the chat column now, not a surface that replaced it
+   * — so a sister he just mentioned has to appear without a reload, exactly as a
+   * preference does.
+   */
+  describe('the boards', () => {
+    const person = {
+      id: 'nadia',
+      name: 'Nadia',
+      relationship: 'Sister',
+      generation: 'peer' as const,
+      birthday: '1996-03-22',
+      note: null,
+      source: 'discovered' as const,
+      updatedAt: new Date().toISOString(),
+    };
+    const task = {
+      id: 'book-table',
+      title: 'Book somewhere for the 18th',
+      done: false,
+      due: '2026-09-11',
+      note: null,
+      source: 'discovered' as const,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    it('merges a person the extractor just learned', () => {
+      const peopleDispatch = vi.fn();
+      dispatchServerEvent(
+        { type: 'person_update', payload: { sessionId: 'sess-1', person, isNew: true }, timestamp: new Date().toISOString() },
+        chatDispatch,
+        preferencesDispatch,
+        { peopleDispatch },
+      );
+      // MERGE rather than an isNew branch: the frame says whether the *server*
+      // thought it was new, which is not whether this client holds the row.
+      expect(peopleDispatch).toHaveBeenCalledWith({ type: 'MERGE_PERSON', person });
+    });
+
+    it('merges a to-do the extractor just heard him promise', () => {
+      const tasksDispatch = vi.fn();
+      dispatchServerEvent(
+        { type: 'task_update', payload: { sessionId: 'sess-1', task, isNew: true }, timestamp: new Date().toISOString() },
+        chatDispatch,
+        preferencesDispatch,
+        { tasksDispatch },
+      );
+      expect(tasksDispatch).toHaveBeenCalledWith({ type: 'MERGE_TASK', task });
+    });
+
+    it('drops both frames rather than throwing when no board is mounted', () => {
+      // The socket is exercised on its own, and a connection that refused to open
+      // without a family tree attached would have the dependency backwards.
+      expect(() => {
+        dispatchServerEvent(
+          { type: 'person_update', payload: { sessionId: 'sess-1', person, isNew: true }, timestamp: new Date().toISOString() },
+          chatDispatch,
+          preferencesDispatch,
+        );
+        dispatchServerEvent(
+          { type: 'task_update', payload: { sessionId: 'sess-1', task, isNew: false }, timestamp: new Date().toISOString() },
+          chatDispatch,
+          preferencesDispatch,
+        );
+      }).not.toThrow();
+      expect(chatDispatch).not.toHaveBeenCalled();
+    });
+
+    it('keeps the boards out of each other’s frames', () => {
+      const peopleDispatch = vi.fn();
+      const tasksDispatch = vi.fn();
+      dispatchServerEvent(
+        { type: 'person_update', payload: { sessionId: 'sess-1', person, isNew: true }, timestamp: new Date().toISOString() },
+        chatDispatch,
+        preferencesDispatch,
+        { peopleDispatch, tasksDispatch },
+      );
+      expect(tasksDispatch).not.toHaveBeenCalled();
+      expect(preferencesDispatch).not.toHaveBeenCalled();
+    });
+  });
 });
 
 /**

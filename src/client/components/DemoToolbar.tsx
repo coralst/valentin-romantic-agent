@@ -173,6 +173,16 @@ export function DemoToolbar({ children }: DemoToolbarProps) {
     try {
       const { sessionId, preferenceCount } = await seedDemoSession();
       const preferences = await fetchSessionPreferences(sessionId);
+      /*
+       * Her people are no longer written from here.
+       *
+       * They used to be: `usePeopleStore` kept its own `localStorage` entry and
+       * this was the only way the family tree could arrive populated. Now
+       * `POST /api/session/seed` writes `PERSON#` and `TASK#` rows into the same
+       * session partition as the preferences, so the tree and the to-do list
+       * hydrate over HTTP with everything else — and survive a new device, which
+       * a localStorage seed never did.
+       */
       // Adopt then switch, so SessionSyncer sees a real session change and
       // rehydrates chat + preferences for us.
       adoptSession(buildDemoSession(sessionId, preferences));

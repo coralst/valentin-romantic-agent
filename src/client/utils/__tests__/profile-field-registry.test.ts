@@ -69,6 +69,45 @@ describe('PROFILE_FIELD_REGISTRY', () => {
     }
   });
 
+  /**
+   * The three measurements the dossier's "What fits her" card draws.
+   *
+   * Pinned separately from the gift sizes above because the card shows exactly
+   * these three, in this order, and a tidy-up that renamed `clothing_size` back
+   * to "Clothing Size" would leave the card claiming a generic word for a row
+   * sitting beside a bra size.
+   */
+  it('holds the three measurements the card shows, labelled for it', () => {
+    const expected: Array<[string, string]> = [
+      ['bra_size', 'מידת חזיה'],
+      ['clothing_size', 'Trousers'],
+      ['shoulder_width', 'Shoulders'],
+    ];
+    for (const [id, label] of expected) {
+      const field = getFieldById(id);
+      expect(field, `missing field "${id}"`).toBeDefined();
+      expect(field!.section).toBe('sizes');
+      expect(field!.valueType).toBe('text');
+      expect(field!.label).toBe(label);
+    }
+  });
+
+  /**
+   * The two `@`-encoded list fields.
+   *
+   * Both are drawn as structure — priced rows against a budget bar, seven
+   * weekday bars — so both need a separator the value can be split on. They
+   * must stay `list` (comma between items) with `@` inside an item; flipping
+   * either to `text` would render the raw encoding on the page.
+   */
+  it('keeps the structured tiles as lists so their items can be split', () => {
+    for (const id of ['gift_shortlist', 'weekly_rhythm', 'color_palette']) {
+      const field = getFieldById(id);
+      expect(field, `missing field "${id}"`).toBeDefined();
+      expect(field!.valueType).toBe('list');
+    }
+  });
+
   it('never resolves the bare key "size" to a specific size field', () => {
     // "size" is generic enough that extraction reaches for it about a ring, a
     // shoe or a canvas. Mapping it would file the wrong fact confidently.

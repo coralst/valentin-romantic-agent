@@ -35,24 +35,35 @@ function renderTree(people: Person[], overrides: Partial<Parameters<typeof Famil
 }
 
 describe('FamilyTree', () => {
-  it('draws her on the middle row even though she is not a record', () => {
+  it('draws her on her own band even though she is not a record', () => {
     // The tree is hers. Leaving her out makes it a diagram of a family she is
     // not in.
     renderTree([person({ id: 'miriam', name: 'Miriam', generation: 'elder' })]);
     const her = screen.getByTestId('family-node-her');
     expect(her).toHaveTextContent('Samantha');
-    expect(screen.getByTestId('family-row-peer')).toContainElement(her);
+    expect(screen.getByTestId('family-band-peer')).toContainElement(her);
   });
 
-  it('draws all three rows so an empty generation can still be started', async () => {
-    // Found by driving the real page: skipping empty rows left no way to add a
-    // first younger person once anyone else existed.
-    const props = renderTree([person({ id: 'miriam', name: 'Miriam', generation: 'elder' })]);
-    expect(screen.getByTestId('family-row-peer')).toBeInTheDocument();
-    expect(screen.getByTestId('family-row-younger')).toBeInTheDocument();
+  it('draws four generation bands, grandparents included', async () => {
+    // Four rather than three: grandparents are a real rung of a family, and
+    // folding Miriam in with Ruth and Daniel says she is their sibling.
+    const props = renderTree([person({ id: 'miriam', name: 'Miriam', generation: 'grandparent' })]);
+    for (const band of ['grandparent', 'elder', 'peer', 'younger']) {
+      expect(screen.getByTestId(`family-band-${band}`)).toBeInTheDocument();
+    }
 
+    // Found by driving the real page: skipping empty bands left no way to add a
+    // first younger person once anyone else existed.
     await userEvent.click(screen.getByTestId('family-add-younger'));
     expect(props.onAddPerson).toHaveBeenCalledWith('younger');
+  });
+
+  it('keeps a generation on one line by fixing the node width', () => {
+    // 134px is the width at which her own generation — six people — fits on one
+    // line in the board's measure. A seventh card orphaned onto a second row reads
+    // as a descendant, which is a claim about her family the app cannot make.
+    renderTree([person()]);
+    expect((screen.getByTestId('family-node-leah') as HTMLElement).style.width).toBe('134px');
   });
 
   it('falls back to "Her" when the name is not known yet', () => {
@@ -66,7 +77,10 @@ describe('FamilyTree', () => {
     const props = renderTree([gap]);
     const node = screen.getByTestId('family-node-g1');
     expect(node).toHaveAttribute('data-gap', 'true');
-    expect(node).toHaveTextContent('Brother?');
+    expect(node).toHaveTextContent('Unnamed');
+    expect(node).toHaveTextContent('Brother');
+    // The question, as a button, on the card that is missing the answer.
+    expect(node).toHaveTextContent('Ask her');
 
     await userEvent.click(node);
     expect(props.onAskAboutGap).toHaveBeenCalledWith(gap);
@@ -81,24 +95,38 @@ describe('FamilyTree', () => {
     expect(props.onAskAboutGap).not.toHaveBeenCalled();
   });
 
-  it('adds to the row the + belongs to', async () => {
+  it('adds to the band the + belongs to', async () => {
     const props = renderTree([person({ id: 'miriam', generation: 'elder', name: 'Miriam' })]);
     await userEvent.click(screen.getByTestId('family-add-elder'));
     expect(props.onAddPerson).toHaveBeenCalledWith('elder');
   });
 
-  it('counts named people and gaps separately in the header', () => {
+  it('counts everyone it holds, and says how many are still unnamed', () => {
     renderTree([
       person(),
       person({ id: 'g1', name: null, relationship: 'Brother' }),
       person({ id: 'g2', name: null, relationship: 'Best friend' }),
     ]);
-    expect(screen.getByTestId('dossier-family-tree')).toHaveTextContent('1 named · 2 gaps');
+    // The count is of people, not of names: someone mentioned but unnamed is still
+    // somebody in her family, and the second half of the line is what is missing.
+    expect(screen.getByTestId('dossier-family-tree')).toHaveTextContent('3 known · 2 still unnamed');
   });
 
-  it('says "gap" in the singular', () => {
-    renderTree([person({ id: 'g1', name: null, relationship: 'Brother' })]);
-    expect(screen.getByTestId('dossier-family-tree')).toHaveTextContent('0 named · 1 gap');
+  it('drops the unnamed clause when there is nothing missing', () => {
+    renderTree([person()]);
+    const card = screen.getByTestId('dossier-family-tree');
+    expect(card).toHaveTextContent('1 known');
+    expect(card).not.toHaveTextContent('unnamed');
+  });
+
+  it('adds a date to her own card when her birthday is known', () => {
+    renderTree([person()], { partnerBirthday: '1994-06-12' });
+    expect(screen.getByTestId('family-node-her')).toHaveTextContent(/12 Jun/);
+  });
+
+  it('leaves her card dateless rather than dashed when it is not', () => {
+    renderTree([person()]);
+    expect(screen.getByTestId('family-node-her')).not.toHaveTextContent('—');
   });
 
   it('adds a countdown to the date chip only once it is close', () => {

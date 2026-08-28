@@ -34,14 +34,36 @@ export interface Person {
 }
 
 /**
- * The three rows the tree draws.
+ * The four rows the tree draws.
  *
  * Not "parent / sibling / child" — a cat is none of those and belongs on the
- * bottom row anyway, and a grandmother and a mother both belong on the top one.
- * Generation is about *where the card sits*, so it is stated directly instead of
- * inferred from the relationship text.
+ * bottom row anyway. Generation is about *where the card sits*, so it is stated
+ * directly instead of inferred from the relationship text.
+ *
+ * `grandparent` was added when the tree grew to full width. Folding a
+ * grandmother in beside the parents put four half-remembered great-aunts on the
+ * same rung as her mother, which flattens the one bit of structure a family tree
+ * exists to show. A row that no longer implies descent is not worth drawing as a
+ * tree at all.
+ *
+ * Order matters: `GENERATION_ORDER` in `people-derivation.ts` is the top-to-bottom
+ * drawing order, and rows are keyed by these strings in stored `PERSON#` items.
  */
-export type PersonGeneration = 'elder' | 'peer' | 'younger';
+export type PersonGeneration = 'grandparent' | 'elder' | 'peer' | 'younger';
+
+/**
+ * The generation a stored row falls back to when it does not name one.
+ *
+ * Rows written before `grandparent` existed have no `generation` for it to be,
+ * so they land on her parents' rung — which is where they were drawn when they
+ * were written. Nothing needs migrating.
+ */
+export const DEFAULT_GENERATION: PersonGeneration = 'elder';
+
+/** Narrow an untrusted string — a stored attribute, or a model's tool call. */
+export function isPersonGeneration(value: unknown): value is PersonGeneration {
+  return value === 'grandparent' || value === 'elder' || value === 'peer' || value === 'younger';
+}
 
 /** A person you know of but cannot name — drawn dashed, and worth asking about. */
 export function isGap(person: Person): boolean {

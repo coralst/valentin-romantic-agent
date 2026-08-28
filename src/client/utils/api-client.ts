@@ -65,3 +65,26 @@ export async function apiPostJson<T>(
   if (!response.ok) throw new Error(describeFailure(response.status));
   return (await response.json()) as T;
 }
+
+/** PUT a JSON body — the shape the manual-value route takes. */
+export async function apiPutJson<T>(path: string, body: unknown): Promise<T> {
+  const response = await apiFetch(path, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(describeFailure(response.status));
+  return (await response.json()) as T;
+}
+
+/**
+ * DELETE, discarding the body.
+ *
+ * The delete routes answer `{ deleted: true }`, which no caller reads: the row is
+ * already gone from the reducer by the time this resolves. Only the failure
+ * matters, and that arrives as a throw.
+ */
+export async function apiDelete(path: string): Promise<void> {
+  const response = await apiFetch(path, { method: 'DELETE' });
+  if (!response.ok) throw new Error(describeFailure(response.status));
+}

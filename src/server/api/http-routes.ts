@@ -5,7 +5,13 @@ import type {
 import { DEMO_SEED_SOURCE_MESSAGE_ID } from '../fixtures/demo-profile';
 import { resolvePersona } from '../fixtures/demo-personas';
 import type { DemoConversation } from '../fixtures/demo-personas';
+import { resolveDemoTasks } from '../fixtures/demo-tasks';
+import type { DemoTask } from '../fixtures/demo-tasks';
 import { isPartnerNamePreference } from '../extraction/partner-name';
+import { DEFAULT_GENERATION, isPersonGeneration } from '../../shared/interfaces/person';
+import type { Person } from '../../shared/interfaces/person';
+import type { Task } from '../../shared/interfaces/task';
+import { isProfileFieldId } from '../../shared/constants/profile-fields';
 
 /** Simple framework-agnostic request representation */
 export interface HttpRequest {
@@ -58,6 +64,126 @@ async function seedDemoProfile(
   }
 
   return written.length;
+}
+
+/**
+ * Persist a persona's family and to-do list into the same session.
+ *
+ * Batched for the same reason the preferences are, and written concurrently with
+ * each other because they are different item types under one partition — there
+ * is no ordering between a person and a task.
+ *
+ * `updatedAt` is stamped here rather than in the fixtures so a re-seed of the
+ * same session refreshes the rows it overwrites instead of leaving thirteen
+ * people claiming they were last touched whenever the file was written.
+ */
+async function seedDemoPeopleAndTasks(
+  storage: StorageInterface,
+  sessionId: string,
+  people: readonly Omit<Person, 'updatedAt'>[],
+  tasks: readonly DemoTask[],
+  now: number,
+): Promise<{ peopleCount: number; taskCount: number }> {
+  const stamp = new Date(now).toISOString();
+  const [writtenPeople, writtenTasks] = await Promise.all([
+    // Guarded individually: an empty batch is a round trip some backends reject,
+    // and a persona could reasonably have a family but no to-do list.
+    people.length > 0
+      ? storage.savePeopleBatch(
+          sessionId,
+          people.map((person) => ({ ...person, updatedAt: stamp })),
+        )
+      : Promise.resolve([]),
+    tasks.length > 0
+      ? storage.saveTasksBatch(sessionId, resolveDemoTasks(tasks, now))
+      : Promise.resolve([]),
+  ]);
+  return { peopleCount: writtenPeople.length, taskCount: writtenTasks.length };
+}
+
+/** Longest a person's name, relationship or note may be, in characters */
+const TEXT_LIMIT = 200;
+
+/**
+ * Read a nullable string field from a request body.
+ *
+ * Blank collapses to null rather than to `''`, because a blank name is how the
+ * client draws a gap — "Brother?" — and two spellings of the same gap would make
+ * `isGap` the only thing standing between a stray space and a person called "".
+ */
+function optionalText(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed.slice(0, TEXT_LIMIT) : null;
+}
+
+/** An ISO calendar date (`YYYY-MM-DD`), or null for anything else */
+function optionalDate(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  // Dropped rather than stored loosely: the countdown parses these, and an
+  // unparseable birthday renders as "NaN days" beside her name.
+  return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : null;
+}
+
+/**
+ * Build a Person from an untrusted body, or return why it cannot be built.
+ *
+ * `relationship` is the only required field. A name is not: a person the user
+ * has mentioned but not named is exactly the gap the tree exists to prompt
+ * about, and rejecting it would throw away the most useful row on the card.
+ */
+function parsePerson(body: unknown): { person: Person } | { error: string } {
+  const input = (body ?? {}) as Record<string, unknown>;
+
+  const relationship = optionalText(input.relationship);
+  if (!relationship) {
+    return { error: 'A relationship is required — that is what names the node' };
+  }
+
+  const id = typeof input.id === 'string' && input.id.length > 0 ? input.id : crypto.randomUUID();
+  const generation = isPersonGeneration(input.generation)
+    ? input.generation
+    : DEFAULT_GENERATION;
+
+  return {
+    person: {
+      id,
+      name: optionalText(input.name),
+      relationship,
+      generation,
+      birthday: optionalDate(input.birthday),
+      note: optionalText(input.note),
+      source: input.source === 'discovered' ? 'discovered' : 'manual',
+      updatedAt: new Date().toISOString(),
+    },
+  };
+}
+
+/** Build a Task from an untrusted body, or return why it cannot be built */
+function parseTask(body: unknown): { task: Task } | { error: string } {
+  const input = (body ?? {}) as Record<string, unknown>;
+
+  const title = optionalText(input.title);
+  if (!title) {
+    return { error: 'A title is required' };
+  }
+
+  const now = new Date().toISOString();
+  return {
+    task: {
+      id: typeof input.id === 'string' && input.id.length > 0 ? input.id : crypto.randomUUID(),
+      title,
+      due: optionalDate(input.due),
+      note: optionalText(input.note),
+      done: input.done === true,
+      source: input.source === 'discovered' ? 'discovered' : 'manual',
+      // Preserved when the client round-trips a row it already has, so ticking a
+      // task does not reset how long it has been outstanding.
+      createdAt: typeof input.createdAt === 'string' ? input.createdAt : now,
+      updatedAt: now,
+    },
+  };
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -150,12 +276,21 @@ export function createHttpRoutes(storage: StorageInterface) {
         return { status: 404, body: { error: 'Session not found' } };
       }
 
-      const [messages, preferences] = await Promise.all([
+      // All five in one round trip. They share the session's partition, and the
+      // dossier needs every one of them to draw a single frame — fetching them
+      // separately would show the board filling in four visible stages.
+      const [messages, preferences, people, tasks, manualValues] = await Promise.all([
         storage.getMessagesBySession(sessionId),
         storage.getPreferencesBySession(sessionId),
+        storage.getPeopleBySession(sessionId),
+        storage.getTasksBySession(sessionId),
+        storage.getManualValues(sessionId),
       ]);
 
-      return { status: 200, body: { session, messages, preferences } };
+      return {
+        status: 200,
+        body: { session, messages, preferences, people, tasks, manualValues },
+      };
     },
 
     /** GET /session/:id/preferences — get preferences for a session */
@@ -175,6 +310,124 @@ export function createHttpRoutes(storage: StorageInterface) {
       return { status: 200, body: { preferences } };
     },
 
+    /** GET /session/:id/people — her family and friends */
+    async getSessionPeople(sessionId: string): Promise<HttpResponse> {
+      if (!(await storage.getSession(sessionId))) {
+        return { status: 404, body: { error: 'Session not found' } };
+      }
+      return { status: 200, body: { people: await storage.getPeopleBySession(sessionId) } };
+    },
+
+    /**
+     * POST /session/:id/people — add or revise one person.
+     *
+     * A single upsert rather than a whole-list PUT. The tree is edited one node
+     * at a time, and replacing the list wholesale would let a stale client drop
+     * a relative the extractor had just discovered from the conversation.
+     */
+    async savePerson(sessionId: string, body: unknown): Promise<HttpResponse> {
+      if (!(await storage.getSession(sessionId))) {
+        return { status: 404, body: { error: 'Session not found' } };
+      }
+
+      const parsed = parsePerson(body);
+      if ('error' in parsed) {
+        return { status: 400, body: { error: parsed.error } };
+      }
+
+      return { status: 200, body: { person: await storage.savePerson(sessionId, parsed.person) } };
+    },
+
+    /** DELETE /session/:id/people/:personId */
+    async deletePerson(sessionId: string, personId: string): Promise<HttpResponse> {
+      if (!(await storage.getSession(sessionId))) {
+        return { status: 404, body: { error: 'Session not found' } };
+      }
+
+      await storage.deletePerson(sessionId, personId);
+      return { status: 200, body: { personId, deleted: true } };
+    },
+
+    /** GET /session/:id/tasks — what he still has to do */
+    async getSessionTasks(sessionId: string): Promise<HttpResponse> {
+      if (!(await storage.getSession(sessionId))) {
+        return { status: 404, body: { error: 'Session not found' } };
+      }
+      return { status: 200, body: { tasks: await storage.getTasksBySession(sessionId) } };
+    },
+
+    /** POST /session/:id/tasks — add a task, or tick one by resending it */
+    async saveTask(sessionId: string, body: unknown): Promise<HttpResponse> {
+      if (!(await storage.getSession(sessionId))) {
+        return { status: 404, body: { error: 'Session not found' } };
+      }
+
+      const parsed = parseTask(body);
+      if ('error' in parsed) {
+        return { status: 400, body: { error: parsed.error } };
+      }
+
+      return { status: 200, body: { task: await storage.saveTask(sessionId, parsed.task) } };
+    },
+
+    /** DELETE /session/:id/tasks/:taskId */
+    async deleteTask(sessionId: string, taskId: string): Promise<HttpResponse> {
+      if (!(await storage.getSession(sessionId))) {
+        return { status: 404, body: { error: 'Session not found' } };
+      }
+
+      await storage.deleteTask(sessionId, taskId);
+      return { status: 200, body: { taskId, deleted: true } };
+    },
+
+    /** GET /session/:id/manual — every value the user typed themselves */
+    async getManualValues(sessionId: string): Promise<HttpResponse> {
+      if (!(await storage.getSession(sessionId))) {
+        return { status: 404, body: { error: 'Session not found' } };
+      }
+      return { status: 200, body: { manualValues: await storage.getManualValues(sessionId) } };
+    },
+
+    /**
+     * PUT /session/:id/manual/:fieldId — the user's own answer for one field.
+     *
+     * The field id is checked against the registry. An unknown id would write a
+     * row nothing ever reads back, so the correction would appear to save and
+     * then vanish on reload — the exact failure this route exists to fix.
+     */
+    async setManualValue(
+      sessionId: string,
+      fieldId: string,
+      body: unknown,
+    ): Promise<HttpResponse> {
+      if (!isProfileFieldId(fieldId)) {
+        return { status: 400, body: { error: `Unknown profile field: ${fieldId}` } };
+      }
+      if (!(await storage.getSession(sessionId))) {
+        return { status: 404, body: { error: 'Session not found' } };
+      }
+
+      const value = (body as { value?: unknown })?.value;
+      if (typeof value !== 'string' || value.trim().length === 0) {
+        // An empty correction is a *clear*, and saying so is better than storing
+        // a blank that renders as a filled field with nothing in it.
+        return { status: 400, body: { error: 'A value is required — DELETE to clear one' } };
+      }
+
+      await storage.setManualValue(sessionId, fieldId, value.trim().slice(0, TEXT_LIMIT));
+      return { status: 200, body: { fieldId, value: value.trim() } };
+    },
+
+    /** DELETE /session/:id/manual/:fieldId — let Valentin's own guess show again */
+    async clearManualValue(sessionId: string, fieldId: string): Promise<HttpResponse> {
+      if (!(await storage.getSession(sessionId))) {
+        return { status: 404, body: { error: 'Session not found' } };
+      }
+
+      await storage.clearManualValue(sessionId, fieldId);
+      return { status: 200, body: { fieldId, cleared: true } };
+    },
+
     /**
      * POST /session/seed — create a session pre-populated with a demo persona.
      *
@@ -189,7 +442,7 @@ export function createHttpRoutes(storage: StorageInterface) {
      * the newest conversation and always the one holding the preferences.
      */
     async seedSession(persona?: unknown): Promise<HttpResponse> {
-      const { id, preferences, history } = resolvePersona(persona);
+      const { id, preferences, people, tasks, history } = resolvePersona(persona);
       const now = Date.now();
       const conversations = history ?? [];
 
@@ -227,11 +480,26 @@ export function createHttpRoutes(storage: StorageInterface) {
         preferences,
       );
 
+      // After the preferences, not alongside them: `savePreferencesBatch` sets
+      // the session's partner name and `savePeopleBatch` touches its
+      // `lastActivity`, and the two racing on one session row is a write nobody
+      // needs to reason about for a saving of a few milliseconds on a click that
+      // already wrote thirty rows.
+      const { peopleCount, taskCount } = await seedDemoPeopleAndTasks(
+        storage,
+        sessionId,
+        people ?? [],
+        tasks ?? [],
+        now,
+      );
+
       return {
         status: 201,
         body: {
           sessionId,
           preferenceCount,
+          peopleCount,
+          taskCount,
           persona: id,
           historyCount: Math.max(sessionIds.length - 1, 0),
         },
@@ -329,6 +597,46 @@ export function createHttpRoutes(storage: StorageInterface) {
       );
       if (req.method === 'GET' && prefMatch) {
         return this.getSessionPreferences(prefMatch[1]);
+      }
+
+      // /session/:id/people and /session/:id/people/:personId
+      const peopleMatch = req.url.match(/^\/session\/([^/]+)\/people$/);
+      if (peopleMatch) {
+        if (req.method === 'GET') return this.getSessionPeople(peopleMatch[1]);
+        if (req.method === 'POST') return this.savePerson(peopleMatch[1], req.body);
+      }
+
+      const personMatch = req.url.match(/^\/session\/([^/]+)\/people\/([^/]+)$/);
+      if (req.method === 'DELETE' && personMatch) {
+        return this.deletePerson(personMatch[1], personMatch[2]);
+      }
+
+      // /session/:id/tasks and /session/:id/tasks/:taskId
+      const tasksMatch = req.url.match(/^\/session\/([^/]+)\/tasks$/);
+      if (tasksMatch) {
+        if (req.method === 'GET') return this.getSessionTasks(tasksMatch[1]);
+        if (req.method === 'POST') return this.saveTask(tasksMatch[1], req.body);
+      }
+
+      const taskMatch = req.url.match(/^\/session\/([^/]+)\/tasks\/([^/]+)$/);
+      if (req.method === 'DELETE' && taskMatch) {
+        return this.deleteTask(taskMatch[1], taskMatch[2]);
+      }
+
+      // /session/:id/manual and /session/:id/manual/:fieldId
+      const manualListMatch = req.url.match(/^\/session\/([^/]+)\/manual$/);
+      if (req.method === 'GET' && manualListMatch) {
+        return this.getManualValues(manualListMatch[1]);
+      }
+
+      const manualMatch = req.url.match(/^\/session\/([^/]+)\/manual\/([^/]+)$/);
+      if (manualMatch) {
+        if (req.method === 'PUT') {
+          return this.setManualValue(manualMatch[1], manualMatch[2], req.body);
+        }
+        if (req.method === 'DELETE') {
+          return this.clearManualValue(manualMatch[1], manualMatch[2]);
+        }
       }
 
       // /session/:id — last, so the more specific patterns above win

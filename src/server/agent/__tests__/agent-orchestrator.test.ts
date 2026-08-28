@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AgentOrchestrator } from '../agent-orchestrator';
 import type { BedrockClient, LlmResponse } from '../bedrock-client';
-import type { AgentCoreAdapter } from '../agentcore-adapter';
+import type { ValentinRuntime } from '../valentin-runtime';
 import type { StorageInterface } from '../../persistence/storage-interface';
 import type { ConversationMemory, ContextWindow } from '../../persistence/conversation-memory';
 import type { PreferenceExtractorRef } from '../agent-orchestrator';
@@ -48,10 +48,10 @@ function createMockBedrock(): BedrockClient {
   };
 }
 
-function createMockAgentCore(): AgentCoreAdapter {
+function createMockRuntime(): ValentinRuntime {
   return {
-    registerAgent: vi.fn().mockResolvedValue('agent-001'),
-    createSession: vi.fn().mockResolvedValue('ac-sess-123'),
+    registerAgent: vi.fn().mockResolvedValue('valentin-001'),
+    createSession: vi.fn().mockResolvedValue('valentin-session-123'),
   };
 }
 
@@ -65,7 +65,7 @@ describe('AgentOrchestrator', () => {
   let storage: StorageInterface;
   let memory: ConversationMemory;
   let bedrock: BedrockClient;
-  let agentCore: AgentCoreAdapter;
+  let runtime: ValentinRuntime;
   let extractor: PreferenceExtractorRef;
   let orchestrator: AgentOrchestrator;
 
@@ -73,9 +73,9 @@ describe('AgentOrchestrator', () => {
     storage = createMockStorage();
     memory = createMockMemory();
     bedrock = createMockBedrock();
-    agentCore = createMockAgentCore();
+    runtime = createMockRuntime();
     extractor = createMockExtractor();
-    orchestrator = new AgentOrchestrator(storage, memory, bedrock, agentCore, extractor);
+    orchestrator = new AgentOrchestrator(storage, memory, bedrock, runtime, extractor);
   });
 
   describe('initSession', () => {
@@ -93,9 +93,9 @@ describe('AgentOrchestrator', () => {
       expect(storage.createSession).toHaveBeenCalled();
     });
 
-    it('creates AgentCore session', async () => {
+    it('creates a runtime session', async () => {
       await orchestrator.initSession();
-      expect(agentCore.createSession).toHaveBeenCalledWith('sess-123');
+      expect(runtime.createSession).toHaveBeenCalledWith('sess-123');
     });
 
     it('stores welcome message in memory', async () => {

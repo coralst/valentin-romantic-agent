@@ -3,7 +3,7 @@ import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
 import type { StorageInterface } from '../persistence/storage-interface';
 import type { ConversationMemory } from '../persistence/conversation-memory';
 import type { BedrockClient } from './bedrock-client';
-import type { AgentCoreAdapter } from './agentcore-adapter';
+import type { ValentinRuntime } from './valentin-runtime';
 import {
   buildSystemPrompt,
   partnerNameFrom,
@@ -88,13 +88,13 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
     private readonly storage: StorageInterface,
     private readonly memory: ConversationMemory,
     private readonly bedrockClient: BedrockClient,
-    private readonly agentCore: AgentCoreAdapter,
+    private readonly runtime: ValentinRuntime,
     private readonly extractor: PreferenceExtractorRef | null,
   ) {}
 
   async initSession(): Promise<InitSessionResult> {
     const sessionId = await this.storage.createSession();
-    await this.agentCore.createSession(sessionId);
+    await this.runtime.createSession(sessionId);
 
     const welcomeMessage = buildWelcomeMessage(sessionId);
     await this.memory.addMessage(sessionId, welcomeMessage);

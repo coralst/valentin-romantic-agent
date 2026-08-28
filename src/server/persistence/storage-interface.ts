@@ -146,7 +146,7 @@ export interface ScopedStorageOptions {
  * you have one every key it builds is already scoped.
  *
  * The cost is that the store stops being a process singleton. Bedrock client,
- * AgentCore adapter and WsGateway stay singletons; the store, ConversationMemory,
+ * agent runtime and WsGateway stay singletons; the store, ConversationMemory,
  * PreferenceExtractor, AgentOrchestrator and EventRouter are built per
  * connection. All are constructor-only objects, so that allocation is free, and
  * no consumer's signature changes.

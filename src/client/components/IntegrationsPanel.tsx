@@ -140,14 +140,6 @@ const hubNameStyle: React.CSSProperties = {
   display: 'block',
 };
 
-const hubEyebrowStyle: React.CSSProperties = {
-  fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.micro,
-  letterSpacing: '0.16em',
-  textTransform: 'uppercase',
-  opacity: 0.85,
-};
-
 function nodeStyle(isConnected: boolean): React.CSSProperties {
   return {
     position: 'absolute',
@@ -471,10 +463,10 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
             style={{ ...hubStyle, left: hubX - HUB_SIZE / 2, top: hubY - HUB_SIZE / 2 }}
             data-testid="integrations-hub"
           >
-            <span>
-              <span style={hubNameStyle}>Valentin</span>
-              <span style={hubEyebrowStyle}>agent core</span>
-            </span>
+            {/* Just his name. The eyebrow used to read "agent core", which named
+                a piece of AWS infrastructure this build does not use and told the
+                visitor nothing about what the circle is. */}
+            <span style={hubNameStyle}>Valentin</span>
           </div>
 
           {INTEGRATION_CATALOGUE.map((service, index) => {

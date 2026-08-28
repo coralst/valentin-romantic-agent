@@ -4,7 +4,9 @@ import type {
   PreferenceCategory,
   PreferenceWithHistory,
 } from '../../shared/interfaces/preference';
+import type { Person } from '../../shared/interfaces/person';
 import type { SessionData } from '../../shared/interfaces/session';
+import type { Task } from '../../shared/interfaces/task';
 
 /** Structured preference data extracted from conversation, before persistence */
 export interface ExtractedPreference {
@@ -88,6 +90,44 @@ export interface StorageInterface {
     key: string,
   ): Promise<PreferenceWithHistory | null>;
 
+  // --- Her people ---
+  /**
+   * Write one person, keyed by their own id, so this is idempotent and a rename
+   * is an overwrite rather than a delete plus an insert.
+   */
+  savePerson(sessionId: string, person: Person): Promise<Person>;
+
+  /** Write many at once — the demo seed lands thirteen of them in one click. */
+  savePeopleBatch(sessionId: string, people: readonly Person[]): Promise<Person[]>;
+
+  getPeopleBySession(sessionId: string): Promise<Person[]>;
+
+  /** Remove one person. A no-op for an id this session does not have. */
+  deletePerson(sessionId: string, personId: string): Promise<void>;
+
+  // --- What to do next ---
+  saveTask(sessionId: string, task: Task): Promise<Task>;
+  saveTasksBatch(sessionId: string, tasks: readonly Task[]): Promise<Task[]>;
+  getTasksBySession(sessionId: string): Promise<Task[]>;
+  deleteTask(sessionId: string, taskId: string): Promise<void>;
+
+  // --- Corrections the user made by hand ---
+  /**
+   * Record what the user says a field's value is, overriding what Valentin
+   * inferred.
+   *
+   * Separate from `savePreference` because the two must not race: a manual value
+   * has to survive a later extraction of the same field, and writing both into
+   * one row would make whichever landed second the winner.
+   */
+  setManualValue(sessionId: string, fieldId: string, value: string): Promise<void>;
+
+  /** Every hand-entered value for a session, keyed by field id. */
+  getManualValues(sessionId: string): Promise<Record<string, string>>;
+
+  /** Drop one hand-entered value, letting Valentin's own guess show again. */
+  clearManualValue(sessionId: string, fieldId: string): Promise<void>;
+
   // --- Conversation Memory ---
   saveMessage(msg: ChatMessage): Promise<void>;
   getMessagesBySession(sessionId: string): Promise<ChatMessage[]>;
@@ -113,13 +153,13 @@ export interface StorageInterface {
   endSession(sessionId: string): Promise<void>;
 
   /**
-   * Remove every preference and message belonging to a session, resetting its
-   * counters. The session itself stays alive and usable — this is a reset, not
-   * a delete. A no-op for unknown session ids.
+   * Remove everything belonging to a session — preferences, messages, people,
+   * tasks and manual values — resetting its counters. The session itself stays
+   * alive and usable: this is a reset, not a delete. A no-op for unknown ids.
    */
   clearSession(sessionId: string): Promise<void>;
 
-  /** Remove a session outright, along with its messages and preferences */
+  /** Remove a session outright, along with every item in its partition */
   deleteSession(sessionId: string): Promise<void>;
 }
 

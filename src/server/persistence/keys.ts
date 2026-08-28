@@ -29,14 +29,31 @@ import type { PreferenceCategory } from '../../shared/interfaces/preference';
  * | Session | `USER#<sub>#SESSION#<sid>`| `META`                | `USER#<sub>`| `TS#<createdAt>#<sid>`  |
  * | Message | `USER#<sub>#SESSION#<sid>`| `MSG#<ts>#<msgId>`    | —           | —                       |
  * | Pref    | `USER#<sub>#SESSION#<sid>`| `PREF#<cat>#<key>`    | —           | —                       |
+ * | Person  | `USER#<sub>#SESSION#<sid>`| `PERSON#<personId>`   | —           | —                       |
+ * | Task    | `USER#<sub>#SESSION#<sid>`| `TASK#<taskId>`       | —           | —                       |
+ * | Manual  | `USER#<sub>#SESSION#<sid>`| `MANUAL#<fieldId>`    | —           | —                       |
  *
  * Only session-meta items carry `gsi1pk`, so GSI1 is **sparse**: listing a
  * user's sessions is one query returning one row per session, with no filter.
  *
- * Messages and preferences share their session's partition, so a reset is one
- * query plus a chunked BatchWrite, and `begins_with` is applied to the **sort**
- * key — which is legal. The store this replaced tried `begins_with(gsi1pk, …)`
- * on a *partition* key, which DynamoDB rejects outright.
+ * Every non-meta item shares its session's partition, so a reset is one query
+ * plus a chunked BatchWrite, and `begins_with` is applied to the **sort** key —
+ * which is legal. The store this replaced tried `begins_with(gsi1pk, …)` on a
+ * *partition* key, which DynamoDB rejects outright.
+ *
+ * ## Why people, tasks and manual values are items and not attributes
+ *
+ * All three could have been JSON blobs on the session-meta item, which would
+ * have been fewer lines. They are separate items because each is written
+ * independently and concurrently: extraction can record a person while the user
+ * ticks a task, and a read-modify-write of one shared blob loses one of those
+ * two edits silently. One item per record means the two writes never touch.
+ *
+ * `MANUAL#<fieldId>` deliberately mirrors `PREF#` rather than reusing it. A
+ * `PREF` row is what Valentin *inferred*; a `MANUAL` row is what the user
+ * *corrected him about*, and the correction has to win. Storing them in the same
+ * item would make the last writer win instead, so a re-extraction would quietly
+ * overwrite the user's own answer.
  *
  * Never build a key inline. The previous store had four scattered
  * `'USER#anonymous'` literals, and that is exactly what inline keys produce.
@@ -50,6 +67,22 @@ function assertComponent(name: string, value: string): void {
   if (typeof value !== 'string' || value.length === 0) {
     throw new Error(`Key component "${name}" must be a non-empty string`);
   }
+}
+
+/**
+ * Reject a sort key DynamoDB would reject, naming the component at fault.
+ *
+ * The limit is on the whole key, but the useful error names the part the caller
+ * can do something about — a model-derived preference key or a person id — not
+ * the assembled string with a prefix they never wrote.
+ */
+function withinLimit(sk: string, name: string, value: string): string {
+  if (Buffer.byteLength(sk, 'utf8') > MAX_SORT_KEY_BYTES) {
+    throw new Error(
+      `Key component "${name}" too long: "${value}" exceeds DynamoDB's ${MAX_SORT_KEY_BYTES}-byte sort key limit`,
+    );
+  }
+  return sk;
 }
 
 /** Partition key for everything belonging to one session of one user */
@@ -96,13 +129,47 @@ export function msgSk(timestamp: string, messageId: string): string {
 export function prefSk(category: PreferenceCategory, key: string): string {
   assertComponent('category', category);
   assertComponent('key', key);
-  const sk = `${PREF_PREFIX}${category}#${key}`;
-  if (Buffer.byteLength(sk, 'utf8') > MAX_SORT_KEY_BYTES) {
-    throw new Error(
-      `Preference key too long: "${category}#${key}" exceeds DynamoDB's ${MAX_SORT_KEY_BYTES}-byte sort key limit`,
-    );
-  }
-  return sk;
+  return withinLimit(`${PREF_PREFIX}${category}#${key}`, 'key', `${category}#${key}`);
+}
+
+/** Sort-key prefix shared by every person in a session */
+export const PERSON_PREFIX = 'PERSON#';
+
+/** Sort-key prefix shared by every task in a session */
+export const TASK_PREFIX = 'TASK#';
+
+/** Sort-key prefix shared by every manually-entered field value in a session */
+export const MANUAL_PREFIX = 'MANUAL#';
+
+/**
+ * Sort key of a person.
+ *
+ * Keyed by the record's own id rather than by name, because a rename is the most
+ * likely edit a family record ever gets and a name-keyed row would turn each one
+ * into a delete plus an insert. Nothing needs these in a particular order — the
+ * tree groups them by generation on the client — so the id alone is enough.
+ */
+export function personSk(personId: string): string {
+  assertComponent('personId', personId);
+  return withinLimit(`${PERSON_PREFIX}${personId}`, 'personId', personId);
+}
+
+/** Sort key of a task. Keyed by id for the same reason as a person. */
+export function taskSk(taskId: string): string {
+  assertComponent('taskId', taskId);
+  return withinLimit(`${TASK_PREFIX}${taskId}`, 'taskId', taskId);
+}
+
+/**
+ * Sort key of a manually-entered field value.
+ *
+ * One row per field id, so a correction is an idempotent PutItem and clearing
+ * one is a DeleteItem — no read-modify-write, and no way for two edits to
+ * different fields to clobber each other.
+ */
+export function manualSk(fieldId: string): string {
+  assertComponent('fieldId', fieldId);
+  return withinLimit(`${MANUAL_PREFIX}${fieldId}`, 'fieldId', fieldId);
 }
 
 /** GSI1 partition key — the sparse index that lists one user's sessions */

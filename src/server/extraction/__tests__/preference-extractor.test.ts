@@ -49,6 +49,20 @@ function createMockStorage(): StorageInterface {
     })),
     getPreferencesBySession: vi.fn().mockResolvedValue([]),
     findPreference: vi.fn().mockResolvedValue(null),
+    // Echoing the record back rather than returning undefined: the extractor
+    // forwards what the store returns to the client, so a stub that swallowed it
+    // would let a broken forward pass.
+    savePerson: vi.fn().mockImplementation(async (_sessionId, person) => person),
+    savePeopleBatch: vi.fn().mockResolvedValue([]),
+    getPeopleBySession: vi.fn().mockResolvedValue([]),
+    deletePerson: vi.fn().mockResolvedValue(undefined),
+    saveTask: vi.fn().mockImplementation(async (_sessionId, task) => task),
+    saveTasksBatch: vi.fn().mockResolvedValue([]),
+    getTasksBySession: vi.fn().mockResolvedValue([]),
+    deleteTask: vi.fn().mockResolvedValue(undefined),
+    setManualValue: vi.fn().mockResolvedValue(undefined),
+    getManualValues: vi.fn().mockResolvedValue({}),
+    clearManualValue: vi.fn().mockResolvedValue(undefined),
   };
 }
 

@@ -22,6 +22,17 @@ function createMockStorage(): StorageInterface {
     updatePreference: vi.fn(),
     getPreferencesBySession: vi.fn().mockResolvedValue([]),
     findPreference: vi.fn().mockResolvedValue(null),
+    savePerson: vi.fn(),
+    savePeopleBatch: vi.fn().mockResolvedValue([]),
+    getPeopleBySession: vi.fn().mockResolvedValue([]),
+    deletePerson: vi.fn().mockResolvedValue(undefined),
+    saveTask: vi.fn(),
+    saveTasksBatch: vi.fn().mockResolvedValue([]),
+    getTasksBySession: vi.fn().mockResolvedValue([]),
+    deleteTask: vi.fn().mockResolvedValue(undefined),
+    setManualValue: vi.fn().mockResolvedValue(undefined),
+    getManualValues: vi.fn().mockResolvedValue({}),
+    clearManualValue: vi.fn().mockResolvedValue(undefined),
   };
 }
 

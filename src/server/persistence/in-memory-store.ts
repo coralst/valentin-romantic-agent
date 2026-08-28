@@ -5,7 +5,10 @@ import type {
   PreferenceHistoryEntry,
   PreferenceWithHistory,
 } from '../../shared/interfaces/preference';
+import { DEFAULT_GENERATION, isPersonGeneration } from '../../shared/interfaces/person';
+import type { Person } from '../../shared/interfaces/person';
 import type { SessionData } from '../../shared/interfaces/session';
+import type { Task } from '../../shared/interfaces/task';
 import type {
   PreferenceInput,
   PreferenceRef,
@@ -14,7 +17,7 @@ import type {
   SessionMetaPatch,
   StorageInterface,
 } from './storage-interface';
-import { prefSk, sessionPk } from './keys';
+import { manualSk, personSk, prefSk, sessionPk, taskSk } from './keys';
 
 /**
  * In-memory storage for tests and local development.
@@ -131,6 +134,94 @@ export class InMemoryStore implements StorageInterface {
     return this.shared.preferences.get(this.prefKey(sessionId, category, key)) ?? null;
   }
 
+  // --- Her people ---
+
+  async savePerson(sessionId: string, person: Person): Promise<Person> {
+    const [saved] = await this.savePeopleBatch(sessionId, [person]);
+    return saved;
+  }
+
+  async savePeopleBatch(sessionId: string, people: readonly Person[]): Promise<Person[]> {
+    const now = new Date().toISOString();
+    const records: Person[] = [];
+
+    for (const person of people) {
+      // Normalised on the way in, exactly as the DynamoDB store's `toPerson`
+      // normalises on the way out. Otherwise a test using this store would
+      // accept a generation production would silently reassign.
+      const record: Person = {
+        ...person,
+        generation: isPersonGeneration(person.generation)
+          ? person.generation
+          : DEFAULT_GENERATION,
+        updatedAt: now,
+      };
+      this.shared.people.set(this.itemKey(sessionId, personSk(record.id)), record);
+      records.push(record);
+    }
+
+    this.touchSession(sessionId, now);
+    return records;
+  }
+
+  async getPeopleBySession(sessionId: string): Promise<Person[]> {
+    return this.itemsUnder(this.shared.people, sessionId);
+  }
+
+  async deletePerson(sessionId: string, personId: string): Promise<void> {
+    this.shared.people.delete(this.itemKey(sessionId, personSk(personId)));
+  }
+
+  // --- What to do next ---
+
+  async saveTask(sessionId: string, task: Task): Promise<Task> {
+    const [saved] = await this.saveTasksBatch(sessionId, [task]);
+    return saved;
+  }
+
+  async saveTasksBatch(sessionId: string, tasks: readonly Task[]): Promise<Task[]> {
+    const now = new Date().toISOString();
+    const records: Task[] = [];
+
+    for (const task of tasks) {
+      const record: Task = { ...task, updatedAt: now };
+      this.shared.tasks.set(this.itemKey(sessionId, taskSk(record.id)), record);
+      records.push(record);
+    }
+
+    this.touchSession(sessionId, now);
+    return records;
+  }
+
+  async getTasksBySession(sessionId: string): Promise<Task[]> {
+    return this.itemsUnder(this.shared.tasks, sessionId);
+  }
+
+  async deleteTask(sessionId: string, taskId: string): Promise<void> {
+    this.shared.tasks.delete(this.itemKey(sessionId, taskSk(taskId)));
+  }
+
+  // --- Corrections the user made by hand ---
+
+  async setManualValue(sessionId: string, fieldId: string, value: string): Promise<void> {
+    this.shared.manualValues.set(this.itemKey(sessionId, manualSk(fieldId)), {
+      fieldId,
+      value,
+    });
+  }
+
+  async getManualValues(sessionId: string): Promise<Record<string, string>> {
+    const values: Record<string, string> = {};
+    for (const entry of this.itemsUnder(this.shared.manualValues, sessionId)) {
+      values[entry.fieldId] = entry.value;
+    }
+    return values;
+  }
+
+  async clearManualValue(sessionId: string, fieldId: string): Promise<void> {
+    this.shared.manualValues.delete(this.itemKey(sessionId, manualSk(fieldId)));
+  }
+
   // --- Conversation Memory ---
 
   async saveMessage(msg: ChatMessage): Promise<void> {
@@ -204,6 +295,15 @@ export class InMemoryStore implements StorageInterface {
     }
     this.shared.messages.delete(partition);
 
+    // Her family, his to-do list and his corrections are as much "what Valentin
+    // knows" as the preferences are — a reset that left them standing would look
+    // to the user like it had failed.
+    for (const map of [this.shared.people, this.shared.tasks, this.shared.manualValues]) {
+      for (const mapKey of [...map.keys()]) {
+        if (mapKey.startsWith(prefix)) map.delete(mapKey);
+      }
+    }
+
     const session = this.shared.sessions.get(partition);
     if (session) {
       session.messageCount = 0;
@@ -222,6 +322,31 @@ export class InMemoryStore implements StorageInterface {
   /** Map key mirroring the DynamoDB (pk, sk) pair for a preference */
   private prefKey(sessionId: string, category: PreferenceCategory, key: string): string {
     return `${sessionPk(this.userId, sessionId)}|${prefSk(category, key)}`;
+  }
+
+  /** Map key mirroring the DynamoDB (pk, sk) pair for any session-owned item */
+  private itemKey(sessionId: string, sk: string): string {
+    return `${sessionPk(this.userId, sessionId)}|${sk}`;
+  }
+
+  /** Every value in one of the shared maps belonging to one session */
+  private itemsUnder<T>(map: Map<string, T>, sessionId: string): T[] {
+    const prefix = `${this.itemKey(sessionId, '')}`;
+    return [...map.entries()]
+      .filter(([mapKey]) => mapKey.startsWith(prefix))
+      .map(([, value]) => value);
+  }
+
+  /**
+   * Touch lastActivity without moving a counter.
+   *
+   * People and tasks deliberately do not bump `preferenceCount`: that number
+   * drives the board's field-coverage reading, and a family is not a field.
+   */
+  private touchSession(sessionId: string, at: string): void {
+    const session = this.shared.sessions.get(sessionPk(this.userId, sessionId));
+    if (!session) return;
+    session.lastActivity = at;
   }
 
   /**
@@ -255,6 +380,9 @@ export interface InMemoryData {
   sessions: Map<string, SessionData>;
   messages: Map<string, ChatMessage[]>;
   preferences: Map<string, PreferenceWithHistory>;
+  people: Map<string, Person>;
+  tasks: Map<string, Task>;
+  manualValues: Map<string, { fieldId: string; value: string }>;
 }
 
 /** Hands out user-scoped in-memory stores backed by one shared data set */
@@ -263,6 +391,9 @@ export class InMemoryStoreFactory implements ScopedStorageFactory {
     sessions: new Map(),
     messages: new Map(),
     preferences: new Map(),
+    people: new Map(),
+    tasks: new Map(),
+    manualValues: new Map(),
   };
 
   // ttlSeconds is accepted and ignored: nothing in a process that ends survives

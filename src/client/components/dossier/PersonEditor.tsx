@@ -92,7 +92,11 @@ const hintStyle: React.CSSProperties = {
   color: colors.inkMuted,
 };
 
+// Longer than the tree's own labels on purpose: these are the options in a
+// picker, where the user has to choose between them, not headings above rows
+// where the people underneath already say which rung is which.
 const GENERATION_LABELS: Record<PersonGeneration, string> = {
+  grandparent: 'Her grandparents’ generation',
   elder: 'Her parents’ generation',
   peer: 'Her own generation',
   younger: 'Younger — children, nieces, pets',

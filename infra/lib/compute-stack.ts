@@ -49,6 +49,20 @@ export interface ComputeStackProps extends cdk.StackProps {
    * environment, and nobody has to copy ids out of the console.
    */
   cognitoDomainPrefix: string;
+  /**
+   * AgentCore Runtime the engine-B proxy invokes, from AgentCoreStack.
+   *
+   * The proxy exists because an AgentCore Runtime cannot be an ALB target — the
+   * only target types are instance, ip, lambda and alb. A Lambda target would
+   * work for the HTTP routes and then fail the thing that matters: ALB-to-Lambda
+   * cannot response-stream, so time-to-first-token would be unmeasurable, which
+   * is one of the two numbers this whole comparison exists to produce.
+   */
+  agentCoreRuntimeArn: string;
+  /** AgentCore Memory the proxy reads and writes conversation events on. */
+  agentCoreMemoryId: string;
+  /** Gateway MCP endpoint, passed through for the drawer to display. */
+  agentCoreGatewayUrl: string;
 }
 
 /**
@@ -57,6 +71,17 @@ export interface ComputeStackProps extends cdk.StackProps {
  * Creates: ECS Cluster, Task Definition, Fargate Service, ALB with
  * health-check and sticky sessions, auto-scaling, and security groups.
  * The ECR repository is imported, not created.
+ *
+ * Two services run here, not one. Both run the *same* image off the same tag;
+ * they differ only by the AGENT_ENGINE environment variable:
+ *
+ *   valentin-service-<env>   AGENT_ENGINE=valentin   the hand-built orchestrator
+ *   valentin-ac-proxy-<env>  AGENT_ENGINE=agentcore  streams from AgentCore Runtime
+ *
+ * Same image is the point. A measured difference between the two engines has to
+ * come from the engine, so anything that isn't the engine — Node version, HTTP
+ * stack, DynamoDB client, guardrail, model id, task size — is held identical by
+ * construction rather than by discipline.
  */
 export class ComputeStack extends cdk.Stack {
   public readonly cluster: ecs.Cluster;
@@ -64,6 +89,10 @@ export class ComputeStack extends cdk.Stack {
   public readonly loadBalancer: elbv2.ApplicationLoadBalancer;
   public readonly targetGroup: elbv2.ApplicationTargetGroup;
   public readonly ecrRepository: ecr.IRepository;
+  /** Engine-B service: terminates the browser connection and streams from the Runtime. */
+  public readonly proxyService: ecs.FargateService;
+  /** Engine-B target group, wired to the same ALB by the listener rules below. */
+  public readonly proxyTargetGroup: elbv2.ApplicationTargetGroup;
 
   constructor(scope: Construct, id: string, props: ComputeStackProps) {
     super(scope, id, props);
@@ -128,22 +157,65 @@ export class ComputeStack extends cdk.Stack {
       'Allow traffic from ALB only',
     );
 
-    // --- Task Role (permissions for AWS services) ---
+    // --- Task Roles (permissions for AWS services) ---
+    //
+    // One role per service rather than one shared role. Both run the same image,
+    // so the code paths are identical, but the *engines* are not: only engine A
+    // calls Bedrock Converse directly, and only engine B calls the AgentCore
+    // data plane. Sharing a role would grant each service the other's
+    // permissions and quietly hide that distinction from anyone auditing which
+    // engine actually talks to which API.
     const taskRole = new iam.Role(this, 'TaskRole', {
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
       roleName: `valentin-task-role-${env}`,
     });
 
-    // Grants derive the exact table/bucket ARNs (including GSIs) from the
-    // constructs. The previous hand-written statements used resources:['*']
-    // with a StringLike condition on `valentin-*-<env>`, which never matched
-    // the real table name `ValentinTable-<env>`.
-    //
-    // Deriving from the construct also covers `/index/*`, which a Query against
-    // GSI1 is authorized against rather than the table ARN — so the session
-    // list would 403 under a table-ARN-only grant.
-    props.table.grantReadWriteData(taskRole);
-    props.photoBucket.grantReadWrite(taskRole);
+    const proxyTaskRole = new iam.Role(this, 'ProxyTaskRole', {
+      assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+      roleName: `valentin-ac-proxy-role-${env}`,
+    });
+
+    /**
+     * Everything both engines need: the same table, the same photo bucket, the
+     * same secret and the same demo sign-in. Engine B still owns session and
+     * message persistence and still serves the profile UI, so its access to
+     * these is identical rather than reduced.
+     */
+    const grantSharedAccess = (role: iam.IRole) => {
+      // Grants derive the exact table/bucket ARNs (including GSIs) from the
+      // constructs. The previous hand-written statements used resources:['*']
+      // with a StringLike condition on `valentin-*-<env>`, which never matched
+      // the real table name `ValentinTable-<env>`.
+      //
+      // Deriving from the construct also covers `/index/*`, which a Query against
+      // GSI1 is authorized against rather than the table ARN — so the session
+      // list would 403 under a table-ARN-only grant.
+      props.table.grantReadWriteData(role);
+      props.photoBucket.grantReadWrite(role);
+
+      role.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          actions: ['secretsmanager:GetSecretValue'],
+          resources: [`arn:aws:secretsmanager:*:*:secret:valentin/${env}/*`],
+        }),
+      );
+
+      // Cognito: only what the demo sign-in needs, scoped to this one pool.
+      // AdminInitiateAuth is how POST /api/demo/login exchanges the stored demo
+      // password for real Cognito tokens. Notably absent: AdminCreateUser and
+      // AdminSetUserPassword — the task must not be able to mint pool users. That
+      // is scripts/seed-demo-user.sh's job, run once at deploy time by an
+      // operator identity, so no long-lived role holds pool-admin rights.
+      role.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          actions: ['cognito-idp:AdminInitiateAuth'],
+          resources: [props.userPoolArn],
+        }),
+      );
+    };
+
+    grantSharedAccess(taskRole);
+    grantSharedAccess(proxyTaskRole);
 
     taskRole.addToPolicy(
       new iam.PolicyStatement({
@@ -177,23 +249,52 @@ export class ComputeStack extends cdk.Stack {
       }),
     );
 
-    taskRole.addToPolicy(
+    // --- Engine-B-only permissions ---
+    //
+    // Deliberately absent: bedrock:InvokeModel. The proxy never calls the model
+    // itself — the Runtime does, under its own role in AgentCoreStack. If a
+    // future change makes the proxy fall back to direct Bedrock on a Runtime
+    // error, that fallback should fail loudly with AccessDenied rather than
+    // silently serve engine-A answers on engine-B's route and corrupt every
+    // number the comparison produces.
+    proxyTaskRole.addToPolicy(
       new iam.PolicyStatement({
-        actions: ['secretsmanager:GetSecretValue'],
-        resources: [`arn:aws:secretsmanager:*:*:secret:valentin/${env}/*`],
+        actions: ['bedrock-agentcore:InvokeAgentRuntime'],
+        resources: [
+          props.agentCoreRuntimeArn,
+          // Runtime *endpoints* are children of the runtime ARN and are what an
+          // InvokeAgentRuntime call is actually authorized against when a
+          // qualifier is supplied — including the DEFAULT endpoint.
+          `${props.agentCoreRuntimeArn}/*`,
+        ],
       }),
     );
 
-    // Cognito: only what the demo sign-in needs, scoped to this one pool.
-    // AdminInitiateAuth is how POST /api/demo/login exchanges the stored demo
-    // password for real Cognito tokens. Notably absent: AdminCreateUser and
-    // AdminSetUserPassword — the task must not be able to mint pool users. That
-    // is scripts/seed-demo-user.sh's job, run once at deploy time by an
-    // operator identity, so no long-lived role holds pool-admin rights.
-    taskRole.addToPolicy(
+    // Memory data plane. The proxy writes each turn as an event and reads the
+    // extracted records back, so the profile drawer can show what AgentCore
+    // inferred alongside what the hand-rolled extractor found.
+    proxyTaskRole.addToPolicy(
       new iam.PolicyStatement({
-        actions: ['cognito-idp:AdminInitiateAuth'],
-        resources: [props.userPoolArn],
+        actions: [
+          'bedrock-agentcore:CreateEvent',
+          'bedrock-agentcore:ListEvents',
+          'bedrock-agentcore:GetEvent',
+          'bedrock-agentcore:RetrieveMemoryRecords',
+          'bedrock-agentcore:ListMemoryRecords',
+          'bedrock-agentcore:GetMemoryRecord',
+        ],
+        resources: [
+          cdk.Stack.of(this).formatArn({
+            service: 'bedrock-agentcore',
+            resource: 'memory',
+            resourceName: props.agentCoreMemoryId,
+          }),
+          cdk.Stack.of(this).formatArn({
+            service: 'bedrock-agentcore',
+            resource: 'memory',
+            resourceName: `${props.agentCoreMemoryId}/*`,
+          }),
+        ],
       }),
     );
 
@@ -219,45 +320,109 @@ export class ComputeStack extends cdk.Stack {
     // expects /tmp to exist. The server itself writes nothing to disk.
     taskDefinition.addVolume({ name: 'tmp' });
 
+    /**
+     * Environment shared verbatim by both engines. Anything engine-specific goes
+     * in the per-container spread below, so a reader can see at a glance that the
+     * two services differ by exactly four variables and nothing else.
+     */
+    const sharedEnvironment: Record<string, string> = {
+      DYNAMO_TABLE_NAME: props.table.tableName,
+      // Opt in to durable storage. Without this the server falls back to
+      // InMemoryStore and the deployed app silently forgets everything on
+      // every task replacement.
+      STORAGE_BACKEND: 'dynamodb',
+      S3_PHOTO_BUCKET: props.photoBucket.bucketName,
+      BEDROCK_GUARDRAIL_ID: props.guardrailId,
+      BEDROCK_GUARDRAIL_VERSION: props.guardrailVersion,
+      BEDROCK_MODEL_ID: config.bedrockModelId,
+      AWS_REGION: cdk.Stack.of(this).region,
+      NODE_ENV: 'production',
+      // Auth. The server treats missing Cognito config as a hard boot failure
+      // in production — see src/server/auth/jwt-verifier.ts.
+      COGNITO_USER_POOL_ID: props.userPoolId,
+      COGNITO_SPA_CLIENT_ID: props.spaClientId,
+      COGNITO_DEMO_CLIENT_ID: props.demoClientId,
+      DEMO_SECRET_ARN: props.demoSecret.secretArn,
+      COGNITO_DOMAIN: `https://${props.cognitoDomainPrefix}.auth.${cdk.Stack.of(this).region}.amazoncognito.com`,
+    };
+
+    /** Container-level health check, identical for both services. */
+    const containerHealthCheck: ecs.HealthCheck = {
+      command: ['CMD-SHELL', 'wget -qO- http://localhost:3001/api/health || exit 1'],
+      interval: cdk.Duration.seconds(30),
+      timeout: cdk.Duration.seconds(5),
+      retries: 3,
+      startPeriod: cdk.Duration.seconds(60),
+    };
+
     const container = taskDefinition.addContainer('Backend', {
       image: ecs.ContainerImage.fromEcrRepository(this.ecrRepository, props.imageTag),
       containerName: 'valentin-backend',
       readonlyRootFilesystem: true,
       portMappings: [{ containerPort: 3001, protocol: ecs.Protocol.TCP }],
       environment: {
-        DYNAMO_TABLE_NAME: props.table.tableName,
-        // Opt in to durable storage. Without this the server falls back to
-        // InMemoryStore and the deployed app silently forgets everything on
-        // every task replacement.
-        STORAGE_BACKEND: 'dynamodb',
-        S3_PHOTO_BUCKET: props.photoBucket.bucketName,
-        BEDROCK_GUARDRAIL_ID: props.guardrailId,
-        BEDROCK_GUARDRAIL_VERSION: props.guardrailVersion,
-        BEDROCK_MODEL_ID: config.bedrockModelId,
-        AWS_REGION: cdk.Stack.of(this).region,
-        NODE_ENV: 'production',
-        // Auth. The server treats missing Cognito config as a hard boot failure
-        // in production — see src/server/auth/jwt-verifier.ts.
-        COGNITO_USER_POOL_ID: props.userPoolId,
-        COGNITO_SPA_CLIENT_ID: props.spaClientId,
-        COGNITO_DEMO_CLIENT_ID: props.demoClientId,
-        DEMO_SECRET_ARN: props.demoSecret.secretArn,
-        COGNITO_DOMAIN: `https://${props.cognitoDomainPrefix}.auth.${cdk.Stack.of(this).region}.amazoncognito.com`,
+        ...sharedEnvironment,
+        // Engine A. Named explicitly rather than left to the code's default, so
+        // that flipping the default in src/ cannot silently change what the
+        // baseline service runs.
+        AGENT_ENGINE: 'valentin',
       },
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: `valentin-${env}`,
         logGroup,
       }),
-      healthCheck: {
-        command: ['CMD-SHELL', 'wget -qO- http://localhost:3001/api/health || exit 1'],
-        interval: cdk.Duration.seconds(30),
-        timeout: cdk.Duration.seconds(5),
-        retries: 3,
-        startPeriod: cdk.Duration.seconds(60),
-      },
+      healthCheck: containerHealthCheck,
     });
 
     container.addMountPoints({
+      sourceVolume: 'tmp',
+      containerPath: '/tmp',
+      readOnly: false,
+    });
+
+    // --- Engine-B Task Definition (same image, AGENT_ENGINE=agentcore) ---
+    const proxyTaskDefinition = new ecs.FargateTaskDefinition(this, 'ProxyTaskDef', {
+      // Same size on purpose: a proxy on a smaller task would show up as worse
+      // latency and be misread as an AgentCore result.
+      memoryLimitMiB: config.memoryLimitMiB,
+      cpu: config.cpu,
+      taskRole: proxyTaskRole,
+      family: `valentin-ac-task-${env}`,
+    });
+
+    // A separate log group, not a separate stream prefix in the shared one.
+    // Per-engine telemetry is the deliverable here, and a Logs Insights query
+    // scoped by log group is both cheaper and impossible to get wrong.
+    const proxyLogGroup = new logs.LogGroup(this, 'ProxyLogGroup', {
+      logGroupName: `/valentin/${env}/agentcore`,
+      retention: config.logRetention,
+      removalPolicy: config.env === 'prod'
+        ? cdk.RemovalPolicy.RETAIN
+        : cdk.RemovalPolicy.DESTROY,
+    });
+
+    proxyTaskDefinition.addVolume({ name: 'tmp' });
+
+    const proxyContainer = proxyTaskDefinition.addContainer('Backend', {
+      image: ecs.ContainerImage.fromEcrRepository(this.ecrRepository, props.imageTag),
+      containerName: 'valentin-backend',
+      readonlyRootFilesystem: true,
+      portMappings: [{ containerPort: 3001, protocol: ecs.Protocol.TCP }],
+      environment: {
+        ...sharedEnvironment,
+        AGENT_ENGINE: 'agentcore',
+        AGENTCORE_RUNTIME_ARN: props.agentCoreRuntimeArn,
+        AGENTCORE_MEMORY_ID: props.agentCoreMemoryId,
+        AGENTCORE_GATEWAY_URL: props.agentCoreGatewayUrl,
+      },
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: `valentin-ac-${env}`,
+        logGroup: proxyLogGroup,
+      }),
+      healthCheck: containerHealthCheck,
+    });
+
+    proxyContainer.addMountPoints({
       sourceVolume: 'tmp',
       containerPath: '/tmp',
       readOnly: false,
@@ -305,6 +470,28 @@ export class ComputeStack extends cdk.Stack {
       deregistrationDelay: cdk.Duration.seconds(30),
     });
 
+    // --- Engine-B Target Group ---
+    // Every setting matches the group above. Stickiness in particular is not
+    // optional: both engines keep per-connection WebSocket state, so a session
+    // that lands on a different task mid-conversation loses its stream.
+    this.proxyTargetGroup = new elbv2.ApplicationTargetGroup(this, 'ProxyTargetGroup', {
+      vpc,
+      port: 3001,
+      protocol: elbv2.ApplicationProtocol.HTTP,
+      targetType: elbv2.TargetType.IP,
+      healthCheck: {
+        path: '/api/health',
+        interval: cdk.Duration.seconds(30),
+        timeout: cdk.Duration.seconds(5),
+        healthyThresholdCount: 2,
+        unhealthyThresholdCount: 3,
+        healthyHttpCodes: '200',
+      },
+      stickinessCookieDuration: cdk.Duration.hours(1),
+      targetGroupName: `valentin-tg-ac-${env}`,
+      deregistrationDelay: cdk.Duration.seconds(30),
+    });
+
     // --- ALB Listener ---
     // HTTP only: TLS terminates at CloudFront, and the origin hop is
     // restricted to CloudFront by the security group above. Adding HTTPS here
@@ -312,11 +499,42 @@ export class ComputeStack extends cdk.Stack {
     // `open: false` is essential: the default (true) makes addListener append
     // its own 0.0.0.0/0 ingress rule to the security group, which would
     // silently defeat the CloudFront prefix-list restriction above.
-    this.loadBalancer.addListener('HttpListener', {
+    const listener = this.loadBalancer.addListener('HttpListener', {
       port: 80,
       protocol: elbv2.ApplicationProtocol.HTTP,
+      // Engine A stays the default action, so every existing path — the SPA's
+      // /api/*, /ws, /api/health — keeps reaching the baseline service with no
+      // rule needed and no behaviour change if the rules below are removed.
       defaultTargetGroups: [this.targetGroup],
       open: false,
+    });
+
+    // --- Engine routing ---
+    //
+    // Three rules, in priority order. The two path rules carry the explicit
+    // engine-B endpoints; the header rule is what lets the compare harness send
+    // the *same* request to both engines and change only the routing, which is
+    // the only way a latency comparison is apples-to-apples.
+    listener.addAction('AgentCoreApi', {
+      priority: 10,
+      conditions: [elbv2.ListenerCondition.pathPatterns(['/api/agentcore/*'])],
+      action: elbv2.ListenerAction.forward([this.proxyTargetGroup]),
+    });
+
+    listener.addAction('AgentCoreWs', {
+      // Exact path, not a prefix: src/server/http/attach-websocket.ts matches
+      // request.url with === , so /ws/agentcore/anything would upgrade nowhere.
+      priority: 20,
+      conditions: [elbv2.ListenerCondition.pathPatterns(['/ws/agentcore'])],
+      action: elbv2.ListenerAction.forward([this.proxyTargetGroup]),
+    });
+
+    listener.addAction('AgentCoreHeader', {
+      priority: 30,
+      conditions: [
+        elbv2.ListenerCondition.httpHeader('X-Valentin-Engine', ['agentcore']),
+      ],
+      action: elbv2.ListenerAction.forward([this.proxyTargetGroup]),
     });
 
     // --- Fargate Service ---
@@ -337,6 +555,23 @@ export class ComputeStack extends cdk.Stack {
 
     this.service.attachToApplicationTargetGroup(this.targetGroup);
 
+    // --- Engine-B Fargate Service ---
+    this.proxyService = new ecs.FargateService(this, 'ProxyService', {
+      cluster: this.cluster,
+      taskDefinition: proxyTaskDefinition,
+      desiredCount: config.desiredCount,
+      // Same security group: it already allows 3001 from the ALB and nothing
+      // else, which is exactly this service's ingress requirement too.
+      securityGroups: [ecsSg],
+      assignPublicIp: false,
+      serviceName: `valentin-ac-proxy-${env}`,
+      circuitBreaker: { rollback: true },
+      minHealthyPercent: config.minHealthyPercent,
+      maxHealthyPercent: config.maxHealthyPercent,
+    });
+
+    this.proxyService.attachToApplicationTargetGroup(this.proxyTargetGroup);
+
     // --- Auto Scaling ---
     const scaling = this.service.autoScaleTaskCount({
       minCapacity: config.desiredCount,
@@ -344,6 +579,20 @@ export class ComputeStack extends cdk.Stack {
     });
 
     scaling.scaleOnCpuUtilization('CpuScaling', {
+      targetUtilizationPercent: 70,
+      scaleInCooldown: cdk.Duration.seconds(60),
+      scaleOutCooldown: cdk.Duration.seconds(60),
+    });
+
+    // Identical scaling policy, for the same reason the task size is identical:
+    // if one engine could scale out and the other could not, a load test would
+    // measure the scaling difference and report it as an engine difference.
+    const proxyScaling = this.proxyService.autoScaleTaskCount({
+      minCapacity: config.desiredCount,
+      maxCapacity: 4,
+    });
+
+    proxyScaling.scaleOnCpuUtilization('ProxyCpuScaling', {
       targetUtilizationPercent: 70,
       scaleInCooldown: cdk.Duration.seconds(60),
       scaleOutCooldown: cdk.Duration.seconds(60),
@@ -366,6 +615,21 @@ export class ComputeStack extends cdk.Stack {
       value: this.cluster.clusterArn,
       description: 'ECS cluster ARN',
       exportName: `valentin-cluster-arn-${env}`,
+    });
+
+    // No exportName on the engine-B outputs. An export creates a cross-stack
+    // lock that blocks any later change to the exporting resource while another
+    // stack consumes it — the failure mode this repo already has a production
+    // incident from. These are for `aws cloudformation describe-stacks` and for
+    // deploy.sh to read, not for another stack to import.
+    new cdk.CfnOutput(this, 'ProxyServiceName', {
+      value: this.proxyService.serviceName,
+      description: 'Engine-B (AgentCore) ECS service name',
+    });
+
+    new cdk.CfnOutput(this, 'ProxyLogGroupName', {
+      value: proxyLogGroup.logGroupName,
+      description: 'Engine-B log group — per-engine telemetry lives here',
     });
   }
 }

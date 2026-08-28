@@ -117,6 +117,21 @@ const computeStack = new ComputeStack(app, `Valentin-Compute-${env}`, {
   demoClientId: authStack.demoClient.userPoolClientId,
   demoSecret: authStack.demoSecret,
   cognitoDomainPrefix: authStack.userPoolDomainPrefix,
+  /*
+   * These three do create cross-stack exports that Compute holds open, which is
+   * the same mechanism as the guardrail-version incident above. The difference is
+   * what changes: a guardrail version changes on every policy edit, so the lock
+   * fired immediately. A Runtime ARN, Memory id and Gateway URL only change if
+   * the resource is *replaced*, and replacement only happens on a name change —
+   * and the names are derived from `env`, which never changes within a stack.
+   *
+   * If one of them does need to be replaced, deploy in two steps: set the proxy's
+   * desiredCount to 0 and deploy Compute first to release the export, then deploy
+   * AgentCore.
+   */
+  agentCoreRuntimeArn: agentCoreStack.runtimeArn,
+  agentCoreMemoryId: agentCoreStack.memoryId,
+  agentCoreGatewayUrl: agentCoreStack.gatewayUrl,
   env: stackEnv,
   description: `Valentin ECS Fargate compute (${env})`,
 });
@@ -126,6 +141,11 @@ computeStack.addStackDependency(authStack);
 // The task reads BEDROCK_GUARDRAIL_ID from this stack, so the guardrail must
 // exist first. Without this the guardrail was deployed but never referenced.
 computeStack.addStackDependency(safetyStack);
+// The proxy service names the Runtime, Memory and Gateway in its container
+// environment, so all three must exist before it starts. CDK infers this from
+// the props above, but the explicit call keeps the ordering readable next to the
+// four dependencies it already declares.
+computeStack.addStackDependency(agentCoreStack);
 
 const cdnStack = new CdnStack(app, `Valentin-CDN-${env}`, {
   config,

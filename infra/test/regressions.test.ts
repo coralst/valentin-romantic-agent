@@ -36,6 +36,17 @@ beforeAll(() => {
   const safety = new SafetyStack(app, 'Safety', { config, env: stackEnv });
   const auth = new AuthStack(app, 'Auth', { config, env: stackEnv });
 
+  const agentCore = new AgentCoreStack(app, 'AgentCore', {
+    config,
+    table: data.table,
+    guardrailId: safety.guardrailId,
+    guardrailVersion: 'DRAFT',
+    userPool: auth.userPool,
+    cognitoDomainPrefix: auth.userPoolDomainPrefix,
+    imageTag: 'test-sha',
+    env: stackEnv,
+  });
+
   const compute = new ComputeStack(app, 'Compute', {
     config,
     vpc: network.vpc,
@@ -51,17 +62,9 @@ beforeAll(() => {
     demoClientId: auth.demoClient.userPoolClientId,
     demoSecret: auth.demoSecret,
     cognitoDomainPrefix: auth.userPoolDomainPrefix,
-    env: stackEnv,
-  });
-
-  const agentCore = new AgentCoreStack(app, 'AgentCore', {
-    config,
-    table: data.table,
-    guardrailId: safety.guardrailId,
-    guardrailVersion: 'DRAFT',
-    userPool: auth.userPool,
-    cognitoDomainPrefix: auth.userPoolDomainPrefix,
-    imageTag: 'test-sha',
+    agentCoreRuntimeArn: agentCore.runtimeArn,
+    agentCoreMemoryId: agentCore.memoryId,
+    agentCoreGatewayUrl: agentCore.gatewayUrl,
     env: stackEnv,
   });
 
@@ -90,11 +93,26 @@ function deniedTopics(): Record<string, any> {
   );
 }
 
-/** The container's environment block, as a name -> value map. */
-function containerEnv(): Record<string, unknown> {
+/**
+ * One engine's container definition, selected by AGENT_ENGINE rather than by
+ * position. Two task definitions live in this stack now, and their order in the
+ * template is an implementation detail of construct traversal.
+ */
+function containerDef(engine: 'valentin' | 'agentcore'): any {
   const taskDefs = computeTemplate.findResources('AWS::ECS::TaskDefinition');
-  const def = Object.values(taskDefs)[0] as any;
-  const entries = def.Properties.ContainerDefinitions[0].Environment as Array<{
+  const containers = Object.values<any>(taskDefs).map(
+    (def) => def.Properties.ContainerDefinitions[0],
+  );
+  const match = containers.find((c: any) =>
+    (c.Environment ?? []).some((e: any) => e.Name === 'AGENT_ENGINE' && e.Value === engine),
+  );
+  if (!match) throw new Error(`no container definition for engine ${engine}`);
+  return match;
+}
+
+/** The container's environment block, as a name -> value map. */
+function containerEnv(engine: 'valentin' | 'agentcore' = 'valentin'): Record<string, unknown> {
+  const entries = containerDef(engine).Environment as Array<{
     Name: string;
     Value: unknown;
   }>;
@@ -339,16 +357,162 @@ describe('deployment safety', () => {
     expect(json).not.toContain(':latest');
   });
 
-  it('runs the container with a read-only root filesystem', () => {
-    const taskDefs = computeTemplate.findResources('AWS::ECS::TaskDefinition');
-    const def = Object.values(taskDefs)[0] as any;
-    expect(def.Properties.ContainerDefinitions[0].ReadonlyRootFilesystem).toBe(true);
+  it('runs both containers with a read-only root filesystem', () => {
+    expect(containerDef('valentin').ReadonlyRootFilesystem).toBe(true);
+    expect(containerDef('agentcore').ReadonlyRootFilesystem).toBe(true);
   });
 
   it('bounds log retention', () => {
     computeTemplate.hasResourceProperties('AWS::Logs::LogGroup', {
       RetentionInDays: config.logRetention,
     });
+  });
+});
+
+describe('two engines behind one ALB', () => {
+  /** Every listener rule, as {priority, conditions, targetGroup}. */
+  function listenerRules(): Array<any> {
+    const rules = computeTemplate.findResources('AWS::ElasticLoadBalancingV2::ListenerRule');
+    return Object.values<any>(rules)
+      .map((r) => r.Properties)
+      .sort((a, b) => a.Priority - b.Priority);
+  }
+
+  it('runs exactly two services and two target groups', () => {
+    computeTemplate.resourceCountIs('AWS::ECS::Service', 2);
+    computeTemplate.resourceCountIs('AWS::ElasticLoadBalancingV2::TargetGroup', 2);
+  });
+
+  it('keeps exactly one listener, so both engines share the same front door', () => {
+    // Two listeners would mean two ports, and CloudFront only has one origin
+    // configured. The whole point is one ALB routing by path and header.
+    computeTemplate.resourceCountIs('AWS::ElasticLoadBalancingV2::Listener', 1);
+  });
+
+  it('leaves engine A as the listener default action', () => {
+    // If a rule ever captured '/api/*' or '/ws', removing the rules would break
+    // the baseline app. Engine A must work with zero rules present.
+    const listeners = computeTemplate.findResources('AWS::ElasticLoadBalancingV2::Listener');
+    const listener = Object.values<any>(listeners)[0].Properties;
+    const acTargetGroups = new Set(
+      listenerRules().flatMap((r) =>
+        r.Actions.flatMap((a: any) => JSON.stringify(a.TargetGroupArn)),
+      ),
+    );
+    const defaultTg = JSON.stringify(listener.DefaultActions[0].TargetGroupArn);
+    expect(acTargetGroups.has(defaultTg)).toBe(false);
+  });
+
+  it('routes the three engine-B conditions at the expected priorities', () => {
+    const rules = listenerRules();
+    expect(rules.map((r) => r.Priority)).toEqual([10, 20, 30]);
+    expect(rules[0].Conditions[0].PathPatternConfig.Values).toEqual(['/api/agentcore/*']);
+    // Exact, not a prefix: attach-websocket.ts compares request.url with ===.
+    expect(rules[1].Conditions[0].PathPatternConfig.Values).toEqual(['/ws/agentcore']);
+    expect(rules[2].Conditions[0].HttpHeaderConfig).toEqual({
+      HttpHeaderName: 'X-Valentin-Engine',
+      Values: ['agentcore'],
+    });
+  });
+
+  it('sends all three rules to the same non-default target group', () => {
+    const targets = new Set(
+      listenerRules().map((r) => JSON.stringify(r.Actions[0].TargetGroupArn)),
+    );
+    expect(targets.size).toBe(1);
+  });
+
+  it('adds no ingress rule beyond the prefix list and the ALB-to-ECS hop', () => {
+    /*
+     * addListener with the default open:true appends its own 0.0.0.0/0 ingress
+     * rule. Capturing the listener in a local so rules can be attached to it is
+     * exactly the kind of edit that drops `open: false` by accident, and adding a
+     * second service is exactly when someone reaches for a third rule. Two is the
+     * whole set: CloudFront -> ALB:80, and ALB -> ECS:3001, which both services
+     * share.
+     */
+    computeTemplate.resourceCountIs('AWS::EC2::SecurityGroupIngress', 2);
+  });
+
+  it('holds both engines to the same model, guardrail, table and task size', () => {
+    // Any difference here would show up as a measured engine difference that is
+    // actually a configuration difference.
+    const a = containerEnv('valentin');
+    const b = containerEnv('agentcore');
+    for (const key of [
+      'BEDROCK_MODEL_ID',
+      'BEDROCK_GUARDRAIL_ID',
+      'BEDROCK_GUARDRAIL_VERSION',
+      'DYNAMO_TABLE_NAME',
+      'STORAGE_BACKEND',
+      'COGNITO_USER_POOL_ID',
+    ]) {
+      expect(JSON.stringify(b[key])).toBe(JSON.stringify(a[key]));
+    }
+
+    const taskDefs = Object.values<any>(
+      computeTemplate.findResources('AWS::ECS::TaskDefinition'),
+    ).map((d) => d.Properties);
+    expect(new Set(taskDefs.map((d) => `${d.Cpu}/${d.Memory}`)).size).toBe(1);
+  });
+
+  it('runs both engines from the same image tag', () => {
+    expect(JSON.stringify(containerDef('valentin').Image)).toBe(
+      JSON.stringify(containerDef('agentcore').Image),
+    );
+  });
+
+  it('names the engine on both services rather than relying on a code default', () => {
+    expect(containerEnv('valentin').AGENT_ENGINE).toBe('valentin');
+    expect(containerEnv('agentcore').AGENT_ENGINE).toBe('agentcore');
+  });
+
+  it('gives the proxy the Runtime and Memory it needs to reach', () => {
+    const b = containerEnv('agentcore');
+    expect(b.AGENTCORE_RUNTIME_ARN).toBeDefined();
+    expect(b.AGENTCORE_MEMORY_ID).toBeDefined();
+    expect(b.AGENTCORE_GATEWAY_URL).toBeDefined();
+  });
+
+  it('does not let the proxy call Bedrock directly', () => {
+    /*
+     * A silent fallback to direct Converse on the engine-B route would serve
+     * engine-A answers under engine-B's label and invalidate every measurement.
+     * The proxy is denied InvokeModel so that fallback fails loudly instead.
+     */
+    const policies = computeTemplate.findResources('AWS::IAM::Policy');
+    const proxyPolicies = Object.values<any>(policies).filter((p) =>
+      JSON.stringify(p.Properties.Roles ?? []).includes('ProxyTaskRole'),
+    );
+    expect(proxyPolicies.length).toBeGreaterThan(0);
+
+    const actions = proxyPolicies.flatMap((p) =>
+      p.Properties.PolicyDocument.Statement.flatMap((s: any) => [].concat(s.Action ?? [])),
+    );
+    expect(actions).not.toContain('bedrock:InvokeModel');
+    expect(actions).not.toContain('bedrock:InvokeModelWithResponseStream');
+    expect(actions).toContain('bedrock-agentcore:InvokeAgentRuntime');
+  });
+
+  it('does not let engine A invoke the AgentCore data plane', () => {
+    const policies = computeTemplate.findResources('AWS::IAM::Policy');
+    const basePolicies = Object.values<any>(policies).filter(
+      (p) =>
+        JSON.stringify(p.Properties.Roles ?? []).includes('TaskRole') &&
+        !JSON.stringify(p.Properties.Roles ?? []).includes('ProxyTaskRole'),
+    );
+    const actions = basePolicies.flatMap((p) =>
+      p.Properties.PolicyDocument.Statement.flatMap((s: any) => [].concat(s.Action ?? [])),
+    );
+    expect(actions.filter((a: string) => a.startsWith('bedrock-agentcore:'))).toEqual([]);
+  });
+
+  it('separates the two engines by log group so per-engine queries are exact', () => {
+    const groups = Object.values<any>(computeTemplate.findResources('AWS::Logs::LogGroup')).map(
+      (g) => g.Properties.LogGroupName,
+    );
+    expect(groups).toContain(`/valentin/${config.env}/service`);
+    expect(groups).toContain(`/valentin/${config.env}/agentcore`);
   });
 });
 

@@ -7,11 +7,11 @@ interface AppWindowProps {
   /**
    * Overrides the desktop column track list.
    *
-   * The dossier replaces columns 2–4 with a single wide board while keeping the
-   * icon rail, so the *window* has to change shape — the alternative is a
-   * four-column grid with three empty tracks, or a portal, and the dossier is
-   * not an overlay (see `context/view-context.tsx`). Ignored on mobile, which is
-   * always a single 100% column.
+   * Used for the one shape the shell has besides the default four tracks: the ☰
+   * giving the conversation list's 226px to the chat. Her file is *not* one of
+   * these — it is a thread in the middle column, so the window keeps its shape
+   * across both surfaces. Ignored on mobile, which is always a single 100%
+   * column.
    */
   columns?: string;
   /**
@@ -55,17 +55,6 @@ export const DESKTOP_COLUMNS = [
   `${layout.conversationListWidth}px`,
   'minmax(0, 1fr)',
   `${layout.briefRailWidth}px`,
-].join(' ');
-
-/**
- * The two columns of the dossier shell: icon rail | board (`full-profile.html:19`).
- *
- * The rail keeps its exact 76px so switching surfaces does not shift it by a
- * pixel — nothing you clicked has to move while the surface swaps.
- */
-export const DOSSIER_COLUMNS = [
-  `${layout.iconRailWidth}px`,
-  'minmax(0, 1fr)',
 ].join(' ');
 
 function getPageStyle(variant: AppWindowVariant): React.CSSProperties {

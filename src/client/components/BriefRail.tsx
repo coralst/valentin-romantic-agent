@@ -290,7 +290,8 @@ export function BriefRail({ isMobile = false }: BriefRailProps) {
             subtitle={subtitle}
             photo={profileState.partnerPhoto}
             portrait={portraitForPartner(name)}
-            onOpenProfile={view?.openDossier}
+            onOpenProfile={view?.toggleDossier}
+            isProfileOpen={view?.surface === 'dossier'}
             cameoRef={view?.dossierToggleRef}
           />
 

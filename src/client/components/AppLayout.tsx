@@ -4,7 +4,6 @@ import { BriefRail } from './BriefRail';
 import { DossierView } from './DossierView';
 import { MobileNav } from './MobileNav';
 import { ProfileStoreProvider } from '../context/profile-store-context';
-import { PeopleProvider } from '../context/people-context';
 import { DiscoveryProvider } from '../context/discovery-context';
 import { ViewProvider, useViewState } from '../context/view-context';
 import { usePreferenceIngestion } from '../hooks/use-preference-ingestion';
@@ -12,7 +11,6 @@ import { useChatContext } from '../context/chat-context';
 import { SessionSidebar } from './SessionSidebar';
 import {
   AppWindow,
-  DOSSIER_COLUMNS,
   windowCellStyle,
   windowCellGrowStyle,
 } from './AppWindow';
@@ -79,8 +77,6 @@ function panelHostStyle(gridColumn: string, isChatShell: boolean): React.CSSProp
 const CHAT_COLUMNS_SPAN = '3 / 5';
 /** With the conversation list collapsed those are columns 2 and 3 instead. */
 const CHAT_COLUMNS_SPAN_NO_LIST = '2 / 4';
-/** The dossier's host covers the single board track (column 2). */
-const DOSSIER_COLUMN_SPAN = '2 / 3';
 
 /**
  * The chat shell with the conversation list hidden: rail | chat | brief.
@@ -103,21 +99,20 @@ export function AppLayout() {
   const { state: chatState } = useChatContext();
   return (
     <ProfileStoreProvider sessionId={chatState.sessionId}>
-      {/* Her family sits beside the profile rather than inside it: same session
-          key, separate store, because a family is a list of records and the
-          profile is a fixed set of fields. See `use-people-store`. */}
-      <PeopleProvider sessionId={chatState.sessionId}>
-        {/* Above the layout because the magnifier lives in the sidebar and the
-            drawer is mounted beside the chat — sibling subtrees. */}
-        <ArchitectureDrawerProvider>
-          {/* Above the layout for the same reason: the badge that counts grants
-              lives on the rail, and the panel that changes the count is mounted
-              beside the chat. */}
-          <IntegrationsProvider>
-            <AppLayoutContent />
-          </IntegrationsProvider>
-        </ArchitectureDrawerProvider>
-      </PeopleProvider>
+      {/* Her family and his to-do list are *not* mounted here. They were, while
+          they were localStorage-only, but the server now pushes `person_update`
+          and `task_update` over the socket, and the socket provider is above
+          this component — see `HerRecordsProviders` in `App`. */}
+      {/* Above the layout because the magnifier lives in the sidebar and the
+          drawer is mounted beside the chat — sibling subtrees. */}
+      <ArchitectureDrawerProvider>
+        {/* Above the layout for the same reason: the badge that counts grants
+            lives on the rail, and the panel that changes the count is mounted
+            beside the chat. */}
+        <IntegrationsProvider>
+          <AppLayoutContent />
+        </IntegrationsProvider>
+      </ArchitectureDrawerProvider>
     </ProfileStoreProvider>
   );
 }
@@ -343,13 +338,7 @@ function AppLayoutContent() {
                presenter's place in the walkthrough mid-sentence. Rendered by the
                window, so its bar is one line across the whole bottom edge. */
             footer={<LiveArchitectureDrawer />}
-            columns={
-              isDossier
-                ? DOSSIER_COLUMNS
-                : hasListColumn
-                  ? undefined
-                  : COLLAPSED_CHAT_COLUMNS
-            }
+            columns={hasListColumn ? undefined : COLLAPSED_CHAT_COLUMNS}
           >
             {/* `activeView={null}`: on desktop the chat shell shows both
                 surfaces at once, so no rail button claims to be the active
@@ -373,28 +362,25 @@ function AppLayoutContent() {
               onOpenIntegrations={toggleIntegrations}
               isIntegrationsOpen={isIntegrationsOpen}
             />
-            {isDossier ? (
-              <div
-                style={panelHostStyle(DOSSIER_COLUMN_SPAN, false)}
-              >
-                <DossierView />
+            {/* Her file is a *thread*, not a surface swap: the conversation list
+                and the brief rail stay exactly where they are and only the middle
+                column changes what it shows. The window therefore keeps its
+                chat-shell column template on both surfaces — nothing under the
+                cursor moves when you open her file, and the rail's "Coming next"
+                and "What to do next" stay readable beside the board they
+                summarise, which is the whole point of the layout. */}
+            {hasListColumn && <SessionSidebar isMobile={false} />}
+            <div
+              style={panelHostStyle(
+                hasListColumn ? CHAT_COLUMNS_SPAN : CHAT_COLUMNS_SPAN_NO_LIST,
+                true,
+              )}
+            >
+              <div style={windowCellStyle}>
+                {isDossier ? <DossierView /> : <ChatPanel />}
               </div>
-            ) : (
-              <>
-                {hasListColumn && <SessionSidebar isMobile={false} />}
-                <div
-                  style={panelHostStyle(
-                    hasListColumn ? CHAT_COLUMNS_SPAN : CHAT_COLUMNS_SPAN_NO_LIST,
-                    true,
-                  )}
-                >
-                  <div style={windowCellStyle}>
-                    <ChatPanel />
-                  </div>
-                  <div style={windowCellStyle}>{profilePanel}</div>
-                </div>
-              </>
-            )}
+              <div style={windowCellStyle}>{profilePanel}</div>
+            </div>
             {/* Spans every track except the rail's, over both surfaces — the
                 dossier is as good a place to ask "what can he reach?" as the
                 chat is, and unmounting it on a surface switch would be a

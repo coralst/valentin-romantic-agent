@@ -17,14 +17,27 @@ interface WhoHeaderProps {
    */
   portrait?: string | null;
   /**
-   * Opens her full profile. The cameo is the control for it.
+   * Opens her full profile — and closes it again. The cameo is the control.
    *
    * It used to open a file picker, which is not what a portrait in a header
    * looks like it does: people click a face to go to the person. Uploading a
    * photo lives on the dossier's own avatar (`PartnerAvatar`), which is one
    * click further in and is the only place the upload logic has ever lived.
+   *
+   * Two-way now that her file opens in the chat column rather than replacing the
+   * rail: the cameo stays on screen beside the board it opened, and a control
+   * that is still there, still lit, and does nothing on a second press is the
+   * kind of thing people click three times.
    */
   onOpenProfile?: () => void;
+  /**
+   * Whether her file is the surface on screen, so the cameo can say so.
+   *
+   * `aria-pressed` rather than `aria-current`: this is a toggle for a panel, not
+   * a location in a set of them — the conversation list's pinned row is what
+   * carries `aria-current`.
+   */
+  isProfileOpen?: boolean;
   /**
    * Focus comes back here when the profile closes — see `view-context`'s
    * `applyClose`. The cameo is what opened it, so it is what must not be left
@@ -61,6 +74,17 @@ const cameoStyle: React.CSSProperties = {
   placeItems: 'center',
   // A hairline gold ring plus a wider, fainter halo — a frame, not a border.
   boxShadow: '0 0 0 1px rgba(224, 186, 124, 0.5), 0 0 0 4px rgba(224, 186, 124, 0.12)',
+};
+
+/**
+ * The cameo while her file is the surface on screen: the gold frame goes solid.
+ *
+ * Same geometry, only the ring changes — a portrait that grew or moved when you
+ * opened it would shift the name beside it for no reason.
+ */
+const openCameoStyle: React.CSSProperties = {
+  ...cameoStyle,
+  boxShadow: '0 0 0 2px rgba(224, 186, 124, 0.95), 0 0 0 6px rgba(224, 186, 124, 0.22)',
 };
 
 const photoStyle: React.CSSProperties = {
@@ -101,6 +125,7 @@ export function WhoHeader({
   photo,
   portrait,
   onOpenProfile,
+  isProfileOpen = false,
   cameoRef,
 }: WhoHeaderProps) {
   const displayName = name ?? 'Her brief';
@@ -118,9 +143,18 @@ export function WhoHeader({
       <button
         ref={cameoRef}
         type="button"
-        style={cameoStyle}
+        style={isProfileOpen ? openCameoStyle : cameoStyle}
         onClick={onOpenProfile}
-        aria-label={name ? `Open ${name}'s full profile` : 'Open her full profile'}
+        aria-pressed={isProfileOpen}
+        aria-label={
+          isProfileOpen
+            ? name
+              ? `Close ${name}'s full profile`
+              : 'Close her full profile'
+            : name
+              ? `Open ${name}'s full profile`
+              : 'Open her full profile'
+        }
         data-testid="brief-cameo"
       >
         {image ? (

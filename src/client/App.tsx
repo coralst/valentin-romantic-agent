@@ -4,6 +4,8 @@ import { PreferencesProvider, usePreferencesContext } from './context/preference
 import { WebSocketProvider } from './context/websocket-context';
 import { SessionProvider, useSessionContext } from './context/session-context';
 import { AuthProvider } from './context/auth-context';
+import { PeopleProvider } from './context/people-context';
+import { TasksProvider } from './context/tasks-context';
 import { flattenPreferences, useSessionPersistence } from './hooks/use-session-persistence';
 import { AppLayout } from './components/AppLayout';
 import { colors, typography, spacing } from './design-system/tokens';
@@ -229,6 +231,25 @@ export function SessionSyncer({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/**
+ * Her family and his to-do list, mounted above the socket.
+ *
+ * Both used to live inside `AppLayout`, which was fine while they were
+ * `localStorage` toys nobody else wrote to. Now the extractor discovers a sister
+ * mid-conversation and the server pushes `person_update`, so the stores have to
+ * be in scope where the frames arrive — and `WebSocketProvider` is above the
+ * layout. Keyed on the chat's session id, exactly as they were before, which is
+ * why this reads it from context rather than taking a prop.
+ */
+function HerRecordsProviders({ children }: { children: React.ReactNode }) {
+  const { state } = useChatContext();
+  return (
+    <PeopleProvider sessionId={state.sessionId}>
+      <TasksProvider sessionId={state.sessionId}>{children}</TasksProvider>
+    </PeopleProvider>
+  );
+}
+
 export function App() {
   return (
     <ErrorBoundary>
@@ -243,9 +264,11 @@ export function App() {
           <ChatProvider>
             <PreferencesProvider>
               <SessionSyncer>
-                <WebSocketProvider>
-                  <AppLayout />
-                </WebSocketProvider>
+                <HerRecordsProviders>
+                  <WebSocketProvider>
+                    <AppLayout />
+                  </WebSocketProvider>
+                </HerRecordsProviders>
               </SessionSyncer>
             </PreferencesProvider>
           </ChatProvider>

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ClientEvent, ServerEvent } from '../../shared/interfaces/ws-events';
 import type { ChatAction } from './use-chat-state';
 import type { PreferencesAction } from './use-preferences-state';
+import type { PeopleStoreAction } from './use-people-store';
+import type { TaskStoreAction } from './use-task-store';
 import {
   publishInboundWsEvent,
   publishOutboundWsEvent,
@@ -19,8 +21,21 @@ export interface UseWebSocketReturn {
   lastError: string | null;
 }
 
+/**
+ * The two boards that fill in mid-conversation but are not the chat or the
+ * preferences.
+ *
+ * Optional, because both stores are mounted by providers a test may not have:
+ * `useWebSocket` is exercised on its own, and a socket that refuses to connect
+ * without a family tree attached would be the wrong dependency direction.
+ */
+export interface LiveBoardDispatchers {
+  peopleDispatch?: React.Dispatch<PeopleStoreAction>;
+  tasksDispatch?: React.Dispatch<TaskStoreAction>;
+}
+
 /** Configuration for the WebSocket hook */
-interface UseWebSocketOptions {
+interface UseWebSocketOptions extends LiveBoardDispatchers {
   chatDispatch: React.Dispatch<ChatAction>;
   preferencesDispatch: React.Dispatch<PreferencesAction>;
   sessionId: string | null;
@@ -54,6 +69,7 @@ export function dispatchServerEvent(
   event: ServerEvent,
   chatDispatch: React.Dispatch<ChatAction>,
   preferencesDispatch: React.Dispatch<PreferencesAction>,
+  boards: LiveBoardDispatchers = {},
 ): void {
   switch (event.type) {
     case 'session_init':
@@ -84,6 +100,19 @@ export function dispatchServerEvent(
       }
       break;
 
+    // Both boards are on screen while he is talking, so a relative or a
+    // commitment he just mentioned has to appear without a reload — the same
+    // reason `preference_update` exists. `MERGE_*` rather than an isNew branch:
+    // the frame says whether the *server* considered it new, which is not the
+    // same question as whether this client already holds the row.
+    case 'person_update':
+      boards.peopleDispatch?.({ type: 'MERGE_PERSON', person: event.payload.person });
+      break;
+
+    case 'task_update':
+      boards.tasksDispatch?.({ type: 'MERGE_TASK', task: event.payload.task });
+      break;
+
     case 'connection_status':
       chatDispatch({ type: 'SET_CONNECTION', status: event.payload.status });
       break;
@@ -107,6 +136,8 @@ export function dispatchServerEvent(
 export function useWebSocket({
   chatDispatch,
   preferencesDispatch,
+  peopleDispatch,
+  tasksDispatch,
   sessionId,
   url,
 }: UseWebSocketOptions): UseWebSocketReturn {
@@ -126,6 +157,16 @@ export function useWebSocket({
    */
   const sessionIdRef = useRef<string | null>(sessionId);
   sessionIdRef.current = sessionId;
+  /**
+   * The family-tree and to-do dispatchers, read at delivery time.
+   *
+   * A ref for the same reason `sessionIdRef` is one, and more urgently: both are
+   * keyed on the session they write to, so naming them in `connect`'s deps would
+   * tear the socket down and rebuild it every time the user picked a different
+   * conversation — mid-turn, if he was typing.
+   */
+  const boardsRef = useRef<LiveBoardDispatchers>({ peopleDispatch, tasksDispatch });
+  boardsRef.current = { peopleDispatch, tasksDispatch };
   /**
    * Whether the server has accepted this connection's `auth` frame.
    *
@@ -301,7 +342,12 @@ export function useWebSocket({
             publishOutboundWsEvent(frame);
           }
         }
-        dispatchServerEvent(serverEvent, chatDispatch, preferencesDispatch);
+        dispatchServerEvent(
+          serverEvent,
+          chatDispatch,
+          preferencesDispatch,
+          boardsRef.current,
+        );
       } catch {
         // Malformed message — ignore
       }

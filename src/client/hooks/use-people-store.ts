@@ -1,15 +1,21 @@
-import { useCallback, useEffect, useReducer } from 'react';
-import type { Person, PersonGeneration } from '../../shared/interfaces/person';
+import { useCallback, useEffect, useReducer, useRef } from 'react';
+import { isPersonGeneration, type Person } from '../../shared/interfaces/person';
+import { apiDelete, apiGetJson, apiPostJson } from '../utils/api-client';
 
 /**
- * Her people, persisted per session.
+ * Her people, per session, kept on the server.
  *
- * Deliberately the same shape and the same storage contract as
- * `use-profile-store`: its own versioned key, a reducer, a `RESTORE` on mount and
- * a save on every change. Two stores rather than one because the profile is a
- * fixed set of *fields* and this is an unbounded list of *records*; sharing one
- * reducer would mean either people-shaped actions on the profile store or
- * `family_member_3_name` fields in the registry.
+ * It was `localStorage` only, which made her family the one thing on the board
+ * that did not survive a new device — and, worse, that the extractor could not
+ * write: a `PERSON#` row learned from the conversation had nowhere to land in a
+ * browser it had never seen. DynamoDB is now the source of truth and
+ * `localStorage` is a cache, read on mount so the tree draws before the fetch
+ * lands rather than flashing empty.
+ *
+ * Still two stores rather than one shared with `use-profile-store`, because the
+ * profile is a fixed set of *fields* and this is an unbounded list of *records*;
+ * sharing one reducer would mean either people-shaped actions on the profile
+ * store or `family_member_3_name` fields in the registry.
  */
 export interface PeopleStoreState {
   people: Person[];
@@ -23,6 +29,17 @@ export type PeopleStoreAction =
     }
   /** Any subset of a person's fields — used by every inline edit on the card. */
   | { type: 'UPDATE_PERSON'; id: string; patch: Partial<Omit<Person, 'id'>> }
+  /**
+   * One whole record as the server has it — a `person_update` frame arriving
+   * while he is still talking.
+   *
+   * Distinct from `ADD_PERSON`/`UPDATE_PERSON` because it must not be written
+   * back: the sync wrapper mirrors those two to the server, and echoing a row
+   * the server just sent is at best a wasted round trip and at worst a race
+   * with the extractor's next write. It is also an upsert, since the frame does
+   * not say whether the tree already holds the row this client is looking at.
+   */
+  | { type: 'MERGE_PERSON'; person: Person }
   | { type: 'REMOVE_PERSON'; id: string }
   | { type: 'RESTORE'; people: Person[] }
   | { type: 'CLEAR_ALL_PEOPLE' }
@@ -76,6 +93,19 @@ export function peopleStoreReducer(
         storageError: null,
       };
 
+    case 'MERGE_PERSON': {
+      const held = state.people.some((person) => person.id === action.person.id);
+      return {
+        ...state,
+        people: held
+          ? state.people.map((person) =>
+              person.id === action.person.id ? action.person : person,
+            )
+          : [...state.people, action.person],
+        storageError: null,
+      };
+    }
+
     case 'REMOVE_PERSON':
       return {
         ...state,
@@ -106,9 +136,8 @@ export function peopleStoreReducer(
  * record missing `relationship` or `generation` would render as an unlabelled
  * card in the middle of the tree.
  */
-function sanitise(people: unknown): Person[] {
+export function sanitise(people: unknown): Person[] {
   if (!Array.isArray(people)) return [];
-  const generations: PersonGeneration[] = ['elder', 'peer', 'younger'];
 
   return people.filter((candidate): candidate is Person => {
     if (!candidate || typeof candidate !== 'object') return false;
@@ -116,8 +145,11 @@ function sanitise(people: unknown): Person[] {
     return (
       typeof person.id === 'string' &&
       typeof person.relationship === 'string' &&
-      typeof person.generation === 'string' &&
-      generations.includes(person.generation) &&
+      // `isPersonGeneration` rather than a list spelled out here: this file had
+      // its own copy, and it was written before the tree grew a grandparent
+      // rung — so every grandmother the server sent back was silently dropped
+      // by the client that asked for her.
+      isPersonGeneration(person.generation) &&
       (person.name === null || typeof person.name === 'string')
     );
   });
@@ -158,20 +190,140 @@ export function savePeopleToStorage(
   }
 }
 
-export function usePeopleStore(sessionId: string | null) {
-  const [state, dispatch] = useReducer(peopleStoreReducer, initialState);
+/** Read her whole family back from the server. */
+export async function fetchPeople(sessionId: string): Promise<Person[]> {
+  const { people } = await apiGetJson<{ people: unknown }>(
+    `/api/session/${encodeURIComponent(sessionId)}/people`,
+  );
+  return sanitise(people);
+}
 
+/** Upsert one person. The server keys on `id`, so this covers add and edit. */
+export async function pushPerson(sessionId: string, person: Person): Promise<void> {
+  await apiPostJson(`/api/session/${encodeURIComponent(sessionId)}/people`, person);
+}
+
+/** Forget one person for good. */
+export async function removePerson(sessionId: string, personId: string): Promise<void> {
+  await apiDelete(
+    `/api/session/${encodeURIComponent(sessionId)}/people/${encodeURIComponent(personId)}`,
+  );
+}
+
+export function usePeopleStore(sessionId: string | null) {
+  const [state, localDispatch] = useReducer(peopleStoreReducer, initialState);
+
+  /**
+   * The list as the reducer last left it.
+   *
+   * `UPDATE_PERSON` carries a *patch*, and the server takes whole records, so
+   * writing an edit means reading the row it patches. A ref rather than closing
+   * over `state.people`: the wrapped dispatch has to be stable, or every
+   * consumer that memoises on it re-subscribes on every keystroke.
+   */
+  const peopleRef = useRef(state.people);
+  peopleRef.current = state.people;
+
+  // Cache first, then the server. Both go through `RESTORE`, so the second one
+  // wins by arriving last — which is the right order, because the server knows
+  // about the sister the extractor discovered on another device.
   useEffect(() => {
     if (!sessionId) return;
-    const stored = loadPeopleFromStorage(sessionId);
-    if (stored) dispatch({ type: 'RESTORE', people: stored });
+
+    const cached = loadPeopleFromStorage(sessionId);
+    if (cached) localDispatch({ type: 'RESTORE', people: cached });
+
+    let live = true;
+    void fetchPeople(sessionId)
+      .then((people) => {
+        if (live) localDispatch({ type: 'RESTORE', people });
+      })
+      .catch((err: unknown) => {
+        // The cache is still on screen, so this is a note rather than an empty
+        // tree: her family is what we last saw, just possibly not the latest.
+        if (live) {
+          localDispatch({
+            type: 'STORAGE_ERROR',
+            message: `Showing her family from this device — ${
+              err instanceof Error ? err.message : 'the server did not answer'
+            }`,
+          });
+        }
+      });
+
+    return () => {
+      live = false;
+    };
   }, [sessionId]);
 
   useEffect(() => {
     if (!sessionId) return;
     const error = savePeopleToStorage(sessionId, state.people);
-    if (error) dispatch({ type: 'STORAGE_ERROR', message: error });
+    if (error) localDispatch({ type: 'STORAGE_ERROR', message: error });
   }, [sessionId, state.people]);
+
+  /**
+   * The dispatch every consumer gets: reduce now, write to the server after.
+   *
+   * Optimistic on purpose. Renaming a node is a two-character edit and waiting
+   * on a round trip to see it makes the card feel broken; if the write fails the
+   * next hydration corrects it, and the failure is reported meanwhile.
+   */
+  const dispatch = useCallback(
+    (action: PeopleStoreAction) => {
+      localDispatch(action);
+      if (!sessionId) return;
+
+      const fail = (err: unknown) =>
+        localDispatch({
+          type: 'STORAGE_ERROR',
+          message: `Could not save her family — ${
+            err instanceof Error ? err.message : 'the server did not answer'
+          }`,
+        });
+
+      switch (action.type) {
+        case 'ADD_PERSON':
+          void pushPerson(sessionId, {
+            ...action.person,
+            updatedAt: action.person.updatedAt ?? new Date().toISOString(),
+          }).catch(fail);
+          break;
+
+        case 'UPDATE_PERSON': {
+          const current = peopleRef.current.find((person) => person.id === action.id);
+          if (current) {
+            void pushPerson(sessionId, {
+              ...current,
+              ...action.patch,
+              updatedAt: new Date().toISOString(),
+            }).catch(fail);
+          }
+          break;
+        }
+
+        case 'REMOVE_PERSON':
+          void removePerson(sessionId, action.id).catch(fail);
+          break;
+
+        case 'CLEAR_ALL_PEOPLE':
+          // One delete per row rather than a "clear" route: nothing else needs
+          // one, and a route that empties a session's family is a bad thing to
+          // have lying around behind a single fetch.
+          void Promise.all(
+            peopleRef.current.map((person) => removePerson(sessionId, person.id)),
+          ).catch(fail);
+          break;
+
+        // `RESTORE` and `MERGE_PERSON` are how the server talks to us; echoing
+        // either back would be a write loop. `STORAGE_ERROR` is local by
+        // definition.
+        default:
+          break;
+      }
+    },
+    [sessionId],
+  );
 
   const addPerson = useCallback(
     (person: Omit<Person, 'id' | 'updatedAt'>) => {

@@ -66,7 +66,15 @@ export interface AwsNode {
   service: string;
   /** The actual deployed resource identifier. */
   resourceName: string;
-  /** One line of configuration worth saying out loud. */
+  /**
+   * One line of configuration worth saying out loud.
+   *
+   * One *line*, literally: the cards are all one size (`AWS_NODE_CARD`) and clamp
+   * their caption to a single row, so anything past ~29 characters is truncated
+   * rather than allowed to push the card out of the grid. Three of these were
+   * over that budget and spilled onto their neighbours; the facts that had to go
+   * are stated by the surrounding boxes and band captions instead.
+   */
   caption: string;
   tier: AwsTier;
   /**
@@ -147,9 +155,11 @@ export const AWS_NODES: readonly AwsNode[] = [
     id: 'ac-proxy',
     service: 'Amazon ECS · AWS Fargate',
     resourceName: 'valentin-ac-proxy-dev',
-    // The size is identical on purpose: a proxy on a smaller task would show up
-    // as worse latency that had nothing to do with AgentCore.
-    caption: '256 CPU · 512 MiB · AGENT_ENGINE=agentcore',
+    // Word for word what `fargate` says, and that is the argument: same image,
+    // same task size, same port — so a latency difference is AgentCore's, not the
+    // harness's. `AGENT_ENGINE=agentcore` is dropped from here because the band
+    // caption to the left already says it.
+    caption: '256 CPU · 512 MiB · :3001',
     tier: 'compute',
     inVpc: true,
     engine: 'agentcore',
@@ -161,7 +171,7 @@ export const AWS_NODES: readonly AwsNode[] = [
     // The model call happens *inside* the Runtime, so Bedrock is named here
     // rather than drawn: the proxy's role has no bedrock:InvokeModel, and a
     // Bedrock node on this side would be one we can never light up.
-    caption: 'Strands · Claude Sonnet 4.5 · arm64',
+    caption: 'Strands · Sonnet 4.5 · arm64',
     tier: 'compute',
     engine: 'agentcore',
     inAgentCore: true,
@@ -190,8 +200,10 @@ export const AWS_NODES: readonly AwsNode[] = [
     resourceName: 'ValentinTable-dev',
     // Drawn twice, and it is the same table both times. Duplicating the node is
     // how a tree says "same resource, different path": engine A writes it from
-    // the task, engine B reaches it through the Gateway's Lambda target.
-    caption: 'same table · via valentin-profile-tools-dev',
+    // the task, engine B reaches it through the Gateway's Lambda target. The
+    // Lambda's name is on the connector rather than in here, which is where it
+    // belongs anyway — it is the hop, not the table.
+    caption: 'same table · via the Gateway',
     tier: 'data',
     engine: 'agentcore',
   },

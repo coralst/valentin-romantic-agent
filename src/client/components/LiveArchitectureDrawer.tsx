@@ -4,7 +4,7 @@ import { AwsFlowFeed, type FeedRow } from './AwsFlowFeed';
 import { useArchitectureDrawer } from '../context/architecture-drawer-context';
 import { useArchitectureMode, type ArchitectureMode } from '../hooks/use-architecture-mode';
 import { useLiveArchitecture } from '../hooks/use-live-architecture';
-import { useArchitectureEngine } from '../hooks/use-architecture-engine';
+import { useArchitectureEngineContext } from '../context/architecture-engine-context';
 import { useFlowPlayback } from '../hooks/use-flow-playback';
 import { PANEL_SLIDE_MS } from '../hooks/use-inspector-focus';
 import {
@@ -13,7 +13,7 @@ import {
   demoStepDwellMs,
   frameForStep,
 } from '../utils/aws-demo-flows';
-import type { ArchitectureEngine, AwsNodeId } from '../utils/aws-architecture';
+import type { AwsNodeId } from '../utils/aws-architecture';
 import { colors, typography } from '../design-system/tokens';
 
 /**
@@ -71,10 +71,6 @@ export const DRAWER_COPY = {
   reopen: 'Show the architecture drawer',
   liveMode: 'Live',
   demoMode: 'Demo',
-  /** The engine toggle. Short labels: the band captions carry the full names. */
-  engineGroup: 'Architecture engine',
-  valentinEngine: 'Hand-built',
-  agentcoreEngine: 'AgentCore',
   next: 'Next step',
   previous: 'Previous step',
   restart: 'Restart flow',
@@ -189,15 +185,12 @@ const MODE_OPTIONS: readonly { value: ArchitectureMode; label: string }[] = [
   { value: 'demo', label: DRAWER_COPY.demoMode },
 ];
 
-const ENGINE_OPTIONS: readonly { value: ArchitectureEngine; label: string }[] = [
-  { value: 'valentin', label: DRAWER_COPY.valentinEngine },
-  { value: 'agentcore', label: DRAWER_COPY.agentcoreEngine },
-];
-
 export function LiveArchitectureDrawer() {
   const { isOpen, isMounted, open, close } = useArchitectureDrawer();
   const { mode, setMode } = useArchitectureMode();
-  const { engine, setEngine } = useArchitectureEngine();
+  // The switch itself lives in the icon rail, next to the other things a presenter
+  // reaches for mid-sentence; the drawer only reads the choice.
+  const { engine } = useArchitectureEngineContext();
   const live = useLiveArchitecture(true, engine);
 
   const flow = demoFlow(defaultDemoFlowIdFor(engine));
@@ -336,13 +329,6 @@ export function LiveArchitectureDrawer() {
               options={MODE_OPTIONS}
               onChange={setMode}
               label="Data source"
-            />
-            <SegmentedSwitch
-              value={engine}
-              options={ENGINE_OPTIONS}
-              onChange={setEngine}
-              label={DRAWER_COPY.engineGroup}
-              testId="architecture-engine-switch"
             />
 
             <div

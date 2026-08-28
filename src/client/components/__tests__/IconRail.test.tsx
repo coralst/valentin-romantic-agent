@@ -6,6 +6,7 @@ import { ChatProvider } from '../../context/chat-context';
 import { PreferencesProvider } from '../../context/preferences-context';
 import { ProfileStoreProvider } from '../../context/profile-store-context';
 import { IconRail, type RailView } from '../IconRail';
+import { ArchitectureEngineProvider } from '../../context/architecture-engine-context';
 import { layout, radii } from '../../design-system/tokens';
 
 interface RenderOptions {
@@ -266,6 +267,81 @@ describe('IconRail', () => {
       await user.click(screen.getByRole('button', { name: 'Demo controls' }));
       await user.click(document.body);
       expect(screen.queryByTestId('demo-toolbar')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('the engine switch', () => {
+    /**
+     * With the provider, because the point of the control is that it *changes*
+     * something. `renderRail` deliberately leaves the provider out, which covers
+     * the other half: the rail still renders standalone in every other test here.
+     */
+    function renderWithEngine(orientation: 'column' | 'row' = 'column') {
+      return render(
+        <SessionProvider>
+          <ChatProvider>
+            <PreferencesProvider>
+              <ProfileStoreProvider sessionId="session-1">
+                <ArchitectureEngineProvider>
+                  <IconRail orientation={orientation} activeView={null} onOpenSessions={() => {}} />
+                </ArchitectureEngineProvider>
+              </ProfileStoreProvider>
+            </PreferencesProvider>
+          </ChatProvider>
+        </SessionProvider>,
+      );
+    }
+
+    it('offers both engines, and calls the hand-written one glue code', () => {
+      renderWithEngine();
+      expect(screen.getByTestId('rail-engine-valentin')).toHaveTextContent('Glue code');
+      expect(screen.getByTestId('rail-engine-agentcore')).toHaveTextContent('AgentCore');
+    });
+
+    it('starts on engine A', () => {
+      renderWithEngine();
+      expect(screen.getByTestId('rail-engine-valentin')).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByTestId('rail-engine-agentcore')).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('moves the selection when the other engine is picked', async () => {
+      const user = userEvent.setup();
+      renderWithEngine();
+
+      await user.click(screen.getByTestId('rail-engine-agentcore'));
+
+      expect(screen.getByTestId('rail-engine-agentcore')).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByTestId('rail-engine-valentin')).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('sits at the foot of the rail, just above the gear', () => {
+      // The placement is the request, so it is asserted rather than eyeballed:
+      // DOM order after the menu button and before the gear, which on a column
+      // rail whose spacer has already pushed both down is the bottom-left corner.
+      renderWithEngine();
+      const rail = screen.getByTestId('icon-rail');
+      const order = Array.from(rail.querySelectorAll('[data-testid]')).map((el) =>
+        el.getAttribute('data-testid'),
+      );
+
+      expect(order.indexOf('rail-engine-switch')).toBeGreaterThan(
+        order.indexOf('sidebar-menu-button'),
+      );
+      expect(order.indexOf('rail-engine-switch')).toBeLessThan(order.indexOf('rail-demo-button'));
+    });
+
+    it("follows the rail's axis, stacking on desktop and lying flat on mobile", () => {
+      const { unmount } = renderWithEngine('column');
+      expect(screen.getByTestId('rail-engine-switch').style.flexDirection).toBe('column');
+      unmount();
+
+      renderWithEngine('row');
+      expect(screen.getByTestId('rail-engine-switch').style.flexDirection).toBe('row');
+    });
+
+    it('renders inertly without a provider, so standalone tests need not wrap it', () => {
+      renderRail();
+      expect(screen.getByTestId('rail-engine-valentin')).toHaveAttribute('aria-pressed', 'true');
     });
   });
 

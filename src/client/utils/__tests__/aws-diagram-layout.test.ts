@@ -6,8 +6,10 @@ import {
   AWS_DIAGRAM_CANVAS,
   AWS_DIAGRAM_SCALE,
   AWS_DIAGRAM_SPINE_Y,
+  AWS_COLUMN_PITCH,
   AWS_ENGINE_BANDS,
   AWS_NODE_BOXES,
+  AWS_NODE_CARD,
   AWS_NODE_VISUALS,
   AWS_SEGMENT_GEOMETRY,
   AWS_TIER_LABELS,
@@ -75,17 +77,24 @@ describe('AWS_NODE_BOXES', () => {
     for (const node of AWS_NODES) {
       const box = AWS_NODE_BOXES[node.id];
       expect(box.x, node.id).toBeGreaterThanOrEqual(0);
-      expect(box.x + box.width, node.id).toBeLessThanOrEqual(AWS_DIAGRAM_CANVAS.width);
-      expect(box.top, node.id).toBeLessThan(AWS_DIAGRAM_CANVAS.height);
+      expect(box.x + AWS_NODE_CARD.width, node.id).toBeLessThanOrEqual(AWS_DIAGRAM_CANVAS.width);
+      expect(box.top, node.id).toBeGreaterThanOrEqual(0);
+      expect(box.top + AWS_NODE_CARD.height, node.id).toBeLessThanOrEqual(
+        AWS_DIAGRAM_CANVAS.height,
+      );
     }
   });
 
   it('lays the spine out strictly left to right', () => {
     const spine = ['browser', 'cloudfront', 'alb', 'fargate'] as const;
+    for (const id of spine) {
+      // Centred on the spine, the same rule engine B's row follows below.
+      expect(AWS_NODE_BOXES[id].top, id).toBe(AWS_DIAGRAM_SPINE_Y - AWS_NODE_CARD.height / 2);
+    }
     for (let i = 1; i < spine.length; i += 1) {
       const previous = AWS_NODE_BOXES[spine[i - 1]];
       const current = AWS_NODE_BOXES[spine[i]];
-      expect(current.x, spine[i]).toBeGreaterThanOrEqual(previous.x + previous.width);
+      expect(current.x, spine[i]).toBeGreaterThanOrEqual(previous.x + AWS_NODE_CARD.width);
     }
   });
 
@@ -96,9 +105,53 @@ describe('AWS_NODE_BOXES', () => {
     expect(AWS_NODE_BOXES.bedrock.x).toBe(AWS_NODE_BOXES.dynamodb.x);
   });
 
-  it('gives CloudFront the widest card, because it carries the WAF chip', () => {
-    const widest = Math.max(...AWS_NODES.map((node) => AWS_NODE_BOXES[node.id].width));
-    expect(AWS_NODE_BOXES.cloudfront.width).toBe(widest);
+  it('carries no per-node size, so every card is the same box', () => {
+    // The regression this replaces: cards used to declare their own widths
+    // (146-192) and take their height from their contents, which is how the
+    // AgentCore column ended up with captions running through their neighbours.
+    for (const node of AWS_NODES) {
+      expect(Object.keys(AWS_NODE_BOXES[node.id]).sort(), node.id).toEqual(['top', 'x']);
+    }
+    expect(AWS_NODE_CARD.width).toBeGreaterThan(0);
+    expect(AWS_NODE_CARD.height).toBeGreaterThan(0);
+  });
+
+  it('puts every card on the column grid', () => {
+    for (const node of AWS_NODES) {
+      expect(AWS_NODE_BOXES[node.id].x % AWS_COLUMN_PITCH, node.id).toBe(0);
+    }
+  });
+
+  it('never overlaps two cards', () => {
+    // The failure in the review screenshot, stated as an assertion: engine B's
+    // boxes were 60px apart while the cards themselves were taller than that.
+    for (const a of AWS_NODES) {
+      for (const b of AWS_NODES) {
+        if (a.id >= b.id) continue;
+        const one = AWS_NODE_BOXES[a.id];
+        const two = AWS_NODE_BOXES[b.id];
+        const overlaps =
+          one.x < two.x + AWS_NODE_CARD.width &&
+          two.x < one.x + AWS_NODE_CARD.width &&
+          one.top < two.top + AWS_NODE_CARD.height &&
+          two.top < one.top + AWS_NODE_CARD.height;
+
+        expect(overlaps, `${a.id} vs ${b.id}`).toBe(false);
+      }
+    }
+  });
+
+  it('keeps the group boxes clear of the cards above them', () => {
+    // A dashed box whose label lands on a card's title is the other half of the
+    // same screenshot: AGENTCORE_BOX used to start inside the DynamoDB card.
+    const above = AWS_NODES.filter(
+      (node) => AWS_NODE_BOXES[node.id].top + AWS_NODE_CARD.height <= AGENTCORE_BOX.top,
+    );
+    const lowestAbove = Math.max(
+      ...above.map((node) => AWS_NODE_BOXES[node.id].top + AWS_NODE_CARD.height),
+    );
+
+    expect(AGENTCORE_BOX.top - lowestAbove).toBeGreaterThanOrEqual(12);
   });
 
   it('starts every tier label at the x of the column it heads', () => {
@@ -114,9 +167,9 @@ describe('AWS_NODE_BOXES', () => {
       const box = AWS_NODE_BOXES[node.id];
       return (
         box.x >= AWS_VPC_BOX.left &&
-        box.x + box.width <= AWS_VPC_BOX.left + AWS_VPC_BOX.width &&
+        box.x + AWS_NODE_CARD.width <= AWS_VPC_BOX.left + AWS_VPC_BOX.width &&
         box.top >= AWS_VPC_BOX.top &&
-        box.top <= AWS_VPC_BOX.top + AWS_VPC_BOX.height
+        box.top + AWS_NODE_CARD.height <= AWS_VPC_BOX.top + AWS_VPC_BOX.height
       );
     }).map((node) => node.id);
 
@@ -130,9 +183,9 @@ describe('AWS_NODE_BOXES', () => {
       const box = AWS_NODE_BOXES[node.id];
       return (
         box.x >= AWS_VPC_BOX.left &&
-        box.x + box.width <= AWS_VPC_BOX.left + AWS_VPC_BOX.width &&
+        box.x + AWS_NODE_CARD.width <= AWS_VPC_BOX.left + AWS_VPC_BOX.width &&
         box.top >= AWS_VPC_BOX.top &&
-        box.top <= AWS_VPC_BOX.top + AWS_VPC_BOX.height
+        box.top + AWS_NODE_CARD.height <= AWS_VPC_BOX.top + AWS_VPC_BOX.height
       );
     }).map((node) => node.id);
 
@@ -144,9 +197,9 @@ describe('AWS_NODE_BOXES', () => {
       const box = AWS_NODE_BOXES[node.id];
       return (
         box.x >= AGENTCORE_BOX.left &&
-        box.x + box.width <= AGENTCORE_BOX.left + AGENTCORE_BOX.width &&
+        box.x + AWS_NODE_CARD.width <= AGENTCORE_BOX.left + AGENTCORE_BOX.width &&
         box.top >= AGENTCORE_BOX.top &&
-        box.top <= AGENTCORE_BOX.top + AGENTCORE_BOX.height
+        box.top + AWS_NODE_CARD.height <= AGENTCORE_BOX.top + AGENTCORE_BOX.height
       );
     }).map((node) => node.id);
 
@@ -159,11 +212,13 @@ describe('AWS_NODE_BOXES', () => {
     const spine: AwsNodeId[] = ['ac-proxy', 'ac-runtime', 'ac-gateway', 'ac-dynamodb'];
 
     for (const id of spine) {
-      expect(AWS_NODE_BOXES[id].top, id).toBe(AGENTCORE_SPINE_Y - 28);
+      expect(AWS_NODE_BOXES[id].top, id).toBe(AGENTCORE_SPINE_Y - AWS_NODE_CARD.height / 2);
     }
     for (let k = 1; k < spine.length; k += 1) {
       const previous = AWS_NODE_BOXES[spine[k - 1]];
-      expect(AWS_NODE_BOXES[spine[k]].x, spine[k]).toBeGreaterThan(previous.x + previous.width);
+      expect(AWS_NODE_BOXES[spine[k]].x, spine[k]).toBeGreaterThan(
+        previous.x + AWS_NODE_CARD.width,
+      );
     }
   });
 
@@ -228,7 +283,7 @@ describe('AWS_SEGMENT_GEOMETRY', () => {
       const child = AWS_NODE_BOXES[segment.to];
 
       // Leaves the right-hand edge of the parent, arrives at the left of the child.
-      expect(coordinates[0][0], segment.id).toBe(parent.x + parent.width);
+      expect(coordinates[0][0], segment.id).toBe(parent.x + AWS_NODE_CARD.width);
       expect(coordinates[coordinates.length - 1][0], segment.id).toBeLessThanOrEqual(child.x);
       expect(coordinates[coordinates.length - 1][0], segment.id).toBeGreaterThan(child.x - 12);
     }

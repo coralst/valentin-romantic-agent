@@ -13,6 +13,7 @@ import {
   AWS_DIAGRAM_SCALE,
   AWS_ENGINE_BANDS,
   AWS_NODE_BOXES,
+  AWS_NODE_CARD,
   AWS_NODE_VISUALS,
   AWS_TIER_LABELS,
   AWS_VPC_BOX,
@@ -123,16 +124,60 @@ const NODE_STATE_STYLES: Record<NodeState, React.CSSProperties> = {
  */
 const ICON_SIZE = 21;
 
+/**
+ * Height of the strip at the foot of every card.
+ *
+ * Reserved on all thirteen whether or not they have anything to put in it, which
+ * is the point: the WAF chip and the duration pill both live here, and a pill that
+ * arrived mid-turn used to make its card taller than its neighbours — the grid
+ * moved while someone was pointing at it.
+ */
+const CARD_FOOTER_HEIGHT = 16;
+
+/**
+ * The card itself, at exactly `AWS_NODE_CARD`.
+ *
+ * `boxSizing: 'border-box'` and `overflow: 'hidden'` are load-bearing rather than
+ * defensive: the size is fixed, so the only two possible failures are a border
+ * pushing the card 3px wider than its siblings, and content escaping the bottom
+ * edge. Both were visible in the review screenshot.
+ */
 const cardStyle: React.CSSProperties = {
   background: colors.surface,
   border: '1.5px solid #E5D9D2',
   borderRadius: 10,
+  boxSizing: 'border-box',
+  width: AWS_NODE_CARD.width,
+  height: AWS_NODE_CARD.height,
+  overflow: 'hidden',
   display: 'flex',
   gap: 8,
   alignItems: 'flex-start',
-  padding: '8px 9px',
-  transition: 'all 280ms cubic-bezier(0.4, 0, 0.2, 1)',
+  padding: '7px 9px 6px',
+  transition:
+    'border-color 280ms cubic-bezier(0.4, 0, 0.2, 1), background 280ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 280ms cubic-bezier(0.4, 0, 0.2, 1), opacity 280ms cubic-bezier(0.4, 0, 0.2, 1), filter 280ms cubic-bezier(0.4, 0, 0.2, 1)',
   fontFamily: typography.bodyFontFamily,
+};
+
+/** One line, truncated with an ellipsis rather than allowed to wrap or spill. */
+const oneLineStyle: React.CSSProperties = {
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+};
+
+/**
+ * Up to two lines, then truncated.
+ *
+ * Two because 'Application Load Balancer' and 'Amazon ECS · AWS Fargate' do not
+ * fit on one at this width, and shortening them would mean writing service names
+ * AWS does not use.
+ */
+const twoLineStyle: React.CSSProperties = {
+  display: '-webkit-box',
+  WebkitBoxOrient: 'vertical',
+  WebkitLineClamp: 2,
+  overflow: 'hidden',
 };
 
 const tierLabelStyle: React.CSSProperties = {
@@ -166,7 +211,8 @@ function NodeCard({
         position: 'absolute',
         left: box.x,
         top: box.top,
-        width: box.width,
+        width: AWS_NODE_CARD.width,
+        height: AWS_NODE_CARD.height,
       }}
       data-testid={`aws-node-${id}`}
       data-state={state}
@@ -194,31 +240,48 @@ function NodeCard({
             __html: `<svg width="${ICON_SIZE}" height="${ICON_SIZE}" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8">${visual.glyph}</svg>`,
           }}
         />
-        <div style={{ minWidth: 0, flex: 1 }}>
+        {/* A column, so the footer can be pinned to the bottom of a card whose
+            service name took one line as readily as one where it took two. */}
+        <div
+          style={{
+            minWidth: 0,
+            flex: 1,
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          {/* `title` on all three rows: truncation is the guard, not the plan, and
+              a caption that does get clipped should still be readable on hover. */}
           <div
+            title={node.service}
             style={{
+              ...twoLineStyle,
               fontSize: 11.5,
               fontWeight: 700,
               color: '#2A2226',
-              lineHeight: 1.25,
+              lineHeight: 1.15,
             }}
           >
             {node.service}
           </div>
           <div
+            title={node.resourceName}
             style={{
+              ...oneLineStyle,
               fontSize: 10.5,
               fontWeight: 600,
               color: '#8C2F45',
               lineHeight: 1.3,
               marginTop: 2,
-              overflowWrap: 'break-word',
             }}
           >
             {node.resourceName}
           </div>
           <div
+            title={node.caption}
             style={{
+              ...oneLineStyle,
               fontSize: 9.5,
               color: '#A3959C',
               lineHeight: 1.4,
@@ -227,45 +290,65 @@ function NodeCard({
           >
             {node.caption}
           </div>
-          {id === 'cloudfront' && (
-            <span
-              style={{
-                display: 'inline-block',
-                fontSize: 8.5,
-                fontWeight: 700,
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
-                color: '#DD344C',
-                border: '1px solid #F3C0C6',
-                borderRadius: 3,
-                padding: '1px 5px',
-                marginTop: 4,
-              }}
-            >
-              {WAF_CHIP_LABEL}
-            </span>
-          )}
-          {duration && (
-            <div
-              data-testid={`aws-duration-${id}`}
-              style={{
-                // On its own line rather than absolutely in the corner: over the
-                // top-right it lands on long service names ("Amazon ECS · AWS
-                // Fargate") and clips them.
-                display: 'inline-block',
-                fontSize: 9.5,
-                fontWeight: 700,
-                background:
-                  duration.current === false ? '#C9A7B0' : duration.ok ? colors.success : '#8C2F45',
-                color: colors.textOnAccent,
-                padding: '2px 8px',
-                borderRadius: 20,
-                marginTop: 5,
-              }}
-            >
-              {duration.label}
-            </div>
-          )}
+
+          {/* The reserved strip. `marginTop: auto` pins it to the bottom edge and
+              `flexShrink: 0` keeps it there when the rows above are at their
+              tallest — the two facts that make every card the same height. */}
+          <div
+            style={{
+              marginTop: 'auto',
+              flexShrink: 0,
+              height: CARD_FOOTER_HEIGHT,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              minWidth: 0,
+            }}
+          >
+            {id === 'cloudfront' && (
+              <span
+                style={{
+                  ...oneLineStyle,
+                  fontSize: 8.5,
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  color: '#DD344C',
+                  border: '1px solid #F3C0C6',
+                  borderRadius: 3,
+                  padding: '0 4px',
+                  lineHeight: 1.5,
+                }}
+              >
+                {WAF_CHIP_LABEL}
+              </span>
+            )}
+            {duration && (
+              <div
+                data-testid={`aws-duration-${id}`}
+                style={{
+                  // In the footer rather than absolutely in the corner: over the
+                  // top-right it lands on long service names ("Amazon ECS · AWS
+                  // Fargate") and clips them.
+                  flexShrink: 0,
+                  fontSize: 9,
+                  fontWeight: 700,
+                  lineHeight: 1.6,
+                  background:
+                    duration.current === false
+                      ? '#C9A7B0'
+                      : duration.ok
+                        ? colors.success
+                        : '#8C2F45',
+                  color: colors.textOnAccent,
+                  padding: '0 7px',
+                  borderRadius: 20,
+                }}
+              >
+                {duration.label}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -27,7 +27,41 @@ import type { ArchitectureEngine, AwsNodeId, AwsSegmentId } from './aws-architec
  * Grew from 916×286 to hold engine B. The extra width is two columns for the
  * Gateway and the table it reaches; the extra height is engine B's band.
  */
-export const AWS_DIAGRAM_CANVAS = { width: 1250, height: 392 } as const;
+export const AWS_DIAGRAM_CANVAS = { width: 1446, height: 480 } as const;
+
+/**
+ * Every node card, at exactly one size.
+ *
+ * ONE constant, not a per-node width, and that is the point. The cards used to
+ * carry their own widths (146–192) and to take their height from their contents,
+ * which produced a wall of boxes that were all *nearly* the same — thirteen
+ * slightly different rectangles read as a rendering fault, and on a projector the
+ * eye spends its first second on the ragged edges instead of on the topology.
+ * Content-sized heights were the worse half: a card grew when its duration pill
+ * arrived, so the grid moved *during* a demo.
+ *
+ * The size is derived from the widest thing each row has to hold, and the model's
+ * captions are kept inside it (see `aws-architecture.ts`):
+ *   186px wide  → 139px of text once the icon, gap and padding are taken out,
+ *                 which fits `d26dwovftfq9oe.cloudfront.net` at 9.5px.
+ *   90px tall   → a two-line service name, one line of resource name, one line of
+ *                 caption, and a reserved 16px footer for the WAF chip or the
+ *                 duration pill. Reserved rather than grown into, so a pill
+ *                 arriving mid-turn changes nothing about the layout.
+ *
+ * `AwsTopologyDiagram` clips to this box and clamps each row, so a caption someone
+ * lengthens later is truncated — visibly, in one card — instead of spilling over
+ * its neighbour the way the AgentCore column used to.
+ */
+export const AWS_NODE_CARD = { width: 186, height: 90 } as const;
+
+/**
+ * Horizontal distance between column starts.
+ *
+ * `AWS_NODE_CARD.width` plus 24px of connector, which is what makes every link in
+ * the diagram exactly as long as every other link on its row.
+ */
+export const AWS_COLUMN_PITCH = 210;
 
 /**
  * How far the whole canvas is scaled down when rendered.
@@ -37,10 +71,12 @@ export const AWS_DIAGRAM_CANVAS = { width: 1250, height: 392 } as const;
  * set of coordinates — every geometry test, arrowhead and chevron stays valid at
  * any scale, which a second set of "compact" numbers would not.
  *
- * 0.74 puts 1250×392 at 925×290, which is the space the drawer actually has beside
- * the flow feed and a hair narrower than the old 916px diagram.
+ * 0.645 puts 1446×480 at 933×310, which is the space the drawer actually has
+ * beside the flow feed. Down from 0.74 because uniform cards are wider than the
+ * narrowest of the old ones; the trade is deliberate — slightly smaller type in
+ * exchange for a grid that lines up and never clips.
  */
-export const AWS_DIAGRAM_SCALE = 0.74;
+export const AWS_DIAGRAM_SCALE = 0.645;
 
 /**
  * The shared vertical centre of Browser, CloudFront, ALB and Fargate.
@@ -49,40 +85,48 @@ export const AWS_DIAGRAM_SCALE = 0.74;
  * off it, Bedrock and DynamoDB fan out to the right. Keeping the spine straight
  * is the reason the diagram reads left-to-right at a glance.
  */
-export const AWS_DIAGRAM_SPINE_Y = 154;
+export const AWS_DIAGRAM_SPINE_Y = 152;
 
-/** A node card's position and width on the canvas. */
+/**
+ * A node card's top-left corner on the canvas.
+ *
+ * Position only: every card is `AWS_NODE_CARD` in size, so a per-node width or
+ * height here would be a second, disagreeing source of truth for the thing the
+ * layout most needs to be uniform.
+ */
 export interface AwsNodeBox {
   x: number;
   top: number;
-  width: number;
 }
 
 /**
- * Per-node geometry.
+ * Per-node position, on a strict grid.
  *
- * CloudFront is widest (190px) because it carries the WAF chip; the rest sit at
- * 146–168. Tops are set from measured card heights rather than a shared grid,
- * since the cards differ in height: S3 has to clear the ALB below it and Bedrock
- * has to clear DynamoDB.
+ * Columns are multiples of `AWS_COLUMN_PITCH`; rows are placed so that a card
+ * either sits centred on its band's spine or clears the card above it by 15–17px.
+ * Both facts are asserted in `aws-diagram-layout.test.ts` — including that no two
+ * cards overlap, which is the failure this replaced: the AgentCore column's boxes
+ * were 60px apart while the cards themselves were taller than that, so Memory's
+ * caption ran through the Gateway's title.
  */
 export const AWS_NODE_BOXES: Readonly<Record<AwsNodeId, AwsNodeBox>> = {
-  browser: { x: 0, top: 112, width: 146 },
-  cloudfront: { x: 172, top: 102, width: 192 },
-  s3: { x: 390, top: 0, width: 152 },
-  alb: { x: 390, top: 112, width: 152 },
-  fargate: { x: 568, top: 104, width: 168 },
-  bedrock: { x: 762, top: 50, width: 154 },
-  dynamodb: { x: 762, top: 168, width: 154 },
+  browser: { x: 0, top: 107 },
+  cloudfront: { x: 210, top: 107 },
+  s3: { x: 420, top: 0 },
+  alb: { x: 420, top: 107 },
+  fargate: { x: 630, top: 107 },
+  // Bedrock above the spine, DynamoDB below it, centred on it as a pair.
+  bedrock: { x: 840, top: 55 },
+  dynamodb: { x: 840, top: 159 },
   // Engine B's band. `ac-proxy` sits in the same column as `fargate` and inside
   // the same VPC box, which is the point: one image, one task size, two services.
-  'ac-proxy': { x: 568, top: 300, width: 168 },
-  'ac-runtime': { x: 762, top: 300, width: 154 },
+  'ac-proxy': { x: 630, top: 381 },
+  'ac-runtime': { x: 840, top: 381 },
   // Memory branches up off engine B's spine; the Gateway stays on it, so the
   // longest chain — proxy, Runtime, Gateway, table — reads as one straight line.
-  'ac-memory': { x: 938, top: 240, width: 146 },
-  'ac-gateway': { x: 938, top: 300, width: 146 },
-  'ac-dynamodb': { x: 1104, top: 300, width: 146 },
+  'ac-memory': { x: 1050, top: 274 },
+  'ac-gateway': { x: 1050, top: 381 },
+  'ac-dynamodb': { x: 1260, top: 381 },
 };
 
 /** Column heading above each tier. */
@@ -93,12 +137,12 @@ export interface AwsTierLabel {
 
 export const AWS_TIER_LABELS: readonly AwsTierLabel[] = [
   { label: 'Client', x: 0 },
-  { label: 'Edge', x: 172 },
-  { label: 'Origin', x: 390 },
-  { label: 'Compute', x: 568 },
-  { label: 'AI · Data', x: 762 },
-  { label: 'AgentCore', x: 938 },
-  { label: 'Tool target', x: 1104 },
+  { label: 'Edge', x: 210 },
+  { label: 'Origin', x: 420 },
+  { label: 'Compute', x: 630 },
+  { label: 'AI · Data', x: 840 },
+  { label: 'AgentCore', x: 1050 },
+  { label: 'Tool target', x: 1260 },
 ] as const;
 
 /**
@@ -109,10 +153,10 @@ export const AWS_TIER_LABELS: readonly AwsTierLabel[] = [
  * difference the deployment does not have.
  */
 export const AWS_VPC_BOX = {
-  left: 558,
-  top: 92,
-  width: 188,
-  height: 272,
+  left: 620,
+  top: 97,
+  width: 206,
+  height: 384,
   label: 'valentin-vpc-dev · 2 AZ',
 } as const;
 
@@ -123,12 +167,16 @@ export const AWS_VPC_BOX = {
  * managed, so what is inside this box is the code we did not write. `ac-dynamodb`
  * is deliberately outside it — the table is ours, and the Gateway reaches it
  * through a Lambda we own.
+ *
+ * Its top clears engine A's lowest card by 15px. It used to start at y=228, which
+ * was *inside* the DynamoDB card above it, so the box's label sat on top of that
+ * card's title — the collision in the review screenshot.
  */
 export const AGENTCORE_BOX = {
-  left: 752,
-  top: 228,
-  width: 342,
-  height: 158,
+  left: 830,
+  top: 264,
+  width: 416,
+  height: 217,
   label: 'Amazon Bedrock AgentCore',
 } as const;
 
@@ -154,19 +202,21 @@ export interface AwsEngineBand {
 export const AWS_ENGINE_BANDS: readonly AwsEngineBand[] = [
   {
     engine: 'valentin',
-    label: 'Engine A · hand-built',
+    // "Glue code" is the same word the rail's engine switch uses, deliberately:
+    // one name for one thing, so the control and the band agree.
+    label: 'Engine A · glue code',
     sub: 'AGENT_ENGINE=valentin',
     x: 0,
-    top: 22,
-    width: 146,
+    top: 40,
+    width: AWS_NODE_CARD.width,
   },
   {
     engine: 'agentcore',
     label: 'Engine B · AgentCore',
     sub: 'AGENT_ENGINE=agentcore',
     x: 0,
-    top: 300,
-    width: 146,
+    top: 381,
+    width: AWS_NODE_CARD.width,
   },
 ] as const;
 
@@ -205,100 +255,100 @@ export interface AwsSegmentGeometry {
 export const AWS_SEGMENT_GEOMETRY: Readonly<Record<AwsSegmentId, AwsSegmentGeometry>> = {
   'browser-cloudfront': {
     id: 'browser-cloudfront',
-    path: 'M146,154 L166,154',
-    downstreamHead: '172,154 163,148 163,160',
-    upstreamHead: '146,154 155,148 155,160',
+    path: 'M186,152 L204,152',
+    downstreamHead: '210,152 201,146 201,158',
+    upstreamHead: '186,152 195,146 195,158',
     elbowed: false,
   },
   'cloudfront-s3': {
     id: 'cloudfront-s3',
-    path: 'M364,154 L377,154 L377,50 L384,50',
-    downstreamHead: '390,50 381,44 381,56',
-    upstreamHead: '364,154 373,148 373,160',
+    path: 'M396,152 L408,152 L408,45 L414,45',
+    downstreamHead: '420,45 411,39 411,51',
+    upstreamHead: '396,152 405,146 405,158',
     elbowed: true,
     // S3 sits above the spine, so "away from the browser" points up.
-    midDownstreamHead: '377,96 371,105 383,105',
-    midUpstreamHead: '377,108 371,99 383,99',
+    midDownstreamHead: '408,92 402,101 414,101',
+    midUpstreamHead: '408,106 402,97 414,97',
   },
   'cloudfront-alb': {
     id: 'cloudfront-alb',
-    path: 'M364,154 L384,154',
-    downstreamHead: '390,154 381,148 381,160',
-    upstreamHead: '364,154 373,148 373,160',
+    path: 'M396,152 L414,152',
+    downstreamHead: '420,152 411,146 411,158',
+    upstreamHead: '396,152 405,146 405,158',
     elbowed: false,
   },
   'alb-fargate': {
     id: 'alb-fargate',
-    path: 'M542,154 L562,154',
-    downstreamHead: '568,154 559,148 559,160',
-    upstreamHead: '542,154 551,148 551,160',
+    path: 'M606,152 L624,152',
+    downstreamHead: '630,152 621,146 621,158',
+    upstreamHead: '606,152 615,146 615,158',
     elbowed: false,
   },
   'fargate-bedrock': {
     id: 'fargate-bedrock',
-    path: 'M736,154 L749,154 L749,92 L756,92',
-    downstreamHead: '762,92 753,86 753,98',
-    upstreamHead: '736,154 745,148 745,160',
+    path: 'M816,152 L828,152 L828,100 L834,100',
+    downstreamHead: '840,100 831,94 831,106',
+    upstreamHead: '816,152 825,146 825,158',
     elbowed: true,
     // Bedrock is above the spine: outbound points up, the return points down.
-    midDownstreamHead: '749,110 743,119 755,119',
-    midUpstreamHead: '749,122 743,113 755,113',
+    midDownstreamHead: '828,116 822,125 834,125',
+    midUpstreamHead: '828,130 822,121 834,121',
   },
   'fargate-dynamodb': {
     id: 'fargate-dynamodb',
-    path: 'M736,154 L749,154 L749,218 L756,218',
-    downstreamHead: '762,218 753,212 753,224',
-    upstreamHead: '736,154 745,148 745,160',
+    path: 'M816,152 L828,152 L828,204 L834,204',
+    downstreamHead: '840,204 831,198 831,210',
+    upstreamHead: '816,152 825,146 825,158',
     elbowed: true,
     // DynamoDB is below the spine, so the chevrons are the other way up from
     // Bedrock's. Getting this pair backwards is exactly the bug above.
-    midDownstreamHead: '749,200 743,191 755,191',
-    midUpstreamHead: '749,188 743,197 755,197',
+    midDownstreamHead: '828,184 822,175 834,175',
+    midUpstreamHead: '828,174 822,183 834,183',
   },
 
-  // --- Engine B. Forks at the ALB and runs along its own spine at y=328. ---
+  // --- Engine B. Forks at the ALB and runs along its own spine at y=426. ---
   'alb-ac-proxy': {
     id: 'alb-ac-proxy',
-    // Leaves the ALB at x=555, one pixel clear of the VPC box's left edge (558),
+    // Leaves the ALB at x=614, six pixels clear of the VPC box's left edge (620),
     // so the drop into engine B's band does not run down inside the boundary.
-    path: 'M542,154 L555,154 L555,328 L562,328',
-    downstreamHead: '568,328 559,322 559,334',
-    upstreamHead: '542,154 551,148 551,160',
+    path: 'M606,152 L614,152 L614,426 L624,426',
+    downstreamHead: '630,426 621,420 621,432',
+    upstreamHead: '606,152 615,146 615,158',
     elbowed: true,
-    // The long leg is the 174px drop, which is where the eye goes.
-    midDownstreamHead: '555,246 549,237 561,237',
-    midUpstreamHead: '555,234 549,243 561,243',
+    // The long leg is the 274px drop, which is where the eye goes.
+    midDownstreamHead: '614,295 608,286 620,286',
+    midUpstreamHead: '614,283 608,292 620,292',
   },
   'ac-proxy-ac-runtime': {
     id: 'ac-proxy-ac-runtime',
-    path: 'M736,328 L756,328',
-    downstreamHead: '762,328 753,322 753,334',
-    upstreamHead: '736,328 745,322 745,334',
+    path: 'M816,426 L834,426',
+    downstreamHead: '840,426 831,420 831,432',
+    upstreamHead: '816,426 825,420 825,432',
     elbowed: false,
   },
   'ac-runtime-ac-memory': {
     id: 'ac-runtime-ac-memory',
-    path: 'M916,328 L927,328 L927,268 L932,268',
-    downstreamHead: '938,268 929,262 929,274',
-    upstreamHead: '916,328 925,322 925,334',
+    path: 'M1026,426 L1038,426 L1038,319 L1044,319',
+    downstreamHead: '1050,319 1041,313 1041,325',
+    upstreamHead: '1026,426 1035,420 1035,432',
     elbowed: true,
     // Memory sits above engine B's spine, so away-from-the-browser is up here —
     // the mirror image of `fargate-dynamodb`, and the same pair to get backwards.
-    midDownstreamHead: '927,290 921,299 933,299',
-    midUpstreamHead: '927,306 921,297 933,297',
+    midDownstreamHead: '1038,366 1032,375 1044,375',
+    midUpstreamHead: '1038,380 1032,371 1044,371',
   },
   'ac-runtime-ac-gateway': {
     id: 'ac-runtime-ac-gateway',
-    path: 'M916,328 L932,328',
-    downstreamHead: '938,328 929,322 929,334',
-    upstreamHead: '916,328 925,322 925,334',
+    path: 'M1026,426 L1044,426',
+    downstreamHead: '1050,426 1041,420 1041,432',
+    upstreamHead: '1026,426 1035,420 1035,432',
     elbowed: false,
   },
   'ac-gateway-ac-dynamodb': {
     id: 'ac-gateway-ac-dynamodb',
-    path: 'M1084,328 L1098,328',
-    downstreamHead: '1104,328 1095,322 1095,334',
-    upstreamHead: '1084,328 1093,322 1093,334',
+    path: 'M1236,426 L1254,426',
+    downstreamHead: '1260,426 1251,420 1251,432',
+    upstreamHead: '1236,426 1245,420 1245,432',
     elbowed: false,
   },
 };
@@ -309,7 +359,7 @@ export const AWS_SEGMENT_GEOMETRY: Readonly<Record<AwsSegmentId, AwsSegmentGeome
  * Named for the same reason `AWS_DIAGRAM_SPINE_Y` is: it is asserted against, and
  * a band that drifted a few pixels out of line would look like a rendering bug.
  */
-export const AGENTCORE_SPINE_Y = 328;
+export const AGENTCORE_SPINE_Y = 426;
 
 export function awsSegmentGeometry(id: AwsSegmentId): AwsSegmentGeometry {
   return AWS_SEGMENT_GEOMETRY[id];

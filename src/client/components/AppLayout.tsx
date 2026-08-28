@@ -9,18 +9,14 @@ import { ViewProvider, useViewState } from '../context/view-context';
 import { usePreferenceIngestion } from '../hooks/use-preference-ingestion';
 import { useChatContext } from '../context/chat-context';
 import { SessionSidebar } from './SessionSidebar';
-import {
-  AppWindow,
-  DOSSIER_COLUMNS,
-  windowCellStyle,
-  windowCellGrowStyle,
-} from './AppWindow';
+import { AppWindow, DOSSIER_COLUMNS, windowCellStyle, windowCellGrowStyle } from './AppWindow';
 import { IconRail } from './IconRail';
 import { LiveArchitectureDrawer, reservedDrawerSpace } from './LiveArchitectureDrawer';
 import {
   ArchitectureDrawerProvider,
   useArchitectureDrawer,
 } from '../context/architecture-drawer-context';
+import { ArchitectureEngineProvider } from '../context/architecture-engine-context';
 import { useSessionContext } from '../context/session-context';
 import { breakpoints, layout } from '../design-system/tokens';
 
@@ -123,7 +119,11 @@ export function AppLayout() {
       {/* Above the layout because the magnifier lives in the sidebar and the
           drawer is mounted beside the chat — sibling subtrees. */}
       <ArchitectureDrawerProvider>
-        <AppLayoutContent />
+        {/* Here for the same sibling-subtree reason, one level in: the engine
+            switch is in the icon rail, the diagram it redraws is in the drawer. */}
+        <ArchitectureEngineProvider>
+          <AppLayoutContent />
+        </ArchitectureEngineProvider>
       </ArchitectureDrawerProvider>
     </ProfileStoreProvider>
   );
@@ -297,13 +297,7 @@ function AppLayoutContent() {
               three, so it does not shift under the cursor. */}
           <AppWindow
             variant="desktop"
-            columns={
-              isDossier
-                ? DOSSIER_COLUMNS
-                : isListOpen
-                  ? undefined
-                  : COLLAPSED_CHAT_COLUMNS
-            }
+            columns={isDossier ? DOSSIER_COLUMNS : isListOpen ? undefined : COLLAPSED_CHAT_COLUMNS}
           >
             {/* In the chat shell both surfaces are on screen at once, so no rail
                 button claims to be the active view. The dossier is a single

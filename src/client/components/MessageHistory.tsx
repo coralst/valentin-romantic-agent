@@ -8,7 +8,7 @@ import { ProposalCard } from './ProposalCard';
 import { usePreferencesContext } from '../context/preferences-context';
 import { discoveryKey } from '../hooks/use-preferences-state';
 import type { ProposalEntry } from '../hooks/use-chat-state';
-import { insets } from '../design-system/tokens';
+import { insets, typography } from '../design-system/tokens';
 import { chatMeasureStyle } from './chat-measure';
 
 interface MessageHistoryProps {
@@ -21,6 +21,10 @@ interface MessageHistoryProps {
 
 const containerStyle: React.CSSProperties = {
   flex: 1,
+  // A column, so an empty transcript's placeholder can be told to fill the track
+  // rather than sitting as a line of text at the top of a tall blank area.
+  display: 'flex',
+  flexDirection: 'column',
   // Load-bearing: without it this flex child sizes to the whole transcript and
   // shoves the composer out through the bottom of the window
   // (option-5d-brief.html:41-42,47).
@@ -32,6 +36,49 @@ const containerStyle: React.CSSProperties = {
 
 /** Caps the measure of the transcript without narrowing the scroll gutter. */
 const innerStyle: React.CSSProperties = chatMeasureStyle;
+
+/**
+ * What fills the transcript before anything has been said.
+ *
+ * There was nothing here, and on a wide screen with the architecture drawer open
+ * that read as a rendering fault: the column is at its widest exactly when the
+ * transcript is at its shortest, so a new session showed several hundred pixels of
+ * blank cream between the header and the composer. Seeding the demo profile lands
+ * you here too — it opens its own session, which has no greeting in it yet.
+ *
+ * Centred in the track rather than pinned to the top, because a line of grey text
+ * under the header looks like the first message failed to load.
+ */
+const emptyMeasureStyle: React.CSSProperties = {
+  // The measure box, told to fill the track so what is centred inside it is
+  // centred in the column rather than tucked under the header. Kept as a variant
+  // of `chatMeasureStyle` rather than a sibling of it: the header, the transcript
+  // and the composer are asserted to share one measure, and the transcript's
+  // contribution to that is this element (AppLayout.scaling.test.tsx).
+  ...chatMeasureStyle,
+  flex: 1,
+  minHeight: 0,
+  display: 'flex',
+  flexDirection: 'column',
+};
+
+const emptyTranscriptStyle: React.CSSProperties = {
+  flex: 1,
+  minHeight: 0,
+  display: 'grid',
+  placeItems: 'center',
+  padding: '24px 0',
+};
+
+const emptyTranscriptCopyStyle: React.CSSProperties = {
+  margin: 0,
+  maxWidth: '34ch',
+  textAlign: 'center',
+  fontFamily: typography.bodyFontFamily,
+  fontSize: typography.px.label,
+  lineHeight: 1.6,
+  color: 'rgba(42, 34, 38, 0.55)',
+};
 
 export function MessageHistory({
   messages,
@@ -101,9 +148,21 @@ export function MessageHistory({
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length, proposals.length]);
 
+  // `proposals` counts: a session whose only content is a card awaiting a yes is
+  // not empty, and telling its owner to start talking would be wrong.
+  const isEmpty = messages.length === 0 && proposals.length === 0;
+
   return (
     <div role="log" style={containerStyle} aria-label="Message history">
-      <div style={innerStyle}>
+      <div style={isEmpty ? emptyMeasureStyle : innerStyle}>
+        {isEmpty && (
+          <div style={emptyTranscriptStyle} data-testid="transcript-empty">
+            <p style={emptyTranscriptCopyStyle}>
+              Nothing said yet. Tell Valentin something about her — a food she loves, a
+              place she talks about — and he will start keeping track.
+            </p>
+          </div>
+        )}
         {messages.map((msg) => (
           <div key={msg.id}>
             <MessageBubble

@@ -280,6 +280,13 @@ export class DynamoDBStore implements StorageInterface {
       {
         category: pref.category,
         key: pref.key,
+        // Was dropped on the floor here, so every live-extracted row in DynamoDB
+        // persisted `fieldId: null` and the client fell back to fuzzy category+key
+        // resolution to work out which profile field it belonged to. The batch below
+        // has always read it; only this single-row path forgot to pass it on.
+        // `InMemoryStore.savePreference` does pass it, which is exactly why no unit
+        // test caught the divergence.
+        fieldId: pref.fieldId ?? null,
         value: pref.value,
         confidence: pref.confidence,
         sourceMessageId: pref.sourceMessageId,

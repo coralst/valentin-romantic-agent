@@ -275,6 +275,29 @@ describe.runIf(available)('DynamoDBStore (contract, DynamoDB Local)', () => {
       expect(found!.history).toEqual([]);
     });
 
+    /*
+     * The single-row path used to build its batch entry without `fieldId`, so every
+     * live-extracted preference in the real deployment persisted `fieldId: null` and
+     * the client fell back to fuzzy category+key resolution. `InMemoryStore` passed
+     * it, which is exactly why the unit suite never noticed — hence the same
+     * assertion in both stores' suites.
+     */
+    it('carries fieldId through the single-row save path', async () => {
+      const sessionId = await alice.createSession();
+      await alice.savePreference({
+        sessionId,
+        category: 'personality_traits',
+        key: 'partner_name',
+        fieldId: 'partner_name',
+        value: 'Maya',
+        confidence: 1,
+        sourceMessageId: 'm1',
+      });
+
+      const found = await alice.findPreference(sessionId, 'personality_traits', 'partner_name');
+      expect(found?.fieldId).toBe('partner_name');
+    });
+
     it('saving the same natural key twice keeps one row', async () => {
       const sessionId = await alice.createSession();
       const write = () =>

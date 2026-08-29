@@ -116,9 +116,17 @@ describe('IntegrationsPanel', () => {
       .toBeInTheDocument();
   });
 
-  it('still says the unbuilt capabilities contact nobody', async () => {
+  /*
+   * The narrower claim is the load-bearing one. "Contacts nobody" is true of the
+   * aspirational rows and false of the credentialled ones — a visitor who reads the
+   * old blanket version and then pastes a Google secret has been told the opposite
+   * of what happens. So this asserts the promise is scoped to the unbuilt rows, and
+   * that the panel says out loud that supplying a key reaches the provider.
+   */
+  it('scopes "contacts nobody" to the unbuilt rows, not to everything non-live', async () => {
     await renderPanel();
-    expect(screen.getByText(/not built yet.*contacts nobody/i)).toBeInTheDocument();
+    expect(screen.getByText(/not built yet contact nobody at all/i)).toBeInTheDocument();
+    expect(screen.getByText(/supply one and it reaches the provider too/i)).toBeInTheDocument();
   });
 
   describe('granting reach', () => {

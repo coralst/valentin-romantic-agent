@@ -612,14 +612,18 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
         <span style={pillStyle}>{total - connectedCount} available</span>
         {/* The short form on mobile: the same admission, in the one line a
             390px footer has room for without pushing the pills off screen. */}
-        {/* The old note said flatly that no provider is ever contacted. That was
-            true of every row when it was written and is now true of only some, so
-            it splits: a "live" capability really does reach a provider, and
-            everything it does in the world still waits for a card you confirm. */}
+        {/* There are THREE states here, not two, and collapsing the middle one is
+            what made this note wrong. "live" is built and credentialled; "needs
+            credentials" is built and waiting for a key — connecting one posts real
+            credentials to this server, which then really does reach the provider;
+            "not built yet" is the only row where a grant is just a note to self.
+            The note used to say the whole non-live remainder "contacts nobody",
+            which was a promise it could not keep for Calendar, Travel or Messages
+            — printed directly above a form that asks for Google's OAuth secret. */}
         <span style={footerNoteStyle}>
           {isMobile
-            ? 'Anything marked live reaches a real provider — and still asks you to confirm before it acts.'
-            : 'A capability marked live is real code against a real provider, and the Live Architecture view traces the same calls. Nothing is ever booked or sent unattended — Valentin proposes, and you press Confirm. The rest of this list is not built yet; connecting one records a grant in this browser and contacts nobody.'}
+            ? 'Anything marked live or credentialled reaches a real provider — and still asks you to confirm before it acts.'
+            : 'A capability marked live is real code against a real provider, and the Live Architecture view traces the same calls. "Needs credentials" is the same real code waiting for a key — supply one and it reaches the provider too. Nothing is ever booked or sent unattended: Valentin proposes, and you press Confirm. Only the rows marked not built yet contact nobody at all; connecting one records a grant in this browser and nothing more.'}
         </span>
       </footer>
 

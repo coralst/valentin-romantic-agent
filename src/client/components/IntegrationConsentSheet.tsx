@@ -2,6 +2,10 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { colors, insets, radii, typography, animation } from '../design-system/tokens';
 import { canSpend, type IntegrationService } from '../utils/integration-catalogue';
 import type { IntegrationGrant } from '../hooks/use-integrations-store';
+import { IntegrationCredentialsForm } from './IntegrationCredentialsForm';
+import { connectableFor, type ConnectableId } from '../utils/integration-connect';
+import type { ConnectStatus } from '../hooks/use-integration-connect';
+import type { IntegrationReadiness } from '../hooks/use-integration-readiness';
 
 /**
  * The sheet that stands between "click a service" and "the agent may act through
@@ -29,6 +33,19 @@ interface IntegrationConsentSheetProps {
   onConfirm: (capUsd: number | null) => void;
   onDisconnect?: () => void;
   onCancel: () => void;
+  /**
+   * What the server holds, so the sheet can offer to fill in what is missing.
+   *
+   * Optional so the existing component tests, which are about the grant and the
+   * spend cap, keep constructing this component with the props they always did.
+   * Absent means no credential block at all — the same as a fully configured
+   * capability, which is the correct fallback: never invite someone to fix
+   * something you cannot tell is broken.
+   */
+  readiness?: IntegrationReadiness;
+  connectStatus?: ConnectStatus;
+  onConnectCredentials?: (id: ConnectableId, fields: Record<string, string>) => void;
+  onForgetCredentials?: (id: ConnectableId) => void;
 }
 
 const backdropStyle: React.CSSProperties = {
@@ -159,6 +176,44 @@ const CAP_MIN = 10;
 const CAP_MAX = 500;
 const CAP_STEP = 10;
 
+/**
+ * The connect flows this capability still needs, in catalogue order.
+ *
+ * Deduplicated, because Calendar and Gmail both map to `google` and a capability
+ * backed by both would otherwise render two identical sign-in forms. Empty when
+ * everything is configured, when nothing is known yet, or when the capability has
+ * no real backing at all — a "not built yet" row has no credential to supply, and
+ * offering a form for one would be a lie about what connecting achieves.
+ */
+function missingConnectFlows(
+  service: IntegrationService,
+  readiness: IntegrationReadiness | undefined,
+): ConnectableId[] {
+  if (!readiness || readiness.state !== 'loaded') return [];
+  const seen = new Set<ConnectableId>();
+  for (const id of service.backing ?? []) {
+    if (readiness.configured[id] === true) continue;
+    const flow = connectableFor(id);
+    if (flow) seen.add(flow);
+  }
+  return [...seen];
+}
+
+/** The connect flows behind this capability that *are* configured. */
+function connectedFlows(
+  service: IntegrationService,
+  readiness: IntegrationReadiness | undefined,
+): ConnectableId[] {
+  if (!readiness || readiness.state !== 'loaded') return [];
+  const seen = new Set<ConnectableId>();
+  for (const id of service.backing ?? []) {
+    if (readiness.configured[id] !== true) continue;
+    const flow = connectableFor(id);
+    if (flow) seen.add(flow);
+  }
+  return [...seen];
+}
+
 export function IntegrationConsentSheet({
   service,
   mode,
@@ -166,8 +221,14 @@ export function IntegrationConsentSheet({
   onConfirm,
   onDisconnect,
   onCancel,
+  readiness,
+  connectStatus,
+  onConnectCredentials,
+  onForgetCredentials,
 }: IntegrationConsentSheetProps) {
   const spends = canSpend(service);
+  const missing = onConnectCredentials ? missingConnectFlows(service, readiness) : [];
+  const connected = onConnectCredentials ? connectedFlows(service, readiness) : [];
   const [capUsd, setCapUsd] = useState<number>(
     grant?.capUsd ?? service.defaultCapUsd ?? CAP_MIN,
   );
@@ -258,6 +319,33 @@ export function IntegrationConsentSheet({
           </label>
         )}
 
+        {/* What the server is still missing, and the form to supply it. Rendered
+            above the grant buttons because it is the blocking fact: allowing a
+            capability whose provider has no credentials produces a row that says
+            "Connected" and can do nothing. */}
+        {missing.map((flow) => (
+          <IntegrationCredentialsForm
+            key={flow}
+            id={flow}
+            status={connectStatus ?? { phase: 'idle' }}
+            onSubmit={(fields) => onConnectCredentials?.(flow, fields)}
+          />
+        ))}
+
+        {/* Already configured: no form, just the means to take it away again.
+            Re-showing empty inputs for a working service invites someone to
+            overwrite a good credential with a typo. */}
+        {connected.map((flow) => (
+          <IntegrationCredentialsForm
+            key={flow}
+            id={flow}
+            alreadyConnected
+            status={connectStatus ?? { phase: 'idle' }}
+            onSubmit={(fields) => onConnectCredentials?.(flow, fields)}
+            onDisconnect={() => onForgetCredentials?.(flow)}
+          />
+        ))}
+
         <div style={actionsStyle}>
           <button type="button" style={buttonStyle('ghost')} onClick={onCancel}>
             Cancel
@@ -282,10 +370,15 @@ export function IntegrationConsentSheet({
           </button>
         </div>
 
+        {/* The old note said flatly that no account is ever contacted and nothing
+            is ordered. That was true of every capability when it was written and
+            is now true only of the ones with no backing service, so it splits:
+            a real integration does reach a provider, and what protects the user
+            there is the confirm step, not the absence of a connection. */}
         <p style={noteStyle}>
-          This build records your choice in this browser only. No account is
-          contacted and nothing is ordered — the panel is the permission model, not
-          a live billing relationship.
+          {(service.backing?.length ?? 0) > 0
+            ? 'Your allowance is recorded in this browser. Credentials you supply stay on the server and are never shown back to you. Valentin still proposes every action and waits for you to press Confirm — nothing is booked or sent on his own authority.'
+            : 'This capability is not built yet, so connecting it records your choice in this browser and contacts nobody.'}
         </p>
       </div>
     </div>

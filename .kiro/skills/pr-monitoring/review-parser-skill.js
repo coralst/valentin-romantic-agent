@@ -202,6 +202,10 @@ const OWNERSHIP = [
   ['Dockerfile', 'infra'],
   ['.dockerignore', 'infra'],
   ['.gitignore', 'infra'],
+  // The environment template. Infra's, not backend's: it documents what a
+  // deployment must supply, and it is the one file in the repo where a mistake
+  // means a real credential is committed.
+  ['.env.example', 'infra'],
   ['README.md', 'infra'],
   ['CONTRIBUTING.md', 'infra'],
   ['CLAUDE.md', 'infra'],

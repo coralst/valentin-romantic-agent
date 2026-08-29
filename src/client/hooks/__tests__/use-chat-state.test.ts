@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import { chatReducer, type ChatState } from '../use-chat-state';
 import type { ChatMessage } from '../../../shared/interfaces/message';
+import type { ActionProposalPayload } from '../../../shared/interfaces/ws-events';
 
 /** Arbitrary for a valid ISO timestamp string */
 const isoTimestampArb = fc
@@ -28,6 +29,7 @@ function makeState(messages: ChatMessage[], inputValue: string): ChatState {
     isTyping: false,
     connectionStatus: 'connected',
     inputValue,
+    proposals: [],
   };
 }
 
@@ -226,5 +228,82 @@ describe('chatReducer — SESSION_INIT', () => {
     });
 
     expect(next).toBe(state);
+  });
+});
+
+describe('chatReducer — proposals', () => {
+  const proposal: ActionProposalPayload = {
+    sessionId: 'sess-1',
+    proposalId: 'p1',
+    service: 'ontopo',
+    title: 'Table for two',
+    summary: 'Saturday at 20:00',
+    expiresAt: '2026-09-05T18:15:00.000Z',
+  };
+
+  function stateOn(sessionId: string | null): ChatState {
+    return { ...makeState([], ''), sessionId };
+  }
+
+  it('holds a proposal open when it arrives', () => {
+    const next = chatReducer(stateOn('sess-1'), { type: 'RECEIVE_PROPOSAL', proposal });
+
+    expect(next.proposals).toEqual([{ proposal, status: 'open' }]);
+  });
+
+  it('drops a proposal addressed to another conversation', () => {
+    const state = stateOn('sess-other');
+    // Same hazard as SESSION_INIT: a reply can be in flight when the app has
+    // already moved on, and a card offering to book a table belongs to the
+    // conversation that asked for it.
+    expect(chatReducer(state, { type: 'RECEIVE_PROPOSAL', proposal })).toBe(state);
+  });
+
+  it('is idempotent on proposalId', () => {
+    const once = chatReducer(stateOn('sess-1'), { type: 'RECEIVE_PROPOSAL', proposal });
+    const twice = chatReducer(once, { type: 'RECEIVE_PROPOSAL', proposal });
+
+    // Two identical Confirm buttons means the second click is the one that fails.
+    expect(twice).toBe(once);
+  });
+
+  it('records a confirmation without removing the card', () => {
+    const open = chatReducer(stateOn('sess-1'), { type: 'RECEIVE_PROPOSAL', proposal });
+    const next = chatReducer(open, {
+      type: 'RESOLVE_PROPOSAL',
+      proposalId: 'p1',
+      status: 'confirmed',
+    });
+
+    // Kept, not deleted: this is the only record in the transcript that a table
+    // was actually booked.
+    expect(next.proposals).toEqual([{ proposal, status: 'confirmed' }]);
+  });
+
+  it('leaves other proposals alone when one is resolved', () => {
+    const second = { ...proposal, proposalId: 'p2' };
+    let state = chatReducer(stateOn('sess-1'), { type: 'RECEIVE_PROPOSAL', proposal });
+    state = chatReducer(state, { type: 'RECEIVE_PROPOSAL', proposal: second });
+    state = chatReducer(state, {
+      type: 'RESOLVE_PROPOSAL',
+      proposalId: 'p2',
+      status: 'dismissed',
+    });
+
+    expect(state.proposals.map((entry) => entry.status)).toEqual(['open', 'dismissed']);
+  });
+
+  it('clears proposals on a session switch', () => {
+    const open = chatReducer(stateOn('sess-1'), { type: 'RECEIVE_PROPOSAL', proposal });
+    const next = chatReducer(open, {
+      type: 'SWITCH_SESSION',
+      sessionId: 'sess-2',
+      messages: [],
+    });
+
+    // The server holds proposals in memory and lets them lapse, so there is
+    // nothing to come back to — a leftover card would offer to act on a proposal
+    // the orchestrator has already forgotten.
+    expect(next.proposals).toEqual([]);
   });
 });

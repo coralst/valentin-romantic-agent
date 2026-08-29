@@ -4,13 +4,19 @@ import type { ChatMessage } from '../../shared/interfaces/message';
 import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
 import { MessageBubble } from './MessageBubble';
 import { LearnedStatus, type LearnedAnnouncement } from './LearnedStatus';
+import { ProposalCard } from './ProposalCard';
 import { usePreferencesContext } from '../context/preferences-context';
 import { discoveryKey } from '../hooks/use-preferences-state';
+import type { ProposalEntry } from '../hooks/use-chat-state';
 import { insets } from '../design-system/tokens';
 import { chatMeasureStyle } from './chat-measure';
 
 interface MessageHistoryProps {
   messages: ChatMessage[];
+  /** Proposals awaiting a yes, plus the ones already answered. */
+  proposals?: ProposalEntry[];
+  onConfirmProposal?: (proposalId: string) => void;
+  onDismissProposal?: (proposalId: string) => void;
 }
 
 const containerStyle: React.CSSProperties = {
@@ -27,7 +33,12 @@ const containerStyle: React.CSSProperties = {
 /** Caps the measure of the transcript without narrowing the scroll gutter. */
 const innerStyle: React.CSSProperties = chatMeasureStyle;
 
-export function MessageHistory({ messages }: MessageHistoryProps) {
+export function MessageHistory({
+  messages,
+  proposals = [],
+  onConfirmProposal,
+  onDismissProposal,
+}: MessageHistoryProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const { state: preferencesState } = usePreferencesContext();
 
@@ -84,9 +95,11 @@ export function MessageHistory({ messages }: MessageHistoryProps) {
     });
   }, [visiblePreferences, preferencesState.discovered]);
 
+  // A proposal arriving scrolls too. It is the thing the conversation was for,
+  // and a Confirm button below the fold is a Confirm button nobody presses.
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length]);
+  }, [messages.length, proposals.length]);
 
   return (
     <div role="log" style={containerStyle} aria-label="Message history">
@@ -106,6 +119,22 @@ export function MessageHistory({ messages }: MessageHistoryProps) {
           and departure cannot displace anything the user is reading.
         */}
         <LearnedStatus announcement={announcement} />
+        {/*
+          Proposals sit at the tail rather than beside the message that raised
+          them, for the same reason: nothing renders below the newest one, so a
+          card appearing cannot push the sentence being read up off the screen.
+          They are also the live part of the transcript — whatever is still
+          awaiting a yes should be the last thing on screen.
+        */}
+        {proposals.map((entry) => (
+          <ProposalCard
+            key={entry.proposal.proposalId}
+            proposal={entry.proposal}
+            status={entry.status}
+            onConfirm={(id) => onConfirmProposal?.(id)}
+            onDismiss={(id) => onDismissProposal?.(id)}
+          />
+        ))}
         <div ref={bottomRef} />
       </div>
     </div>

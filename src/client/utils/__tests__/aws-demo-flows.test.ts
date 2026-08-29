@@ -12,12 +12,59 @@ import { AWS_NODES, routeBetween, type AwsNodeId } from '../aws-architecture';
 const NODE_IDS = new Set<string>(AWS_NODES.map((node) => node.id));
 
 describe('DEMO_FLOWS', () => {
-  it('ships the three flows the talk needs', () => {
+  it('ships the four flows the talk needs', () => {
     expect(DEMO_FLOWS.map((flow) => flow.id)).toEqual([
       'page-load',
       'chat-reply',
       'learns-something',
+      'proposes-a-table',
     ]);
+  });
+
+  describe('proposes-a-table', () => {
+    const steps = demoFlow('proposes-a-table').steps;
+
+    /**
+     * The order is the argument. In Israel a Saturday-night dinner is a
+     * Hebrew-calendar question before it is a restaurant question, and a flow that
+     * asked Ontopo first would demonstrate the bug rather than the fix.
+     */
+    it('checks the calendar before it looks for a table', () => {
+      const operations = steps.map((step) => step.operation);
+      expect(operations.indexOf('check_shabbat')).toBeGreaterThan(-1);
+      expect(operations.indexOf('check_shabbat')).toBeLessThan(
+        operations.indexOf('search_restaurants'),
+      );
+    });
+
+    /**
+     * The authority model, asserted. The proposal is not the end of the flow — the
+     * confirmation travelling back out to Ontopo is, and it is the only step that
+     * reaches a provider with intent to write. A flow ending at the proposal would
+     * let a room assume the agent booked it.
+     */
+    it('ends with the confirmation reaching the provider, not with the proposal', () => {
+      const last = steps[steps.length - 1];
+      expect(last.operation).toBe('confirm_action');
+      expect(last.from).toBe('browser');
+      expect(last.to).toBe('integrations');
+    });
+
+    it('routes each provider call from the task rather than from its sibling', () => {
+      // Chaining these would give from === to, which `routeBetween` reports as no
+      // hop at all — a beat that lights nothing on the diagram.
+      const calls = steps.filter(
+        (step) => step.to === 'integrations' && step.operation !== 'confirm_action',
+      );
+      expect(calls.length).toBeGreaterThan(1);
+      for (const call of calls) expect(call.from, call.operation).toBe('fargate');
+    });
+
+    it('says which provider it reached without saying what was asked', () => {
+      for (const step of steps) {
+        expect(step.detail, step.operation).not.toMatch(/@|\bhttps?:/i);
+      }
+    });
   });
 
   it('names only real nodes, so no step can invent a resource', () => {

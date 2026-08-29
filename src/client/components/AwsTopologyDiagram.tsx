@@ -254,7 +254,7 @@ export function AwsTopologyDiagram({
       }}
       data-testid="aws-topology-diagram"
       role="img"
-      aria-label="AWS architecture: browser through CloudFront, ALB and Fargate to Bedrock and DynamoDB"
+      aria-label="AWS architecture: browser through CloudFront, ALB and Fargate to Bedrock, DynamoDB and the external integration APIs"
     >
       <svg
         width={AWS_DIAGRAM_CANVAS.width}

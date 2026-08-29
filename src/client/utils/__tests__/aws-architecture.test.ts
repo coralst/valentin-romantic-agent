@@ -25,6 +25,8 @@ const ALL_EVENT_TYPES = [
   'error',
   'ping',
   'pong',
+  'action_proposal',
+  'confirm_action',
 ];
 
 describe('AWS_NODES', () => {
@@ -183,6 +185,29 @@ describe('awsNodesForEventType', () => {
       'alb',
       'cloudfront',
       'browser',
+    ]);
+  });
+
+  /**
+   * The A/B demo's whole point in one route. A proposal starts at the provider —
+   * Ontopo held the table — and travels out; the confirmation travels all the way
+   * back to it. Neither may shortcut: the previous hand-authored diagram drew
+   * exactly that kind of phantom link, which is why the topology is a tree now.
+   */
+  it('runs a proposal out from the provider and the confirmation back to it', () => {
+    expect(awsNodesForEventType('action_proposal')).toEqual([
+      'integrations',
+      'fargate',
+      'alb',
+      'cloudfront',
+      'browser',
+    ]);
+    expect(awsNodesForEventType('confirm_action')).toEqual([
+      'browser',
+      'cloudfront',
+      'alb',
+      'fargate',
+      'integrations',
     ]);
   });
 

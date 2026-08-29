@@ -7,11 +7,17 @@
  * logo-and-trademark grid would claim one. The category line under each name is
  * what tells the visitor which kind of provider sits behind it.
  *
- * Nothing here reaches the network. Connecting a service in this build records a
- * grant in the browser and nothing else — the panel says so out loud, because a
- * row that reads "Connected" while no account was ever contacted is the one thing
- * this surface must not imply.
+ * Some of these are now real and some are still aspirational, and {@link
+ * IntegrationService.backing} is what separates them. A capability with no
+ * `backing` reaches nothing: connecting it records a grant in the browser and
+ * nothing else. A capability with `backing` names the services behind it, and the
+ * panel asks the server whether those services are actually configured. A row
+ * that reads "Connected" while no account was ever contacted is the one thing this
+ * surface must not imply — which is exactly why the distinction is data here and
+ * not a comment.
  */
+
+import type { IntegrationId } from '../../shared/interfaces/integrations';
 
 /**
  * How far a single permission reaches, which is what decides how loudly the
@@ -33,6 +39,16 @@ export interface IntegrationScope {
 export interface IntegrationService {
   id: string;
   name: string;
+  /**
+   * The services that actually carry this capability out, or `undefined` while it
+   * is still aspirational.
+   *
+   * More than one is normal: Messages is Gmail *and* WhatsApp, and a visitor does
+   * not care which of the two a nudge went out through. Being an array is also what
+   * keeps the panel honest — a capability is only as ready as its least-ready
+   * service, so a Messages row with WhatsApp unconfigured must not read "ready".
+   */
+  backing?: readonly IntegrationId[];
   /** The kind of provider behind the capability, e.g. "flower delivery". */
   category: string;
   /** The glyph shown in the fan-out node and the mobile card. */
@@ -52,12 +68,13 @@ export const INTEGRATION_CATALOGUE: readonly IntegrationService[] = [
   {
     id: 'dining',
     name: 'Restaurant booking',
+    backing: ['ontopo'],
     category: 'reservations',
     glyph: '🍽',
     blurb: 'Finds somewhere quiet near her favourites, and holds the table.',
     scopes: [
       { label: 'search restaurants', detail: 'Read-only', reach: 'read' },
-      { label: 'book up to 4 seats', detail: 'Larger tables come back to you first', reach: 'write' },
+      { label: 'offer you a table to confirm', detail: 'The booking only happens once you press Confirm', reach: 'write' },
       { label: 'cancel a booking he made', detail: 'Never one you made yourself', reach: 'write' },
     ],
     defaultCapUsd: null,
@@ -65,6 +82,7 @@ export const INTEGRATION_CATALOGUE: readonly IntegrationService[] = [
   {
     id: 'calendar',
     name: 'Calendar',
+    backing: ['google-calendar'],
     category: 'your own diary',
     glyph: '📅',
     blurb: 'Checks you are actually free before he promises her an evening.',
@@ -125,6 +143,7 @@ export const INTEGRATION_CATALOGUE: readonly IntegrationService[] = [
   {
     id: 'travel',
     name: 'Travel',
+    backing: ['amadeus'],
     category: 'flights & hotels',
     glyph: '✈️',
     blurb: 'Surprise weekends, priced against the cap you set.',
@@ -137,11 +156,38 @@ export const INTEGRATION_CATALOGUE: readonly IntegrationService[] = [
   {
     id: 'messages',
     name: 'Messages',
-    category: 'messaging',
+    backing: ['gmail', 'whatsapp'],
+    category: 'email & WhatsApp',
     glyph: '✉️',
-    blurb: 'Drafts what you want to say. You are the one who presses send.',
+    blurb: 'Writes what you want to say. You read it before it goes.',
     scopes: [
-      { label: 'draft only', detail: 'He can never send on your behalf', reach: 'write' },
+      /*
+       * This used to read "draft only — he can never send on your behalf", which
+       * stopped being true the moment Gmail and WhatsApp were wired up. He does
+       * send now; what he cannot do is send unread. Overstating a limit is worse
+       * than stating a weaker one, because the visitor calibrates on it.
+       */
+      { label: 'write the message for you', detail: 'You see the full text before anything is sent', reach: 'write' },
+      { label: 'send it once you confirm', detail: 'Only the message on screen, only to the person named on it', reach: 'write' },
+    ],
+    defaultCapUsd: null,
+  },
+  {
+    id: 'occasions',
+    name: 'Occasions',
+    backing: ['hebcal'],
+    category: 'the Hebrew calendar',
+    glyph: '🕯',
+    blurb: 'Knows when Shabbat comes in, and which Hebrew date your anniversary really is.',
+    scopes: [
+      /*
+       * Genuinely read-only and genuinely local: the Hebrew calendar is computed
+       * in-process, so this row needs no account and can never be unconfigured.
+       * It is here because it is the reason Valentin does not offer an Israeli
+       * couple a Friday-night restaurant.
+       */
+      { label: 'read the Hebrew calendar', detail: 'Computed on the server — no account, nothing sent anywhere', reach: 'read' },
+      { label: 'candle-lighting for your city', detail: 'A city name is all it needs', reach: 'read' },
     ],
     defaultCapUsd: null,
   },
@@ -150,6 +196,18 @@ export const INTEGRATION_CATALOGUE: readonly IntegrationService[] = [
 /** Lookup by id, or `undefined` for an id the catalogue has since dropped. */
 export function findIntegration(id: string): IntegrationService | undefined {
   return INTEGRATION_CATALOGUE.find((service) => service.id === id);
+}
+
+/**
+ * True when real code stands behind this capability.
+ *
+ * "Live" here means *built*, not *ready* — whether the credentials exist is the
+ * server's answer, not the catalogue's, and the two are deliberately separate so a
+ * missing refresh token reads as "needs credentials" rather than as a capability
+ * that was never written.
+ */
+export function isLive(service: IntegrationService): boolean {
+  return (service.backing?.length ?? 0) > 0;
 }
 
 /** True when any of a service's scopes can spend money. */

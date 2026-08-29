@@ -75,7 +75,7 @@ const separatorStyle: React.CSSProperties = {
 
 export function ChatPanel() {
   const { state, dispatch } = useChatContext();
-  const { sendMessage } = useWebSocketContext();
+  const { sendMessage, confirmAction } = useWebSocketContext();
   // Optional: the chat column renders standalone in tests and on mobile, where
   // the profile store is not necessarily above it.
   const profileStore = useOptionalProfileStoreContext();
@@ -95,6 +95,24 @@ export function ChatPanel() {
 
     dispatch({ type: 'SEND_MESSAGE', message });
     sendMessage(content);
+  };
+
+  /*
+   * Marked confirmed as soon as the frame goes out, not when the result comes
+   * back. The tool takes seconds — Ontopo and Gmail are both round trips — and a
+   * Confirm button that stays live for those seconds gets pressed twice. If the
+   * action fails, the agent says so in the reply that follows.
+   */
+  const handleConfirmProposal = (proposalId: string) => {
+    dispatch({ type: 'RESOLVE_PROPOSAL', proposalId, status: 'confirmed' });
+    confirmAction(proposalId);
+  };
+
+  // Dismissal is local: the server holds proposals in memory and lets them
+  // expire, so there is nothing to tell it. Saying "not now" is not an event
+  // worth spending a turn on.
+  const handleDismissProposal = (proposalId: string) => {
+    dispatch({ type: 'RESOLVE_PROPOSAL', proposalId, status: 'dismissed' });
   };
 
   const messageCount = state.messages.length;
@@ -121,7 +139,12 @@ export function ChatPanel() {
           note. It sits above the transcript rather than inside it so the messages
           it produces are ordinary messages. */}
       <GuidedIntro />
-      <MessageHistory messages={state.messages} />
+      <MessageHistory
+        messages={state.messages}
+        proposals={state.proposals}
+        onConfirmProposal={handleConfirmProposal}
+        onDismissProposal={handleDismissProposal}
+      />
       <TypingIndicator isVisible={state.isTyping} />
       <MessageInput
         value={state.inputValue}

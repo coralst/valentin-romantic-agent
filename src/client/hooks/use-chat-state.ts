@@ -1,8 +1,24 @@
 import { useReducer } from 'react';
 import type { ChatMessage } from '../../shared/interfaces/message';
+import type { ActionProposalPayload } from '../../shared/interfaces/ws-events';
 
 /** Connection status for the WebSocket link */
 export type ConnectionStatus = 'connected' | 'reconnecting' | 'disconnected';
+
+/**
+ * What has become of a proposal Valentin raised.
+ *
+ * Resolved proposals stay in the transcript rather than disappearing. A card that
+ * vanishes on click leaves no record that a table was booked or a message sent,
+ * and this is the one place in the app where the user took an action with a
+ * consequence outside the browser — it should still be there to scroll back to.
+ */
+export type ProposalStatus = 'open' | 'confirmed' | 'dismissed';
+
+export interface ProposalEntry {
+  proposal: ActionProposalPayload;
+  status: ProposalStatus;
+}
 
 /** Full chat state managed by the reducer */
 export interface ChatState {
@@ -11,6 +27,8 @@ export interface ChatState {
   isTyping: boolean;
   connectionStatus: ConnectionStatus;
   inputValue: string;
+  /** Open and resolved proposals for the conversation on screen, oldest first. */
+  proposals: ProposalEntry[];
 }
 
 /** All actions the chat reducer can handle */
@@ -22,7 +40,9 @@ export type ChatAction =
   | { type: 'SET_TYPING'; isTyping: boolean }
   | { type: 'SET_CONNECTION'; status: ConnectionStatus }
   | { type: 'SET_INPUT'; value: string }
-  | { type: 'CLEAR_INPUT' };
+  | { type: 'CLEAR_INPUT' }
+  | { type: 'RECEIVE_PROPOSAL'; proposal: ActionProposalPayload }
+  | { type: 'RESOLVE_PROPOSAL'; proposalId: string; status: ProposalStatus };
 
 /** Sort messages ascending by ISO timestamp */
 function sortByTimestamp(messages: ChatMessage[]): ChatMessage[] {
@@ -37,6 +57,7 @@ const initialState: ChatState = {
   isTyping: false,
   connectionStatus: 'disconnected',
   inputValue: '',
+  proposals: [],
 };
 
 /** Reducer handling all chat state transitions */
@@ -84,6 +105,14 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         messages: action.messages,
         isTyping: false,
         inputValue: '',
+        /*
+         * Proposals do not survive a switch. They are held in memory on the
+         * server too — deliberately, since an Ontopo checkout link is good for
+         * about fifteen minutes — so there is nothing to restore when the user
+         * comes back, and a card left over from another conversation would offer
+         * to act on a proposal the orchestrator has forgotten.
+         */
+        proposals: [],
       };
 
     case 'SEND_MESSAGE':
@@ -110,6 +139,40 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
 
     case 'CLEAR_INPUT':
       return { ...state, inputValue: '' };
+
+    case 'RECEIVE_PROPOSAL': {
+      /*
+       * Addressed to the conversation on screen, or dropped.
+       *
+       * Same hazard as `SESSION_INIT`: a reply for the previous session can still
+       * be in flight when the new one is showing, and a card offering to book a
+       * table belongs to the conversation that asked for it.
+       */
+      if (state.sessionId !== null && state.sessionId !== action.proposal.sessionId) {
+        return state;
+      }
+      // Idempotent on proposalId. The server emits each proposal once, but a
+      // duplicate would put two identical Confirm buttons on screen — and the
+      // second click would be the one that fails.
+      if (state.proposals.some((entry) => entry.proposal.proposalId === action.proposal.proposalId)) {
+        return state;
+      }
+
+      return {
+        ...state,
+        proposals: [...state.proposals, { proposal: action.proposal, status: 'open' }],
+      };
+    }
+
+    case 'RESOLVE_PROPOSAL':
+      return {
+        ...state,
+        proposals: state.proposals.map((entry) =>
+          entry.proposal.proposalId === action.proposalId
+            ? { ...entry, status: action.status }
+            : entry,
+        ),
+      };
 
     default:
       return state;

@@ -7,6 +7,7 @@ import { useOptionalTasksContext } from './tasks-context';
 
 interface WebSocketContextValue {
   sendMessage: (content: string) => void;
+  confirmAction: (proposalId: string) => void;
   connectionStatus: 'connected' | 'reconnecting' | 'disconnected';
   lastError: string | null;
 }
@@ -27,7 +28,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const people = useOptionalPeopleContext();
   const tasks = useOptionalTasksContext();
 
-  const { sendMessage, connectionStatus, lastError } = useWebSocket({
+  const { sendMessage, confirmAction, connectionStatus, lastError } = useWebSocket({
     chatDispatch,
     preferencesDispatch,
     peopleDispatch: people?.dispatch,
@@ -36,7 +37,9 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   });
 
   return (
-    <WebSocketContext.Provider value={{ sendMessage, connectionStatus, lastError }}>
+    <WebSocketContext.Provider
+      value={{ sendMessage, confirmAction, connectionStatus, lastError }}
+    >
       {children}
     </WebSocketContext.Provider>
   );

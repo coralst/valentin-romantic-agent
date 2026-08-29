@@ -12,6 +12,18 @@ import { DEFAULT_GENERATION, isPersonGeneration } from '../../shared/interfaces/
 import type { Person } from '../../shared/interfaces/person';
 import type { Task } from '../../shared/interfaces/task';
 import { isProfileFieldId } from '../../shared/constants/profile-fields';
+import { buildToolRegistry, integrationReadiness } from '../integrations';
+import type { IntegrationStatusResponse } from '../../shared/interfaces/integrations';
+import {
+  INTEGRATION_IDS,
+  INTEGRATION_LABELS,
+} from '../../shared/interfaces/integrations';
+import {
+  applyIntegrationCredentials,
+  clearIntegrationCredentials,
+  isConnectable,
+} from '../integrations/credentials';
+import { buildAuthUrl } from '../integrations/google/oauth';
 
 /** Simple framework-agnostic request representation */
 export interface HttpRequest {
@@ -238,6 +250,101 @@ export function createHttpRoutes(storage: StorageInterface) {
     /** GET /health — health check */
     async health(): Promise<HttpResponse> {
       return { status: 200, body: { status: 'ok' } };
+    },
+
+    /**
+     * GET /integrations — which outside services this deployment can reach.
+     *
+     * Booleans and nothing else. There is no credential in this response, not
+     * even a masked or truncated one: the client needs to know whether Gmail
+     * works, and a prefix of a refresh token would answer that question while
+     * also putting part of a secret into a public-facing payload and into every
+     * browser devtools log that captures it.
+     *
+     * Needs no session and no storage — readiness is a property of the process.
+     *
+     * Ordered by `INTEGRATION_IDS` rather than by whatever order the readiness
+     * object happens to enumerate in, so the panel's rows do not reshuffle if
+     * someone reorders that function.
+     */
+    async listIntegrations(): Promise<HttpResponse> {
+      return { status: 200, body: this.readinessBody() };
+    },
+
+    /**
+     * POST /integrations/:id/connect — hand this deployment a credential.
+     *
+     * The response is the same readiness list `listIntegrations` returns, plus a
+     * sentence to show. That shape is deliberate: the caller needs to re-render
+     * from the truth rather than assume its own request succeeded, and returning
+     * readiness here saves a follow-up GET that could race the rebuild.
+     *
+     * Nothing in the response echoes what was sent. A route that confirmed a
+     * credential by quoting it back would put a secret in the browser's network
+     * log for no gain — the visitor typed it, they do not need it read aloud.
+     */
+    async connectIntegration(id: string, body: unknown): Promise<HttpResponse> {
+      if (!isConnectable(id)) {
+        return { status: 404, body: { error: 'No such connectable integration' } };
+      }
+      const fields = (body ?? {}) as Record<string, unknown>;
+      const result = await applyIntegrationCredentials(id, fields);
+      if (!result.ok) {
+        return { status: result.status, body: { error: result.message } };
+      }
+
+      // Pick up tools for whatever just became configured. Without this the
+      // panel would say "live" while the model still had no tool to call.
+      buildToolRegistry();
+      return {
+        status: 200,
+        body: { message: result.message, ...(this.readinessBody() as object) },
+      };
+    },
+
+    /**
+     * POST /integrations/:id/disconnect — take a credential away again.
+     *
+     * Rebuilds the registry too, so the tools actually disappear. A model still
+     * holding a tool for a disconnected service would call it and fail, which
+     * reads to the user as a broken integration rather than an absent one.
+     */
+    async disconnectIntegration(id: string): Promise<HttpResponse> {
+      if (!isConnectable(id)) {
+        return { status: 404, body: { error: 'No such connectable integration' } };
+      }
+      clearIntegrationCredentials(id);
+      buildToolRegistry();
+      return {
+        status: 200,
+        body: { message: 'Disconnected.', ...(this.readinessBody() as object) },
+      };
+    },
+
+    /**
+     * GET /integrations/google/auth-url — where to send the visitor to consent.
+     *
+     * Returns the URL rather than a redirect because the panel opens it in a
+     * popup: a 302 from `fetch` would be followed by the fetch itself and the
+     * consent screen would never be seen by anyone.
+     */
+    async googleAuthUrl(): Promise<HttpResponse> {
+      const result = buildAuthUrl();
+      return result.ok
+        ? { status: 200, body: { url: result.url } }
+        : { status: result.status, body: { error: result.message } };
+    },
+
+    /** The readiness payload, shared by the list and both connect routes. */
+    readinessBody(): IntegrationStatusResponse {
+      const ready = integrationReadiness();
+      return {
+        integrations: INTEGRATION_IDS.map((id) => ({
+          id,
+          label: INTEGRATION_LABELS[id],
+          configured: ready[id],
+        })),
+      };
     },
 
     /** POST /session — create a new session */
@@ -567,6 +674,11 @@ export function createHttpRoutes(storage: StorageInterface) {
       // GET /health
       if (req.method === 'GET' && req.url === '/health') {
         return this.health();
+      }
+
+      // GET /integrations
+      if (req.method === 'GET' && req.url === '/integrations') {
+        return this.listIntegrations();
       }
 
       // GET /sessions

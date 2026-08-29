@@ -3,12 +3,13 @@ import { InMemoryStoreFactory } from './persistence/in-memory-store';
 import { DynamoDBStoreFactory } from './persistence/dynamodb-store';
 import { InMemoryConversationMemory } from './persistence/conversation-memory';
 import { AwsBedrockClient } from './agent/bedrock-client';
-import { StubAgentCoreAdapter } from './agent/agentcore-adapter';
+import { LocalValentinRuntime } from './agent/valentin-runtime';
 import { AgentOrchestrator } from './agent/agent-orchestrator';
 import { PreferenceExtractor } from './extraction/preference-extractor';
 import { EventRouter } from './api/event-router';
 import { WsGateway } from './api/ws-gateway';
 import { createHttpRoutes } from './api/http-routes';
+import { buildToolRegistry } from './integrations';
 import { startSpanBridge } from './telemetry/span-bridge';
 import {
   ANONYMOUS_USER_ID,
@@ -87,7 +88,7 @@ const DEMO_TTL_SECONDS = 24 * 60 * 60;
 /**
  * The per-user half of the object graph.
  *
- * Bedrock client, AgentCore adapter and WsGateway are process singletons; these
+ * Bedrock client, agent runtime and WsGateway are process singletons; these
  * five are not, because each closes over a user-scoped store. All are
  * constructor-only, so building them per connection costs nothing measurable.
  */
@@ -130,7 +131,12 @@ export function createServer(deps: ServerDeps = {}) {
 
   // AWS Bedrock — always use real LLM, no stubs
   const bedrockClient = new AwsBedrockClient();
-  const agentCore = new StubAgentCoreAdapter();
+  const runtime = new LocalValentinRuntime();
+
+  // Built once: the tools are stateless and credential-gated at boot, so there
+  // is nothing per-user about them. What *is* per-user is the proposal store,
+  // which lives on the orchestrator.
+  const toolRegistry = buildToolRegistry();
 
   console.log(`[server] AWS Bedrock (region: ${process.env.AWS_REGION ?? 'us-east-1'}, model: ${process.env.BEDROCK_MODEL_ID ?? 'claude-3-haiku'})`);
 
@@ -179,8 +185,24 @@ export function createServer(deps: ServerDeps = {}) {
       store,
       memory,
       bedrockClient,
-      agentCore,
+      runtime,
       extractor,
+      {
+        registry: toolRegistry,
+        // The same late-closed edge as the extractor's callback above, and for
+        // the same reason: the router is built from the orchestrator.
+        onProposal: (proposal) => {
+          eventRouter?.emitActionProposal({
+            sessionId: proposal.sessionId,
+            proposalId: proposal.id,
+            service: proposal.service,
+            title: proposal.title,
+            summary: proposal.summary,
+            url: proposal.url,
+            expiresAt: proposal.expiresAt,
+          });
+        },
+      },
     );
 
     eventRouter = new EventRouter(orchestrator, emit);
@@ -231,8 +253,8 @@ export function createServer(deps: ServerDeps = {}) {
   // highlights from WebSocket events, it just loses the measured durations.
   startSpanBridge((userId, event) => emitFor(userId)(event));
 
-  // Register agent with AgentCore on startup
-  agentCore.registerAgent().then((agentId) => {
+  // Register the agent on startup
+  runtime.registerAgent().then((agentId) => {
     console.log(`[server] Valentin agent registered: ${agentId}`);
   }).catch((err) => {
     console.error('[server] Failed to register agent:', err);

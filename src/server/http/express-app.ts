@@ -8,6 +8,24 @@ import { config } from '../config';
 import type { DemoLoginService } from '../auth/demo-login';
 import { storageUserId } from '../auth/demo-login';
 import { describePersonas } from '../fixtures/demo-personas';
+import { consumeState, exchangeCode } from '../integrations/google/oauth';
+import { applyGoogleRefreshToken } from '../integrations/credentials';
+import { buildToolRegistry } from '../integrations';
+
+/**
+ * Escape text destined for the OAuth callback's HTML page.
+ *
+ * All of the messages it renders are our own constants today, so nothing here is
+ * attacker-controlled — but this page is assembled by string concatenation, and
+ * the next person to add a message to it should not have to notice that.
+ */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
 
 /** Structured log sink, so the two entry points keep their own formats */
 export type LogFn = (
@@ -216,9 +234,142 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
     }
   });
 
+  /**
+   * Where Google sends the visitor back after they approve the scopes.
+   *
+   * Unauthenticated of necessity: Google performs this navigation and has no
+   * bearer token for our API, so `requireAuth` would turn every consent into a
+   * 401. The `state` parameter carries the security instead — server-minted,
+   * single-use, ten-minute TTL — and a mismatch exchanges nothing and stores
+   * nothing. See `integrations/google/oauth.ts` for why that is sufficient.
+   *
+   * Responds with a small HTML page rather than JSON because a human is looking
+   * at it: this is a popup window, and the page's job is to say what happened
+   * and close itself.
+   */
+  app.get('/api/integrations/google/callback', async (req, res) => {
+    const { code, state, error } = req.query as Record<string, string | undefined>;
+
+    const finish = (ok: boolean, message: string) => {
+      // Told to the opener so the panel can refresh its readiness immediately
+      // rather than waiting for the visitor to reopen it. `origin: '*'` is safe
+      // for this payload — it is a boolean and a sentence, no token — and the
+      // popup's own origin is ours anyway.
+      res.status(ok ? 200 : 400).type('html').send(
+        `<!doctype html><meta charset="utf-8"><title>${ok ? 'Connected' : 'Not connected'}</title>` +
+          `<body style="font:16px/1.5 system-ui;padding:2rem;color:#2a2226">` +
+          `<p>${escapeHtml(message)}</p>` +
+          `<p style="color:#8a7f85">You can close this window.</p>` +
+          `<script>try{window.opener&&window.opener.postMessage(` +
+          `{source:'valentin-google-oauth',ok:${ok ? 'true' : 'false'}},'*');}catch(e){}` +
+          `setTimeout(function(){window.close()},${ok ? 1200 : 6000});</script>`,
+      );
+    };
+
+    if (error) {
+      finish(false, 'Google sign-in was cancelled. Nothing was changed.');
+      return;
+    }
+    // State first, before the code is used for anything. An unrecognised state
+    // means this redirect was not one we started.
+    if (!consumeState(state)) {
+      deps.log('warn', 'Rejected a Google OAuth callback with an unknown state');
+      finish(false, 'This sign-in link has expired or was not started here. Press Connect again.');
+      return;
+    }
+    if (!code) {
+      finish(false, 'Google did not return an authorisation code.');
+      return;
+    }
+
+    try {
+      const result = await exchangeCode(code);
+      if (!result.ok || !result.refreshToken) {
+        finish(false, result.message);
+        return;
+      }
+      applyGoogleRefreshToken(result.refreshToken);
+      // Calendar and Gmail have tools now; register them without a restart.
+      buildToolRegistry();
+      deps.log('info', 'Google connected via OAuth', { integration: 'google' });
+      finish(true, 'Google is connected. Valentin can read your occasions and draft mail for you to approve.');
+    } catch (err) {
+      deps.log('error', 'Google OAuth callback failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      finish(false, 'Something went wrong finishing the sign-in.');
+    }
+  });
+
   // --- Everything below requires a token ---
 
   app.use('/api', requireAuth(deps));
+
+  /*
+   * Which outside services this deployment can actually reach.
+   *
+   * Behind the token even though the body is booleans and labels with no
+   * credential in it, because "which integrations are wired up" is a fact about
+   * the deployment and the only caller is the panel inside the app. `/api/config`
+   * is unauthenticated for a reason that does not apply here — the landing page
+   * cannot sign anyone in without it.
+   *
+   * The handler needs no storage; it goes through `scoped` anyway so it stays in
+   * the one route table that `http-routes.test.ts` covers, rather than growing a
+   * second inline copy that can drift.
+   */
+  app.get(
+    '/api/integrations',
+    scoped(deps, (routes) => routes.listIntegrations()),
+  );
+
+  /*
+   * Credential intake, from the panel's Connect form.
+   *
+   * Behind the token, and that is the whole access control: anyone who can reach
+   * this can point the deployment's Amadeus or WhatsApp integration at an account
+   * of their choosing. In a single-account demo the token is the right boundary;
+   * a multi-tenant version of this would need per-user credential storage, which
+   * is exactly the identity problem Version B exists to solve.
+   *
+   * Registered before the `/api/session/*` routes for no reason other than
+   * grouping — the paths cannot collide.
+   */
+  app.post(
+    '/api/integrations/:id/connect',
+    scoped(deps, async (routes, req) => {
+      const id = pathParam(req, 'id');
+      const result = await routes.connectIntegration(id, req.body);
+      // The id and the outcome, never the body — the body is the credential.
+      deps.log('info', 'Integration connect attempted', {
+        integration: id,
+        status: result.status,
+      });
+      return result;
+    }),
+  );
+
+  app.post(
+    '/api/integrations/:id/disconnect',
+    scoped(deps, async (routes, req) => {
+      const id = pathParam(req, 'id');
+      const result = await routes.disconnectIntegration(id);
+      deps.log('info', 'Integration disconnected', {
+        integration: id,
+        status: result.status,
+      });
+      return result;
+    }),
+  );
+
+  /*
+   * Where to send the visitor to consent. Authenticated — unlike the callback,
+   * which Google itself performs and which therefore cannot present a token.
+   */
+  app.get(
+    '/api/integrations/google/auth-url',
+    scoped(deps, (routes) => routes.googleAuthUrl()),
+  );
 
   app.get(
     '/api/sessions',

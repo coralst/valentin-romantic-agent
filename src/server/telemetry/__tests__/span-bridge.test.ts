@@ -4,6 +4,10 @@ import { logger, resetServerLogSubscribers, withUserScope } from '../../logging'
 import { resolveBroadcastSessionId } from '../../index';
 import type { AwsSpan, ServerEvent } from '../../../shared/interfaces/ws-events';
 import type { ServerLogRecord } from '../../logging';
+import {
+  INTEGRATION_IDS,
+  INTEGRATION_LABELS,
+} from '../../../shared/interfaces/integrations';
 
 function record(
   event: string,
@@ -129,6 +133,104 @@ describe('logRecordToSpan', () => {
         }),
       );
       expect(span).toMatchObject({ ok: false, durationMs: 4001 });
+    });
+  });
+
+  describe('integration.* → External APIs', () => {
+    it('maps every service onto the one grouped node', () => {
+      /*
+       * One node, not six. Six cards do not read on a projector, so `resourceId`
+       * is the node and the service goes in `resourceName` — which is what makes
+       * a single node able to say "Ontopo, 412ms" out loud.
+       */
+      for (const id of INTEGRATION_IDS) {
+        const span = logRecordToSpan(
+          record(`integration.${id}`, {
+            sessionId: 's-9',
+            integration: id,
+            operation: 'check_availability',
+            durationMs: 412,
+            ok: true,
+          }),
+        );
+        expect(span).toMatchObject({
+          sessionId: 's-9',
+          resourceId: 'integrations',
+          service: 'External APIs',
+          resourceName: INTEGRATION_LABELS[id],
+          operation: 'check_availability',
+          durationMs: 412,
+          ok: true,
+        });
+      }
+    });
+
+    it('carries the tool name and nothing about what was asked', () => {
+      const span = logRecordToSpan(
+        record('integration.gmail', {
+          sessionId: 's-9',
+          operation: 'propose_email',
+          durationMs: 88,
+        }),
+      );
+
+      /*
+       * The load-bearing assertion of this whole file. A proposed email carries
+       * prose about someone's partner, and the drawer is on a projector. The tool
+       * name is the whole of what is safe, so there is no `detail` at all.
+       */
+      expect(span?.detail).toBeUndefined();
+      expect(JSON.stringify(span)).not.toMatch(/@|body|recipient|message/i);
+    });
+
+    it('reports a failed call as not ok, keeping its duration', () => {
+      // A visible red segment with a real number on it is the point: "Ontopo took
+      // 3 seconds and failed" is the sentence the drawer exists to show.
+      expect(
+        logRecordToSpan(
+          record('integration.ontopo', {
+            sessionId: 's-9',
+            operation: 'search_restaurants',
+            durationMs: 3010,
+            ok: false,
+          }),
+        ),
+      ).toMatchObject({ ok: false, durationMs: 3010 });
+
+      expect(
+        logRecordToSpan(
+          record('integration.ontopo', { sessionId: 's-9', durationMs: 5 }, 'error'),
+        ),
+      ).toMatchObject({ ok: false });
+    });
+
+    it('survives a log with no operation or duration', () => {
+      // Degrades to a labelled zero-length segment rather than vanishing: a call
+      // that happened and was not timed is still a call worth drawing.
+      expect(
+        logRecordToSpan(record('integration.hebcal', { sessionId: 's-9' })),
+      ).toMatchObject({ operation: 'call', durationMs: 0 });
+    });
+
+    it('ignores an integration event for a service that is not in the union', () => {
+      /*
+       * The prefix match is still a closed set. A stray `integration.opentable`
+       * log — a rename half-applied, say — must be dropped rather than drawn as a
+       * node with an empty label.
+       */
+      expect(
+        logRecordToSpan(record('integration.opentable', { sessionId: 's-9' })),
+      ).toBeUndefined();
+      expect(logRecordToSpan(record('integration.', { sessionId: 's-9' }))).toBeUndefined();
+    });
+
+    it('ignores an integration event with no session to route it to', () => {
+      expect(logRecordToSpan(record('integration.ontopo', { durationMs: 5 }))).toBeUndefined();
+      // `integration.failed` is a warning for CloudWatch, not a span — and it is
+      // logged *alongside* the real one, so mapping it would double every failure.
+      expect(
+        logRecordToSpan(record('integration.failed', { sessionId: 's-9', cause: 'boom' })),
+      ).toBeUndefined();
     });
   });
 

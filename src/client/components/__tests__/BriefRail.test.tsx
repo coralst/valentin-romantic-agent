@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { BriefRail } from '../BriefRail';
 import { ChatProvider } from '../../context/chat-context';
 import { PreferencesProvider, usePreferencesContext } from '../../context/preferences-context';
@@ -367,5 +367,88 @@ describe('BriefRail — good to know', () => {
       .filter((chip) => chip.getAttribute('data-empty') === 'true');
     expect(empties.length).toBeGreaterThan(0);
     expect(empties[0].textContent).toMatch(/^\+ /);
+  });
+});
+
+/*
+ * Switching conversations must not leave the previous partner on screen.
+ *
+ * The reported bug: load the demo profile (Samantha — sage green, Northern
+ * Italian, Gemini), then click the "Maya" conversation, which knows only Thai
+ * food. All of Samantha's chips stayed, under Maya's name. The server was
+ * innocent — `GET /api/session/<maya>/preferences` returned Maya's rows and
+ * nothing else — so this asserts the client store, which is where it leaked.
+ *
+ * `SET_DISCOVERED_VALUE` rather than `SET_MANUAL_VALUE`: discovered values are the
+ * ones ingestion writes and the ones that used to survive, and the two live in
+ * different slices of the store.
+ */
+describe('BriefRail — a session switch clears the previous partner', () => {
+  /*
+   * These are the only tests here that pass a real session id, which makes the
+   * store's effect fetch her corrections. Stubbed so the assertions are about the
+   * reset and not about a pending request resolving mid-assertion.
+   */
+  beforeEach(() => {
+    vi.stubGlobal('fetch', async () => ({ ok: true, status: 200, json: async () => ({}) }) as Response);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function Discoverer({ fieldId, value }: { fieldId: string; value: string }) {
+    const { dispatch } = useProfileStoreContext();
+    const seeded = useSeedOnce(() => {
+      dispatch({ type: 'SET_DISCOVERED_VALUE', fieldId, value, confidence: 0.9 });
+    });
+    return seeded ? <BriefRail /> : null;
+  }
+
+  function renderAtSession(sessionId: string | null, seed: { fieldId: string; value: string }) {
+    refs.done = false;
+    return render(
+      <ChatProvider>
+        <PreferencesProvider>
+          <ProfileStoreProvider sessionId={sessionId}>
+            <Discoverer {...seed} />
+          </ProfileStoreProvider>
+        </PreferencesProvider>
+      </ChatProvider>,
+    );
+  }
+
+  it('shows a discovered value while its own session is active', async () => {
+    await act(async () => {
+      renderAtSession('session-samantha', { fieldId: 'favorite_color', value: 'Deep sage green' });
+    });
+    expect(screen.getByTestId('brief-good-to-know').textContent).toContain('Deep sage green');
+  });
+
+  it('drops it once a different session is active', async () => {
+    let rerender!: ReturnType<typeof render>['rerender'];
+    await act(async () => {
+      ({ rerender } = renderAtSession('session-samantha', {
+        fieldId: 'favorite_color',
+        value: 'Deep sage green',
+      }));
+    });
+    expect(screen.getByTestId('brief-good-to-know').textContent).toContain('Deep sage green');
+
+    // The seed runs once, so the second render carries no values of its own —
+    // anything still on screen was carried over, which is the bug.
+    await act(async () => {
+      rerender(
+        <ChatProvider>
+          <PreferencesProvider>
+            <ProfileStoreProvider sessionId="session-maya">
+              <Discoverer fieldId="favorite_color" value="Deep sage green" />
+            </ProfileStoreProvider>
+          </PreferencesProvider>
+        </ChatProvider>,
+      );
+    });
+
+    expect(screen.queryByText(/Deep sage green/)).not.toBeInTheDocument();
   });
 });

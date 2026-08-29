@@ -384,6 +384,12 @@ describe('GET /api/integrations', () => {
       'google-calendar',
       'gmail',
       'whatsapp',
+      // The browser tier. `browser` is a dependency rather than a destination —
+      // nothing is booked on it — but it carries its own readiness, because a
+      // deployment may simply not have Chromium.
+      'browser',
+      'wolt',
+      'events',
     ]);
     // Hebcal is arithmetic in-process, so it is configured on every deployment.
     expect(body.integrations.find((i) => i.id === 'hebcal')?.configured).toBe(true);
@@ -402,7 +408,11 @@ describe('GET /api/integrations', () => {
       integrations: Record<string, unknown>[];
     };
     for (const entry of body.integrations) {
-      expect(Object.keys(entry).sort()).toEqual(['configured', 'id', 'label']);
+      // `transport` says whether reaching this needs a browser. Sent rather than
+      // inferred client-side so the panel's relay layout follows the deployment.
+      expect(Object.keys(entry).sort()).toEqual([
+        'configured', 'id', 'label', 'transport',
+      ]);
       expect(typeof entry.configured).toBe('boolean');
     }
   });

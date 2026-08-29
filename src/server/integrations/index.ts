@@ -7,6 +7,7 @@ import { hebcalTools } from './hebcal/tools';
 import { ontopoTools } from './ontopo/tools';
 import { whatsappTools } from './whatsapp/tools';
 import { browserReadyCached } from './browser/session';
+import { woltTools } from './wolt/tools';
 
 export type { ToolRegistry, AgentTool, ActionProposal, IntegrationId } from './tool-registry';
 
@@ -108,6 +109,9 @@ export function buildToolRegistry(): ToolRegistry {
   if (ready['google-calendar']) tools.push(...googleCalendarTools);
   if (ready.gmail) tools.push(...gmailTools);
   if (ready.whatsapp) tools.push(...whatsappTools);
+  // Flowers, wine and gifts. Needs no credential — Wolt's catalogue endpoint is
+  // unauthenticated — so this is on wherever the process can reach the internet.
+  if (ready.wolt) tools.push(...woltTools);
 
   // Cleared first, so a *disconnect* actually removes tools. Refilling without
   // clearing would leave the old ones registered and let the model keep calling

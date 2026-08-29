@@ -1,4 +1,6 @@
 import type { DossierIconName } from '../components/dossier/dossier-icons';
+import { daysBetween, midnight } from './calendar-days';
+import { parseStoredDate } from './stored-date';
 
 /**
  * The days that come round every year whether anyone writes them down or not.
@@ -22,18 +24,6 @@ export interface PinnedDate {
   when: string;
   /** Days from now, or null when it cannot be worked out on this platform. */
   daysUntil: number | null;
-}
-
-const DAY_MS = 86_400_000;
-
-/** Local midnight, so day arithmetic is not thrown by the clock time. */
-function midnight(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
-/** Whole days between two local midnights. */
-function daysBetween(from: Date, to: Date): number {
-  return Math.round((midnight(to).getTime() - midnight(from).getTime()) / DAY_MS);
 }
 
 /** `'12 Jun'` — the part of a date you say out loud. */
@@ -108,18 +98,25 @@ export function derivePinnedDates(
   const pinned: PinnedDate[] = [];
 
   if (birthdayValue) {
-    const parsed = new Date(birthdayValue);
-    if (!Number.isNaN(parsed.getTime())) {
-      // UTC getters: a bare `YYYY-MM-DD` parses as UTC midnight, and local
-      // getters west of Greenwich would shift her birthday a day early.
-      const month = parsed.getUTCMonth();
-      const day = parsed.getUTCDate();
+    /*
+     * `parseStoredDate` rather than `new Date` plus UTC getters.
+     *
+     * The UTC getters were here to stop a bare `YYYY-MM-DD` — which parses as UTC
+     * midnight — reading a day early west of Greenwich. But they only hold for that
+     * one shape: `"March 14"` parses as *local* midnight, so east of Greenwich the
+     * UTC getters read it back as 13 March. That is the off-by-one that made this
+     * block disagree with `NextUp` about the same birthday, in the opposite
+     * direction. Parsing to explicit parts removes the question of which getters to
+     * use, because there is no round-trip through a Date at all.
+     */
+    const parts = parseStoredDate(birthdayValue);
+    if (parts) {
       pinned.push({
         id: 'birthday',
         label: 'Her birthday',
         icon: 'cake',
-        when: shortDate(new Date(2000, month, day)),
-        daysUntil: daysUntilAnnual(month, day, now),
+        when: shortDate(new Date(2000, parts.month, parts.day)),
+        daysUntil: daysUntilAnnual(parts.month, parts.day, now),
       });
     }
   }

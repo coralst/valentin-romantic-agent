@@ -7,6 +7,7 @@ import {
   OCCASION_LEAD_TIMES,
 } from '../lead-times';
 import type { Occasion } from '../occasion-derivation';
+import { daysBetween } from '../calendar-days';
 
 /** 21 August 2026, the date the Stage 4 checkpoint shots were taken. */
 const TODAY = new Date(2026, 7, 21);
@@ -107,5 +108,49 @@ describe('getActByPlan', () => {
       TODAY,
     );
     expect(plan.label).toBe('Book by 26 Aug');
+  });
+});
+
+/*
+ * `getNextOccurrence` used to be `addDays(today, getDaysUntilOccasion(...))` — it
+ * reconstructed the date from the count instead of reading it. So the count being
+ * one day out (a daylight-saving hour that `Math.ceil` rounded up) did not merely
+ * show a wrong number: it re-rendered as the wrong *date* and the wrong *weekday*.
+ * A Sunday birthday was announced as "Monday 15 March", and the act-by line drifted
+ * with it.
+ */
+describe('the occurrence date is read, not reconstructed', () => {
+  const REFERENCE = new Date(2026, 7, 29); // Saturday 29 August 2026
+  const birthday = {
+    fieldId: 'birthday',
+    label: 'Birthday',
+    date: new Date(2001, 2, 14), // 14 March, year immaterial for an annual
+    recurrence: 'annual' as const,
+  };
+
+  it('names the real next occurrence, on its real weekday', () => {
+    const next = getNextOccurrence(birthday, REFERENCE);
+
+    expect(next.getFullYear()).toBe(2027);
+    expect(next.getMonth()).toBe(2);
+    expect(next.getDate()).toBe(14);
+    expect(next.getDay()).toBe(0); // Sunday, not Monday
+  });
+
+  it('counts the act-by deadline back from the occasion, not forward from today', () => {
+    // A birthday's lead time is 14 days, so 14 March 2027 minus a fortnight.
+    const plan = getActByPlan(birthday, REFERENCE);
+
+    expect(plan.date.getMonth()).toBe(1); // February
+    expect(plan.date.getDate()).toBe(28);
+    expect(plan.label).toBe('Order by 28 Feb');
+    expect(plan.isOverdue).toBe(false);
+  });
+
+  it('keeps the deadline exactly one lead time before the occasion', () => {
+    const next = getNextOccurrence(birthday, REFERENCE);
+    const plan = getActByPlan(birthday, REFERENCE);
+
+    expect(daysBetween(plan.date, next)).toBe(14);
   });
 });

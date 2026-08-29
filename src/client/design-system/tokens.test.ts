@@ -234,7 +234,6 @@ describe('vitrine design tokens', () => {
     expect(layout.cameoSize).toBe(56);
     expect(layout.chatColumnMaxWidth).toBe(620);
     expect(layout.chatColumnMinWidth).toBe(520);
-    expect(layout.windowMaxWidth).toBe(1440);
     expect(layout.menuWidth).toBe(268);
     expect(layout.menuControlHeight).toBe(38);
   });
@@ -243,16 +242,12 @@ describe('vitrine design tokens', () => {
    * The chat column's two bounds, as a relationship. A minimum above the maximum
    * would mean the column had no legal width at all, and the breakpoint derived
    * from the minimum would be arguing with the measure derived from the maximum.
+   *
+   * There is no longer a `windowMaxWidth` to check the shell against: the frame
+   * fills whatever window it is given, so the only ceiling is the screen.
    */
   it('the chat column may not be floored above its own cap', () => {
     expect(layout.chatColumnMinWidth).toBeLessThan(layout.chatColumnMaxWidth);
-    // And the window has to be able to hold the whole shell at its widest.
-    expect(layout.windowMaxWidth).toBeGreaterThan(
-      layout.iconRailWidth +
-        layout.conversationListWidth +
-        layout.briefRailWidth +
-        layout.chatColumnMaxWidth,
-    );
   });
 
   /**

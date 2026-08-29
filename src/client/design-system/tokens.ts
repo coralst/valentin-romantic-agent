@@ -233,19 +233,6 @@ export const layout = {
    * when all three fixed tracks are held at once on a 1000px window.
    */
   chatColumnMinWidth: 520,
-  /**
-   * Widest the app window is allowed to grow.
-   *
-   * Every track but the chat column is a fixed pixel measurement, and the chat
-   * column's *content* is capped at `chatColumnMaxWidth`. So without a ceiling the
-   * only thing an extra 1000px of screen buys is 1000px of empty cream: on a
-   * 2400px display the 306px brief rail is 13% of the frame instead of 21%, the
-   * composer is a small pill adrift in a 1764px column, and the shell reads as a
-   * stretched ribbon rather than as the window the mockups describe. Capping and
-   * centring means the proportions from here up are identical, and the surplus
-   * becomes linen — a margin, which is what the design already uses at 14px.
-   */
-  windowMaxWidth: 1440,
 } as const;
 
 export const animation = {

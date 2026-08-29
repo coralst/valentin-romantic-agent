@@ -42,7 +42,39 @@ export type ClientEvent =
       }
     >
   | WsEnvelope<'send_message', { sessionId: string; content: string }>
+  /**
+   * Accept a proposal Valentin raised. This click is the authority to act — see
+   * `AgentOrchestrator.confirmAction` for why it does not go back through the
+   * model.
+   */
+  | WsEnvelope<'confirm_action', { sessionId: string; proposalId: string }>
   | WsEnvelope<'ping', Record<string, never>>;
+
+/**
+ * Something Valentin would like to do in the outside world, awaiting a yes.
+ *
+ * Mirrors the server's `ActionProposal`, minus the tool that would run it. It
+ * exists as its own event rather than as prose inside an `agent_message`
+ * because the user has to be able to accept it with a click, and because a
+ * sentence claiming a table is booked is exactly what this design prevents:
+ * nothing is booked, sent or scheduled until this proposal comes back as
+ * `confirm_action`.
+ *
+ * `expiresAt` is load-bearing, not decorative — an Ontopo checkout link is good
+ * for about fifteen minutes, and the card counts down so a stale one is visibly
+ * stale rather than a button that quietly fails.
+ */
+export interface ActionProposalPayload {
+  sessionId: string;
+  proposalId: string;
+  /** Which integration would carry it out — `ontopo`, `gmail`, … */
+  service: string;
+  title: string;
+  summary: string;
+  /** Where accepting sends the user, when the provider owns the final step. */
+  url?: string;
+  expiresAt: string;
+}
 
 /**
  * One measured call against a real AWS resource, pushed to the client so the
@@ -70,7 +102,16 @@ export interface AwsSpan {
   resourceName: string;
   /** The API call made, e.g. 'PutItem' | 'Converse'. */
   operation: string;
-  durationMs: number;
+  /**
+   * How long the call took, when the emitter is the one that made it.
+   *
+   * Absent for a call that really happened but cannot be timed from where the
+   * span is emitted — a Gateway tool call runs inside the AgentCore Runtime, so
+   * the proxy learns it happened from the reply and never holds a stopwatch on
+   * it. The view renders that as `—`, which is the truth; a `0` would read as a
+   * free call and a made-up number would be worse.
+   */
+  durationMs?: number;
   ok: boolean;
   /** Sort key or category, never raw partner data. */
   detail?: string;
@@ -81,6 +122,7 @@ export type ServerEvent =
   | WsEnvelope<'auth_ok', { userId: string; isDemo: boolean }>
   | WsEnvelope<'aws_span', AwsSpan>
   | WsEnvelope<'agent_message', { message: ChatMessage }>
+  | WsEnvelope<'action_proposal', ActionProposalPayload>
   | WsEnvelope<'typing_start', { sessionId: string }>
   | WsEnvelope<'typing_stop', { sessionId: string }>
   | WsEnvelope<'preference_update', { preference: PreferenceWithHistory; isNew: boolean }>

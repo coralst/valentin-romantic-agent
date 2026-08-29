@@ -4,7 +4,16 @@ import { MOBILE_STRIP_HEIGHT } from './AppWindow';
 import { REOPEN_BAR_HEIGHT } from './LiveArchitectureDrawer';
 import { INTEGRATION_CATALOGUE, type IntegrationService } from '../utils/integration-catalogue';
 import { useIntegrations } from '../context/integrations-context';
+import {
+  capabilityReadiness,
+  liveServices,
+  useIntegrationReadiness,
+  type CapabilityReadiness,
+  type IntegrationReadiness,
+} from '../hooks/use-integration-readiness';
+import { INTEGRATION_LABELS } from '../../shared/interfaces/integrations';
 import { IntegrationConsentSheet } from './IntegrationConsentSheet';
+import { useIntegrationConnect } from '../hooks/use-integration-connect';
 
 /**
  * "What Valentin can reach": the agent at the hub, every capability fanning out
@@ -15,9 +24,16 @@ import { IntegrationConsentSheet } from './IntegrationConsentSheet';
  * and a hub-and-spoke drawing says that in one glance where a settings list says
  * only "seven rows".
  *
- * On mobile the fan collapses to cards. A 375px canvas cannot hold a hub, eight
+ * On mobile the fan collapses to cards. A 375px canvas cannot hold a hub, nine
  * labelled nodes and their edges without becoming illegible, and an illegible
  * diagram is worse than the list it replaced.
+ *
+ * Each node now also carries what the *server* says about it, fetched once from
+ * `GET /api/integrations`. Half this catalogue is now real code against a real
+ * provider and half is still a drawing, and the visitor cannot tell those apart by
+ * looking. So the badge says which: "live", "live via Gmail", "needs credentials",
+ * "not built yet". A grant the visitor gave and a credential the deployment has are
+ * two different facts, and the panel's whole job is to not conflate them.
  */
 
 interface IntegrationsPanelProps {
@@ -138,14 +154,6 @@ const hubNameStyle: React.CSSProperties = {
   fontFamily: typography.headingFontFamily,
   fontSize: typography.px.headingSm,
   display: 'block',
-};
-
-const hubEyebrowStyle: React.CSSProperties = {
-  fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.micro,
-  letterSpacing: '0.16em',
-  textTransform: 'uppercase',
-  opacity: 0.85,
 };
 
 function nodeStyle(isConnected: boolean): React.CSSProperties {
@@ -289,6 +297,52 @@ const cardBlurbStyle: React.CSSProperties = {
 };
 
 /**
+ * What the server's readiness answer means for one capability, in words.
+ *
+ * Four phrases, because there are genuinely four situations and flattening them
+ * loses the one a visitor most needs: "not built yet" and "needs credentials" look
+ * identical on screen and are completely different claims. `unknown` returns null
+ * rather than a hedge — no badge at all is quieter than a badge saying nothing, and
+ * this is the state that exists only for the moment before the fetch lands.
+ *
+ * `partial` names the service that does work. Messages backed by a configured Gmail
+ * and an unconfigured WhatsApp reads "live via Gmail", which is exactly true: he
+ * can email her and cannot message her.
+ */
+function readinessLabel(
+  reach: CapabilityReadiness,
+  service: IntegrationService,
+  readiness: IntegrationReadiness,
+): string | null {
+  switch (reach) {
+    case 'ready':
+      return 'live';
+    case 'partial':
+      return `live via ${liveServices(service.backing, readiness)
+        .map((id) => INTEGRATION_LABELS[id])
+        .join(' & ')}`;
+    case 'unconfigured':
+      return 'needs credentials';
+    case 'aspirational':
+      return 'not built yet';
+    default:
+      return null;
+  }
+}
+
+function badgeStyle(reach: CapabilityReadiness): React.CSSProperties {
+  return {
+    fontFamily: typography.bodyFontFamily,
+    fontSize: typography.px.caption,
+    // Only a genuinely live capability gets the confident colour. "Needs
+    // credentials" is a real state and not an error, so it stays quiet rather than
+    // red — nothing is broken, something is simply absent.
+    color: reach === 'ready' || reach === 'partial' ? colors.olive : colors.inkFaint,
+    whiteSpace: 'nowrap',
+  };
+}
+
+/**
  * Where a node sits, and the curve that reaches it.
  *
  * One evenly spaced column, bowed out in the middle. Even spacing is what keeps
@@ -315,7 +369,11 @@ function nodeLayout(index: number, count: number, width: number, height: number)
 export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps) {
   const { state, connectedCount, isConnected, connect, disconnect, setCap, dismissStorageError } =
     useIntegrations();
+  const readiness = useIntegrationReadiness();
   const [pending, setPending] = useState<PendingGrant | null>(null);
+  // `readiness.refresh` is stable (a useCallback over a setState), so this does
+  // not re-subscribe on every render.
+  const credentials = useIntegrationConnect(readiness.refresh);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: FALLBACK_WIDTH, height: FALLBACK_HEIGHT });
@@ -353,6 +411,9 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
   }, [onClose]);
 
   const open = (service: IntegrationService) => {
+    // Clear any status left from the last capability's attempt: an error about
+    // WhatsApp has no business appearing when someone opens Travel.
+    credentials.reset();
     setPending({ service, mode: isConnected(service.id) ? 'manage' : 'connect' });
   };
 
@@ -411,6 +472,8 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
         <ul style={listStyle} data-testid="integrations-list">
           {INTEGRATION_CATALOGUE.map((service) => {
             const connected = isConnected(service.id);
+            const reach = capabilityReadiness(service.backing, readiness);
+            const badge = readinessLabel(reach, service, readiness);
             return (
               <li key={service.id}>
                 <button
@@ -430,6 +493,18 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
                     <span style={nodeStateStyle(connected)}>
                       {connected ? 'Connected' : `Not connected · ${service.category}`}
                     </span>
+                    {badge && (
+                      <>
+                        {' · '}
+                        <span
+                          style={badgeStyle(reach)}
+                          data-testid={`integration-readiness-${service.id}`}
+                          data-readiness={reach}
+                        >
+                          {badge}
+                        </span>
+                      </>
+                    )}
                   </span>
                 </button>
               </li>
@@ -471,14 +546,16 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
             style={{ ...hubStyle, left: hubX - HUB_SIZE / 2, top: hubY - HUB_SIZE / 2 }}
             data-testid="integrations-hub"
           >
-            <span>
-              <span style={hubNameStyle}>Valentin</span>
-              <span style={hubEyebrowStyle}>agent core</span>
-            </span>
+            {/* Just his name. The eyebrow used to read "agent core", which named
+                a piece of AWS infrastructure this build does not use and told the
+                visitor nothing about what the circle is. */}
+            <span style={hubNameStyle}>Valentin</span>
           </div>
 
           {INTEGRATION_CATALOGUE.map((service, index) => {
             const connected = isConnected(service.id);
+            const reach = capabilityReadiness(service.backing, readiness);
+            const badge = readinessLabel(reach, service, readiness);
             const { x, y } = nodeLayout(index, total, size.width, size.height);
             return (
               <button
@@ -502,6 +579,15 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
                         : 'Connected'
                       : service.category}
                   </span>
+                  {badge && (
+                    <span
+                      style={{ ...badgeStyle(reach), display: 'block' }}
+                      data-testid={`integration-readiness-${service.id}`}
+                      data-readiness={reach}
+                    >
+                      {badge}
+                    </span>
+                  )}
                 </span>
                 <span
                   aria-hidden="true"
@@ -526,10 +612,14 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
         <span style={pillStyle}>{total - connectedCount} available</span>
         {/* The short form on mobile: the same admission, in the one line a
             390px footer has room for without pushing the pills off screen. */}
+        {/* The old note said flatly that no provider is ever contacted. That was
+            true of every row when it was written and is now true of only some, so
+            it splits: a "live" capability really does reach a provider, and
+            everything it does in the world still waits for a card you confirm. */}
         <span style={footerNoteStyle}>
           {isMobile
-            ? 'Recorded in this browser only — no provider is contacted, and nothing is ordered.'
-            : 'Every connection is a tool the agent may call, and the Live Architecture view traces the same list. Grants are recorded in this browser only — no provider is contacted, and nothing is ordered.'}
+            ? 'Anything marked live reaches a real provider — and still asks you to confirm before it acts.'
+            : 'A capability marked live is real code against a real provider, and the Live Architecture view traces the same calls. Nothing is ever booked or sent unattended — Valentin proposes, and you press Confirm. The rest of this list is not built yet; connecting one records a grant in this browser and contacts nobody.'}
         </span>
       </footer>
 
@@ -548,6 +638,14 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
               : undefined
           }
           onCancel={() => setPending(null)}
+          readiness={readiness}
+          connectStatus={credentials.status}
+          onConnectCredentials={(id, fields) => {
+            void credentials.connect(id, fields);
+          }}
+          onForgetCredentials={(id) => {
+            void credentials.disconnect(id);
+          }}
         />
       )}
     </section>

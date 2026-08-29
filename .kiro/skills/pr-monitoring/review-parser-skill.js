@@ -167,6 +167,10 @@ const OWNERSHIP = [
   ['src/client/main.tsx', 'frontend-dev'],
   ['src/client/vite-env.d.ts', 'frontend-dev'],
   ['src/server/', 'backend-dev'],
+  // The Strands agent that runs inside the AgentCore Runtime. Python, and its own
+  // image, but it is engine B's agent turn — the same work `src/server/agent/`
+  // does for engine A, so the same lane owns both sides of the comparison.
+  ['agentcore/', 'backend-dev'],
   ['src/shared/', 'system-architect'],
   ['e2e/', 'qa-agent'],
   ['playwright.config.ts', 'qa-agent'],
@@ -202,6 +206,10 @@ const OWNERSHIP = [
   ['Dockerfile', 'infra'],
   ['.dockerignore', 'infra'],
   ['.gitignore', 'infra'],
+  // The environment template. Infra's, not backend's: it documents what a
+  // deployment must supply, and it is the one file in the repo where a mistake
+  // means a real credential is committed.
+  ['.env.example', 'infra'],
   ['README.md', 'infra'],
   ['CONTRIBUTING.md', 'infra'],
   ['CLAUDE.md', 'infra'],

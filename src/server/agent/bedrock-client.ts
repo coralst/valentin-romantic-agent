@@ -31,6 +31,47 @@ export interface ToolUseResponse {
   input: Record<string, unknown>;
 }
 
+/**
+ * One turn of a conversation, in Bedrock's own shape.
+ *
+ * Re-exported so the tool loop and its tests can hold a transcript without
+ * importing the AWS SDK. That matters more than it looks: the loop appends
+ * `toolUse` and `toolResult` content blocks, which {@link ChatMessage} cannot
+ * represent — it has a single `content` string — so the loop genuinely has to
+ * work in this type and not in ours. Keeping the alias here means exactly one
+ * file knows the SDK exists.
+ */
+export type LlmMessage = Message;
+
+/** One block of a turn: prose, a tool request, or a tool's answer. */
+export type LlmContentBlock = ContentBlock;
+
+/** A tool the model asked to run, and the id its result must be tagged with. */
+export interface ToolUseRequest {
+  /** Bedrock's correlation id. A `toolResult` without the matching id is rejected. */
+  toolUseId: string;
+  name: string;
+  input: Record<string, unknown>;
+}
+
+/** The outcome of one tool-aware Converse call. */
+export interface ToolTurn {
+  /**
+   * The assistant message verbatim, to append to the transcript unmodified.
+   *
+   * Reconstructing it from `text` and `toolUses` would drop block ordering and
+   * any block type this code does not know about, and Bedrock validates that a
+   * `toolResult` follows the exact `toolUse` block it answers.
+   */
+  message: LlmMessage;
+  /** Whatever prose accompanied the call. Often empty on a tool-use turn. */
+  text: string;
+  /** Empty when the model chose to answer rather than to call anything. */
+  toolUses: ToolUseRequest[];
+  /** `tool_use`, `end_turn`, `max_tokens`, `guardrail_intervened`, … */
+  stopReason: string;
+}
+
 /** Abstract interface for LLM interactions — implementations can be real Bedrock SDK or stubs */
 export interface BedrockClient {
   /** Generate a conversational response given message history and system prompt */
@@ -45,6 +86,29 @@ export interface BedrockClient {
     history: ChatMessage[],
     toolSchema: ToolSchema,
   ): Promise<ToolUseResponse>;
+
+  /**
+   * One turn of a tool-enabled conversation.
+   *
+   * Deliberately a single call and not the loop: the caller owns iteration,
+   * because deciding whether to run a requested tool, and what to do when it
+   * fails, is policy and does not belong in a transport class. See
+   * `tool-loop.ts`.
+   *
+   * Unlike {@link extractWithTool}, which forces one named tool, this offers all
+   * of them and lets the model choose — including choosing none.
+   */
+  converseWithTools(
+    messages: LlmMessage[],
+    systemPrompt: string,
+    tools: readonly ToolSchema[],
+    sessionId: string,
+  ): Promise<ToolTurn>;
+}
+
+/** Lift a ChatMessage transcript into the shape the tool loop works in. */
+export function toLlmMessages(messages: ChatMessage[]): LlmMessage[] {
+  return toBedrockMessages(messages);
 }
 
 /**
@@ -158,6 +222,21 @@ function extractTextFromBlocks(blocks: ContentBlock[] | undefined): string {
  */
 function sessionIdOf(messages: ChatMessage[]): string {
   return messages[messages.length - 1]?.sessionId ?? 'unknown';
+}
+
+/** Our tool shape as Bedrock's `toolSpec`. */
+function toBedrockTool(schema: ToolSchema): Tool {
+  return {
+    toolSpec: {
+      name: schema.name,
+      description: schema.description,
+      inputSchema: {
+        // Bedrock SDK expects DocumentType, a broad union — safe to cast here.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        json: schema.input_schema as any,
+      },
+    },
+  };
 }
 
 /** Build guardrail config if environment variables are set */
@@ -411,6 +490,82 @@ export class AwsBedrockClient implements BedrockClient {
     }
   }
 
+  async converseWithTools(
+    messages: LlmMessage[],
+    systemPrompt: string,
+    tools: readonly ToolSchema[],
+    sessionId: string,
+  ): Promise<ToolTurn> {
+    try {
+      const guardrailConfig = buildGuardrailConfig();
+
+      const command = new ConverseCommand({
+        modelId: this.modelId,
+        system: [{ text: systemPrompt }],
+        // Not passed through `toBedrockMessages`: the caller's transcript already
+        // contains toolUse/toolResult blocks by the second iteration, and that
+        // function only knows how to build text blocks.
+        messages: guardNewestUserTurn(messages, guardrailConfig),
+        inferenceConfig: {
+          maxTokens: MAX_REPLY_TOKENS,
+          // Claude Sonnet 4.5 rejects temperature and topP together.
+          temperature: 0.8,
+        },
+        toolConfig: {
+          tools: tools.map(toBedrockTool),
+          // The whole difference from `extractWithTool`, which pins one tool.
+          // Here the model picks, and "none of them" is a valid pick — most
+          // turns in this product are conversation, not action.
+          toolChoice: { auto: {} },
+        },
+        guardrailConfig,
+      });
+
+      const response = await this.sendTimed(command, 'chat-tools', sessionId);
+
+      if (response.stopReason === 'guardrail_intervened') {
+        logger.warn('bedrock.guardrail_intervened', {
+          sessionId,
+          operation: 'chat-tools',
+          policies: guardrailPoliciesFrom(response.trace),
+        });
+      }
+
+      const blocks = response.output?.message?.content ?? [];
+
+      return {
+        message: response.output?.message ?? { role: 'assistant', content: blocks },
+        text: extractTextFromBlocks(blocks),
+        // A single turn may request several tools at once — "check Shabbat and
+        // search restaurants" is one natural sentence and Bedrock will emit two
+        // blocks for it. Collecting all of them is what lets the loop answer in
+        // one round trip instead of three.
+        toolUses: blocks.flatMap((block) =>
+          'toolUse' in block && block.toolUse
+            ? [
+                {
+                  toolUseId: block.toolUse.toolUseId ?? '',
+                  name: block.toolUse.name ?? '',
+                  input: (block.toolUse.input ?? {}) as Record<string, unknown>,
+                },
+              ]
+            : [],
+        ),
+        stopReason: response.stopReason ?? 'unknown',
+      };
+    } catch (err) {
+      if (err instanceof LlmError) throw err;
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const errName = err instanceof Error ? err.name : 'Unknown';
+      console.error(`[bedrock] converseWithTools failed: ${errName}: ${errMsg}`);
+      throw new LlmError('Bedrock converseWithTools failed', {
+        modelId: this.modelId,
+        errorName: errName,
+        cause: errMsg,
+      });
+    }
+  }
+
   async extractWithTool(
     message: ChatMessage,
     history: ChatMessage[],
@@ -424,17 +579,7 @@ export class AwsBedrockClient implements BedrockClient {
         guardrailConfig,
       );
 
-      const tool: Tool = {
-        toolSpec: {
-          name: toolSchema.name,
-          description: toolSchema.description,
-          inputSchema: {
-            // Bedrock SDK expects DocumentType which is a broad union — safe to cast here
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            json: toolSchema.input_schema as any,
-          },
-        },
-      };
+      const tool = toBedrockTool(toolSchema);
 
       const system: SystemContentBlock[] = [{
         text: `Analyze the latest message in the conversation and extract any spouse/partner preferences using the ${toolSchema.name} tool. Only extract preferences that are clearly stated or strongly implied.`,

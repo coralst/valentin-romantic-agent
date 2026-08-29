@@ -1,0 +1,160 @@
+{
+  "ranAt": "2026-08-28T14:07:38.626Z",
+  "amadeusHost": "test.api.amadeus.com",
+  "outcomes": [
+    {
+      "integration": "hebcal",
+      "claim": "Resolves the real candle-lighting and Havdalah times for a Tel Aviv Shabbat",
+      "tool": "check_shabbat",
+      "input": {
+        "city": "Tel Aviv",
+        "when": "2026-08-29T21:00"
+      },
+      "passed": true,
+      "summary": "Tel Aviv: Shabbat begins 2026-09-04 at 18:41 and ends (Havdalah, מוצ״ש) 2026-09-05 at 19:37 (Parashat Nitzavim-Vayeilech) That time is outside Shabbat, so it is available.",
+      "data": {
+        "city": "Tel Aviv",
+        "candleLighting": {
+          "at": "2026-09-04T15:41:00.000Z",
+          "localDate": "2026-09-04",
+          "localTime": "18:41"
+        },
+        "havdalah": {
+          "at": "2026-09-05T16:37:00.000Z",
+          "localDate": "2026-09-05",
+          "localTime": "19:37"
+        },
+        "parsha": "Parashat Nitzavim-Vayeilech",
+        "duringShabbat": false
+      },
+      "durationMs": 18
+    },
+    {
+      "integration": "hebcal",
+      "claim": "Converts a Gregorian anniversary to its drifting Hebrew date",
+      "tool": "get_hebrew_occasions",
+      "input": {
+        "anniversary_date": "2019-03-02"
+      },
+      "passed": true,
+      "summary": "2019-03-02 was 25 Adar I 5779 in the Hebrew calendar, so their anniversary falls on: 2027-03-04 (25 Adar I 5787) — their anniversary, in 188 day(s); 2028-03-23 (25 Adar 5788) — their anniversary, in 573 day(s). Holidays in the next 90 days: 2026-09-05 (23 Elul 5786) — Leil Selichot, in 8 day(s); 2026-09-11 (29 Elul 5786) — Erev Rosh Hashana, in 14 day(s); 2026-09-12 (1 Tishrei 5787) — Rosh Hashana 5787, in 15 day(s); 2026-09-13 (2 Tishrei 5787) — Rosh Hashana II, in 16 day(s); 2026-09-20 (9 Tishrei 5787) — Erev Yom Kippur, in 23 day(s); 2026-09-21 (10 Tishrei 5787) — Yom Kippur, in 24 day(s); 2026-09-25 (14 Tishrei 5787) — Erev Sukkot, in 28 day(s); 2026-09-26 (15 Tishrei 5787) — Sukkot I, in 29 day(s); 2026-09-27 (16 Tishrei 5787) — Sukkot II (CH’’M), in 30 day(s); 2026-09-28 (17 Tishrei 5787) — Sukkot III (CH’’M), in 31 day(s); 2026-09-29 (18 Tishrei 5787) — Sukkot IV (CH’’M), in 32 day(s); 2026-09-30 (19 Tishrei 5787) — Sukkot V (CH’’M), in 33 day(s); 2026-10-01 (20 Tishrei 5787) — Sukkot VI (CH’’M), in 34 day(s); 2026-10-02 (21 Tishrei 5787) — Sukkot VII (Hoshana Raba), in 35 day(s); 2026-10-03 (22 Tishrei 5787) — Shmini Atzeret, in 36 day(s); 2026-10-18 (7 Cheshvan 5787) — Yom HaAliyah School Observance, in 51 day(s); 2026-10-22 (11 Cheshvan 5787) — Yitzhak Rabin Memorial Day, in 55 day(s); 2026-11-09 (29 Cheshvan 5787) — Sigd, in 73 day(s); 2026-11-16 (6 Kislev 5787) — Ben-Gurion Day, in 80 day(s).",
+      "data": {
+        "anniversaries": {
+          "count": 2,
+          "first": {
+            "date": "2027-03-04",
+            "hebrewDate": "25 Adar I 5787",
+            "title": "their anniversary",
+            "kind": "anniversary",
+            "inDays": 188
+          }
+        },
+        "holidays": {
+          "count": 19,
+          "first": {
+            "date": "2026-09-05",
+            "hebrewDate": "23 Elul 5786",
+            "title": "Leil Selichot",
+            "kind": "holiday",
+            "inDays": 8
+          }
+        }
+      },
+      "durationMs": 1
+    },
+    {
+      "integration": "ontopo",
+      "claim": "Resolves the curated bookable list (local — no network call)",
+      "tool": "find_restaurants",
+      "input": {
+        "query": "romantic"
+      },
+      "passed": true,
+      "summary": "5 option(s): Hotel Montefiore (Montefiore, Tel Aviv; romantic, intimate, chef) — A small dining room in a restored Bauhaus hotel — the default answer for a serious anniversary. | NOEMA (Jaffa Port, Tel Aviv; Bar, Bistro) — Sea air and a bar worth sitting at; has an outside area that books separately. | Yaffo Tel Aviv (Tel Aviv; Mediterranean, Chef Haim Cohen) — Haim Cohen’s room — grown-up, generous, and reliably good for a night that matters. | Brasserie 18 (Tel Aviv; Restaurant) — Classic brasserie, open late, works for a spontaneous evening. | Matteo (Tel Aviv; Italian, Meat, Fish, Seafood) — Italian, warm, dependable — an easy yes when nobody wants to be adventurous.",
+      "data": {
+        "venues": {
+          "count": 5,
+          "first": {
+            "slug": "33687997",
+            "name": "Hotel Montefiore",
+            "city": "Tel Aviv",
+            "neighbourhood": "Montefiore",
+            "cuisine": [],
+            "vibes": [
+              "romantic",
+              "intimate",
+              "chef"
+            ]
+          }
+        }
+      },
+      "durationMs": 1
+    },
+    {
+      "integration": "ontopo",
+      "claim": "Reads live table availability from ontopo.com for a real venue and date",
+      "tool": "check_availability",
+      "input": {
+        "restaurant": "Hotel Montefiore",
+        "date": "2026-09-06",
+        "time": "20:00",
+        "party_size": 2
+      },
+      "passed": true,
+      "summary": "Hotel Montefiore has nothing bookable for 2 on Sunday 6 September around 20:00. Offer a different night, or another restaurant.",
+      "data": {
+        "venue": "Hotel Montefiore",
+        "date": "Sunday 6 September",
+        "slots": {
+          "count": 0
+        }
+      },
+      "durationMs": 317
+    },
+    {
+      "integration": "ontopo",
+      "claim": "Turns a genuinely free slot into a proposal, and books nothing — the checkout link is minted only on confirm",
+      "tool": "propose_reservation",
+      "input": {
+        "restaurant": "NOEMA",
+        "date": "2026-09-06",
+        "time": "19:30",
+        "party_size": 2,
+        "area": "Outside"
+      },
+      "passed": true,
+      "summary": "I've put a card in front of them for NOEMA, Sunday 6 September at 19:30, Outside, for 2. Tell them what you found and that it needs their confirmation. Do not say it is booked.",
+      "data": {
+        "venue": "NOEMA",
+        "time": "19:30",
+        "area": "Outside",
+        "partySize": 2
+      },
+      "proposal": {
+        "service": "ontopo",
+        "title": "NOEMA, Sunday 6 September at 19:30",
+        "expiresAt": "2026-08-28T14:22:38.625Z"
+      },
+      "durationMs": 292
+    }
+  ],
+  "unproven": [],
+  "skipped": [
+    {
+      "integration": "amadeus",
+      "why": "no credentials on this machine, so the tools are not registered"
+    },
+    {
+      "integration": "google-calendar",
+      "why": "no credentials on this machine, so the tools are not registered"
+    },
+    {
+      "integration": "gmail",
+      "why": "no credentials on this machine, so the tools are not registered"
+    },
+    {
+      "integration": "whatsapp",
+      "why": "no credentials on this machine, so the tools are not registered"
+    }
+  ]
+}

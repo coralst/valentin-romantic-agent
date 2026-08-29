@@ -105,6 +105,10 @@ export function AppLayout() {
           this component — see `HerRecordsProviders` in `App`. */}
       {/* Above the layout because the magnifier lives in the sidebar and the
           drawer is mounted beside the chat — sibling subtrees. */}
+      {/* The engine provider is deliberately NOT here beside it. The switch has to
+          be readable by `WebSocketProvider`, which is above this component, because
+          the engine decides which socket path the chat opens — so it lives in
+          `App.tsx` instead. See the note there. */}
       <ArchitectureDrawerProvider>
         {/* Above the layout for the same reason: the badge that counts grants
             lives on the rail, and the panel that changes the count is mounted

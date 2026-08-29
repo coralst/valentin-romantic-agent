@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { getBackoffDelay, dispatchServerEvent, useWebSocket } from '../use-websocket';
+import {
+  getBackoffDelay,
+  dispatchServerEvent,
+  useWebSocket,
+  webSocketPathFor,
+} from '../use-websocket';
 import {
   subscribeToWsEvents,
   resetWsObservers,
@@ -147,7 +152,9 @@ describe('dispatchServerEvent', () => {
       sourceMessageId: 'msg-2',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      history: [{ previousValue: 'Rock', changedAt: new Date().toISOString(), sourceMessageId: 'msg-1' }],
+      history: [
+        { previousValue: 'Rock', changedAt: new Date().toISOString(), sourceMessageId: 'msg-1' },
+      ],
     };
     const event: ServerEvent = {
       type: 'preference_update',
@@ -157,7 +164,10 @@ describe('dispatchServerEvent', () => {
 
     dispatchServerEvent(event, chatDispatch, preferencesDispatch);
 
-    expect(preferencesDispatch).toHaveBeenCalledWith({ type: 'UPDATE_PREFERENCE', preference: pref });
+    expect(preferencesDispatch).toHaveBeenCalledWith({
+      type: 'UPDATE_PREFERENCE',
+      preference: pref,
+    });
   });
 
   it('dispatches SET_CONNECTION on connection_status event', () => {
@@ -434,6 +444,59 @@ describe('WebSocket observation seam', () => {
    * dispatch. Adding a `default: throw` upstream would break the drawer, and
    * this is the test that would catch it.
    */
+  it('sends a confirm_action naming the proposal', () => {
+    const { result, socket } = renderSocket();
+
+    act(() => {
+      result.current.confirmAction('prop-7');
+    });
+
+    const sent = socket.sent
+      .map((raw) => JSON.parse(raw) as { type: string; payload: Record<string, unknown> })
+      .filter((frame) => frame.type === 'confirm_action');
+    expect(sent).toHaveLength(1);
+    expect(sent[0].payload).toEqual({ sessionId: 'sess-1', proposalId: 'prop-7' });
+  });
+
+  it('holds a confirmation sent before auth rather than losing the socket', () => {
+    const { result, socket } = renderSocket('sess-1', { authenticate: false });
+
+    act(() => {
+      result.current.confirmAction('prop-7');
+    });
+    // The gateway closes the connection on a pre-auth frame, so this must not go
+    // out yet — a lost confirmation looks to the user like a button that did
+    // nothing.
+    expect(socket.sent.filter((raw) => raw.includes('confirm_action'))).toHaveLength(0);
+
+    act(() => {
+      socket.receive(authOk());
+    });
+    expect(socket.sent.filter((raw) => raw.includes('confirm_action'))).toHaveLength(1);
+  });
+
+  it('turns an action_proposal into a card rather than a message', () => {
+    const { socket, chatDispatch } = renderSocket();
+    const proposal = {
+      sessionId: 'sess-1',
+      proposalId: 'prop-7',
+      service: 'ontopo',
+      title: 'Table for two',
+      summary: 'Saturday at 20:00',
+      expiresAt: new Date(Date.now() + 600_000).toISOString(),
+    };
+
+    act(() => {
+      socket.receive({
+        type: 'action_proposal',
+        payload: proposal,
+        timestamp: new Date().toISOString(),
+      });
+    });
+
+    expect(chatDispatch).toHaveBeenCalledWith({ type: 'RECEIVE_PROPOSAL', proposal });
+  });
+
   it('publishes aws_span even though no reducer handles it', () => {
     const { socket } = renderSocket();
 
@@ -813,5 +876,110 @@ describe('WebSocket observation seam', () => {
       // than the turn quietly not being replayed.
       expect(sent).toEqual([]);
     });
+  });
+});
+
+/**
+ * Which backend the socket is opened against.
+ *
+ * These are the assertions that keep the engine switch from being a drawing. The
+ * whole mechanism is that the engine picks a *path* the ALB routes on, so a socket
+ * opened at the wrong URL is the entire failure — and it is a silent one, because
+ * both paths connect on both engines by design.
+ */
+describe('the engine a socket is opened against', () => {
+  class UrlRecordingSocket {
+    static instances: UrlRecordingSocket[] = [];
+    static readonly OPEN = 1;
+
+    readyState = UrlRecordingSocket.OPEN;
+    onopen: (() => void) | null = null;
+    onmessage: ((event: { data: string }) => void) | null = null;
+    onclose: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+
+    constructor(public url: string) {
+      UrlRecordingSocket.instances.push(this);
+    }
+
+    send() {}
+    close() {
+      this.readyState = 3;
+    }
+  }
+
+  /** The URL of the most recently opened socket. */
+  function lastUrl(): string {
+    return UrlRecordingSocket.instances[UrlRecordingSocket.instances.length - 1].url;
+  }
+
+  /**
+   * Renders with no `url` override, so the hook derives the URL the way the browser
+   * does — which is the code path the engine actually flows through.
+   */
+  function renderWithEngine(engine: 'valentin' | 'agentcore' | undefined) {
+    const chatDispatch = vi.fn();
+    const preferencesDispatch = vi.fn();
+    return renderHook(
+      ({ engine: current }: { engine: 'valentin' | 'agentcore' | undefined }) =>
+        useWebSocket({
+          chatDispatch,
+          preferencesDispatch,
+          sessionId: 'sess-1',
+          engine: current,
+        }),
+      { initialProps: { engine } },
+    );
+  }
+
+  beforeEach(() => {
+    UrlRecordingSocket.instances = [];
+    vi.stubGlobal('WebSocket', UrlRecordingSocket);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('maps each engine to the path its ALB rule matches', () => {
+    expect(webSocketPathFor('valentin')).toBe('/ws');
+    expect(webSocketPathFor('agentcore')).toBe('/ws/agentcore');
+    // No argument is engine A, which is what an untouched deployment serves.
+    expect(webSocketPathFor()).toBe('/ws');
+  });
+
+  it('opens the baseline path when no engine is chosen', () => {
+    renderWithEngine(undefined);
+    expect(lastUrl().endsWith('/ws')).toBe(true);
+  });
+
+  it('opens the AgentCore path when AgentCore is selected', () => {
+    renderWithEngine('agentcore');
+    expect(lastUrl().endsWith('/ws/agentcore')).toBe(true);
+  });
+
+  it('reopens against the other engine when the selection changes', () => {
+    // The regression this guards: the engine used to be read by nothing, so
+    // switching redrew the diagram and left the chat on the socket it already had.
+    const view = renderWithEngine('valentin');
+    expect(UrlRecordingSocket.instances).toHaveLength(1);
+
+    act(() => {
+      view.rerender({ engine: 'agentcore' });
+    });
+
+    expect(UrlRecordingSocket.instances.length).toBeGreaterThan(1);
+    expect(lastUrl().endsWith('/ws/agentcore')).toBe(true);
+    // The socket it replaced is closed rather than left open alongside it: two live
+    // sockets would have both engines answering the same conversation.
+    expect(UrlRecordingSocket.instances[0].readyState).toBe(3);
+  });
+
+  it('does not rebuild the socket when the engine is unchanged', () => {
+    const view = renderWithEngine('agentcore');
+    act(() => {
+      view.rerender({ engine: 'agentcore' });
+    });
+    expect(UrlRecordingSocket.instances).toHaveLength(1);
   });
 });

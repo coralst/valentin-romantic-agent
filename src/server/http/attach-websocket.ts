@@ -2,6 +2,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import type { IncomingMessage, Server } from 'http';
 import type { WsConnection, WsGateway } from '../api/ws-gateway';
 import type { LogFn } from './express-app';
+import { isWebSocketPath } from '../agent/engine';
 
 export interface AttachWebSocketDeps {
   gateway: WsGateway;
@@ -32,7 +33,11 @@ export function attachWebSocket(
   let connectionCounter = 0;
 
   server.on('upgrade', (request: IncomingMessage, socket, head) => {
-    if (request.url === '/ws') {
+    // `/ws` and `/ws/agentcore` both, on both engines. The second is an ALB
+    // routing label rather than a second protocol — see `agent/engine.ts` for why
+    // the engine is decided by `AGENT_ENGINE` and not by the path a socket
+    // arrived on.
+    if (isWebSocketPath(request.url)) {
       wss.handleUpgrade(request, socket, head, (ws) => {
         wss.emit('connection', ws, request);
       });

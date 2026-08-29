@@ -1,0 +1,15 @@
+# Engine B's agent. Pinned to minor versions rather than floated: the two images
+# in this comparison deploy independently, and a Strands release that changed how
+# tool use is reported would move engine B's numbers with nothing in this repo to
+# explain it.
+bedrock-agentcore==0.1.*
+strands-agents==1.*
+strands-agents-tools==0.2.*
+mcp==1.*
+boto3>=1.40.0
+requests>=2.32.0
+
+# Emits OpenTelemetry spans to the Runtime's collector, which is what puts engine
+# B's traces next to engine A's in CloudWatch. Not optional in practice: without
+# it the Observability half of the comparison has nothing to show.
+aws-opentelemetry-distro>=0.12.0

@@ -17,6 +17,8 @@ import { SafetyStack } from '../lib/safety-stack';
 import { ComputeStack } from '../lib/compute-stack';
 import { AuthStack } from '../lib/auth-stack';
 import { MonitoringStack } from '../lib/monitoring-stack';
+import { AgentCoreStack } from '../lib/agentcore-stack';
+import { CdnStack } from '../lib/cdn-stack';
 
 const config = getConfig('dev');
 
@@ -24,6 +26,8 @@ let computeTemplate: Template;
 let monitoringTemplate: Template;
 let dataTemplate: Template;
 let safetyTemplate: Template;
+let agentCoreTemplate: Template;
+let cdnTemplate: Template;
 
 beforeAll(() => {
   const app = new cdk.App();
@@ -33,6 +37,17 @@ beforeAll(() => {
   const data = new DataStack(app, 'Data', { config, env: stackEnv });
   const safety = new SafetyStack(app, 'Safety', { config, env: stackEnv });
   const auth = new AuthStack(app, 'Auth', { config, env: stackEnv });
+
+  const agentCore = new AgentCoreStack(app, 'AgentCore', {
+    config,
+    table: data.table,
+    guardrailId: safety.guardrailId,
+    guardrailVersion: 'DRAFT',
+    userPool: auth.userPool,
+    cognitoDomainPrefix: auth.userPoolDomainPrefix,
+    imageTag: 'test-sha',
+    env: stackEnv,
+  });
 
   const compute = new ComputeStack(app, 'Compute', {
     config,
@@ -49,6 +64,16 @@ beforeAll(() => {
     demoClientId: auth.demoClient.userPoolClientId,
     demoSecret: auth.demoSecret,
     cognitoDomainPrefix: auth.userPoolDomainPrefix,
+    agentCoreRuntimeArn: agentCore.runtimeArn,
+    agentCoreMemoryId: agentCore.memoryId,
+    agentCoreGatewayUrl: agentCore.gatewayUrl,
+    env: stackEnv,
+  });
+
+  const cdn = new CdnStack(app, 'Cdn', {
+    config,
+    alb: compute.loadBalancer,
+    accessLogBucket: data.accessLogBucket,
     env: stackEnv,
   });
 
@@ -65,6 +90,8 @@ beforeAll(() => {
   monitoringTemplate = Template.fromStack(monitoring);
   dataTemplate = Template.fromStack(data);
   safetyTemplate = Template.fromStack(safety);
+  agentCoreTemplate = Template.fromStack(agentCore);
+  cdnTemplate = Template.fromStack(cdn);
 });
 
 /** The guardrail's denied-topic list, keyed by topic name. */
@@ -76,11 +103,26 @@ function deniedTopics(): Record<string, any> {
   );
 }
 
-/** The container's environment block, as a name -> value map. */
-function containerEnv(): Record<string, unknown> {
+/**
+ * One engine's container definition, selected by AGENT_ENGINE rather than by
+ * position. Two task definitions live in this stack now, and their order in the
+ * template is an implementation detail of construct traversal.
+ */
+function containerDef(engine: 'valentin' | 'agentcore'): any {
   const taskDefs = computeTemplate.findResources('AWS::ECS::TaskDefinition');
-  const def = Object.values(taskDefs)[0] as any;
-  const entries = def.Properties.ContainerDefinitions[0].Environment as Array<{
+  const containers = Object.values<any>(taskDefs).map(
+    (def) => def.Properties.ContainerDefinitions[0],
+  );
+  const match = containers.find((c: any) =>
+    (c.Environment ?? []).some((e: any) => e.Name === 'AGENT_ENGINE' && e.Value === engine),
+  );
+  if (!match) throw new Error(`no container definition for engine ${engine}`);
+  return match;
+}
+
+/** The container's environment block, as a name -> value map. */
+function containerEnv(engine: 'valentin' | 'agentcore' = 'valentin'): Record<string, unknown> {
+  const entries = containerDef(engine).Environment as Array<{
     Name: string;
     Value: unknown;
   }>;
@@ -344,15 +386,293 @@ describe('deployment safety', () => {
     expect(json).not.toContain(':latest');
   });
 
-  it('runs the container with a read-only root filesystem', () => {
-    const taskDefs = computeTemplate.findResources('AWS::ECS::TaskDefinition');
-    const def = Object.values(taskDefs)[0] as any;
-    expect(def.Properties.ContainerDefinitions[0].ReadonlyRootFilesystem).toBe(true);
+  it('runs both containers with a read-only root filesystem', () => {
+    expect(containerDef('valentin').ReadonlyRootFilesystem).toBe(true);
+    expect(containerDef('agentcore').ReadonlyRootFilesystem).toBe(true);
   });
 
   it('bounds log retention', () => {
     computeTemplate.hasResourceProperties('AWS::Logs::LogGroup', {
       RetentionInDays: config.logRetention,
     });
+  });
+});
+
+describe('two engines behind one ALB', () => {
+  /** Every listener rule, as {priority, conditions, targetGroup}. */
+  function listenerRules(): Array<any> {
+    const rules = computeTemplate.findResources('AWS::ElasticLoadBalancingV2::ListenerRule');
+    return Object.values<any>(rules)
+      .map((r) => r.Properties)
+      .sort((a, b) => a.Priority - b.Priority);
+  }
+
+  it('runs exactly two services and two target groups', () => {
+    computeTemplate.resourceCountIs('AWS::ECS::Service', 2);
+    computeTemplate.resourceCountIs('AWS::ElasticLoadBalancingV2::TargetGroup', 2);
+  });
+
+  it('keeps exactly one listener, so both engines share the same front door', () => {
+    // Two listeners would mean two ports, and CloudFront only has one origin
+    // configured. The whole point is one ALB routing by path and header.
+    computeTemplate.resourceCountIs('AWS::ElasticLoadBalancingV2::Listener', 1);
+  });
+
+  it('leaves engine A as the listener default action', () => {
+    // If a rule ever captured '/api/*' or '/ws', removing the rules would break
+    // the baseline app. Engine A must work with zero rules present.
+    const listeners = computeTemplate.findResources('AWS::ElasticLoadBalancingV2::Listener');
+    const listener = Object.values<any>(listeners)[0].Properties;
+    const acTargetGroups = new Set(
+      listenerRules().flatMap((r) =>
+        r.Actions.flatMap((a: any) => JSON.stringify(a.TargetGroupArn)),
+      ),
+    );
+    const defaultTg = JSON.stringify(listener.DefaultActions[0].TargetGroupArn);
+    expect(acTargetGroups.has(defaultTg)).toBe(false);
+  });
+
+  it('routes the three engine-B conditions at the expected priorities', () => {
+    const rules = listenerRules();
+    expect(rules.map((r) => r.Priority)).toEqual([10, 20, 30]);
+    expect(rules[0].Conditions[0].PathPatternConfig.Values).toEqual(['/api/agentcore/*']);
+    // Exact, not a prefix: attach-websocket.ts compares request.url with ===.
+    expect(rules[1].Conditions[0].PathPatternConfig.Values).toEqual(['/ws/agentcore']);
+    expect(rules[2].Conditions[0].HttpHeaderConfig).toEqual({
+      HttpHeaderName: 'X-Valentin-Engine',
+      Values: ['agentcore'],
+    });
+  });
+
+  it('sends all three rules to the same non-default target group', () => {
+    const targets = new Set(
+      listenerRules().map((r) => JSON.stringify(r.Actions[0].TargetGroupArn)),
+    );
+    expect(targets.size).toBe(1);
+  });
+
+  it('adds no ingress rule beyond the prefix list and the ALB-to-ECS hop', () => {
+    /*
+     * addListener with the default open:true appends its own 0.0.0.0/0 ingress
+     * rule. Capturing the listener in a local so rules can be attached to it is
+     * exactly the kind of edit that drops `open: false` by accident, and adding a
+     * second service is exactly when someone reaches for a third rule. Two is the
+     * whole set: CloudFront -> ALB:80, and ALB -> ECS:3001, which both services
+     * share.
+     */
+    computeTemplate.resourceCountIs('AWS::EC2::SecurityGroupIngress', 2);
+  });
+
+  it('holds both engines to the same model, guardrail, table and task size', () => {
+    // Any difference here would show up as a measured engine difference that is
+    // actually a configuration difference.
+    const a = containerEnv('valentin');
+    const b = containerEnv('agentcore');
+    for (const key of [
+      'BEDROCK_MODEL_ID',
+      'BEDROCK_GUARDRAIL_ID',
+      'BEDROCK_GUARDRAIL_VERSION',
+      'DYNAMO_TABLE_NAME',
+      'STORAGE_BACKEND',
+      'COGNITO_USER_POOL_ID',
+    ]) {
+      expect(JSON.stringify(b[key])).toBe(JSON.stringify(a[key]));
+    }
+
+    const taskDefs = Object.values<any>(
+      computeTemplate.findResources('AWS::ECS::TaskDefinition'),
+    ).map((d) => d.Properties);
+    expect(new Set(taskDefs.map((d) => `${d.Cpu}/${d.Memory}`)).size).toBe(1);
+  });
+
+  it('runs both engines from the same image tag', () => {
+    expect(JSON.stringify(containerDef('valentin').Image)).toBe(
+      JSON.stringify(containerDef('agentcore').Image),
+    );
+  });
+
+  it('names the engine on both services rather than relying on a code default', () => {
+    expect(containerEnv('valentin').AGENT_ENGINE).toBe('valentin');
+    expect(containerEnv('agentcore').AGENT_ENGINE).toBe('agentcore');
+  });
+
+  it('gives the proxy the Runtime and Memory it needs to reach', () => {
+    const b = containerEnv('agentcore');
+    expect(b.AGENTCORE_RUNTIME_ARN).toBeDefined();
+    expect(b.AGENTCORE_MEMORY_ID).toBeDefined();
+    expect(b.AGENTCORE_GATEWAY_URL).toBeDefined();
+  });
+
+  it('does not let the proxy call Bedrock directly', () => {
+    /*
+     * A silent fallback to direct Converse on the engine-B route would serve
+     * engine-A answers under engine-B's label and invalidate every measurement.
+     * The proxy is denied InvokeModel so that fallback fails loudly instead.
+     */
+    const policies = computeTemplate.findResources('AWS::IAM::Policy');
+    const proxyPolicies = Object.values<any>(policies).filter((p) =>
+      JSON.stringify(p.Properties.Roles ?? []).includes('ProxyTaskRole'),
+    );
+    expect(proxyPolicies.length).toBeGreaterThan(0);
+
+    const actions = proxyPolicies.flatMap((p) =>
+      p.Properties.PolicyDocument.Statement.flatMap((s: any) => [].concat(s.Action ?? [])),
+    );
+    expect(actions).not.toContain('bedrock:InvokeModel');
+    expect(actions).not.toContain('bedrock:InvokeModelWithResponseStream');
+    expect(actions).toContain('bedrock-agentcore:InvokeAgentRuntime');
+  });
+
+  it('does not let engine A invoke the AgentCore data plane', () => {
+    const policies = computeTemplate.findResources('AWS::IAM::Policy');
+    const basePolicies = Object.values<any>(policies).filter(
+      (p) =>
+        JSON.stringify(p.Properties.Roles ?? []).includes('TaskRole') &&
+        !JSON.stringify(p.Properties.Roles ?? []).includes('ProxyTaskRole'),
+    );
+    const actions = basePolicies.flatMap((p) =>
+      p.Properties.PolicyDocument.Statement.flatMap((s: any) => [].concat(s.Action ?? [])),
+    );
+    expect(actions.filter((a: string) => a.startsWith('bedrock-agentcore:'))).toEqual([]);
+  });
+
+  it('separates the two engines by log group so per-engine queries are exact', () => {
+    const groups = Object.values<any>(computeTemplate.findResources('AWS::Logs::LogGroup')).map(
+      (g) => g.Properties.LogGroupName,
+    );
+    expect(groups).toContain(`/valentin/${config.env}/service`);
+    expect(groups).toContain(`/valentin/${config.env}/agentcore`);
+  });
+});
+
+describe('agentcore engine B', () => {
+  /*
+   * The two naming rules are opposites, and `cdk synth` only *warns* about a
+   * violation — it does not fail. So a wrong name synthesises fine, deploys for
+   * ten minutes, and then fails at CreateStack. These two tests turn that into a
+   * red test in a second.
+   */
+  it('names Runtime and Memory with underscores, which their API requires', () => {
+    agentCoreTemplate.hasResourceProperties('AWS::BedrockAgentCore::Runtime', {
+      AgentRuntimeName: 'valentin_agent_dev',
+    });
+    agentCoreTemplate.hasResourceProperties('AWS::BedrockAgentCore::Memory', {
+      Name: 'valentin_memory_dev',
+    });
+  });
+
+  it('names the Gateway without underscores, which its API rejects', () => {
+    const gateways = agentCoreTemplate.findResources('AWS::BedrockAgentCore::Gateway');
+    const name = (Object.values(gateways)[0] as any).Properties.Name;
+    expect(name).toBe('valentin-gateway-dev');
+    expect(name).not.toContain('_');
+  });
+
+  it('scopes the Gateway JWT authorizer to the machine client only', () => {
+    // Without allowedClients, any token this pool issues would open the gateway —
+    // including a signed-in visitor's, which would let a browser call the tools.
+    const gateways = agentCoreTemplate.findResources('AWS::BedrockAgentCore::Gateway');
+    const authorizer = (Object.values(gateways)[0] as any).Properties.AuthorizerConfiguration
+      .CustomJWTAuthorizer;
+    expect(authorizer.AllowedClients).toHaveLength(1);
+    expect(authorizer.DiscoveryUrl).toBeDefined();
+  });
+
+  it('never puts the gateway client secret in the template', () => {
+    // The runtime reads it with DescribeUserPoolClient instead. A custom-resource
+    // read would store the plaintext in this stack's own event history.
+    const json = JSON.stringify(agentCoreTemplate.toJSON());
+    expect(json).not.toContain('ClientSecret');
+    expect(json).not.toContain('userPoolClientSecret');
+  });
+
+  it('gives Memory an execution role, without which extraction silently produces nothing', () => {
+    const memories = agentCoreTemplate.findResources('AWS::BedrockAgentCore::Memory');
+    const props = (Object.values(memories)[0] as any).Properties;
+    expect(props.MemoryExecutionRoleArn).toBeDefined();
+    expect(props.MemoryStrategies[0].UserPreferenceMemoryStrategy).toBeDefined();
+  });
+
+  it('scopes the memory namespace per session, not per user', () => {
+    // A user-wide namespace blends two partners' profiles for anyone who starts a
+    // second session — the exact bug the per-session DynamoDB partition avoids.
+    const memories = agentCoreTemplate.findResources('AWS::BedrockAgentCore::Memory');
+    const namespaces = (Object.values(memories)[0] as any).Properties.MemoryStrategies[0]
+      .UserPreferenceMemoryStrategy.Namespaces;
+    expect(namespaces[0]).toContain('{sessionId}');
+  });
+
+  it('runs the agent on a specific image tag rather than :latest', () => {
+    const json = JSON.stringify(agentCoreTemplate.toJSON());
+    expect(json).toContain('test-sha');
+    expect(json).not.toContain(':latest');
+  });
+
+  it('holds both engines to the same model and guardrail', () => {
+    // If the engines differed here, a measured difference between them would say
+    // nothing about AgentCore.
+    const runtimes = agentCoreTemplate.findResources('AWS::BedrockAgentCore::Runtime');
+    const vars = (Object.values(runtimes)[0] as any).Properties.EnvironmentVariables;
+    expect(vars.BEDROCK_MODEL_ID).toBe(config.bedrockModelId);
+    expect(vars.BEDROCK_GUARDRAIL_ID).toBeDefined();
+  });
+
+  it('exposes exactly the three profile tools', () => {
+    const targets = agentCoreTemplate.findResources('AWS::BedrockAgentCore::GatewayTarget');
+    const tools = (Object.values(targets)[0] as any).Properties.TargetConfiguration.Mcp.Lambda
+      .ToolSchema.InlinePayload;
+    expect(tools.map((t: any) => t.Name).sort()).toEqual([
+      'get_partner_profile',
+      'list_preferences',
+      'save_preference',
+    ]);
+  });
+
+  it('bounds log retention on both new log groups', () => {
+    agentCoreTemplate.resourceCountIs('AWS::Logs::LogGroup', 2);
+    const groups = agentCoreTemplate.findResources('AWS::Logs::LogGroup');
+    for (const group of Object.values(groups)) {
+      expect((group as any).Properties.RetentionInDays).toBe(config.logRetention);
+    }
+  });
+});
+
+describe('CloudFront reaches both engines', () => {
+  /** The distribution's cache behaviors, keyed by path pattern. */
+  function behaviors(): Record<string, any> {
+    const distributions = cdnTemplate.findResources('AWS::CloudFront::Distribution');
+    const dist = Object.values<any>(distributions)[0].Properties.DistributionConfig;
+    return Object.fromEntries(
+      (dist.CacheBehaviors ?? []).map((b: any) => [b.PathPattern, b]),
+    );
+  }
+
+  it('has a behavior for the AgentCore socket', () => {
+    // `/ws` is an exact pattern, not a prefix, so without its own entry
+    // `/ws/agentcore` falls through to the S3 default behavior and the upgrade
+    // comes back as a cached 403 rather than as anything diagnosable.
+    expect(Object.keys(behaviors()).sort()).toEqual(['/api/*', '/ws', '/ws/agentcore']);
+  });
+
+  it('gives the two sockets identical treatment', () => {
+    // The frames are the same on both; the path exists only so the ALB can pick
+    // a target group. A difference here would be measured as an engine result.
+    const all = behaviors();
+    const baseline = all['/ws'];
+    const agentcore = all['/ws/agentcore'];
+    // toEqual throughout: the policy ids synth as `{ Ref: ... }` objects, which
+    // are structurally identical but not the same object.
+    expect(agentcore.CachePolicyId).toEqual(baseline.CachePolicyId);
+    expect(agentcore.OriginRequestPolicyId).toEqual(baseline.OriginRequestPolicyId);
+    expect(agentcore.AllowedMethods).toEqual(baseline.AllowedMethods);
+    expect(agentcore.TargetOriginId).toEqual(baseline.TargetOriginId);
+    expect(agentcore.ViewerProtocolPolicy).toEqual(baseline.ViewerProtocolPolicy);
+  });
+
+  it('needs no extra behavior for engine B HTTP routes', () => {
+    // `/api/*` already covers `/api/agentcore/*`, and ALL_VIEWER forwards the
+    // `X-Valentin-Engine` header the third listener rule matches on.
+    expect(behaviors()['/api/*']).toBeDefined();
+    expect(behaviors()['/api/agentcore/*']).toBeUndefined();
   });
 });

@@ -3,12 +3,23 @@ import { InMemoryStoreFactory } from './persistence/in-memory-store';
 import { DynamoDBStoreFactory } from './persistence/dynamodb-store';
 import { InMemoryConversationMemory } from './persistence/conversation-memory';
 import { AwsBedrockClient } from './agent/bedrock-client';
-import { StubAgentCoreAdapter } from './agent/agentcore-adapter';
-import { AgentOrchestrator } from './agent/agent-orchestrator';
+import { LocalValentinRuntime } from './agent/valentin-runtime';
+import {
+  BedrockAgentCoreRuntime,
+  StubAgentCoreAdapter,
+  type AgentCoreRuntime,
+} from './agent/agentcore-adapter';
+import {
+  AgentOrchestrator,
+  type AgentOrchestratorInterface,
+} from './agent/agent-orchestrator';
+import { AgentCoreOrchestrator } from './agent/agentcore-orchestrator';
+import { resolveEngine, type AgentEngine } from './agent/engine';
 import { PreferenceExtractor } from './extraction/preference-extractor';
 import { EventRouter } from './api/event-router';
 import { WsGateway } from './api/ws-gateway';
 import { createHttpRoutes } from './api/http-routes';
+import { buildToolRegistry } from './integrations';
 import { startSpanBridge } from './telemetry/span-bridge';
 import {
   ANONYMOUS_USER_ID,
@@ -70,6 +81,23 @@ export interface ServerDeps {
    * refuses the bypass in production.
    */
   verifier?: TokenVerifier;
+
+  /**
+   * Which engine to serve. Defaults to `resolveEngine()`, i.e. `AGENT_ENGINE`.
+   *
+   * Overridable so a test can exercise engine B without setting a process-wide
+   * environment variable — vitest runs files in one process per pool worker, so
+   * an `AGENT_ENGINE` set by one test would leak into the next.
+   */
+  engine?: AgentEngine;
+
+  /**
+   * The AgentCore data plane, when engine B is being served.
+   *
+   * Required for any test of engine B: the real client is constructed from
+   * `config.agentCore` and would reach a live Runtime.
+   */
+  agentCoreRuntime?: AgentCoreRuntime;
 }
 
 export { ANONYMOUS_USER_ID };
@@ -87,15 +115,27 @@ const DEMO_TTL_SECONDS = 24 * 60 * 60;
 /**
  * The per-user half of the object graph.
  *
- * Bedrock client, AgentCore adapter and WsGateway are process singletons; these
+ * Bedrock client, agent runtime and WsGateway are process singletons; these
  * five are not, because each closes over a user-scoped store. All are
  * constructor-only, so building them per connection costs nothing measurable.
  */
 export interface UserServices {
   store: StorageInterface;
   memory: InMemoryConversationMemory;
+  /**
+   * Built on both engines, invoked only on engine A.
+   *
+   * Engine B gets preference extraction from AgentCore Memory's managed
+   * strategy instead of from this hand-written pipeline — that substitution is
+   * most of what the comparison is about. It is still constructed here because
+   * it is constructor-only and costs nothing, and because `forUser` returning a
+   * different shape per engine would push the branch into every caller.
+   */
   extractor: PreferenceExtractor;
-  orchestrator: AgentOrchestrator;
+  /** {@link AgentOrchestrator} on engine A, {@link AgentCoreOrchestrator} on B. */
+  orchestrator: AgentOrchestratorInterface;
+  /** Which engine `orchestrator` actually is, for `/api/config` to report. */
+  engine: AgentEngine;
   eventRouter: EventRouter;
   httpRoutes: ReturnType<typeof createHttpRoutes>;
 }
@@ -130,7 +170,34 @@ export function createServer(deps: ServerDeps = {}) {
 
   // AWS Bedrock — always use real LLM, no stubs
   const bedrockClient = new AwsBedrockClient();
-  const agentCore = new StubAgentCoreAdapter();
+  const runtime = new LocalValentinRuntime();
+
+  // Built once: the tools are stateless and credential-gated at boot, so there
+  // is nothing per-user about them. What *is* per-user is the proposal store,
+  // which lives on the orchestrator.
+  const toolRegistry = buildToolRegistry();
+
+  /*
+   * Decided once, at boot, and logged.
+   *
+   * Which engine a task serves is invisible from the outside once it is running —
+   * both services run the same image, listen on the same port and answer the same
+   * routes — so this line is the only thing that distinguishes the two in the
+   * logs. `resolveEngine` also downgrades to engine A rather than throwing when
+   * the AgentCore wiring is missing, so the value logged here is what actually
+   * ran, not what was asked for.
+   */
+  const engine = deps.engine ?? resolveEngine();
+  logger.info('agent.engine', { requested: process.env.AGENT_ENGINE ?? null, resolved: engine });
+
+  /*
+   * Built only on engine B, and only once — the client holds a connection pool,
+   * so one per user would open a pool per signed-in visitor. Constructing it on
+   * engine A would try to read config that is deliberately unset there and throw
+   * `AgentCoreNotConfiguredError` at boot.
+   */
+  const agentCoreRuntime: AgentCoreRuntime | null =
+    engine === 'agentcore' ? (deps.agentCoreRuntime ?? new BedrockAgentCoreRuntime()) : null;
 
   console.log(`[server] AWS Bedrock (region: ${process.env.AWS_REGION ?? 'us-east-1'}, model: ${process.env.BEDROCK_MODEL_ID ?? 'claude-3-haiku'})`);
 
@@ -175,13 +242,41 @@ export function createServer(deps: ServerDeps = {}) {
       },
     });
 
-    const orchestrator = new AgentOrchestrator(
-      store,
-      memory,
-      bedrockClient,
-      agentCore,
-      extractor,
-    );
+    // The one place the two engines diverge. Everything either side of this —
+    // the store, the conversation memory, the event router, the HTTP routes and
+    // the socket — is shared, so a difference in behaviour has exactly one
+    // possible source.
+    //
+    // Engine A carries the integration tool registry; engine B reaches the same
+    // tools through the AgentCore Gateway instead, so the registry and the
+    // proposal callback belong on this side of the branch only.
+    const orchestrator: AgentOrchestratorInterface = agentCoreRuntime
+      ? new AgentCoreOrchestrator(store, memory, agentCoreRuntime, userId, (pref, isNew) => {
+          eventRouter?.emitPreferenceUpdate(pref, isNew);
+        })
+      : new AgentOrchestrator(
+          store,
+          memory,
+          bedrockClient,
+          runtime,
+          extractor,
+          {
+            registry: toolRegistry,
+            // The same late-closed edge as the extractor's callback above, and
+            // for the same reason: the router is built from the orchestrator.
+            onProposal: (proposal) => {
+              eventRouter?.emitActionProposal({
+                sessionId: proposal.sessionId,
+                proposalId: proposal.id,
+                service: proposal.service,
+                title: proposal.title,
+                summary: proposal.summary,
+                url: proposal.url,
+                expiresAt: proposal.expiresAt,
+              });
+            },
+          },
+        );
 
     eventRouter = new EventRouter(orchestrator, emit);
 
@@ -190,6 +285,7 @@ export function createServer(deps: ServerDeps = {}) {
       memory,
       extractor,
       orchestrator,
+      engine,
       eventRouter,
       httpRoutes: createHttpRoutes(store),
     };
@@ -231,8 +327,8 @@ export function createServer(deps: ServerDeps = {}) {
   // highlights from WebSocket events, it just loses the measured durations.
   startSpanBridge((userId, event) => emitFor(userId)(event));
 
-  // Register agent with AgentCore on startup
-  agentCore.registerAgent().then((agentId) => {
+  // Register the agent on startup
+  runtime.registerAgent().then((agentId) => {
     console.log(`[server] Valentin agent registered: ${agentId}`);
   }).catch((err) => {
     console.error('[server] Failed to register agent:', err);
@@ -244,6 +340,13 @@ export function createServer(deps: ServerDeps = {}) {
     verifier,
     demoLogin,
     forUser,
+    /**
+     * Handed to `createExpressApp` so `/api/config` can report it.
+     *
+     * Returned rather than recomputed there because `resolveEngine` logs when it
+     * downgrades, and a per-request call would repeat that warning on every hit.
+     */
+    engine,
     httpRoutes: anonymous.httpRoutes,
     orchestrator: anonymous.orchestrator,
     store: anonymous.store,

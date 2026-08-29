@@ -15,7 +15,11 @@ cdk.out/
 infra/cdk.out/
 infra/cdk.out.*/
 infra/cdk-outputs-*.json
+# Both spellings on purpose: the trailing slash matches a real directory, and the
+# bare name matches a symlink to one — which is how a git worktree borrows the
+# main checkout's already-installed CDK deps instead of reinstalling 400 MB.
 infra/node_modules/
+infra/node_modules
 
 # Environment
 .env
@@ -52,6 +56,9 @@ Thumbs.db
 # Test
 coverage/
 test-results/
+# PW_RESULTS lets a concurrent worktree run E2E without overwriting another run's
+# traces, so the directory name is no longer fixed.
+test-results-*/
 playwright-report/
 blob-report/
 

@@ -18,6 +18,7 @@ import type { Person } from '../../../shared/interfaces/person';
 function mockBedrock(input: Record<string, unknown>): BedrockClient {
   return {
     generateResponse: vi.fn(),
+    converseWithTools: vi.fn(),
     extractWithTool: vi.fn().mockResolvedValue({
       toolName: 'extract_preferences',
       input: { preferences: [], ...input },

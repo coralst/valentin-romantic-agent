@@ -8,6 +8,15 @@ export type {
 } from './interfaces/preference';
 export type { SessionData } from './interfaces/session';
 export type {
+  IntegrationId,
+  IntegrationStatus,
+  IntegrationStatusResponse,
+} from './interfaces/integrations';
+export {
+  INTEGRATION_IDS,
+  INTEGRATION_LABELS,
+} from './interfaces/integrations';
+export type {
   WsEnvelope,
   ClientEvent,
   ServerEvent,

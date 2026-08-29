@@ -24,6 +24,15 @@ export interface RuntimeAuthConfig {
    * personas, hence optional.
    */
   demoPersonas?: DemoPersonaSummary[];
+  /**
+   * Which backend answered this request — `'valentin'` or `'agentcore'`.
+   *
+   * The engine that *ran*, not the one the request was routed to: a deployment
+   * without the AgentCore wiring downgrades server-side, so anything labelling a
+   * measurement must read it from here rather than inferring it from the URL.
+   * Optional, since a deployment predating two engines omits it.
+   */
+  engine?: 'valentin' | 'agentcore';
 }
 
 /** One selectable demo profile, as `/api/config` advertises it */
@@ -50,9 +59,26 @@ export interface DemoPersonaSummary {
   fieldCount: number;
 }
 
-/** Read the deployment's auth configuration */
-export async function fetchRuntimeConfig(): Promise<RuntimeAuthConfig> {
-  const response = await fetch('/api/config');
+/**
+ * Read the deployment's auth configuration.
+ *
+ * `engine` asks for a specific backend, which is how the app finds out whether the
+ * engine it selected is actually reachable. It is sent as `X-Valentin-Engine`
+ * rather than as a path because that header is the one routing rule that works on
+ * *every* endpoint — the ALB forwards a request carrying it to the AgentCore proxy
+ * service, and CloudFront's `/api/*` behaviour forwards all headers, so it survives
+ * the CDN hop (see `infra/lib/compute-stack.ts` and `cdn-stack.ts`).
+ *
+ * A deployment whose AgentCore wiring is missing answers with `engine: 'valentin'`
+ * even when asked for AgentCore — that downgrade is the server's, and reporting it
+ * is the whole point of asking.
+ */
+export async function fetchRuntimeConfig(
+  engine?: 'valentin' | 'agentcore',
+): Promise<RuntimeAuthConfig> {
+  const response = await fetch('/api/config', {
+    headers: engine === 'agentcore' ? { 'X-Valentin-Engine': 'agentcore' } : undefined,
+  });
   if (!response.ok) {
     throw new Error(`Could not read the server configuration (${response.status})`);
   }

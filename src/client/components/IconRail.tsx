@@ -1,10 +1,23 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { colors, radii, layout, typography, insets, spacing, animation } from '../design-system/tokens';
+import {
+  colors,
+  radii,
+  layout,
+  typography,
+  insets,
+  spacing,
+  animation,
+} from '../design-system/tokens';
 import { DemoToolbar } from './DemoToolbar';
 import { UserChip } from './UserChip';
 import { useOptionalAuthContext } from '../context/auth-context';
 import { useIntegrations } from '../context/integrations-context';
+import {
+  ENGINE_COPY,
+  ENGINE_OPTIONS,
+  useArchitectureEngineContext,
+} from '../context/architecture-engine-context';
 
 /** Which of the rail's view buttons is currently the active surface. */
 export type RailView = 'chat' | 'profile';
@@ -214,6 +227,63 @@ function FanOutMark() {
   );
 }
 
+/**
+ * The engine switch's frame.
+ *
+ * It sits at the foot of the rail, immediately above the ⚙, because that is the
+ * pair a presenter reaches for mid-sentence: settings and "now show me the other
+ * architecture". It used to live in the drawer's header, which put it off screen
+ * whenever the drawer was closed — and the whole point of the comparison is being
+ * able to switch engines while talking about something else.
+ *
+ * Stacked on the desktop rail, side by side on the mobile strip: the rail's own
+ * axis, so it reads as part of the rail rather than as a widget dropped into it.
+ */
+function getEngineSwitchStyle(orientation: 'column' | 'row'): React.CSSProperties {
+  return {
+    display: 'flex',
+    flexDirection: orientation === 'column' ? 'column' : 'row',
+    gap: 2,
+    padding: 2,
+    flexShrink: 0,
+    borderRadius: radii.icon,
+    // A shade darker than the active option, so the frame reads as the trough the
+    // selection sits in rather than as a third, half-lit choice.
+    backgroundColor: 'rgba(255, 253, 251, 0.08)',
+    marginBottom: orientation === 'column' ? spacing.xs : 0,
+  };
+}
+
+/**
+ * One engine option.
+ *
+ * Deliberately the rail's own active idiom — translucent white behind white text —
+ * and not the drawer's porcelain pills. The rail is claret; a porcelain segmented
+ * control here would look like a piece of the drawer had come loose.
+ *
+ * Uppercase at 8.5px is what makes two words fit a 76px column. Both labels are
+ * nine characters, which is a small piece of luck worth keeping: the two options
+ * are the same width, so the selection moves without the frame resizing.
+ */
+function getEngineOptionStyle(isActive: boolean): React.CSSProperties {
+  return {
+    border: 'none',
+    borderRadius: 6,
+    cursor: 'pointer',
+    padding: '4px 3px',
+    fontFamily: typography.bodyFontFamily,
+    fontSize: 8.5,
+    fontWeight: 700,
+    letterSpacing: '0.04em',
+    textTransform: 'uppercase',
+    lineHeight: 1.2,
+    whiteSpace: 'nowrap',
+    backgroundColor: isActive ? ACTIVE_ICON_BACKGROUND : 'transparent',
+    color: isActive ? '#FFFFFF' : INACTIVE_ICON_COLOR,
+    transition: `background-color ${animation.durations.fast}ms ${animation.easing.easeInOut}`,
+  };
+}
+
 const popoverWrapperStyle: React.CSSProperties = {
   position: 'relative',
   flexShrink: 0,
@@ -228,10 +298,7 @@ const popoverWrapperStyle: React.CSSProperties = {
  * absolutely positioned popover inside the rail is sliced off at the window
  * edge. Coordinates come from the gear's own bounding box.
  */
-function getPopoverStyle(
-  orientation: 'column' | 'row',
-  anchor: DOMRect,
-): React.CSSProperties {
+function getPopoverStyle(orientation: 'column' | 'row', anchor: DOMRect): React.CSSProperties {
   return {
     position: 'fixed',
     zIndex: 200,
@@ -385,6 +452,7 @@ export function IconRail({
    * desktop chat and brief share the window, `activeView` is `null`, and the ◆
    * claims nothing — which is what `IconRail.test.tsx` asserts.
    */
+  const { engine, setEngine } = useArchitectureEngineContext();
   const isChatActive = activeView === 'chat';
   const hasSurfaceState = activeView !== null;
 
@@ -497,6 +565,29 @@ export function IconRail({
       </button>
 
       <div style={spacerStyle} />
+
+      {/* `role="group"` rather than a radiogroup: two buttons that each report
+          `aria-pressed` is the same pattern the drawer's data-source switch uses,
+          and it keeps both options reachable with one Tab each. */}
+      <div
+        role="group"
+        aria-label={ENGINE_COPY.group}
+        style={getEngineSwitchStyle(orientation)}
+        data-testid="rail-engine-switch"
+      >
+        {ENGINE_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            style={getEngineOptionStyle(engine === option.value)}
+            aria-pressed={engine === option.value}
+            onClick={() => setEngine(option.value)}
+            data-testid={`rail-engine-${option.value}`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
 
       <div style={popoverWrapperStyle} ref={wrapperRef}>
         <button

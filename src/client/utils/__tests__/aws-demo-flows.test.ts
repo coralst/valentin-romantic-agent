@@ -2,22 +2,102 @@ import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_DEMO_FLOW_ID,
   DEMO_FLOWS,
+  defaultDemoFlowIdFor,
   demoFlow,
   demoStepDwellMs,
   frameForStep,
+  stepLegCount,
+  FLOW_LEG_MS,
   type DemoFlowId,
 } from '../aws-demo-flows';
-import { AWS_NODES, routeBetween, type AwsNodeId } from '../aws-architecture';
+import {
+  ARCHITECTURE_ENGINES,
+  AWS_NODES,
+  isNodeInEngine,
+  routeBetween,
+  type AwsNodeId,
+} from '../aws-architecture';
 
 const NODE_IDS = new Set<string>(AWS_NODES.map((node) => node.id));
 
 describe('DEMO_FLOWS', () => {
-  it('ships the three flows the talk needs', () => {
+  it('ships the five flows the talk needs, including engine B', () => {
     expect(DEMO_FLOWS.map((flow) => flow.id)).toEqual([
       'page-load',
       'chat-reply',
       'learns-something',
+      'proposes-a-table',
+      'agentcore-learns-something',
     ]);
+  });
+
+  describe('proposes-a-table', () => {
+    const steps = demoFlow('proposes-a-table').steps;
+
+    /**
+     * The order is the argument. In Israel a Saturday-night dinner is a
+     * Hebrew-calendar question before it is a restaurant question, and a flow that
+     * asked Ontopo first would demonstrate the bug rather than the fix.
+     */
+    it('checks the calendar before it looks for a table', () => {
+      const operations = steps.map((step) => step.operation);
+      expect(operations.indexOf('check_shabbat')).toBeGreaterThan(-1);
+      expect(operations.indexOf('check_shabbat')).toBeLessThan(
+        operations.indexOf('search_restaurants'),
+      );
+    });
+
+    /**
+     * The authority model, asserted. The proposal is not the end of the flow — the
+     * confirmation travelling back out to Ontopo is, and it is the only step that
+     * reaches a provider with intent to write. A flow ending at the proposal would
+     * let a room assume the agent booked it.
+     */
+    it('ends with the confirmation reaching the provider, not with the proposal', () => {
+      const last = steps[steps.length - 1];
+      expect(last.operation).toBe('confirm_action');
+      expect(last.from).toBe('browser');
+      expect(last.to).toBe('integrations');
+    });
+
+    it('routes each provider call from the task rather than from its sibling', () => {
+      // Chaining these would give from === to, which `routeBetween` reports as no
+      // hop at all — a beat that lights nothing on the diagram.
+      const calls = steps.filter(
+        (step) => step.to === 'integrations' && step.operation !== 'confirm_action',
+      );
+      expect(calls.length).toBeGreaterThan(1);
+      for (const call of calls) expect(call.from, call.operation).toBe('fargate');
+    });
+
+    it('says which provider it reached without saying what was asked', () => {
+      for (const step of steps) {
+        expect(step.detail, step.operation).not.toMatch(/@|\bhttps?:/i);
+      }
+    });
+  });
+
+  it('opens on a flow whose steps belong to the engine being shown', () => {
+    // A flow is a list of concrete nodes, so playing engine A's script while
+    // engine A is shaded would animate greyed-out cards.
+    for (const engine of ARCHITECTURE_ENGINES) {
+      const flow = demoFlow(defaultDemoFlowIdFor(engine));
+      for (const step of flow.steps) {
+        expect(isNodeInEngine(step.to, engine), `${flow.id}:${step.to}`).toBe(true);
+        expect(isNodeInEngine(step.from, engine), `${flow.id}:${step.from}`).toBe(true);
+      }
+    }
+  });
+
+  it('tells the same story on both engines, beat for beat', () => {
+    // The comparison is only fair if the script is the same on both sides: a
+    // different narrative would let the room read the script as the platform.
+    const engineA = demoFlow('learns-something');
+    const engineB = demoFlow('agentcore-learns-something');
+    const actions = (flow: typeof engineA) => [...new Set(flow.steps.map((step) => step.action))];
+
+    expect(actions(engineB)).toEqual(actions(engineA));
+    expect(engineB.steps[engineB.steps.length - 1].operation).toBe('preference_update');
   });
 
   it('names only real nodes, so no step can invent a resource', () => {
@@ -102,7 +182,11 @@ describe('DEMO_FLOWS', () => {
 
     expect(steps).toHaveLength(9);
     expect(steps[7]).toMatchObject({ to: 'dynamodb', operation: 'PutItem', durationMs: 18 });
-    expect(steps[8]).toMatchObject({ from: 'dynamodb', to: 'browser', operation: 'preference_update' });
+    expect(steps[8]).toMatchObject({
+      from: 'dynamodb',
+      to: 'browser',
+      operation: 'preference_update',
+    });
   });
 
   it('makes two Converse calls in the headline flow, as the server really does', () => {
@@ -162,25 +246,79 @@ describe('frameForStep', () => {
 
     expect(frame.litNode).toBe('browser');
     expect(frame.litIsResponse).toBe(true);
-    expect(frame.activeHops[0].downstream).toBe(false);
+    // Mid-flight on the way home, the live hop climbs rather than descends.
+    expect(frameForStep(steps, 8, 1).activeHops[0].downstream).toBe(false);
   });
 
-  it('marks transited nodes as passed, not arrived at', () => {
-    const frame = frameForStep(steps, 8);
-
-    // Fargate, ALB and CloudFront are travelled through on the way back.
-    expect(frame.passNodes).toContain('fargate');
-    expect(frame.passNodes).toContain('cloudfront');
-    expect(frame.passNodes).not.toContain('browser');
-  });
-
-  it('never lists a node as both lit and something else', () => {
+  it('never lists a node as both lit and done', () => {
     for (let i = 0; i < steps.length; i += 1) {
       const frame = frameForStep(steps, i);
       if (!frame.litNode) continue;
-      expect(frame.passNodes, `step ${i}`).not.toContain(frame.litNode);
       expect(frame.doneNodes, `step ${i}`).not.toContain(frame.litNode);
     }
+  });
+
+  /**
+   * One thing highlighted at a time, which is the whole reason legs exist.
+   *
+   * The bug this replaces: a step lit every node on its route and animated every
+   * segment the instant it became current, so step 11 of the AgentCore flow glowed
+   * across eight cards at once — a picture of which resources exist rather than of
+   * where the request had got to.
+   */
+  describe('walking a step one beat at a time', () => {
+    // DynamoDB → Browser, the longest journey in the flow.
+    const homeward = 8;
+
+    it('alternates a node and a segment, and never both', () => {
+      const legs = stepLegCount(steps[homeward]);
+      expect(legs).toBeGreaterThan(2);
+
+      for (let leg = 0; leg < legs; leg += 1) {
+        const frame = frameForStep(steps, homeward, leg);
+        const parked = frame.litNode !== undefined;
+        expect(parked, `leg ${leg}`).toBe(leg % 2 === 0);
+        expect(frame.activeHops.length, `leg ${leg}`).toBe(parked ? 0 : 1);
+      }
+    });
+
+    it('starts where the traffic already is and ends where the step lands', () => {
+      expect(frameForStep(steps, homeward, 0).litNode).toBe('dynamodb');
+      expect(frameForStep(steps, homeward, 99).litNode).toBe('browser');
+    });
+
+    it('fills the trail in behind the traffic rather than all at once', () => {
+      // On the first step of the flow nothing has been visited yet, so the trail is
+      // purely this step's own — which is what makes the growth observable.
+      const outbound = 1; // Browser → CloudFront … the descent begins.
+      const first = frameForStep(steps, outbound, 0).doneNodes;
+      const later = frameForStep(steps, outbound, 2).doneNodes;
+
+      expect(first).toEqual([]);
+      expect(later).toContain('browser');
+      expect(later.length).toBeGreaterThan(first.length);
+    });
+
+    it('leaves the node behind it in the trail once the traffic moves on', () => {
+      expect(frameForStep(steps, homeward, 0).doneNodes).not.toContain('dynamodb');
+      expect(frameForStep(steps, homeward, 2).doneNodes).toContain('dynamodb');
+    });
+
+    it('withholds the duration pill until the traffic has arrived', () => {
+      // The number is what the work cost; announcing it over a box nothing has
+      // reached yet would be a measurement of nothing.
+      const bedrock = 4;
+      expect(frameForStep(steps, bedrock, 0).durations.bedrock).toBeUndefined();
+      expect(frameForStep(steps, bedrock).durations.bedrock?.current).toBe(true);
+    });
+
+    it('holds a step at least as long as its legs take to walk', () => {
+      // Otherwise autoplay advances mid-traversal and the animation jumps instead
+      // of arriving.
+      for (const step of steps) {
+        expect(demoStepDwellMs(step)).toBeGreaterThanOrEqual(stepLegCount(step) * FLOW_LEG_MS);
+      }
+    });
   });
 
   it('accumulates duration pills and mutes the ones that are not current', () => {

@@ -96,7 +96,11 @@ export function useAwsSpans({
 
       setSpans((current) => [entry, ...current].slice(0, limit));
       setTotalObserved((count) => count + 1);
-      if (entry.nodeId) holdDuration(entry.nodeId, entry.durationMs);
+      // An untimed span still lists in the feed; it just pins no badge, because
+      // there is no number to pin.
+      if (entry.nodeId && entry.durationMs !== undefined) {
+        holdDuration(entry.nodeId, entry.durationMs);
+      }
     },
     [limit, holdDuration],
   );
@@ -127,8 +131,10 @@ export function useAwsSpans({
  * The payload is checked rather than cast: this arrives from the network, and a
  * malformed span must be dropped quietly instead of throwing inside a
  * subscriber. Only `operation` and the two names are required to be strings —
- * `detail` is optional and `durationMs` is coerced, because a span that is
- * merely missing its timing is still worth listing.
+ * `detail` and `durationMs` are both optional, because a span that is merely
+ * missing its timing is still worth listing. An untimed span keeps `undefined`
+ * rather than being coerced to zero: it pins no badge to its node, so the room
+ * is never shown a latency nobody measured.
  */
 function toSpanEntry(observed: ObservedWsEvent, id: number): AwsSpanEntry | undefined {
   const payload = observed.event.payload as Partial<AwsSpan> | undefined;
@@ -144,7 +150,7 @@ function toSpanEntry(observed: ObservedWsEvent, id: number): AwsSpanEntry | unde
     return undefined;
   }
 
-  const durationMs = typeof payload.durationMs === 'number' ? payload.durationMs : 0;
+  const durationMs = typeof payload.durationMs === 'number' ? payload.durationMs : undefined;
 
   return {
     id,

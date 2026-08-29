@@ -13,6 +13,8 @@ function createMockBedrock(): BedrockClient {
       toolName: 'extract_preferences',
       input: { preferences: [] },
     }),
+    // Extraction forces one named tool and never enters the loop.
+    converseWithTools: vi.fn(),
   };
 }
 

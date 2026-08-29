@@ -564,7 +564,23 @@ export function IconRail({
         )}
       </button>
 
-      <div style={spacerStyle} />
+      {/*
+        A band, not a spacer.
+        
+        This was `<div style={{ flex: 1 }} />`, which pinned the engine switch and the
+        ⚙ to the *foot* of the rail — so both moved every time the architecture drawer
+        opened, closed or was resized, because the rail's height is what changes. A
+        control that is somewhere different each time you reach for it is the opposite
+        of what a presenter needs mid-sentence.
+        
+        Top-anchored under its own label instead, so the rail is one stable column at
+        every drawer height. The pair stays adjacent, which was the point of putting
+        them together, and "show" names what they share: both choose what you are
+        looking at rather than doing anything to her profile. The mobile strip keeps
+        the spacer — it is a row, so the group sits at the far end and nothing above
+        it can move it.
+      */}
+      {orientation === 'column' ? band('show') : <div style={spacerStyle} />}
 
       {/* `role="group"` rather than a radiogroup: two buttons that each report
           `aria-pressed` is the same pattern the drawer's data-source switch uses,

@@ -200,24 +200,19 @@ describe('AppLayout', () => {
      * heights they come from, so a change to one cannot silently leave the other
      * reserving the wrong amount.
      */
-    it('derives the reserved amount from the drawer itself', () => {
-      // No viewport given means no clamp: the ceiling is still the drawer's height.
+    /*
+     * `reservedDrawerSpace` is now just "open or closed?" — the height it reserves is
+     * whatever the drawer's shared sizing state says, so that the panel and the hole
+     * it sits in cannot disagree. The clamping lives with the height, in
+     * `use-drawer-height.test.ts`.
+     */
+    it('reserves whatever height the drawer reports', () => {
+      expect(reservedDrawerSpace(true, 300)).toBe(300);
       expect(reservedDrawerSpace(true)).toBe(DRAWER_HEIGHT);
-      expect(reservedDrawerSpace(false)).toBe(REOPEN_BAR_HEIGHT);
     });
 
-    it('never reserves more than the drawer wants, however tall the window', () => {
-      expect(reservedDrawerSpace(true, 4000)).toBe(DRAWER_HEIGHT);
-    });
-
-    it('keeps a floor, so a short window gets a diagram rather than a strip', () => {
-      // Below this the drawer would be chrome pretending to be a diagram; the shell
-      // scrolls instead.
-      expect(reservedDrawerSpace(true, 400)).toBeGreaterThanOrEqual(240);
-    });
-
-    it('leaves the bar alone when closed, whatever the viewport', () => {
-      expect(reservedDrawerSpace(false, 400)).toBe(REOPEN_BAR_HEIGHT);
+    it('leaves the bar alone when closed, whatever the height', () => {
+      expect(reservedDrawerSpace(false, 300)).toBe(REOPEN_BAR_HEIGHT);
       expect(reservedDrawerSpace(false, 4000)).toBe(REOPEN_BAR_HEIGHT);
     });
 

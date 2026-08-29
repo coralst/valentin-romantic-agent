@@ -169,7 +169,7 @@ function AppLayoutContent() {
 
   // Read here rather than inside the drawer: the *layout* is what has to give up
   // the space, and only the layout owns the regions whose height it takes from.
-  const { isOpen: isDrawerOpen } = useArchitectureDrawer();
+  const { isOpen: isDrawerOpen, height: drawerHeight } = useArchitectureDrawer();
   /*
    * Clamped against the window's height, so the drawer cannot starve the shell.
    *
@@ -178,8 +178,7 @@ function AppLayoutContent() {
    * and the brief rail's pinned strip and nudge are `flex: none` — so the entire
    * loss came out of its scroll region and opening the drawer buried half the rail.
    */
-  const viewportHeight = useViewportHeight();
-  const reserved = reservedDrawerSpace(isDrawerOpen, viewportHeight);
+  const reserved = reservedDrawerSpace(isDrawerOpen, drawerHeight);
 
   /*
    * The app's only surface state: chat shell vs full-page dossier.

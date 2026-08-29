@@ -137,6 +137,7 @@ export function GiftShortlist({ items, budget, onAsk }: GiftShortlistProps) {
             type="button"
             style={{ ...askPillStyle, alignSelf: 'flex-start', marginTop: 10 }}
             onClick={onAsk}
+            aria-label="Ask about gift ideas for her"
             data-testid="shortlist-ask"
           >
             Ask

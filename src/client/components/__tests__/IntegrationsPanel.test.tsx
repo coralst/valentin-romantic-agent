@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { IntegrationsProvider } from '../../context/integrations-context';
-import { IntegrationsPanel, nodeLayout } from '../IntegrationsPanel';
+import { IntegrationsPanel, nodeLayout, connectionLabel } from '../IntegrationsPanel';
 import { INTEGRATION_CATALOGUE } from '../../utils/integration-catalogue';
 import {
   INTEGRATION_IDS,
@@ -446,5 +446,56 @@ describe('IntegrationsPanel — the fan uses the width it is given', () => {
     // The clamp protecting a narrow window must not fold the column onto the hub.
     const { hubX, x } = nodeLayout(0, COUNT, 600, 560);
     expect(x - NODE_WIDTH_FOR_TEST / 2).toBeGreaterThan(hubX);
+  });
+});
+
+/*
+ * A grant is not a connection.
+ *
+ * Reported from the running app: "Restaurant booking — Connected" and "Calendar —
+ * Connected" with a rail badge of 2, for a browser whose grants were left in
+ * `localStorage` by an earlier session. The Calendar row read "Connected" on one line
+ * and "needs credentials" on the next, which cannot both be true.
+ */
+describe('connectionLabel — the two facts kept apart', () => {
+  it('says Connected only when the deployment can reach it', () => {
+    expect(connectionLabel(true, 'ready')).toBe('Connected');
+  });
+
+  it('says Allowed for a grant the deployment cannot honour', () => {
+    expect(connectionLabel(true, 'unconfigured')).toBe('Allowed');
+    expect(connectionLabel(true, 'aspirational')).toBe('Allowed');
+    expect(connectionLabel(true, 'partial')).toBe('Allowed');
+  });
+
+  it('never claims a connection while readiness is still unknown', () => {
+    // Guessing "Connected" here is the overclaim; guessing the opposite would call a
+    // working service broken.
+    expect(connectionLabel(true, 'unknown')).toBe('Allowed');
+  });
+
+  it('reads the spend cap back whatever the reach', () => {
+    expect(connectionLabel(true, 'ready', 80)).toBe('Connected · up to $80');
+    expect(connectionLabel(true, 'aspirational', 80)).toBe('Allowed · up to $80');
+  });
+
+  it('ignores an absent or zero cap rather than printing "$0"', () => {
+    expect(connectionLabel(true, 'ready', null)).toBe('Connected');
+    expect(connectionLabel(true, 'ready', undefined)).toBe('Connected');
+    expect(connectionLabel(true, 'ready', 0)).toBe('Connected');
+  });
+
+  it('says nothing about a grant that was never given', () => {
+    for (const reach of ['ready', 'partial', 'unconfigured', 'aspirational', 'unknown'] as const) {
+      expect(connectionLabel(false, reach)).toBe('Not connected');
+    }
+  });
+
+  it('never repeats what the readiness badge already says', () => {
+    // An earlier version produced "Allowed · not built yet" directly above a badge
+    // reading "not built yet".
+    for (const reach of ['unconfigured', 'aspirational', 'unknown'] as const) {
+      expect(connectionLabel(true, reach)).not.toMatch(/credential|built|checking/i);
+    }
   });
 });

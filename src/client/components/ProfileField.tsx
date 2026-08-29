@@ -124,7 +124,7 @@ const inputStyle: React.CSSProperties = {
   padding: `4px ${spacing.xs}px`,
   border: `1px solid ${colors.border}`,
   borderRadius: borderRadius.sm,
-  outline: 'none',
+  // See `MessageInput`: removed so the global `:focus-visible` ring can reach it.
   color: colors.text,
   backgroundColor: colors.surface,
 };

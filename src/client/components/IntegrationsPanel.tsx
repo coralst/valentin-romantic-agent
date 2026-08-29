@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { colors, insets, layout, radii, typography, animation } from '../design-system/tokens';
 import { MOBILE_STRIP_HEIGHT } from './AppWindow';
-import { REOPEN_BAR_HEIGHT } from './LiveArchitectureDrawer';
+import { reservedDrawerSpace } from './LiveArchitectureDrawer';
+import { useArchitectureDrawer } from '../context/architecture-drawer-context';
 import { INTEGRATION_CATALOGUE, type IntegrationService } from '../utils/integration-catalogue';
 import { useIntegrations } from '../context/integrations-context';
 import {
@@ -73,7 +74,7 @@ const SPOKE_LENGTH_RATIO = 0.42;
 /** Below this the ratio would fold the cards back onto the hub. */
 const SPOKE_MIN_LENGTH = 260;
 
-function panelStyle(isMobile: boolean): React.CSSProperties {
+function panelStyle(isMobile: boolean, bottomInset: number): React.CSSProperties {
   return {
     /*
      * Everything but the rail: the rail stays live behind — or above, on mobile —
@@ -91,7 +92,19 @@ function panelStyle(isMobile: boolean): React.CSSProperties {
     top: isMobile ? MOBILE_STRIP_HEIGHT : 0,
     left: isMobile ? 0 : layout.iconRailWidth,
     right: 0,
-    bottom: 0,
+    /*
+     * Stops where the architecture drawer starts.
+     *
+     * This was `bottom: 0`, and an absolutely positioned element resolves against
+     * its ancestor's *padding box* — so `0` was the outer bottom edge of the window
+     * frame, underneath the drawer rather than above it. With the drawer open the
+     * fan's lower cards were simply behind it: "Travel" and "Occasions" were cut
+     * off mid-row with no scrollbar and no way to reach them.
+     *
+     * The frame's own `paddingBottom` cannot help here, for the same reason: the
+     * padding is inside the containing block this offset is measured from.
+     */
+    bottom: bottomInset,
     zIndex: 5,
     display: 'flex',
     flexDirection: 'column',
@@ -222,18 +235,16 @@ function nodeStateStyle(isConnected: boolean): React.CSSProperties {
   };
 }
 
-/**
- * `paddingBottom` clears the architecture drawer's reopen bar, which is pinned to
- * the foot of the window and would otherwise sit on top of the footer's last line.
- * The amount comes from the drawer's own constant so the two cannot drift.
- */
+/** The footer sits at the foot of the panel, which is itself above the drawer. */
 function footerStyle(isMobile: boolean): React.CSSProperties {
   return {
     flexShrink: 0,
     borderTop: `1px solid ${colors.linenShade}`,
     boxSizing: 'border-box',
     padding: `${insets.tight}px ${isMobile ? insets.snug : insets.roomy}px`,
-    paddingBottom: insets.tight + REOPEN_BAR_HEIGHT,
+    // No drawer allowance any more: the panel itself now ends above the drawer, so
+    // adding the bar's height here would leave a second, empty gap below the footer.
+    paddingBottom: insets.tight,
     display: 'flex',
     alignItems: 'center',
     gap: insets.tight,
@@ -353,6 +364,40 @@ function badgeStyle(reach: CapabilityReadiness): React.CSSProperties {
 }
 
 /**
+ * What a row's state line says.
+ *
+ * A grant and a credential are different things — the header comment on this file
+ * says so — and this line used to report only the first: any service the visitor had
+ * ever pressed Connect on read "Connected", including one whose credentials the
+ * deployment has never had. So a card read "Connected" on one line and "needs
+ * credentials" on the next, and a grant left in `localStorage` by a previous session
+ * claimed a live connection to a service this deployment cannot reach at all.
+ *
+ * "Connected" is now reserved for the case where both are true. Otherwise the line
+ * says "Allowed", which is exactly what a grant is.
+ *
+ * It deliberately does *not* say why reach is missing: the readiness badge sits
+ * directly beneath it already saying "needs credentials" or "not built yet", and an
+ * earlier version of this that spelled the reason out here produced rows reading
+ * "Allowed · not built yet" above a badge reading "not built yet".
+ *
+ * The cap comes along in both cases, because it is the visitor's own setting and they
+ * should see it read back whatever the deployment can currently do with it.
+ */
+export function connectionLabel(
+  connected: boolean,
+  reach: CapabilityReadiness,
+  capUsd?: number | null,
+): string {
+  if (!connected) return 'Not connected';
+  const cap = capUsd ? ` · up to $${capUsd}` : '';
+  // "Connected" only when the deployment can actually reach it. Otherwise the row
+  // reports the grant, and the readiness badge beside it reports the reason — which
+  // is also why the reason is not repeated here.
+  return reach === 'ready' ? `Connected${cap}` : `Allowed${cap}`;
+}
+
+/**
  * Where a node sits, and the curve that reaches it.
  *
  * One evenly spaced column, bowed out in the middle. Even spacing is what keeps
@@ -390,6 +435,11 @@ export function nodeLayout(index: number, count: number, width: number, height: 
 }
 
 export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps) {
+  // The same reservation the window frame makes, so the panel and the drawer agree
+  // on where one ends and the other begins.
+  const { isOpen: isDrawerOpen, height: drawerHeight } = useArchitectureDrawer();
+  const drawerInset = reservedDrawerSpace(isDrawerOpen, drawerHeight);
+
   const { state, connectedCount, isConnected, connect, disconnect, setCap, dismissStorageError } =
     useIntegrations();
   const readiness = useIntegrationReadiness();
@@ -453,7 +503,7 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
 
   return (
     <section
-      style={panelStyle(isMobile)}
+      style={panelStyle(isMobile, drawerInset)}
       role="dialog"
       aria-label="Integrations"
       data-testid="integrations-panel"
@@ -504,7 +554,12 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
                   style={cardStyle(connected)}
                   onClick={() => open(service)}
                   data-testid={`integration-card-${service.id}`}
-                  aria-label={`${service.name}, ${connected ? 'connected' : 'not connected'}`}
+                  data-reach={reach}
+                  aria-label={`${service.name}, ${connectionLabel(
+                    connected,
+                    reach,
+                    state.grants[service.id]?.capUsd,
+                  ).toLowerCase()}`}
                 >
                   <span style={glyphStyle(connected)} aria-hidden="true">
                     {service.glyph}
@@ -514,7 +569,9 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
                     <span style={cardBlurbStyle}>{service.blurb}</span>
                     <br />
                     <span style={nodeStateStyle(connected)}>
-                      {connected ? 'Connected' : `Not connected · ${service.category}`}
+                      {connected
+                        ? connectionLabel(connected, reach, state.grants[service.id]?.capUsd)
+                        : `Not connected · ${service.category}`}
                     </span>
                     {badge && (
                       <>
@@ -588,7 +645,12 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
                 onClick={() => open(service)}
                 data-testid={`integration-node-${service.id}`}
                 data-connected={connected}
-                aria-label={`${service.name}, ${connected ? 'connected' : 'not connected'}`}
+                data-reach={reach}
+                aria-label={`${service.name}, ${connectionLabel(
+                  connected,
+                  reach,
+                  state.grants[service.id]?.capUsd,
+                ).toLowerCase()}`}
               >
                 <span style={glyphStyle(connected)} aria-hidden="true">
                   {service.glyph}
@@ -597,9 +659,7 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
                   <span style={nodeNameStyle}>{service.name}</span>
                   <span style={nodeStateStyle(connected)}>
                     {connected
-                      ? state.grants[service.id]?.capUsd
-                        ? `Connected · up to $${state.grants[service.id]?.capUsd}`
-                        : 'Connected'
+                      ? connectionLabel(connected, reach, state.grants[service.id]?.capUsd)
                       : service.category}
                   </span>
                   {badge && (

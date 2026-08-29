@@ -64,6 +64,17 @@ const CANVAS_PADDING = 40;
 /** How far the middle of the column bows away from the hub. */
 const COLUMN_BULGE = 56;
 /**
+ * The least vertical distance between two card centres.
+ *
+ * A card is about 52px tall, so anything under this overlaps its neighbour. The
+ * spacing used to be purely proportional — `(height - padding*2) / (count - 1)` —
+ * which is correct only while the canvas is tall enough for the catalogue. Once the
+ * panel started ending above the architecture drawer instead of behind it, the canvas
+ * lost ~200px and nine cards stacked on top of each other. Below this the column
+ * keeps its spacing and the canvas scrolls instead.
+ */
+const MIN_NODE_GAP = 62;
+/**
  * How far across the canvas the card column sits, as a fraction of its width.
  *
  * `hubX` is `width * 0.24`, so putting the column at `width * 0.42` keeps roughly
@@ -156,8 +167,18 @@ const canvasStyle: React.CSSProperties = {
   position: 'relative',
   flex: 1,
   minHeight: 0,
-  overflow: 'hidden',
+  // Scrolls vertically rather than clipping. The fan keeps `MIN_NODE_GAP` between
+  // cards, so on a panel too short for the whole catalogue the column is taller than
+  // the viewport — the alternative, which shipped briefly, was nine cards overlapping.
+  overflowY: 'auto',
+  overflowX: 'hidden',
 };
+
+/** Holds the fan at its full height, so the canvas above has something to scroll. */
+const fanStyle = (contentHeight: number): React.CSSProperties => ({
+  position: 'relative',
+  height: contentHeight,
+});
 
 const hubStyle: React.CSSProperties = {
   position: 'absolute',
@@ -404,11 +425,23 @@ export function connectionLabel(
  * the cards from colliding at any catalogue size — the first draft placed them on
  * an ellipse, which reads beautifully at five services and overlaps at eight.
  */
+/**
+ * How tall the fan needs to be for `count` cards, at minimum spacing.
+ *
+ * The canvas scrolls to this when the panel is shorter — see `MIN_NODE_GAP`.
+ */
+export function fanContentHeight(count: number, height: number): number {
+  if (count <= 1) return height;
+  const gap = Math.max(MIN_NODE_GAP, (height - CANVAS_PADDING * 2) / (count - 1));
+  return Math.max(height, CANVAS_PADDING * 2 + gap * (count - 1));
+}
+
 export function nodeLayout(index: number, count: number, width: number, height: number) {
   const hubX = Math.max(width * 0.24, HUB_SIZE / 2 + insets.roomy);
   const hubY = height / 2;
 
-  const gap = count > 1 ? (height - CANVAS_PADDING * 2) / (count - 1) : 0;
+  const gap =
+    count > 1 ? Math.max(MIN_NODE_GAP, (height - CANVAS_PADDING * 2) / (count - 1)) : 0;
   const t = count > 1 ? (index / (count - 1)) * 2 - 1 : 0;
   /*
    * The spoke scales with the canvas instead of being a flat 300px.
@@ -499,7 +532,13 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
   };
 
   const total = INTEGRATION_CATALOGUE.length;
-  const { hubX, hubY } = nodeLayout(0, total, size.width, size.height);
+  /*
+   * Geometry is measured against the *content* height, not the visible one, so the
+   * hub stays centred in the fan it belongs to and the spacing stays legible when the
+   * canvas is scrolling.
+   */
+  const fanHeight = fanContentHeight(total, size.height);
+  const { hubX, hubY } = nodeLayout(0, total, size.width, fanHeight);
 
   return (
     <section
@@ -593,13 +632,14 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
         </ul>
       ) : (
         <div style={canvasStyle} ref={canvasRef} data-testid="integrations-canvas">
+          <div style={fanStyle(fanHeight)} data-testid="integrations-fan">
           <svg
             style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
             aria-hidden="true"
           >
             {INTEGRATION_CATALOGUE.map((service, index) => {
               const connected = isConnected(service.id);
-              const { edge } = nodeLayout(index, total, size.width, size.height);
+              const { edge } = nodeLayout(index, total, size.width, fanHeight);
               return (
                 <path
                   key={service.id}
@@ -636,7 +676,7 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
             const connected = isConnected(service.id);
             const reach = capabilityReadiness(service.backing, readiness);
             const badge = readinessLabel(reach, service, readiness);
-            const { x, y } = nodeLayout(index, total, size.width, size.height);
+            const { x, y } = nodeLayout(index, total, size.width, fanHeight);
             return (
               <button
                 key={service.id}
@@ -685,6 +725,7 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
               </button>
             );
           })}
+          </div>
         </div>
       )}
 

@@ -38,6 +38,15 @@ const rowStyle: React.CSSProperties = {
   boxShadow: insetRing(onClaret(0.07)),
 };
 
+/** What the badge's count means, once the list is showing fewer than all of it. */
+const moreStyle: React.CSSProperties = {
+  margin: '2px 0 0',
+  paddingLeft: 12,
+  fontFamily: typography.bodyFontFamily,
+  fontSize: typography.px.caption,
+  color: onClaret(0.45),
+};
+
 const markStyle: React.CSSProperties = {
   flex: 'none',
   marginTop: 1,
@@ -79,10 +88,13 @@ const reasonStyle: React.CSSProperties = {
  */
 export function WorthAsking({ gaps, onAsk }: WorthAskingProps) {
   const visible = gaps.slice(0, VISIBLE_GAPS);
+  const hidden = gaps.length - visible.length;
   if (visible.length === 0) return null;
 
   return (
     <section data-testid="brief-worth-asking">
+      {/* The count is every unfilled field, not the three listed — 21 beside three
+          rows was baffling until the overflow line below said where the rest went. */}
       <SectionHead label="Worth asking next" count={gaps.length} />
       <div style={listStyle}>
         {visible.map((gap) => (
@@ -103,6 +115,11 @@ export function WorthAsking({ gaps, onAsk }: WorthAskingProps) {
             </span>
           </button>
         ))}
+        {hidden > 0 && (
+          <p style={moreStyle} data-testid="brief-worth-asking-more">
+            {hidden} more he could ask about
+          </p>
+        )}
       </div>
     </section>
   );

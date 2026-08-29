@@ -266,6 +266,9 @@ export function BriefRail({ isMobile = false }: BriefRailProps) {
           fieldId,
           label,
           value: entry ? truncate(entry.value, CHIP_VALUE_MAX) : null,
+          // The uncut answer travels with the chip so the pill can be short without
+          // the accessible name and the tooltip being short too.
+          fullValue: entry ? entry.value.trim() : null,
         };
       })
         // An all-empty strip is seven identical outlines and no information, so
@@ -283,6 +286,23 @@ export function BriefRail({ isMobile = false }: BriefRailProps) {
   const askAbout = useCallback(
     (gap: FieldGap) => {
       chatDispatch({ type: 'SET_INPUT', value: `Ask me about her ${gap.label.toLowerCase()}.` });
+    },
+    [chatDispatch],
+  );
+
+  /**
+   * The same ask, from a "Good to know" chip.
+   *
+   * Those chips were `<button>`s wired to `() => undefined` — a cursor, a hover
+   * state and no effect, on both the filled pills and the `+ Colour` prompts whose
+   * whole job is to be a call to action. A chip knows only its field id, so the
+   * label comes from the registry rather than from a `FieldGap`.
+   */
+  const askAboutField = useCallback(
+    (fieldId: string) => {
+      const field = PROFILE_FIELD_REGISTRY.find((candidate) => candidate.id === fieldId);
+      if (!field) return;
+      chatDispatch({ type: 'SET_INPUT', value: `Ask me about her ${field.label.toLowerCase()}.` });
     },
     [chatDispatch],
   );
@@ -355,7 +375,7 @@ export function BriefRail({ isMobile = false }: BriefRailProps) {
           )}
         </div>
 
-        {!isCompletelyEmpty && <GoodToKnow chips={chips} onChipClick={() => undefined} />}
+        {!isCompletelyEmpty && <GoodToKnow chips={chips} onChipClick={askAboutField} />}
 
         {nudgeGap && (
           <ValentinNudge

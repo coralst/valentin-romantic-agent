@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act, render, screen, fireEvent } from '@testing-library/react';
 import { BriefRail } from '../BriefRail';
-import { ChatProvider } from '../../context/chat-context';
+import { ChatProvider, useChatContext } from '../../context/chat-context';
 import { PreferencesProvider, usePreferencesContext } from '../../context/preferences-context';
 import {
   ProfileStoreProvider,
@@ -63,6 +63,12 @@ function renderRail(fields: SeedField[] = [], preferences: PreferenceWithHistory
       </PreferencesProvider>
     </ChatProvider>,
   );
+}
+
+/** Renders whatever the rail has put in the composer, which the rail harness omits. */
+function ComposerProbe() {
+  const { state } = useChatContext();
+  return <span data-testid="composer-probe">{state.inputValue}</span>;
 }
 
 function preference(overrides: Partial<PreferenceWithHistory>): PreferenceWithHistory {
@@ -355,6 +361,70 @@ describe('BriefRail — good to know', () => {
       .find((el) => el.getAttribute('data-empty') === 'false');
     expect(chip?.textContent).toContain('…');
     expect((chip?.textContent ?? '').length).toBeLessThan(35);
+  });
+
+  /*
+   * The truncation happens in the data, not in CSS, so the accessible name used to
+   * be built from the already-cut string: "Food: Northern Italian —…" was all a
+   * screen reader could ever say, and there was no `title` either. The full answer
+   * was unreachable for everyone.
+   */
+  it('speaks the whole answer even though the pill shows a cut one', () => {
+    const full = 'Northern Italian — anything with brown butter and sage';
+    renderRail([
+      { fieldId: 'partner_name', value: 'Coral' },
+      { fieldId: 'favorite_cuisine', value: full },
+    ]);
+    const chip = screen
+      .getAllByTestId('brief-chip')
+      .find((el) => el.getAttribute('data-empty') === 'false');
+
+    expect(chip?.getAttribute('aria-label')).toBe(`Food: ${full}`);
+    expect(chip?.getAttribute('title')).toBe(`Food: ${full}`);
+    expect(chip?.getAttribute('aria-label')).not.toContain('…');
+  });
+
+  it('leaves a short answer alone in both the pill and the name', () => {
+    renderRail([
+      { fieldId: 'partner_name', value: 'Coral' },
+      { fieldId: 'favorite_cuisine', value: 'Thai food' },
+    ]);
+    const chip = screen
+      .getAllByTestId('brief-chip')
+      .find((el) => el.getAttribute('data-empty') === 'false');
+
+    expect(chip?.textContent).toContain('Thai food');
+    expect(chip?.getAttribute('aria-label')).toBe('Food: Thai food');
+  });
+
+  /*
+   * These chips were `<button>`s wired to `() => undefined` — a cursor, a hover
+   * state and no effect, including on the `+ Colour` prompts whose entire job is to
+   * be a call to action. They now do what every other ask on this rail does.
+   */
+  it('puts the question in the composer when a chip is clicked', () => {
+    // The composer itself lives in `ChatPanel`, which the rail harness does not
+    // mount, so the assertion is on the chat state the composer reads.
+    refs.done = false;
+    render(
+      <ChatProvider>
+        <PreferencesProvider>
+          <ProfileStoreProvider sessionId={null}>
+            <Seeder fields={[{ fieldId: 'partner_name', value: 'Coral' }]} preferences={[]} />
+            <ComposerProbe />
+          </ProfileStoreProvider>
+        </PreferencesProvider>
+      </ChatProvider>,
+    );
+
+    const empty = screen
+      .getAllByTestId('brief-chip')
+      .find((el) => el.getAttribute('data-empty') === 'true');
+    expect(empty).toBeDefined();
+
+    fireEvent.click(empty!);
+
+    expect(screen.getByTestId('composer-probe').textContent).toMatch(/^Ask me about her .+\.$/);
   });
 
   it('shows empty chips as prompts, so the gaps are visible', () => {

@@ -179,6 +179,10 @@ const OWNERSHIP = [
   // The local rehearsal driver behind `npm run verify:local`. Shared test
   // harness like the two rows above, not deploy tooling.
   ['rehearsal.mjs', 'qa-agent'],
+  // Its sibling for the deployed app: same job, but it walks the Cognito landing
+  // page the localhost driver never sees. QA's for the same reason — it asserts on
+  // what a person would see, it does not deploy anything.
+  ['rehearsal-prod.mjs', 'qa-agent'],
   // ── workflow & platform ─────────────────────────────────────────────────
   // The frontend shell (index.html) and static assets (public/) are platform
   // wiring, not component work: they change when the build or the deploy target

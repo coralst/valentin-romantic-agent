@@ -78,15 +78,25 @@ const openDemoMenu = async () => {
   await p.getByTestId('rail-demo-button').click();
 };
 
+// The rail's empty state, which is the seed/reset signal now.
+//
+// It used to be the "N of 21" tally in the rail's footer. #84 rebuilt her brief
+// and moved that counter onto her file, so the tally is no longer on the surface
+// this driver is standing on — the assertion went on passing a regex against a
+// number that had left the page. This asks the question the tally was standing in
+// for, on the surface that answers it: is anything known about her at all.
+const emptyRail = p.getByTestId('empty-encouragement');
+const railIsEmpty = () => emptyRail.isVisible().catch(() => false);
+const railIsPopulated = async () => !(await railIsEmpty());
+
 // 1. seed
 await openDemoMenu();
 ok('seed control present', await waitFor(() => seed.isVisible(), { label: 'seed button' }));
 await seed.click();
-// Was a flat 6s sleep; the counter filling up is the actual signal.
-// 21/21, not 18/18: the default persona is `samantha` (demo-personas.ts), and
-// her fixture carries 21 preferences. The old numbers and the old name were from
-// a persona that no longer seeds by default.
-ok('21/21 after seed', await bodyMatches(/21\s*of\s*21/i));
+// Was a flat 6s sleep; the rail filling up is the actual signal. The persona's
+// own details are asserted on the next line, which is what proves *which* profile
+// landed — this one only proves that one did.
+ok('rail populated after seed', await waitFor(railIsPopulated, { label: 'rail populated' }));
 let body = await bodyText();
 ok('persona rendered (Samantha + Kyoto + sage)',
   body.includes('Samantha') && body.includes('Kyoto') && body.includes('sage'));
@@ -161,12 +171,12 @@ await waitFor(() => drawer.isVisible(), { label: 'drawer reopen' });
 await openDemoMenu();
 const reset = p.getByRole('button', { name: /^reset$/i }).first();
 await reset.click();
-ok('counter cleared after reset', await bodyMatches(/0\s*of\s*21/i));
+ok('rail emptied after reset', await waitFor(railIsEmpty, { label: 'rail empty' }));
 
 // 4. re-seed (the recovery path)
 await openDemoMenu();
 await seed.click();
-ok('re-seed restores 21/21', await bodyMatches(/21\s*of\s*21/i));
+ok('re-seed refills the rail', await waitFor(railIsPopulated, { label: 'rail repopulated' }));
 
 ok('no console errors', errs.length === 0);
 if (errs.length) console.log('  errors:', errs.slice(0, 4));

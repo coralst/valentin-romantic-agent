@@ -62,6 +62,16 @@ const NODE_WIDTH = 190;
 const CANVAS_PADDING = 40;
 /** How far the middle of the column bows away from the hub. */
 const COLUMN_BULGE = 56;
+/**
+ * How far across the canvas the card column sits, as a fraction of its width.
+ *
+ * `hubX` is `width * 0.24`, so putting the column at `width * 0.42` keeps roughly
+ * the same proportion between the hub, the spoke and the trailing margin at every
+ * size — which a fixed 300px spoke did not: it left 40% of a 1440px panel empty.
+ */
+const SPOKE_LENGTH_RATIO = 0.42;
+/** Below this the ratio would fold the cards back onto the hub. */
+const SPOKE_MIN_LENGTH = 260;
 
 function panelStyle(isMobile: boolean): React.CSSProperties {
   return {
@@ -349,13 +359,26 @@ function badgeStyle(reach: CapabilityReadiness): React.CSSProperties {
  * the cards from colliding at any catalogue size — the first draft placed them on
  * an ellipse, which reads beautifully at five services and overlaps at eight.
  */
-function nodeLayout(index: number, count: number, width: number, height: number) {
+export function nodeLayout(index: number, count: number, width: number, height: number) {
   const hubX = Math.max(width * 0.24, HUB_SIZE / 2 + insets.roomy);
   const hubY = height / 2;
 
   const gap = count > 1 ? (height - CANVAS_PADDING * 2) / (count - 1) : 0;
   const t = count > 1 ? (index / (count - 1)) * 2 - 1 : 0;
-  const columnX = Math.min(hubX + 300, width - NODE_WIDTH / 2 - insets.tight);
+  /*
+   * The spoke scales with the canvas instead of being a flat 300px.
+   *
+   * `hubX` is proportional to the width but the column was not, so past roughly
+   * 1100px of canvas the `Math.min` clamp stopped binding and the cards simply
+   * stopped moving: on a 1440px window the whole fan ended at x≈862 and the right
+   * ~40% of the panel was empty. Placing the column a fixed fraction of the way
+   * across keeps the composition centred at any width, and the clamp still protects
+   * a narrow window by pulling the column back off the right edge.
+   */
+  const columnX = Math.min(
+    hubX + Math.max(SPOKE_MIN_LENGTH, width * SPOKE_LENGTH_RATIO),
+    width - NODE_WIDTH / 2 - insets.tight,
+  );
   const x = columnX + (1 - Math.abs(t)) * COLUMN_BULGE;
   const y = CANVAS_PADDING + index * gap;
 

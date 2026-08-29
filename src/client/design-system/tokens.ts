@@ -280,7 +280,26 @@ export const shadows = {
 } as const;
 
 export const breakpoints = {
-  mobile: 768,
+  /**
+   * Below this the shell becomes the single-panel, tabbed mobile layout.
+   *
+   * Was 768, which is a phone-vs-tablet number and not a fact about this shell. It
+   * left a dead zone: at 768 and at 1024 you got the *desktop* tree, and because
+   * three of its four grid tracks are fixed pixel measurements every lost pixel
+   * comes out of the chat column alone. At 768 that column was ~358px, and once the
+   * transcript's 26px gutters and the composer's padding were taken, ~250px of
+   * measure — three or four words a line, with the send button sitting on the rim of
+   * a composer narrower than its own placeholder.
+   *
+   * Derived the way `conversationList` is, one step further in. With the list column
+   * already yielded, what the shell still cannot compress is `2 × insets.tight` of
+   * window margin, the 76px icon rail and the 306px brief — and below
+   * `layout.chatColumnMinWidth` on top of that, the desktop shell can no longer
+   * honour its own declared minimum. `28 + 76 + 306 + 520 = 930`. Above it you get
+   * columns; below it the tabs, which are a better answer than a column nobody can
+   * read. `tokens.test.ts` asserts the derivation so the number moves if a track does.
+   */
+  mobile: 930,
   /**
    * Below this the conversation list stops being a column and becomes the ☰
    * overlay it already is on mobile.

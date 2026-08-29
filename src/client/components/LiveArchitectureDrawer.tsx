@@ -4,6 +4,7 @@ import { AwsFlowFeed, REPLAY_COPY, type FeedGroup, type FeedRow } from './AwsFlo
 import { useArchitectureDrawer } from '../context/architecture-drawer-context';
 import { useArchitectureMode, type ArchitectureMode } from '../hooks/use-architecture-mode';
 import { useLiveArchitecture } from '../hooks/use-live-architecture';
+import { useViewportHeight } from '../hooks/use-viewport-height';
 import { ENGINE_COPY, useArchitectureEngineContext } from '../context/architecture-engine-context';
 import { useFlowPlayback } from '../hooks/use-flow-playback';
 import { useFlowTraversal } from '../hooks/use-flow-traversal';
@@ -78,8 +79,16 @@ const LENS_SIZE = 26;
 const LENS_LEFT = 14;
 /** Vertically centred in the bar. */
 const LENS_RESTING_BOTTOM = (REOPEN_BAR_HEIGHT - LENS_SIZE) / 2;
-const LENS_OPEN_BOTTOM = DRAWER_HEIGHT - 38;
-const LENS_TRAVEL = LENS_OPEN_BOTTOM - LENS_RESTING_BOTTOM;
+/**
+ * How far the lens rises, for a drawer of the given total height.
+ *
+ * A function of the height rather than a constant, because the drawer now shrinks
+ * on a short viewport — a fixed travel would send the lens through the panel's
+ * ceiling on a laptop and leave it short of the title on a monitor.
+ */
+function lensTravel(drawerHeight: number): number {
+  return drawerHeight - 38 - LENS_RESTING_BOTTOM;
+}
 /** Left padding on the bar and the panel header: clears the lens in both places. */
 const HEADER_INSET = LENS_LEFT + LENS_SIZE + 6;
 
@@ -100,9 +109,37 @@ const BAR_FEATHER_HEIGHT = 16;
  * agreement with the drawer it is making room for. Open reserves the full
  * drawer; closed reserves just the reopen bar, which is always on screen.
  */
-export function reservedDrawerSpace(isOpen: boolean): number {
-  return isOpen ? DRAWER_HEIGHT : REOPEN_BAR_HEIGHT;
+export function reservedDrawerSpace(isOpen: boolean, viewportHeight?: number): number {
+  if (!isOpen) return REOPEN_BAR_HEIGHT;
+  if (viewportHeight === undefined) return DRAWER_HEIGHT;
+  return Math.max(MIN_DRAWER_HEIGHT, Math.min(DRAWER_HEIGHT, viewportHeight - MIN_SHELL_HEIGHT));
 }
+
+/**
+ * The least room the shell above the drawer is allowed to keep.
+ *
+ * The reservation used to be an unclamped 454px, taken out of the frame as
+ * `paddingBottom`, which means every column loses it at once. On a 900px screen the
+ * frame is ~872px and each track drops to ~418px — and the brief rail's pinned
+ * strip and nudge are `flex: none`, so the whole loss came out of its scroll region.
+ * `railStyle`'s `overflow: hidden` then clipped what was left, so opening the drawer
+ * made "Pinned every year" and "What to do next" *disappear* rather than scroll, and
+ * sliced the "Next up" card at the top edge.
+ *
+ * 560px is the rail's header, one section, the chip strip and the nudge — the point
+ * below which the shell stops being usable. The drawer gives up its own height to
+ * respect it.
+ */
+const MIN_SHELL_HEIGHT = 560;
+
+/**
+ * Below this the drawer is not worth opening, so it stops shrinking.
+ *
+ * On a viewport too short for both, the drawer wins its floor and the shell scrolls
+ * — the alternative is a drawer of 40px, which is a strip of chrome pretending to be
+ * a diagram.
+ */
+const MIN_DRAWER_HEIGHT = 240;
 
 /**
  * The drawer positions itself absolutely against its nearest positioned
@@ -281,6 +318,8 @@ const drawerStyle: React.CSSProperties = {
   right: 0,
   // Above the bar, not over it: the bar stays put in both states.
   bottom: REOPEN_BAR_HEIGHT,
+  // Overridden at the call site with the clamped height on short viewports. The
+  // constant is the ceiling, and stays here so the common case reads plainly.
   height: DRAWER_PANEL_HEIGHT,
   background: '#FAF4F0',
   // Soft top edge rather than a drawn rule: a translucent hairline over a wide,
@@ -326,7 +365,7 @@ const ghostButtonStyle: React.CSSProperties = {
  * A magnifier with a ⊕ in it reads as "there is more to look at here" in a way a
  * bare chevron does not, and the sign is the whole of the open/closed signal —
  * nothing else about the bar changes between states. It rides up with the panel
- * (see `LENS_TRAVEL`), so the ⊕ becoming a ⊖ happens *while* it moves. Drawn
+ * (see `lensTravel`), so the ⊕ becoming a ⊖ happens *while* it moves. Drawn
  * rather than a glyph so
  * the stroke weight matches the label beside it at any size, and it matches the
  * magnifier on the sidebar's `ArchitectureToggle`, which opens the same drawer.
@@ -418,6 +457,13 @@ const MODE_OPTIONS: readonly { value: ArchitectureMode; label: string }[] = [
 
 export function LiveArchitectureDrawer() {
   const { isOpen, isMounted, toggle, close } = useArchitectureDrawer();
+  /*
+   * The same clamp the layout uses to reserve space, so the panel and the hole it
+   * sits in are computed from one expression. If they disagree the panel either
+   * covers the composer or floats above a gap.
+   */
+  const viewportHeight = useViewportHeight();
+  const drawerHeight = reservedDrawerSpace(true, viewportHeight);
   // Read once per mount: the candidate is chosen from the URL, and re-reading it
   // mid-session would repaint the bar under whoever is presenting.
   const theme = useMemo(() => resolveBarTheme(), []);
@@ -640,6 +686,9 @@ export function LiveArchitectureDrawer() {
           data-open={isOpen ? 'true' : 'false'}
           style={{
             ...drawerStyle,
+            // Must match what the layout reserved, or the panel covers the very
+            // composer the reservation exists to keep clear.
+            height: drawerHeight - REOPEN_BAR_HEIGHT,
             transform: isOpen ? 'translateY(0)' : 'translateY(100%)',
           }}
         >
@@ -874,7 +923,7 @@ export function LiveArchitectureDrawer() {
           color: isOpen ? colors.ink : theme.copy,
           cursor: 'pointer',
           zIndex: 7,
-          transform: isOpen ? `translateY(-${LENS_TRAVEL}px)` : 'translateY(0)',
+          transform: isOpen ? `translateY(-${lensTravel(drawerHeight)}px)` : 'translateY(0)',
           transition: `transform ${PANEL_SLIDE_MS}ms cubic-bezier(0.4, 0, 0.2, 1), color ${PANEL_SLIDE_MS}ms ease`,
         }}
       >

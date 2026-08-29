@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { IntegrationsProvider } from '../../context/integrations-context';
-import { IntegrationsPanel } from '../IntegrationsPanel';
+import { IntegrationsPanel, nodeLayout } from '../IntegrationsPanel';
 import { INTEGRATION_CATALOGUE } from '../../utils/integration-catalogue';
 import {
   INTEGRATION_IDS,
@@ -404,5 +404,47 @@ describe('IntegrationsPanel', () => {
 
   it('keeps the storage key stable, so grants are not silently orphaned', () => {
     expect(INTEGRATIONS_STORAGE_KEY).toBe('valentin_integrations_v1');
+  });
+});
+
+/*
+ * The fan used to stop scaling and leave the right 40% of a wide panel empty.
+ *
+ * `hubX` is proportional to the canvas width but the card column was a flat
+ * `hubX + 300`, so past roughly 1100px the `Math.min` clamp stopped binding and the
+ * cards simply stopped moving outward: on a 1440px window everything ended at
+ * x≈862 with ~578px of nothing beside it.
+ */
+describe('IntegrationsPanel — the fan uses the width it is given', () => {
+  const COUNT = 9;
+  /** Right edge of the widest card, which is the one that bulges furthest out. */
+  const rightmostEdge = (width: number, height = 560) => {
+    const centres = Array.from({ length: COUNT }, (_, i) => nodeLayout(i, COUNT, width, height).x);
+    return Math.max(...centres) + NODE_WIDTH_FOR_TEST / 2;
+  };
+  const NODE_WIDTH_FOR_TEST = 190;
+
+  it('reaches further across a wider canvas', () => {
+    expect(rightmostEdge(1336)).toBeGreaterThan(rightmostEdge(900));
+  });
+
+  it('leaves no more than a sensible margin on the widest canvas the shell allows', () => {
+    // `layout.windowMaxWidth` is 1440, less the 28px linen margin and the 76px rail.
+    // The old geometry left ~43% of this empty; a quarter is a composition, not a gap.
+    const width = 1336;
+    const slack = width - rightmostEdge(width);
+    expect(slack).toBeLessThan(width * 0.25);
+  });
+
+  it('keeps the cards inside the canvas at every width', () => {
+    for (const width of [600, 860, 1024, 1336, 1900]) {
+      expect(rightmostEdge(width)).toBeLessThanOrEqual(width);
+    }
+  });
+
+  it('keeps the hub clear of the cards on a narrow canvas', () => {
+    // The clamp protecting a narrow window must not fold the column onto the hub.
+    const { hubX, x } = nodeLayout(0, COUNT, 600, 560);
+    expect(x - NODE_WIDTH_FOR_TEST / 2).toBeGreaterThan(hubX);
   });
 });

@@ -119,25 +119,44 @@ const railStyle: React.CSSProperties = {
 };
 
 /**
+ * How much of the scroll region fades out at its foot.
+ *
+ * Was 26px, which is less than one row of anything in this rail — so a row that
+ * happened to end inside the fade did not recede, it looked *sliced*, with a hard
+ * edge one line up from the "Good to know" strip. 44px clears a two-line gap row
+ * and reads as depth rather than as a rendering fault.
+ */
+const SCROLL_FADE_PX = 44;
+
+/**
  * The masked fade at the foot of the scroll region.
  *
- * Content recedes under the pinned nudge instead of being sliced off mid-line.
- * Dropped on mobile: at the bottom of a full-height panel with nothing pinned
- * visually below it, a fade reads as a rendering fault rather than as depth.
+ * Content recedes under the pinned strip below instead of being sliced off
+ * mid-line. Applied on mobile too, now: it was dropped there on the theory that a
+ * fade with nothing pinned under it reads as a fault, but the mobile Profile tab
+ * pins "Good to know" and the nudge exactly as the desktop rail does, so what it
+ * actually produced was the hardest edge of the three viewports.
  */
-const SCROLL_MASK = 'linear-gradient(to bottom, #000 calc(100% - 26px), transparent 100%)';
+const SCROLL_MASK = `linear-gradient(to bottom, #000 calc(100% - ${SCROLL_FADE_PX}px), transparent 100%)`;
 
-function getScrollStyle(isMobile: boolean): React.CSSProperties {
-  return {
-    flex: 1,
-    minHeight: 0,
-    overflowY: 'auto',
-    padding: `${insets.snug}px ${insets.snug}px 8px`,
-    ...(isMobile
-      ? {}
-      : { maskImage: SCROLL_MASK, WebkitMaskImage: SCROLL_MASK }),
-  };
-}
+/**
+ * The scroll region's style. No longer varies by viewport — see `SCROLL_MASK`.
+ *
+ * The bottom padding is the other half of the fix. Without it the foot of the
+ * content and the foot of the scroll box coincide, so the last row can never be
+ * scrolled clear of the faded zone however far you scroll: it is permanently
+ * half-legible. `scrollPaddingBottom` keeps programmatic scrolls honest about the
+ * same margin; there were no uses of it anywhere in this codebase before.
+ */
+const scrollStyle: React.CSSProperties = {
+  flex: 1,
+  minHeight: 0,
+  overflowY: 'auto',
+  padding: `${insets.snug}px ${insets.snug}px ${SCROLL_FADE_PX}px`,
+  scrollPaddingBottom: SCROLL_FADE_PX,
+  maskImage: SCROLL_MASK,
+  WebkitMaskImage: SCROLL_MASK,
+};
 
 const emptyStyle: React.CSSProperties = {
   fontFamily: typography.bodyFontFamily,
@@ -155,11 +174,6 @@ const storageErrorStyle: React.CSSProperties = {
   marginTop: 12,
 };
 
-interface BriefRailProps {
-  /** Full-width and unmasked when true. Driven by `AppLayout`'s `isMobile`. */
-  isMobile?: boolean;
-}
-
 /**
  * Column 4 of the window: the brief.
  *
@@ -174,7 +188,7 @@ interface BriefRailProps {
  * unit tests and two Playwright specs select the profile surface by the old name,
  * and `e2e/` is not this component's lane to edit. A QA follow-up renames them.
  */
-export function BriefRail({ isMobile = false }: BriefRailProps) {
+export function BriefRail() {
   const { state: preferencesState } = usePreferencesContext();
   const { state: profileState, getFieldValue } = useProfileStoreContext();
   const { dispatch: chatDispatch } = useChatContext();
@@ -328,7 +342,7 @@ export function BriefRail({ isMobile = false }: BriefRailProps) {
   return (
     <div style={aliasWrapperStyle} data-testid="partner-profile-panel">
       <aside style={railStyle} data-testid="brief-rail" aria-label="Her brief">
-        <div style={getScrollStyle(isMobile)} data-testid="brief-scroll">
+        <div style={scrollStyle} data-testid="brief-scroll">
           {/* Her portrait is the way into her profile. The photo *upload* moved
               to the dossier's own avatar, which already owned the validation —
               a header cameo that opens a file dialog is not what a click on a

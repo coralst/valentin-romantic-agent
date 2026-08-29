@@ -116,18 +116,54 @@ describe('AppLayout', () => {
       return Number(frame.getAttribute('data-bottom-inset'));
     }
 
+    /**
+     * Give the window room for the whole drawer.
+     *
+     * The reservation is clamped against the viewport height now, and jsdom's window
+     * is 768px tall — short enough that the clamp binds. Tests about the *full*
+     * height therefore have to say how tall the screen is, or they are really tests
+     * about the clamp.
+     */
+    function withTallViewport(height = 1200) {
+      Object.defineProperty(window, 'innerHeight', {
+        value: height,
+        writable: true,
+        configurable: true,
+      });
+    }
+
     it('reserves only the bar while the drawer is closed', () => {
       renderWithProviders(<AppLayout />);
       expect(reservedSpace()).toBe(REOPEN_BAR_HEIGHT);
     });
 
-    it('reserves the full drawer height once opened', async () => {
+    it('reserves the full drawer height once opened, when the window can afford it', async () => {
+      withTallViewport();
       const user = userEvent.setup();
       renderWithProviders(<AppLayout />);
 
       await user.click(screen.getByTestId('architecture-toggle'));
 
       expect(reservedSpace()).toBe(DRAWER_HEIGHT);
+    });
+
+    /*
+     * The reservation is `paddingBottom` on the frame, so every column pays it at
+     * once. Unclamped at 454px on a 900px screen that left each track ~418px — and
+     * the brief rail's chip strip and nudge are `flex: none`, so the whole loss came
+     * out of its scroll region and opening the drawer buried half the rail.
+     */
+    it('gives up its own height rather than starving the shell on a short window', async () => {
+      withTallViewport(760);
+      const user = userEvent.setup();
+      renderWithProviders(<AppLayout />);
+
+      await user.click(screen.getByTestId('architecture-toggle'));
+
+      const reserved = reservedSpace();
+      expect(reserved).toBeLessThan(DRAWER_HEIGHT);
+      // Whatever it takes, the shell keeps a usable amount.
+      expect(760 - reserved).toBeGreaterThanOrEqual(400);
     });
 
     it('gives the space back when the drawer is hidden again', async () => {
@@ -156,7 +192,7 @@ describe('AppLayout', () => {
       await user.click(screen.getByTestId('sidebar-menu-button'));
       await user.click(screen.getByTestId('architecture-toggle'));
 
-      expect(reservedSpace()).toBe(DRAWER_HEIGHT);
+      expect(reservedSpace()).toBeGreaterThan(REOPEN_BAR_HEIGHT);
     });
 
     /**
@@ -165,8 +201,24 @@ describe('AppLayout', () => {
      * reserving the wrong amount.
      */
     it('derives the reserved amount from the drawer itself', () => {
+      // No viewport given means no clamp: the ceiling is still the drawer's height.
       expect(reservedDrawerSpace(true)).toBe(DRAWER_HEIGHT);
       expect(reservedDrawerSpace(false)).toBe(REOPEN_BAR_HEIGHT);
+    });
+
+    it('never reserves more than the drawer wants, however tall the window', () => {
+      expect(reservedDrawerSpace(true, 4000)).toBe(DRAWER_HEIGHT);
+    });
+
+    it('keeps a floor, so a short window gets a diagram rather than a strip', () => {
+      // Below this the drawer would be chrome pretending to be a diagram; the shell
+      // scrolls instead.
+      expect(reservedDrawerSpace(true, 400)).toBeGreaterThanOrEqual(240);
+    });
+
+    it('leaves the bar alone when closed, whatever the viewport', () => {
+      expect(reservedDrawerSpace(false, 400)).toBe(REOPEN_BAR_HEIGHT);
+      expect(reservedDrawerSpace(false, 4000)).toBe(REOPEN_BAR_HEIGHT);
     });
 
     /**

@@ -50,7 +50,23 @@ describe('design tokens', () => {
   });
 
   it('breakpoints defines mobile threshold', () => {
-    expect(breakpoints.mobile).toBe(768);
+    expect(breakpoints.mobile).toBe(930);
+  });
+
+  it('the mobile breakpoint leaves the collapsed shell its minimum chat column', () => {
+    // The same derivation as `conversationList` below, one step further in: with the
+    // list column already yielded, this is everything left that cannot compress. Was
+    // 768 — a phone-vs-tablet number, not a fact about this shell — which left the
+    // desktop tree rendering at 768 and 1024 with ~250px of usable measure.
+    const fixedChrome = 2 * insets.tight + layout.iconRailWidth + layout.briefRailWidth;
+
+    expect(breakpoints.mobile - fixedChrome).toBeGreaterThanOrEqual(layout.chatColumnMinWidth);
+  });
+
+  it('keeps the two breakpoints in the right order', () => {
+    // Between them the desktop shell runs without its list column. If mobile ever
+    // rose above this, that middle band would have no layout at all.
+    expect(breakpoints.mobile).toBeLessThan(breakpoints.conversationList);
   });
 
   it('breakpoints defines the conversation-list threshold above mobile', () => {

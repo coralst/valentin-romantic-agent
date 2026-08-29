@@ -210,4 +210,22 @@ describe('MessageHistory', () => {
     // The facts are still there — it is the announcement that is wrong, not the data.
     expect(screen.getByTestId('store-probe').textContent).toContain('surfing');
   });
+  /*
+   * The transcript is at its widest exactly when it is at its shortest — a new
+   * session on a wide screen with the architecture drawer open — so an unfilled
+   * transcript used to render several hundred pixels of blank cream between the
+   * header and the composer, which reads as a failed render rather than as a
+   * conversation waiting to start.
+   */
+  describe('an empty transcript', () => {
+    it('says what to do instead of leaving the column blank', () => {
+      renderHistory([]);
+      expect(screen.getByTestId('transcript-empty')).toBeInTheDocument();
+    });
+
+    it('gets out of the way as soon as anything is said', () => {
+      renderHistory([message('m1', 'agent', 'Hello')]);
+      expect(screen.queryByTestId('transcript-empty')).not.toBeInTheDocument();
+    });
+  });
 });

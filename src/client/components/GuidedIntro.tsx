@@ -163,9 +163,19 @@ export function GuidedIntro() {
           lastActivity: new Date().toISOString(),
           messageCount: chatState.messages.length,
         };
-        // Adopt before switching: `SessionSyncer` reads `activeSession.messages`
-        // at the instant the id changes, so a session focused before it has been
-        // hydrated renders blank until the next switch.
+        /*
+         * Adopt before switching: `SessionSyncer` reads `activeSession.messages`
+         * at the instant the id changes, so a session focused before it has been
+         * hydrated renders blank until the next switch.
+         *
+         * Deliberately still a locally-built row, unlike `DemoToolbar`, which now
+         * calls `refreshSessions` so the seed's other conversations reach the
+         * sidebar. Here the fabricated row is what carries `chatState.messages`
+         * across — the three answers the room just watched land — and re-reading the
+         * list would replace them with the fixture's own history. The cost is that
+         * the payoff seed's sibling conversations appear only after a reload, which
+         * is the lesser of the two.
+         */
         sessions.adoptSession(carried);
         sessions.switchSession(sessionId);
       } else {

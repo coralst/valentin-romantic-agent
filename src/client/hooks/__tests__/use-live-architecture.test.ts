@@ -363,11 +363,13 @@ describe('useLiveArchitecture — keepalives are not events', () => {
     resetWsObservers();
   });
 
-  const beat = (type: string) => ({
-    type,
-    payload: {},
-    timestamp: '2026-08-29T17:00:00.000Z',
-  });
+  /** A bare server event of the given type. Cast because the union is per-type. */
+  const beat = (type: string) =>
+    ({
+      type,
+      payload: {},
+      timestamp: '2026-08-29T17:00:00.000Z',
+    }) as unknown as Parameters<typeof publishInboundWsEvent>[0];
 
   it('records no beat for a ping', () => {
     const { result } = renderHook(() => useLiveArchitecture());

@@ -39,9 +39,12 @@ import { barFeather, barGround, resolveBarTheme } from '../design-system/bar-the
  * Total height the drawer occupies when open, bar included.
  *
  * Grew by 30 with the External APIs node, which is exactly what the canvas grew
- * by — the diagram row has no `overflowY`, so anything less would clip the bottom
- * card silently rather than scroll to it. `reservedDrawerSpace` passes the change
- * on to the composer, so nothing else needs touching.
+ * by. `reservedDrawerSpace` passes the change on to the composer, so nothing else
+ * needs touching.
+ *
+ * A ceiling rather than a fixed height, as of the viewport clamp in
+ * `reservedDrawerSpace`: on a short window the drawer gives up height so the shell
+ * above it stays usable, and the diagram row scrolls instead of clipping.
  */
 export const DRAWER_HEIGHT = 454;
 /**
@@ -808,6 +811,15 @@ export function LiveArchitectureDrawer() {
               padding: '0 20px 18px',
               minHeight: 0,
               overflowX: 'auto',
+              /*
+               * Scrolls rather than clips, now that the drawer's height is clamped
+               * against the viewport. This row deliberately had no `overflowY` back
+               * when `DRAWER_HEIGHT` was always tall enough to hold the whole
+               * diagram — but on a short window the drawer gives up height to leave
+               * the shell usable, and without this the bottom cards were cut off
+               * silently instead of being reachable.
+               */
+              overflowY: 'auto',
             }}
           >
             <AwsTopologyDiagram {...diagram} engine={engine} />

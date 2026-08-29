@@ -100,22 +100,47 @@ describe('useAwsSpans', () => {
     expect(result.current.spans).toHaveLength(0);
   });
 
-  it('treats a missing duration as zero rather than dropping the span', () => {
+  /**
+   * An untimed span is not a broken one. A Gateway tool call happens inside the
+   * AgentCore Runtime and reaches the proxy only as a name in the reply, so no
+   * duration was ever measured — and `0` would read to the room as a free call.
+   */
+  it('keeps a span with no duration, and does not invent one', () => {
     const { result } = renderHook(() => useAwsSpans());
 
     act(() => {
-      publishInboundWsEvent(makeMalformedSpan({
-        sessionId: 'sess-1',
-        resourceId: 'bedrock',
-        service: 'Amazon Bedrock',
-        resourceName: 'Claude Sonnet 4.5',
-        operation: 'Converse',
-      }));
+      publishInboundWsEvent(
+        makeMalformedSpan({
+          sessionId: 'sess-1',
+          resourceId: 'bedrock',
+          service: 'Amazon Bedrock',
+          resourceName: 'Claude Sonnet 4.5',
+          operation: 'Converse',
+        }),
+      );
     });
 
     expect(result.current.spans).toHaveLength(1);
-    expect(result.current.spans[0].durationMs).toBe(0);
+    expect(result.current.spans[0].durationMs).toBeUndefined();
     expect(result.current.spans[0].ok).toBe(true);
+  });
+
+  it('pins no duration badge for a span it was never given a duration for', () => {
+    const { result } = renderHook(() => useAwsSpans());
+
+    act(() => {
+      publishInboundWsEvent(
+        makeMalformedSpan({
+          sessionId: 'sess-1',
+          resourceId: 'bedrock',
+          service: 'Amazon Bedrock',
+          resourceName: 'Claude Sonnet 4.5',
+          operation: 'Converse',
+        }),
+      );
+    });
+
+    expect(result.current.durationsByNode.has('bedrock')).toBe(false);
   });
 
   it('preserves a failed span', () => {

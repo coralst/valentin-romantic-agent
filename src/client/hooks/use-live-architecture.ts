@@ -3,10 +3,14 @@ import { subscribeToWsEvents, type ObservedWsEvent } from '../utils/ws-event-obs
 import {
   awsNodeIdForResource,
   describeAwsEvent,
-  routeBetween,
+  flowLegs,
+  nodeForEngine,
+  type ArchitectureEngine,
   type AwsHop,
   type AwsNodeId,
 } from '../utils/aws-architecture';
+import { useFlowTraversal } from './use-flow-traversal';
+import type { FlowBeat } from '../utils/aws-demo-flows';
 import type { AwsCategory } from '../utils/aws-diagram-layout';
 import type { AwsSpan } from '../../shared/interfaces/ws-events';
 
@@ -19,8 +23,15 @@ import type { AwsSpan } from '../../shared/interfaces/ws-events';
  * different picture from demo mode, because there is only one picture.
  */
 
-/** One thing that happened, live. */
-export interface LiveBeat {
+/**
+ * One thing that happened, live.
+ *
+ * `extends FlowBeat` is the promise, checked by the compiler: a recorded beat is
+ * shaped like a scripted step, so it can be fed to the same diagram, the same feed
+ * and the same replay. A field drifting apart here would silently become two
+ * animations instead of one.
+ */
+export interface LiveBeat extends FlowBeat {
   key: string;
   from: AwsNodeId;
   to: AwsNodeId;
@@ -52,9 +63,10 @@ export interface UseLiveArchitectureResult {
   beats: readonly LiveBeat[];
   /** The beat currently lit, or undefined once the highlight has expired. */
   currentBeat?: LiveBeat;
+  /** The node the traffic is sitting in, or undefined while it is in flight. */
   litNode?: AwsNodeId;
   litIsResponse: boolean;
-  passNodes: readonly AwsNodeId[];
+  /** Nodes already visited — a quiet trail, not a highlight. */
   doneNodes: readonly AwsNodeId[];
   activeHops: readonly AwsHop[];
   /** Number of `aws_span` events seen — the honest "spans" count for the feed. */
@@ -103,6 +115,13 @@ const SPAN_CATEGORY: Readonly<Record<string, AwsCategory>> = {
   fargate: 'compute',
   s3: 'storage',
   integrations: 'external',
+  // Engine B. The three AgentCore primitives are `ml` because that is the service
+  // group they belong to, which is the colour a builder already recognises.
+  'ac-proxy': 'compute',
+  'ac-runtime': 'ml',
+  'ac-memory': 'ml',
+  'ac-gateway': 'ml',
+  'ac-dynamodb': 'database',
 };
 
 /**
@@ -113,10 +132,16 @@ const SPAN_CATEGORY: Readonly<Record<string, AwsCategory>> = {
  * this point in the flow nothing has been booked — the Confirm press is a
  * separate beat. Naming it otherwise on a projector would claim an authority the
  * agent does not have.
+ *
+ * The two engine B entries are here rather than in a second list because they are
+ * the same beat in the story: on engine B the preference is extracted inside the
+ * Runtime and lands in Memory, so a Memory span *is* Valentin learning something.
  */
 const SPAN_ACTION: Readonly<Record<string, string>> = {
   dynamodb: 'learns something new',
   integrations: 'asks the outside world',
+  'ac-memory': 'learns something new',
+  'ac-dynamodb': 'learns something new',
 };
 
 /** Short names for the feed. `Amazon DynamoDB` does not fit 70px. */
@@ -144,14 +169,27 @@ const EVENT_ENDPOINTS: Readonly<Record<string, { from: AwsNodeId; to: AwsNodeId 
   confirm_action: { from: 'browser', to: 'integrations' },
 };
 
-function beatFromEvent(observed: ObservedWsEvent, key: string): LiveBeat | undefined {
+function beatFromEvent(
+  observed: ObservedWsEvent,
+  key: string,
+  engine: ArchitectureEngine,
+): LiveBeat | undefined {
   const { event } = observed;
-  const endpoints = EVENT_ENDPOINTS[event.type];
+  const routed = EVENT_ENDPOINTS[event.type];
   // An unrouted event has nowhere to light. It is skipped rather than guessed at:
   // inventing a path is exactly what the computed-topology design exists to stop.
-  if (!endpoints) return undefined;
+  if (!routed) return undefined;
+  // The endpoints are authored once, for engine A, and translated: the events are
+  // identical on both engines because both engines speak the same WS protocol.
+  const endpoints = {
+    from: nodeForEngine(routed.from, engine),
+    to: nodeForEngine(routed.to, engine),
+  };
 
-  const story = EVENT_STORY[event.type] ?? { actor: 'System', action: 'is working' };
+  const story = EVENT_STORY[event.type] ?? {
+    actor: 'System',
+    action: 'is working',
+  };
 
   return {
     key,
@@ -166,16 +204,20 @@ function beatFromEvent(observed: ObservedWsEvent, key: string): LiveBeat | undef
   };
 }
 
-function beatFromSpan(span: AwsSpan, key: string): LiveBeat | undefined {
-  const node = awsNodeIdForResource(span.resourceId);
+function beatFromSpan(
+  span: AwsSpan,
+  key: string,
+  engine: ArchitectureEngine,
+): LiveBeat | undefined {
+  const node = awsNodeIdForResource(span.resourceId, engine);
   if (!node) return undefined;
 
   return {
     key,
-    // Every span is a call the Fargate task made, so that is where it starts. A
-    // span about Fargate itself routes to itself, which `routeBetween` reports as
-    // an empty route — work that happened without a network hop.
-    from: 'fargate',
+    // Every span is a call the task made, so that is where it starts. A span about
+    // the task itself routes to itself, which `routeBetween` reports as an empty
+    // route — work that happened without a network hop.
+    from: nodeForEngine('fargate', engine),
     to: node,
     service: shortService(span.service),
     operation: span.operation,
@@ -206,10 +248,23 @@ function nodeServiceName(id: AwsNodeId): string {
       return 'DynamoDB';
     case 'integrations':
       return 'External APIs';
+    case 'ac-proxy':
+      return 'Proxy';
+    case 'ac-runtime':
+      return 'Runtime';
+    case 'ac-memory':
+      return 'Memory';
+    case 'ac-gateway':
+      return 'Gateway';
+    case 'ac-dynamodb':
+      return 'DynamoDB';
   }
 }
 
-export function useLiveArchitecture(enabled = true): UseLiveArchitectureResult {
+export function useLiveArchitecture(
+  enabled = true,
+  engine: ArchitectureEngine = 'valentin',
+): UseLiveArchitectureResult {
   const [beats, setBeats] = useState<readonly LiveBeat[]>([]);
   const [currentKey, setCurrentKey] = useState<string | undefined>(undefined);
   const [spanCount, setSpanCount] = useState(0);
@@ -218,35 +273,42 @@ export function useLiveArchitecture(enabled = true): UseLiveArchitectureResult {
   const nextKeyRef = useRef(0);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  const record = useCallback((observed: ObservedWsEvent) => {
-    const key = `live-${nextKeyRef.current}`;
-    nextKeyRef.current += 1;
+  const record = useCallback(
+    (observed: ObservedWsEvent) => {
+      const key = `live-${nextKeyRef.current}`;
+      nextKeyRef.current += 1;
 
-    let beat: LiveBeat | undefined;
-    if (observed.event.type === 'aws_span') {
-      const span = observed.event.payload as AwsSpan | undefined;
-      if (span && typeof span.resourceId === 'string') {
-        setSpanCount((count) => count + 1);
-        if (span.operation === 'Converse') setModelCallCount((count) => count + 1);
-        beat = beatFromSpan(span, key);
+      let beat: LiveBeat | undefined;
+      if (observed.event.type === 'aws_span') {
+        const span = observed.event.payload as AwsSpan | undefined;
+        if (span && typeof span.resourceId === 'string') {
+          setSpanCount((count) => count + 1);
+          // `Converse` is engine A's model call; on engine B the model runs inside
+          // the Runtime, so `InvokeAgentRuntime` is the closest measurable equivalent.
+          if (span.operation === 'Converse' || span.operation === 'InvokeAgentRuntime') {
+            setModelCallCount((count) => count + 1);
+          }
+          beat = beatFromSpan(span, key, engine);
+        }
+      } else {
+        beat = beatFromEvent(observed, key, engine);
       }
-    } else {
-      beat = beatFromEvent(observed, key);
-    }
 
-    if (!beat) return;
+      if (!beat) return;
 
-    setBeats((current) => [...current, beat].slice(-LIVE_BEAT_LIMIT));
-    setCurrentKey(key);
+      setBeats((current) => [...current, beat].slice(-LIVE_BEAT_LIMIT));
+      setCurrentKey(key);
 
-    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
-    highlightTimerRef.current = setTimeout(() => {
-      highlightTimerRef.current = undefined;
-      // Drop the highlight, keep the history: the feed still shows what happened,
-      // the diagram stops claiming it is still happening.
-      setCurrentKey(undefined);
-    }, LIVE_HIGHLIGHT_MS);
-  }, []);
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+      highlightTimerRef.current = setTimeout(() => {
+        highlightTimerRef.current = undefined;
+        // Drop the highlight, keep the history: the feed still shows what happened,
+        // the diagram stops claiming it is still happening.
+        setCurrentKey(undefined);
+      }, LIVE_HIGHLIGHT_MS);
+    },
+    [engine],
+  );
 
   useEffect(() => {
     if (!enabled) return;
@@ -268,19 +330,43 @@ export function useLiveArchitecture(enabled = true): UseLiveArchitectureResult {
   }, []);
 
   const currentBeat = beats.find((beat) => beat.key === currentKey);
-  const activeHops = currentBeat ? routeBetween(currentBeat.from, currentBeat.to) : [];
-  const litNode = currentBeat?.to;
+
+  /*
+   * Live traffic is animated exactly the way a scripted step is: the beat's route is
+   * split into legs and walked one at a time.
+   *
+   * It used to be handed to the diagram whole, so a single `preference_update` lit
+   * the browser, CloudFront, the ALB, Fargate, the Gateway, Memory and DynamoDB at
+   * the same instant — a picture that shows which resources exist rather than what
+   * just happened. Sharing the traversal with demo mode is also the only way the two
+   * modes can be trusted to look the same, which is the promise this hook's output
+   * shape exists to keep.
+   */
+  const legs = currentBeat ? flowLegs(currentBeat.from, currentBeat.to) : [];
+  const legIndex = useFlowTraversal({
+    legCount: Math.max(1, legs.length),
+    resetKey: currentKey ?? null,
+    enabled: currentBeat !== undefined,
+  });
+  const leg = legs[Math.min(legIndex, legs.length - 1)];
+
+  const litNode = leg?.kind === 'node' ? leg.node : undefined;
+  const activeHops = leg?.kind === 'hop' ? [leg.hop] : [];
+
+  // The trail: every earlier beat's destination, plus the part of this beat's route
+  // the traffic has already crossed. Not a highlight — the diagram renders these
+  // border-only, so the one lit box stays the only thing that draws the eye.
+  const trail = beats.filter((beat) => beat.key !== currentKey).map((beat) => beat.to);
+  for (const earlier of legs.slice(0, legIndex)) {
+    if (earlier.kind === 'node') trail.push(earlier.node);
+  }
 
   return {
     beats,
     currentBeat,
     litNode,
-    litIsResponse: activeHops.length > 0 && !activeHops[0].downstream,
-    passNodes: activeHops.slice(0, -1).map((hop) => hop.node).filter((id) => id !== litNode),
-    doneNodes: beats
-      .filter((beat) => beat.key !== currentKey)
-      .map((beat) => beat.to)
-      .filter((id) => id !== litNode),
+    litIsResponse: leg !== undefined && !leg.downstream,
+    doneNodes: trail.filter((id) => id !== litNode),
     activeHops,
     spanCount,
     modelCallCount,

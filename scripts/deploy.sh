@@ -66,6 +66,12 @@ ACCOUNT=$(aws sts get-caller-identity --profile "$PROFILE" --query Account --out
 ECR_URI="${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com/valentin-backend-${ENV}"
 RELEASE_BUCKET="valentin-releases-${ENV}"
 
+# Engine B's agent is a second, ARM64 image in its own repository. Separate
+# because it shares nothing with the backend: different language, different base
+# image, different architecture.
+AGENT_REPO="valentin-agentcore-${ENV}"
+AGENT_ECR_URI="${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com/${AGENT_REPO}"
+
 # Immutable, content-addressed image tag. Using :latest made the ECS circuit
 # breaker's rollback a no-op, because the "previous" task definition pointed at
 # the same mutable tag that had just failed.
@@ -121,13 +127,36 @@ if [[ "$SCOPE" == "all" || "$SCOPE" == "backend" ]]; then
   echo "--- Building Docker image..."
   run docker build --platform linux/amd64 -t "$ECR_URI:${IMAGE_TAG}" "$ROOT"
 
+  # ARM64 on purpose. AgentCore Runtime is arm64-only and accepts an amd64
+  # image at deploy time, then fails at cold start with an exec format error
+  # that surfaces as an invoke timeout — so the platform is pinned here
+  # rather than inherited.
+  run docker build --platform linux/arm64 \
+    -t "$AGENT_ECR_URI:${IMAGE_TAG}" "$ROOT/agentcore"
+
+  # The AgentCore stack imports this repository by name rather than creating it,
+  # so a first deploy into a fresh account would otherwise fail at push with a
+  # RepositoryNotFoundException after both images are already built. Idempotent,
+  # and inside the scope guard because a frontend-only deploy pushes nothing.
+  if [[ "$DRY_RUN" == true ]]; then
+    echo "  [dry-run] ensure ECR repository $AGENT_REPO exists"
+  elif ! aws ecr describe-repositories --repository-names "$AGENT_REPO" \
+         --profile "$PROFILE" --region "$REGION" > /dev/null 2>&1; then
+    aws ecr create-repository --repository-name "$AGENT_REPO" \
+      --image-scanning-configuration scanOnPush=true \
+      --image-tag-mutability IMMUTABLE \
+      --profile "$PROFILE" --region "$REGION" > /dev/null
+  fi
+
   echo "--- Pushing to ECR..."
   if [[ "$DRY_RUN" == true ]]; then
     echo "  [dry-run] docker login + docker push $ECR_URI:${IMAGE_TAG}"
+    echo "  [dry-run] docker push $AGENT_ECR_URI:${IMAGE_TAG}"
   else
     aws ecr get-login-password --region "$REGION" --profile "$PROFILE" \
       | docker login --username AWS --password-stdin "${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com"
     docker push "$ECR_URI:${IMAGE_TAG}"
+    docker push "$AGENT_ECR_URI:${IMAGE_TAG}"
   fi
 else
   echo ""
@@ -172,6 +201,7 @@ if [[ "$SCOPE" == "all" || "$SCOPE" == "backend" || "$SCOPE" == "infra" ]]; then
     run env AWS_PROFILE="$PROFILE" npx cdk deploy "Valentin-Compute-${ENV}" --exclusively \
       --context env="$ENV" \
       --context imageTag="$IMAGE_TAG" \
+      --context agentImageTag="$IMAGE_TAG" \
       --require-approval never \
       --outputs-file "cdk-outputs-${ENV}.json"
   else
@@ -179,12 +209,16 @@ if [[ "$SCOPE" == "all" || "$SCOPE" == "backend" || "$SCOPE" == "infra" ]]; then
     # deploy whatever other branches have changed in their own stacks, so two
     # people deploying from different branches stomp each other. Order matters:
     # Auth before Compute, because Compute imports the pool id and client ids.
-    for STACK in Network Data Safety Auth Compute CDN Monitoring; do
+    # AgentCore before Compute: the proxy service names the Runtime ARN, the
+    # Memory id and the Gateway URL in its container environment, and none of
+    # the three exists until AgentCore is deployed. See infra/bin/app.ts.
+    for STACK in Network Data Safety Auth AgentCore Compute CDN Monitoring; do
       echo "    -> Valentin-${STACK}-${ENV}"
       run env AWS_PROFILE="$PROFILE" npx cdk deploy "Valentin-${STACK}-${ENV}" \
         --exclusively \
         --context env="$ENV" \
         --context imageTag="$IMAGE_TAG" \
+      --context agentImageTag="$IMAGE_TAG" \
         --require-approval never \
         --outputs-file "cdk-outputs-${ENV}.json"
     done

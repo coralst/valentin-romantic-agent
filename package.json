@@ -26,6 +26,7 @@
     "teardown": "bash scripts/teardown.sh"
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock-agentcore": "^3.1120.0",
     "@aws-sdk/client-bedrock-runtime": "^3.1024.0",
     "@aws-sdk/client-cognito-identity-provider": "^3.1115.0",
     "@aws-sdk/client-dynamodb": "^3.1024.0",

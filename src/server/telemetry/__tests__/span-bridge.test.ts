@@ -234,6 +234,129 @@ describe('logRecordToSpan', () => {
     });
   });
 
+  describe('agentcore.invoke → AgentCore Runtime', () => {
+    const invoked = record('agentcore.invoke', {
+      sessionId: 's-3',
+      durationMs: 486,
+      runtimeSessionId: 'rt-s-3',
+      toolsUsed: 2,
+      ok: true,
+    });
+
+    it('maps to the Runtime, counting as engine B’s model call', () => {
+      expect(logRecordToSpan(invoked)).toMatchObject({
+        sessionId: 's-3',
+        // Not `ac-runtime`: the wire carries the service's own id and the client
+        // maps it, so renaming a diagram node cannot silently drop a span.
+        resourceId: 'agentcore-runtime',
+        service: 'AgentCore Runtime',
+        operation: 'InvokeAgentRuntime',
+        durationMs: 486,
+        ok: true,
+      });
+    });
+
+    it('reports how many tools were called, never their arguments', () => {
+      // Tool arguments carry partner data and this is projected in front of a room.
+      expect(logRecordToSpan(invoked)?.detail).toBe('2 tool calls');
+      expect(
+        logRecordToSpan(
+          record('agentcore.invoke', { sessionId: 's-3', durationMs: 9, toolsUsed: 1 }),
+        )?.detail,
+      ).toBe('1 tool call');
+    });
+
+    it('says nothing about tools on a turn that used none', () => {
+      expect(
+        logRecordToSpan(
+          record('agentcore.invoke', { sessionId: 's-3', durationMs: 9, toolsUsed: 0 }),
+        )?.detail,
+      ).toBeUndefined();
+    });
+
+    it('keeps a failed invoke, with its duration', () => {
+      const span = logRecordToSpan(
+        record('agentcore.invoke', { sessionId: 's-3', durationMs: 3002, ok: false }, 'error'),
+      );
+      expect(span).toMatchObject({ ok: false, durationMs: 3002 });
+    });
+  });
+
+  describe('agentcore.memory → AgentCore Memory', () => {
+    it('keeps the two Memory calls distinct, since they are different beats', () => {
+      const write = logRecordToSpan(
+        record('agentcore.memory', { sessionId: 's-4', operation: 'CreateEvent', durationMs: 37 }),
+      );
+      const read = logRecordToSpan(
+        record('agentcore.memory', {
+          sessionId: 's-4',
+          operation: 'ListMemoryRecords',
+          durationMs: 61,
+          recordCount: 5,
+        }),
+      );
+
+      expect(write).toMatchObject({ resourceId: 'agentcore-memory', operation: 'CreateEvent' });
+      expect(write?.detail).toBeUndefined();
+      expect(read).toMatchObject({ operation: 'ListMemoryRecords', durationMs: 61 });
+      // The count of what has been learned, never any of it.
+      expect(read?.detail).toBe('5 records');
+    });
+
+    it('reports zero records as zero rather than as nothing at all', () => {
+      // "Recalled nothing" is a fact worth seeing — it is what a cold session
+      // looks like, and an absent detail would read as an unmeasured call.
+      const span = logRecordToSpan(
+        record('agentcore.memory', {
+          sessionId: 's-4',
+          operation: 'ListMemoryRecords',
+          durationMs: 12,
+          recordCount: 0,
+        }),
+      );
+      expect(span?.detail).toBe('0 records');
+    });
+
+    it('ignores a Memory record that never says which call it was', () => {
+      expect(
+        logRecordToSpan(record('agentcore.memory', { sessionId: 's-4', durationMs: 37 })),
+      ).toBeUndefined();
+    });
+  });
+
+  describe('agentcore.gateway → AgentCore Gateway', () => {
+    it('names the tool as the operation', () => {
+      expect(
+        logRecordToSpan(
+          record('agentcore.gateway', { sessionId: 's-5', tool: 'get_partner_profile' }),
+        ),
+      ).toMatchObject({
+        sessionId: 's-5',
+        resourceId: 'agentcore-gateway',
+        service: 'AgentCore Gateway',
+        operation: 'get_partner_profile',
+        ok: true,
+      });
+    });
+
+    /**
+     * The one span that carries no timing, and deliberately: the tool call runs
+     * inside the Runtime and reaches the proxy only as a name in the reply. A `0`
+     * would read as a free call and the turn's own duration would credit the
+     * whole model call to a tool lookup.
+     */
+    it('reports no duration, because the proxy never timed this call', () => {
+      const span = logRecordToSpan(
+        record('agentcore.gateway', { sessionId: 's-5', tool: 'save_preference' }),
+      );
+      expect(span?.durationMs).toBeUndefined();
+    });
+
+    it('ignores a Gateway record with no tool name', () => {
+      expect(logRecordToSpan(record('agentcore.gateway', { sessionId: 's-5' }))).toBeUndefined();
+    });
+  });
+
   describe('what it refuses to map', () => {
     /**
      * The bridge must never need to know every call site to stay correct.
@@ -256,7 +379,9 @@ describe('logRecordToSpan', () => {
      */
     it('ignores a record whose sessionId is missing or the wrong type', () => {
       expect(logRecordToSpan(record('preference.saved', { category: 'music' }))).toBeUndefined();
-      expect(logRecordToSpan(record('bedrock.converse', { sessionId: 42, durationMs: 1 }))).toBeUndefined();
+      expect(
+        logRecordToSpan(record('bedrock.converse', { sessionId: 42, durationMs: 1 })),
+      ).toBeUndefined();
     });
 
     it('ignores a converse record with no measured duration', () => {
@@ -392,9 +517,7 @@ describe('startSpanBridge', () => {
     stop();
     expect(emitted).toHaveLength(2);
     for (const event of emitted) {
-      expect(
-        resolveBroadcastSessionId(event.payload as Record<string, unknown>),
-      ).toBe('s-42');
+      expect(resolveBroadcastSessionId(event.payload as Record<string, unknown>)).toBe('s-42');
     }
   });
 

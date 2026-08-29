@@ -6,6 +6,7 @@ import { SessionProvider, useSessionContext } from './context/session-context';
 import { AuthProvider } from './context/auth-context';
 import { PeopleProvider } from './context/people-context';
 import { TasksProvider } from './context/tasks-context';
+import { ArchitectureEngineProvider } from './context/architecture-engine-context';
 import { flattenPreferences, useSessionPersistence } from './hooks/use-session-persistence';
 import { AppLayout } from './components/AppLayout';
 import { colors, typography, spacing } from './design-system/tokens';
@@ -77,10 +78,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
           <p style={errorTextStyle}>
             Valentin encountered an unexpected error. Please try refreshing.
           </p>
-          <button
-            style={retryButtonStyle}
-            onClick={() => window.location.reload()}
-          >
+          <button style={retryButtonStyle} onClick={() => window.location.reload()}>
             Refresh
           </button>
         </div>
@@ -265,9 +263,19 @@ export function App() {
             <PreferencesProvider>
               <SessionSyncer>
                 <HerRecordsProviders>
-                  <WebSocketProvider>
-                    <AppLayout />
-                  </WebSocketProvider>
+                  {/*
+                    Above the socket, not inside the layout, and that nesting is the
+                    whole reason the engine switch does something: `WebSocketProvider`
+                    reads the selected engine to pick which path it opens — `/ws` or
+                    `/ws/agentcore` — and a provider mounted below it could not be
+                    read. It used to sit in `AppLayout`, which is why the switch
+                    redrew the diagram while the chat stayed on engine A.
+                  */}
+                  <ArchitectureEngineProvider>
+                    <WebSocketProvider>
+                      <AppLayout />
+                    </WebSocketProvider>
+                  </ArchitectureEngineProvider>
                 </HerRecordsProviders>
               </SessionSyncer>
             </PreferencesProvider>

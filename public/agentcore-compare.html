@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Valentin — two engines, one ALB (target architecture)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+<style>
+  /* Deliberately mirrors the Live Architecture drawer's palette and card
+     geometry (src/client/components/AwsTopologyDiagram.tsx) so this reads as the
+     same artefact rather than a second, competing diagram. Values are copied,
+     not re-invented: #FAF4F0 canvas, #E5D9D2 hairline, #8C2F45 claret. */
+  :root {
+    --canvas: #FAF4F0;
+    --surface: #FFFFFF;
+    --hairline: #E5D9D2;
+    --ink: #2A2226;
+    --claret: #8C2F45;
+    --muted: #A3959C;
+    --dim: #756A70;
+    --vpc: #8C4FFF;
+    --mirror: #0E9B84;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 34px 30px 60px;
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: 'Inter', 'Helvetica Neue', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  header { max-width: 1180px; margin: 0 auto 26px; }
+  h1 { font-size: 21px; font-weight: 700; margin: 0 0 5px; letter-spacing: -0.01em; }
+  .sub { font-size: 11.5px; color: var(--dim); line-height: 1.55; margin: 0; max-width: 1000px; }
+  .sub b { color: var(--claret); font-weight: 600; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 14px; align-items: center; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 9.5px; color: var(--dim); }
+
+  /* --- chips: same idiom as the WAF chip on the CloudFront card --- */
+  .chip {
+    display: inline-block; font-size: 8.5px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; border-radius: 3px; padding: 1px 5px; white-space: nowrap;
+  }
+  .chip-waf       { color: #DD344C; border: 1px solid #F3C0C6; }
+  .chip-agentcore { color: #01A88D; border: 1px solid #A8E5DA; background: #F1FBF8; }
+  .chip-unchanged { color: #8E8189; border: 1px solid #E5D9D2; background: #FBF7F5; }
+  .chip-yours     { color: #ED7100; border: 1px solid #FBD9BB; background: #FFF7F0; }
+  .chip-new       { color: #8C2F45; border: 1px solid #E7C3CC; background: #FDF3F5; }
+  .chip-shared    { color: #527FFF; border: 1px solid #C2D2FF; background: #F3F6FF; }
+
+  .board { max-width: 1180px; margin: 0 auto; display: flex; gap: 0; align-items: flex-start; }
+
+  /* Shared tier gutter — one row of labels owned by neither engine, so the two
+     lanes can be compared by reading across a row. */
+  .gutter { width: 84px; flex-shrink: 0; position: relative; height: 1230px; margin-top: 44px; }
+  .tier {
+    position: absolute; right: 12px; text-align: right; width: 72px;
+    font-size: 8.5px; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted); line-height: 1.3;
+  }
+
+  /* Lane headers sit above the canvas, aligned to the two backend columns. */
+  .lanes { position: relative; height: 44px; width: 1060px; }
+  .lane {
+    position: absolute; top: 0; font-size: 11.5px; font-weight: 700; letter-spacing: 0.01em;
+  }
+  .lane .tag {
+    font-size: 8.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+    padding: 2px 6px; border-radius: 3px; margin-left: 7px; vertical-align: 1px;
+  }
+  .tag-built { background: var(--claret); color: #fff; }
+  .tag-new   { background: #01A88D; color: #fff; }
+  .lane .note { font-size: 9.5px; color: var(--muted); margin-top: 2px; font-weight: 400; letter-spacing: 0; }
+
+  .canvas { position: relative; width: 1060px; height: 1230px; }
+  .canvas svg { position: absolute; left: 0; top: 0; overflow: visible; }
+
+  /* --- node card: geometry lifted from cardStyle in AwsTopologyDiagram.tsx --- */
+  .card {
+    position: absolute; background: var(--surface); border: 1.5px solid var(--hairline);
+    border-radius: 11px; display: flex; gap: 9px; align-items: flex-start; padding: 9px 10px;
+  }
+  .card.dimmed { opacity: 0.45; }
+  .tile { width: 26px; height: 26px; border-radius: 6px; flex-shrink: 0; }
+  .body { min-width: 0; flex: 1; }
+  .service { font-size: 11.5px; font-weight: 700; color: var(--ink); line-height: 1.25; }
+  .resource { font-size: 10.5px; font-weight: 600; color: var(--claret); line-height: 1.3; margin-top: 2px; overflow-wrap: break-word; }
+  .caption { font-size: 9.5px; color: var(--muted); line-height: 1.4; margin-top: 2px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+
+  .edge-label {
+    position: absolute; font-size: 8.5px; font-weight: 600; color: var(--dim);
+    background: var(--canvas); padding: 0 4px; white-space: nowrap; transform: translateX(-50%);
+  }
+  .edge-label.mirror { color: var(--mirror); }
+
+  /* The VPC box wraps both Fargate services — and nothing else. Its edge is
+     where the AgentCore lane leaves the network you operate. */
+  .vpc-box {
+    position: absolute; border: 2px dashed var(--vpc); border-radius: 12px;
+    background: rgba(140, 79, 255, 0.045);
+  }
+  .vpc-box span {
+    position: absolute; top: -9px; background: var(--canvas); padding: 0 6px;
+    font-size: 8.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--vpc); white-space: nowrap;
+  }
+  .aside {
+    position: absolute; font-size: 9px; font-weight: 600; color: var(--muted);
+    font-style: italic; line-height: 1.45;
+  }
+
+  /* --- panels below the diagram --- */
+  .cols { max-width: 1180px; margin: 32px auto 0; display: flex; gap: 20px; padding-left: 84px; align-items: stretch; }
+  .col { flex: 1; background: var(--surface); border: 1px solid var(--hairline); border-radius: 11px; padding: 14px 16px; }
+  .col h3 {
+    font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--muted); margin: 0 0 8px;
+  }
+  .col h3 + ul, .col h3 + table { margin-top: 0; }
+  .col ul { margin: 0; padding: 0; list-style: none; }
+  .col li { font-size: 10.5px; line-height: 1.6; color: var(--ink); padding-left: 13px; position: relative; }
+  .col li::before { content: '·'; position: absolute; left: 3px; color: var(--claret); font-weight: 700; }
+  .col .split { margin-top: 14px; }
+  code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 9.8px; color: var(--dim); }
+
+  .routing { max-width: 1180px; margin: 20px auto 0; padding-left: 84px; }
+  .routing-inner { background: var(--surface); border: 1px solid var(--hairline); border-radius: 11px; padding: 15px 18px; }
+  .routing h3 {
+    font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--muted); margin: 0 0 10px;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    font-size: 8.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--muted); text-align: left; padding: 0 10px 6px 0; border-bottom: 1px solid var(--hairline);
+  }
+  td { font-size: 10.5px; padding: 6px 10px 6px 0; border-top: 1px solid #F2EAE6; vertical-align: top; line-height: 1.45; }
+  tr:first-child td { border-top: none; }
+  td.k { color: var(--dim); white-space: nowrap; }
+  td.v { color: var(--ink); font-weight: 600; }
+
+  .foot { max-width: 1180px; margin: 22px auto 0; padding-left: 84px; font-size: 9.5px; color: var(--muted); line-height: 1.65; }
+  .foot b { color: var(--dim); font-weight: 600; }
+
+  @media (max-width: 1220px) {
+    .gutter { display: none; }
+    .cols, .routing, .foot { padding-left: 0; }
+    .cols { flex-wrap: wrap; }
+    .board { overflow-x: auto; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Valentin — two engines behind one ALB</h1>
+  <p class="sub">
+    The architecture this change builds. One CloudFront distribution, one ALB, one DynamoDB table, one model —
+    and <b>two interchangeable agent engines</b> selected by path so the same request can be served either way and
+    measured. The left lane is what runs today. The right lane is new: a thin streaming proxy in front of
+    <b>AgentCore Runtime, Memory, Gateway and Observability</b>.
+    <br />
+    Bedrock and DynamoDB are deliberately <b>shared, not duplicated</b> — that is what makes a latency or cost delta
+    attributable to the orchestration layer instead of to a different model or a different store.
+  </p>
+  <div class="legend">
+    <span class="legend-item"><span class="chip chip-unchanged">unchanged</span> already deployed, untouched</span>
+    <span class="legend-item"><span class="chip chip-new">new</span> added by this change</span>
+    <span class="legend-item"><span class="chip chip-agentcore">agentcore</span> managed by AWS</span>
+    <span class="legend-item"><span class="chip chip-yours">your code</span> you write and own</span>
+    <span class="legend-item"><span class="chip chip-shared">both engines</span> shared, held fixed</span>
+    <span class="legend-item"><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="#8C2F45" stroke-width="2.5" stroke-dasharray="7 5"/></svg> request path</span>
+    <span class="legend-item"><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="#0E9B84" stroke-width="2.5" stroke-dasharray="2 4"/></svg> write-behind mirror</span>
+    <span class="legend-item"><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="#C9BDB6" stroke-width="2" stroke-dasharray="3 4"/></svg> telemetry, off the request path</span>
+  </div>
+</header>
+
+<div class="board">
+  <div class="gutter" id="gutter"></div>
+  <div>
+    <div class="lanes" id="lanes"></div>
+    <div class="canvas" id="canvas"></div>
+  </div>
+</div>
+
+<div class="cols">
+  <div class="col">
+    <h3>Engine A — as built (unchanged)</h3>
+    <ul>
+      <li><code>ws-gateway.ts</code> — the WebSocket loop, auth, session binding</li>
+      <li><code>agent-orchestrator.ts</code> — turn loop, retry-once</li>
+      <li><code>conversation-memory.ts</code> — 4096-token context window</li>
+      <li><code>preference-extractor.ts</code> — extraction + category mapping</li>
+      <li>DynamoDB is both memory and profile store</li>
+      <li><code>span-bridge.ts</code> — hand-wired spans to CloudWatch</li>
+    </ul>
+  </div>
+  <div class="col">
+    <h3>Engine B — new, what AWS runs</h3>
+    <ul>
+      <li>Per-session microVM isolation, scale to zero</li>
+      <li>Short-term memory: <code>CreateEvent</code> / <code>ListEvents</code></li>
+      <li>Long-term: <code>userPreferenceMemoryStrategy</code> — the managed replacement for your extractor</li>
+      <li>MCP tool routing, schema validation, auth via Gateway</li>
+      <li>Traces, sessions and trajectories, no wiring</li>
+    </ul>
+    <h3 class="split">Engine B — new, what you write</h3>
+    <ul>
+      <li>The Strands agent in the Runtime container</li>
+      <li><code>agentcore-orchestrator.ts</code> — the proxy's turn loop</li>
+      <li>The Gateway's three profile tools (a Lambda)</li>
+      <li><code>prompts.ts</code> — reused verbatim, not rewritten</li>
+    </ul>
+  </div>
+  <div class="col">
+    <h3>Held fixed across both</h3>
+    <ul>
+      <li>Claude Sonnet 4.5, same <code>modelId</code></li>
+      <li>The same Bedrock guardrail</li>
+      <li><code>ValentinTable-dev</code> — one table, one profile</li>
+      <li>Cognito user pool, both app clients</li>
+      <li>CloudFront, WAF, S3, the React SPA</li>
+      <li>Valentin's persona prompt</li>
+    </ul>
+    <h3 class="split">Explicitly out of scope</h3>
+    <ul>
+      <li>The labelled-persona harness</li>
+      <li>The side-by-side compare dashboard</li>
+    </ul>
+  </div>
+</div>
+
+<div class="routing">
+  <div class="routing-inner">
+    <h3>How a request picks an engine — ALB listener, port 80, <code>open: false</code></h3>
+    <table>
+      <tr><th>Priority</th><th>Match</th><th>Target group</th><th>Lands on</th></tr>
+      <tr>
+        <td class="k">10</td>
+        <td class="k"><code>path /api/agentcore/*</code></td>
+        <td class="v">valentin-tg-ac-dev</td>
+        <td class="k">AgentCore proxy → <code>InvokeAgentRuntime</code></td>
+      </tr>
+      <tr>
+        <td class="k">20</td>
+        <td class="k"><code>path /ws/agentcore</code></td>
+        <td class="v">valentin-tg-ac-dev</td>
+        <td class="k">AgentCore proxy, WebSocket upgrade</td>
+      </tr>
+      <tr>
+        <td class="k">30</td>
+        <td class="k"><code>header X-Valentin-Engine: agentcore</code></td>
+        <td class="v">valentin-tg-ac-dev</td>
+        <td class="k">same, for a scripted paired run</td>
+      </tr>
+      <tr>
+        <td class="k">default</td>
+        <td class="k">everything else</td>
+        <td class="v">valentin-tg-dev</td>
+        <td class="k">the existing Node server, untouched</td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+<div class="routing">
+  <div class="routing-inner">
+    <h3>Build order — the files this change touches</h3>
+    <table>
+      <tr><th>#</th><th>File</th><th>What lands there</th></tr>
+      <tr><td class="k">1</td><td class="v"><code>infra/lib/agentcore-stack.ts</code></td><td class="k">new — CfnMemory, CfnRuntime, CfnGateway + CfnGatewayTarget, three IAM roles, observability log group</td></tr>
+      <tr><td class="k">2</td><td class="v"><code>infra/lambda/profile-tools/index.mjs</code></td><td class="k">new — the Gateway's MCP Lambda target over <code>ValentinTable-dev</code></td></tr>
+      <tr><td class="k">3</td><td class="v"><code>infra/lib/compute-stack.ts</code></td><td class="k">second target group, second Fargate service, three listener rules</td></tr>
+      <tr><td class="k">4</td><td class="v"><code>infra/bin/app.ts</code></td><td class="k">wire the stack, explicit <code>addStackDependency</code></td></tr>
+      <tr><td class="k">5</td><td class="v"><code>agentcore/</code></td><td class="k">new — the Strands agent, ARM64 Dockerfile, <code>/invocations</code> + <code>/ping</code></td></tr>
+      <tr><td class="k">6</td><td class="v"><code>src/server/agent/agentcore-adapter.ts</code></td><td class="k">replaces the stub with the real data-plane client</td></tr>
+      <tr><td class="k">7</td><td class="v"><code>src/server/agent/agentcore-orchestrator.ts</code></td><td class="k">new — the second <code>AgentOrchestratorInterface</code> implementation</td></tr>
+      <tr><td class="k">8</td><td class="v"><code>src/server/index.ts</code></td><td class="k">pick the engine from <code>AGENT_ENGINE</code></td></tr>
+      <tr><td class="k">9</td><td class="v"><code>src/server/telemetry/span-bridge.ts</code></td><td class="k">three new span cases, so the drawer shows either lane</td></tr>
+    </table>
+  </div>
+</div>
+
+<p class="foot">
+  <b>The seam already exists.</b> <code>AgentOrchestratorInterface</code> in <code>agent-orchestrator.ts</code> is two
+  methods wide, and <code>StubAgentCoreAdapter</code> has carried a <code>TODO(yellow)</code> since the first commit.
+  Engine B is a second implementation of an interface the app already programs against — not a fork of the app.
+  <br />
+  <b>Why a proxy at all.</b> AgentCore Runtime cannot be an ALB target: ALB targets are instance, IP, Lambda or ALB, and
+  the Runtime is a Bedrock API reached by <code>InvokeAgentRuntime</code>. A Lambda target could front it but cannot
+  response-stream, which would destroy the time-to-first-token measurement. A second Fargate service can, and it runs
+  the same image as engine A with one environment variable changed.
+  <br />
+  <b>Memory does the work; DynamoDB keeps the record.</b> AgentCore Memory owns the conversation and the managed
+  preference extraction. Its retrieval API returns ranked natural language, not the typed fields the profile UI renders,
+  and its records expire by design — so engine B mirrors what Memory extracted back into the same table, tagged
+  <code>engine=agentcore</code>. One table means <code>GET /api/session/:id/preferences</code> and the profile panel
+  work identically on both lanes, and both engines' output is scorable in one place.
+  <br />
+  <b>Nothing on the right lane is deployed yet.</b> Every value in the left lane was read from live AWS and the CDK;
+  every identifier on the right is the name this change will create.
+</p>
+
+<script>
+  /* ---------------------------------------------------------------------------
+     Model, then view — the same split the app makes between aws-architecture.ts
+     and aws-diagram-layout.ts.
+
+     Card heights are FIXED, not minimums, and that is load-bearing: every
+     connector below is authored against these exact bottom edges, so a card that
+     grew to fit its text would leave its outbound line emerging from inside
+     itself. An earlier pass used min-height and did exactly that — CloudFront
+     measured 101px against an assumed 82 and both origin connectors started
+     19px up inside the card. Each height carries ~6px of headroom over its
+     measured content.
+     --------------------------------------------------------------------------- */
+
+  const CANVAS = { w: 1060, h: 1230 };
+
+  const TIERS = [
+    { label: 'Client',        y: 22 },
+    { label: 'Edge',          y: 150 },
+    { label: 'Routing',       y: 300 },
+    { label: 'Backends',      y: 462 },
+    { label: 'Agent runtime', y: 645 },
+    { label: 'Managed AI',    y: 826 },
+    { label: 'Data',          y: 1000 },
+    { label: 'Telemetry',     y: 1152 },
+  ];
+
+  const TILE = {
+    ink:    '#232F3E',
+    network:'linear-gradient(135deg,#A16BFF,#8C4FFF)',
+    storage:'linear-gradient(135deg,#8FBF2A,#7AA116)',
+    compute:'linear-gradient(135deg,#FF9A3E,#ED7100)',
+    ml:     'linear-gradient(135deg,#21C8AC,#01A88D)',
+    core:   'linear-gradient(135deg,#3FD9BE,#01A88D)',
+    db:     'linear-gradient(135deg,#7A9DFF,#527FFF)',
+    mgmt:   'linear-gradient(135deg,#F5559B,#E7157B)',
+  };
+
+  /* Glyphs are our own constants, stroked white on a 24×24 viewBox — same
+     contract as AWS_NODE_VISUALS. */
+  const GLYPH = {
+    browser: '<rect x="2.5" y="4" width="19" height="13" rx="1.5" /><path d="M8 20h8M12 17v3" />',
+    cloudfront: '<circle cx="12" cy="12" r="8.2" /><ellipse cx="12" cy="12" rx="3.4" ry="8.2" /><path d="M3.9 9.4h16.2M3.9 14.6h16.2" />',
+    s3: '<path d="M4.5 5.5h15l-1.7 13a1.4 1.4 0 0 1-1.4 1.2H7.6a1.4 1.4 0 0 1-1.4-1.2L4.5 5.5Z" /><path d="M3.4 5.5h17.2" />',
+    alb: '<circle cx="5" cy="12" r="2.1" /><circle cx="19" cy="6.5" r="2.1" /><circle cx="19" cy="17.5" r="2.1" /><path d="M7.1 11.2 16.9 7.2M7.1 12.8l9.8 4" />',
+    fargate: '<rect x="3" y="3.5" width="7.5" height="7.5" rx="1" /><rect x="13.5" y="3.5" width="7.5" height="7.5" rx="1" /><rect x="3" y="13" width="7.5" height="7.5" rx="1" /><rect x="13.5" y="13" width="7.5" height="7.5" rx="1" />',
+    bedrock: '<path d="M12 3 3.2 7.6 12 12.2l8.8-4.6L12 3Z" /><path d="M3.2 12.3 12 16.9l8.8-4.6M3.2 16.6 12 21.2l8.8-4.6" />',
+    dynamodb: '<ellipse cx="12" cy="5.8" rx="7.4" ry="2.9" /><path d="M4.6 5.8v12.4c0 1.6 3.3 2.9 7.4 2.9s7.4-1.3 7.4-2.9V5.8" /><path d="M4.6 12c0 1.6 3.3 2.9 7.4 2.9s7.4-1.3 7.4-2.9" />',
+    cloudwatch: '<circle cx="12" cy="12" r="8.5" /><path d="M6.5 12.4h2.4l1.7-3.6 2.1 6.3 1.5-2.7h3.3" />',
+    runtime: '<rect x="2.8" y="4" width="18.4" height="16" rx="2.6" /><path d="M2.8 9.2h18.4M8.6 14.6h6.8" /><circle cx="6" cy="6.6" r="0.85" />',
+    memory: '<path d="M11.4 4.6c-2.5 0-4.4 1.9-4.4 4.2 0 .8.2 1.5.6 2.1-.6.7-1 1.6-1 2.6 0 2.3 1.9 4.1 4.2 4.1h.6V4.6Z" /><path d="M12.6 4.6c2.5 0 4.4 1.9 4.4 4.2 0 .8-.2 1.5-.6 2.1.6.7 1 1.6 1 2.6 0 2.3-1.9 4.1-4.2 4.1h-.6M12 4.6v13.1M12 20.4v-2.7" />',
+    gateway: '<path d="M8.2 4 4 8.2v7.6L8.2 20M15.8 4 20 8.2v7.6L15.8 20" /><circle cx="12" cy="12" r="2.5" /><path d="M12 4v5M12 15v5" />',
+    lambda: '<path d="M3.6 20 11.7 4h3.1" /><path d="M10.1 20 14.9 10.2 20.4 20" />',
+  };
+
+  const CHIP = {
+    waf:       { cls: 'chip-waf',       text: 'AWS WAF · 2000 req/IP' },
+    unchanged: { cls: 'chip-unchanged', text: 'unchanged' },
+    agentcore: { cls: 'chip-agentcore', text: 'agentcore' },
+    yours:     { cls: 'chip-yours',     text: 'your code' },
+    fresh:     { cls: 'chip-new',       text: 'new' },
+    shared:    { cls: 'chip-shared',    text: 'both engines' },
+  };
+
+  /* ---- topology ----------------------------------------------------------
+     One canvas, one system. Lane A (engine you built) runs down x≈190,
+     lane B (AgentCore) down x≈700, and the shared spine — CloudFront, ALB,
+     Bedrock, DynamoDB, all of which serve BOTH lanes — sits between them.
+     ------------------------------------------------------------------------ */
+
+  const NODES = [
+    { x: 330, y: 0,    w: 230, h: 80,
+      tile: TILE.ink, glyph: GLYPH.browser,
+      service: 'Browser', resource: 'React 19 SPA',
+      caption: 'one bundle · picks its /ws path', chips: ['unchanged'] },
+
+    { x: 315, y: 112,  w: 260, h: 106,
+      tile: TILE.network, glyph: GLYPH.cloudfront,
+      service: 'Amazon CloudFront', resource: 'E6OHMQWNEQL6M',
+      caption: 'd26dwovftfq9oe.cloudfront.net', chips: ['waf', 'unchanged'] },
+
+    { x: 775, y: 112,  w: 240, h: 106,
+      tile: TILE.storage, glyph: GLYPH.s3,
+      service: 'Amazon S3', resource: 'valentin-frontend-dev',
+      caption: 'OAC · CACHING_OPTIMIZED', chips: ['unchanged'], dimmed: true },
+
+    { x: 295, y: 260,  w: 300, h: 106,
+      tile: TILE.network, glyph: GLYPH.alb,
+      service: 'Application Load Balancer', resource: 'valentin-alb-dev',
+      caption: 'one listener :80 · 3 new rules · sticky 1 h', chips: ['shared'] },
+
+    { x: 40,  y: 418,  w: 300, h: 118,
+      tile: TILE.compute, glyph: GLYPH.fargate,
+      service: 'Fargate · engine A', resource: 'valentin-service-dev',
+      caption: 'AGENT_ENGINE=valentin · :3001 · always on', chips: ['unchanged', 'yours'] },
+
+    { x: 550, y: 418,  w: 300, h: 118,
+      tile: TILE.compute, glyph: GLYPH.fargate,
+      service: 'Fargate · engine B proxy', resource: 'valentin-ac-proxy-dev',
+      caption: 'same image · AGENT_ENGINE=agentcore · streams', chips: ['fresh', 'yours'] },
+
+    { x: 540, y: 608,  w: 320, h: 106,
+      tile: TILE.core, glyph: GLYPH.runtime,
+      service: 'AgentCore Runtime', resource: 'valentin_agent_dev',
+      caption: 'Strands · ARM64 · microVM per session', chips: ['fresh', 'agentcore'] },
+
+    { x: 255, y: 790,  w: 250, h: 100,
+      tile: TILE.ml, glyph: GLYPH.bedrock,
+      service: 'Amazon Bedrock', resource: 'Claude Sonnet 4.5',
+      caption: 'same modelId · same guardrail', chips: ['shared'] },
+
+    { x: 540, y: 790,  w: 240, h: 100,
+      tile: TILE.core, glyph: GLYPH.memory,
+      service: 'AgentCore Memory', resource: 'valentin_memory_dev',
+      caption: 'userPreferenceMemoryStrategy', chips: ['fresh', 'agentcore'] },
+
+    { x: 810, y: 790,  w: 210, h: 100,
+      tile: TILE.core, glyph: GLYPH.gateway,
+      service: 'AgentCore Gateway', resource: 'MCP · CUSTOM_JWT',
+      caption: '3 profile tools', chips: ['fresh', 'agentcore'] },
+
+    { x: 165, y: 962,  w: 330, h: 106,
+      tile: TILE.db, glyph: GLYPH.dynamodb,
+      service: 'Amazon DynamoDB', resource: 'ValentinTable-dev',
+      caption: 'source of truth · pk/sk · GSI1 · engine-tagged', chips: ['shared'] },
+
+    { x: 740, y: 962,  w: 260, h: 106,
+      tile: TILE.compute, glyph: GLYPH.lambda,
+      service: 'AWS Lambda', resource: 'valentin-profile-tools-dev',
+      caption: 'get / save / list preference', chips: ['fresh', 'yours'] },
+
+    { x: 100, y: 1120, w: 300, h: 88,
+      tile: TILE.mgmt, glyph: GLYPH.cloudwatch,
+      service: 'Amazon CloudWatch', resource: 'Valentin-dev dashboard',
+      caption: 'span-bridge.ts · hand-wired', chips: ['unchanged'] },
+
+    { x: 600, y: 1120, w: 320, h: 88,
+      tile: TILE.mgmt, glyph: GLYPH.cloudwatch,
+      service: 'AgentCore Observability', resource: 'CloudWatch GenAI',
+      caption: 'traces · sessions · trajectories', chips: ['fresh', 'agentcore'] },
+  ];
+
+  /* Connectors. Every elbow turns in the gap between two rows, never over a
+     card, and every path is authored against the fixed bottoms above.
+     `kind` selects the stroke: request (claret dashes), mirror (teal, the
+     write-behind that is not on the request path), telemetry (pale). */
+  const EDGES = [
+    // --- edge tier -------------------------------------------------------
+    { kind: 'request', path: 'M445,80 L445,106',  head: '445,112 439,103 451,103',
+      label: 'HTTPS', lx: 445, ly: 89 },
+    { kind: 'request', path: 'M575,165 L769,165', head: '775,165 766,159 766,171',
+      label: 'default behavior *', lx: 672, ly: 152 },
+
+    // --- edge -> routing --------------------------------------------------
+    { kind: 'request', path: 'M445,218 L445,254', head: '445,260 439,251 451,251',
+      label: '/api/* · /ws · /ws/agentcore', lx: 445, ly: 231 },
+
+    // --- routing -> the two backends -------------------------------------
+    { kind: 'request', path: 'M445,366 L445,392 L190,392 L190,412', head: '190,418 184,409 196,409',
+      label: 'default → valentin-tg-dev', lx: 300, ly: 379 },
+    { kind: 'request', path: 'M445,366 L445,392 L700,392 L700,412', head: '700,418 694,409 706,409',
+      label: 'rules 10/20/30 → valentin-tg-ac-dev', lx: 590, ly: 379 },
+
+    // --- engine B: proxy -> runtime, crossing the VPC edge ----------------
+    { kind: 'request', path: 'M760,536 L760,602', head: '760,608 754,599 766,599',
+      label: 'InvokeAgentRuntime · SigV4', lx: 760, ly: 572 },
+
+    // --- engine A skips the runtime tier and calls Bedrock itself ---------
+    { kind: 'request', path: 'M260,536 L260,772 L340,772 L340,784', head: '340,790 334,781 346,781',
+      label: 'Converse', lx: 260, ly: 660 },
+
+    // --- runtime -> the three managed services ---------------------------
+    { kind: 'request', path: 'M700,714 L700,758 L400,758 L400,784', head: '400,790 394,781 406,781',
+      label: 'Converse · same modelId', lx: 520, ly: 745 },
+    { kind: 'request', path: 'M700,714 L700,784', head: '700,790 694,781 706,781',
+      label: 'CreateEvent · Retrieve', lx: 700, ly: 771 },
+    { kind: 'request', path: 'M700,714 L700,732 L915,732 L915,784', head: '915,790 909,781 921,781',
+      label: 'MCP', lx: 862, ly: 719 },
+
+    // --- data tier -------------------------------------------------------
+    { kind: 'request', path: 'M120,536 L120,934 L330,934 L330,956', head: '330,962 324,953 336,953',
+      label: 'PutItem · Query GSI1', lx: 120, ly: 760 },
+    { kind: 'request', path: 'M915,890 L915,956', head: '915,962 909,953 921,953',
+      label: 'Lambda target', lx: 915, ly: 924 },
+    { kind: 'request', path: 'M734,1015 L501,1015', head: '495,1015 504,1009 504,1021',
+      label: 'same table, same keys', lx: 617, ly: 1002 },
+
+    // --- the write-behind mirror, off the request path --------------------
+    { kind: 'mirror', path: 'M560,536 L560,570 L522,570 L522,934 L440,934 L440,956', head: '440,962 434,953 446,953',
+      /* Label sits in the clear band between the Managed AI row (ends 890) and
+         the Data row (starts 962) — at y=800 it straddled Bedrock and Memory. */
+      label: 'mirror engine=agentcore', lx: 522, ly: 908 },
+
+    // --- telemetry -------------------------------------------------------
+    { kind: 'telemetry', path: 'M60,536 L60,1090 L250,1090 L250,1114', head: '250,1120 244,1111 256,1111',
+      label: 'span-bridge.ts', lx: 60, ly: 1010 },
+    { kind: 'telemetry', path: 'M850,714 L850,732 L1040,732 L1040,1090 L760,1090 L760,1114', head: '760,1120 754,1111 766,1111',
+      /* On the y=1090 return leg, not the x=1040 riser: at x=1040 the label's own
+         width pushed it past the 1060px canvas edge. */
+      label: 'OTEL · no wiring', lx: 900, ly: 1078 },
+  ];
+
+  const STROKE = {
+    request:   { color: '#8C2F45', width: 2.5, dash: '7 5',  opacity: 0.75 },
+    mirror:    { color: '#0E9B84', width: 2.5, dash: '2 4',  opacity: 0.9  },
+    telemetry: { color: '#C9BDB6', width: 2,   dash: '3 4',  opacity: 1    },
+  };
+
+  const LANES = [
+    { left: 40,  title: 'Engine A — your orchestrator', tag: 'deployed', tagCls: 'tag-built',
+      note: 'ECS Fargate · Bedrock Converse · DynamoDB is memory and profile' },
+    { left: 550, title: 'Engine B — AgentCore', tag: 'this change', tagCls: 'tag-new',
+      note: 'Runtime · Memory · Gateway · Observability' },
+  ];
+
+  /* ---- view -------------------------------------------------------------- */
+
+  function tileSvg(glyph) {
+    return '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7">' + glyph + '</svg>';
+  }
+
+  function cardHtml(node) {
+    const chips = (node.chips || []).map((key) => {
+      const chip = CHIP[key];
+      return '<span class="chip ' + chip.cls + '">' + chip.text + '</span>';
+    }).join('');
+
+    return '<div class="card' + (node.dimmed ? ' dimmed' : '') + '"'
+      + ' style="left:' + node.x + 'px;top:' + node.y + 'px;width:' + node.w + 'px;height:' + node.h + 'px">'
+      + '<div class="tile" style="background:' + node.tile + '" aria-hidden="true">' + tileSvg(node.glyph) + '</div>'
+      + '<div class="body">'
+      + '<div class="service">' + node.service + '</div>'
+      + '<div class="resource">' + node.resource + '</div>'
+      + '<div class="caption">' + node.caption + '</div>'
+      + (chips ? '<div class="chips">' + chips + '</div>' : '')
+      + '</div></div>';
+  }
+
+  function edgesSvg() {
+    // Telemetry and the mirror are drawn first so the request path sits on top
+    // wherever they cross it — the request path is what the eye should follow.
+    const order = ['telemetry', 'mirror', 'request'];
+    const body = order.map((kind) =>
+      EDGES.filter((edge) => edge.kind === kind).map((edge) => {
+        const s = STROKE[kind];
+        return '<path d="' + edge.path + '" fill="none" stroke="' + s.color + '"'
+          + ' stroke-width="' + s.width + '" stroke-dasharray="' + s.dash + '"'
+          + ' stroke-linejoin="round" stroke-linecap="round" opacity="' + s.opacity + '" />'
+          + '<polygon points="' + edge.head + '" fill="' + s.color + '" />';
+      }).join('')
+    ).join('');
+
+    return '<svg width="' + CANVAS.w + '" height="' + CANVAS.h + '" aria-hidden="true">' + body + '</svg>';
+  }
+
+  function labelsHtml() {
+    return EDGES.filter((edge) => edge.label).map((edge) =>
+      '<div class="edge-label' + (edge.kind === 'mirror' ? ' mirror' : '') + '"'
+      + ' style="left:' + edge.lx + 'px;top:' + edge.ly + 'px">' + edge.label + '</div>'
+    ).join('');
+  }
+
+  /* The VPC box hugs the two Fargate cards and nothing else. Its bottom edge at
+     y=556 is where engine B leaves the network you operate: the
+     InvokeAgentRuntime arrow crosses it, and everything below on the right lane
+     is a managed endpoint reached over the AWS network, not a subnet. */
+  /* The caption rides the BOTTOM edge, not the top. Two reasons: at the top it
+     cleared the ALB fan-out labels by 2px, and the bottom edge is the line that
+     actually matters — it is where engine B leaves the network you operate. */
+  const VPC =
+    '<div class="vpc-box" style="left:20px;top:400px;width:860px;height:156px">'
+    + '<span style="left:300px;top:auto;bottom:-9px">valentin-vpc-dev · 2 AZ · private subnets · no inbound</span></div>';
+
+  const ASIDES =
+    '<div class="aside" style="left:876px;top:614px;width:180px">AgentCore Runtime is not<br />'
+    + 'an ALB target and not in<br />your VPC — hence the proxy.</div>'
+    + '<div class="aside" style="left:0px;top:632px;width:200px;text-align:left">engine A has no<br />'
+    + 'agent-runtime tier: the<br />Fargate task <em>is</em> the runtime.</div>';
+
+  document.getElementById('gutter').innerHTML = TIERS.map((tier) =>
+    '<div class="tier" style="top:' + tier.y + 'px">' + tier.label + '</div>'
+  ).join('');
+
+  document.getElementById('lanes').innerHTML = LANES.map((lane) =>
+    '<div class="lane" style="left:' + lane.left + 'px">' + lane.title
+    + '<span class="tag ' + lane.tagCls + '">' + lane.tag + '</span>'
+    + '<div class="note">' + lane.note + '</div></div>'
+  ).join('');
+
+  document.getElementById('canvas').innerHTML =
+    edgesSvg() + VPC + ASIDES + NODES.map(cardHtml).join('') + labelsHtml();
+</script>
+
+</body>
+</html>

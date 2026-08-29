@@ -36,7 +36,7 @@ const log: LogFn = (level, message, meta) => {
 // createServer throws here rather than booting unauthenticated if Cognito is
 // unconfigured, which is what we want: a failed health check is recoverable, a
 // silently open API is not.
-const { gateway, verifier, forUser, demoLogin } = createServer();
+const { gateway, verifier, forUser, demoLogin, engine } = createServer();
 
 const app = createExpressApp({
   verifier,
@@ -44,6 +44,7 @@ const app = createExpressApp({
   connectionCount: () => gateway.connectionCount,
   log,
   demoLogin,
+  engine,
 });
 
 const server = createHttpServer(app);

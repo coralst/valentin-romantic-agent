@@ -1,9 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { AWS_NODES, AWS_SEGMENTS } from '../aws-architecture';
+import { ARCHITECTURE_ENGINES, AWS_NODES, AWS_SEGMENTS, type AwsNodeId } from '../aws-architecture';
 import {
+  AGENTCORE_BOX,
+  AGENTCORE_SPINE_Y,
   AWS_DIAGRAM_CANVAS,
+  AWS_DIAGRAM_SCALE,
   AWS_DIAGRAM_SPINE_Y,
+  AWS_COLUMN_PITCH,
+  AWS_ENGINE_BANDS,
   AWS_NODE_BOXES,
+  AWS_NODE_CARD,
   AWS_NODE_VISUALS,
   AWS_SEGMENT_GEOMETRY,
   AWS_TIER_LABELS,
@@ -71,17 +77,24 @@ describe('AWS_NODE_BOXES', () => {
     for (const node of AWS_NODES) {
       const box = AWS_NODE_BOXES[node.id];
       expect(box.x, node.id).toBeGreaterThanOrEqual(0);
-      expect(box.x + box.width, node.id).toBeLessThanOrEqual(AWS_DIAGRAM_CANVAS.width);
-      expect(box.top, node.id).toBeLessThan(AWS_DIAGRAM_CANVAS.height);
+      expect(box.x + AWS_NODE_CARD.width, node.id).toBeLessThanOrEqual(AWS_DIAGRAM_CANVAS.width);
+      expect(box.top, node.id).toBeGreaterThanOrEqual(0);
+      expect(box.top + AWS_NODE_CARD.height, node.id).toBeLessThanOrEqual(
+        AWS_DIAGRAM_CANVAS.height,
+      );
     }
   });
 
   it('lays the spine out strictly left to right', () => {
     const spine = ['browser', 'cloudfront', 'alb', 'fargate'] as const;
+    for (const id of spine) {
+      // Centred on the spine, the same rule engine B's row follows below.
+      expect(AWS_NODE_BOXES[id].top, id).toBe(AWS_DIAGRAM_SPINE_Y - AWS_NODE_CARD.height / 2);
+    }
     for (let i = 1; i < spine.length; i += 1) {
       const previous = AWS_NODE_BOXES[spine[i - 1]];
       const current = AWS_NODE_BOXES[spine[i]];
-      expect(current.x, spine[i]).toBeGreaterThanOrEqual(previous.x + previous.width);
+      expect(current.x, spine[i]).toBeGreaterThanOrEqual(previous.x + AWS_NODE_CARD.width);
     }
   });
 
@@ -92,26 +105,142 @@ describe('AWS_NODE_BOXES', () => {
     expect(AWS_NODE_BOXES.bedrock.x).toBe(AWS_NODE_BOXES.dynamodb.x);
   });
 
-  it('gives CloudFront the widest card, because it carries the WAF chip', () => {
-    const widest = Math.max(...AWS_NODES.map((node) => AWS_NODE_BOXES[node.id].width));
-    expect(AWS_NODE_BOXES.cloudfront.width).toBe(widest);
+  it('carries no per-node size, so every card is the same box', () => {
+    // The regression this replaces: cards used to declare their own widths
+    // (146-192) and take their height from their contents, which is how the
+    // AgentCore column ended up with captions running through their neighbours.
+    for (const node of AWS_NODES) {
+      expect(Object.keys(AWS_NODE_BOXES[node.id]).sort(), node.id).toEqual(['top', 'x']);
+    }
+    expect(AWS_NODE_CARD.width).toBeGreaterThan(0);
+    expect(AWS_NODE_CARD.height).toBeGreaterThan(0);
+  });
+
+  it('puts every card on the column grid', () => {
+    for (const node of AWS_NODES) {
+      expect(AWS_NODE_BOXES[node.id].x % AWS_COLUMN_PITCH, node.id).toBe(0);
+    }
+  });
+
+  it('never overlaps two cards', () => {
+    // The failure in the review screenshot, stated as an assertion: engine B's
+    // boxes were 60px apart while the cards themselves were taller than that.
+    for (const a of AWS_NODES) {
+      for (const b of AWS_NODES) {
+        if (a.id >= b.id) continue;
+        const one = AWS_NODE_BOXES[a.id];
+        const two = AWS_NODE_BOXES[b.id];
+        const overlaps =
+          one.x < two.x + AWS_NODE_CARD.width &&
+          two.x < one.x + AWS_NODE_CARD.width &&
+          one.top < two.top + AWS_NODE_CARD.height &&
+          two.top < one.top + AWS_NODE_CARD.height;
+
+        expect(overlaps, `${a.id} vs ${b.id}`).toBe(false);
+      }
+    }
+  });
+
+  it('keeps the group boxes clear of the cards above them', () => {
+    // A dashed box whose label lands on a card's title is the other half of the
+    // same screenshot: AGENTCORE_BOX used to start inside the DynamoDB card.
+    const above = AWS_NODES.filter(
+      (node) => AWS_NODE_BOXES[node.id].top + AWS_NODE_CARD.height <= AGENTCORE_BOX.top,
+    );
+    const lowestAbove = Math.max(
+      ...above.map((node) => AWS_NODE_BOXES[node.id].top + AWS_NODE_CARD.height),
+    );
+
+    expect(AGENTCORE_BOX.top - lowestAbove).toBeGreaterThanOrEqual(12);
   });
 
   it('starts every tier label at the x of the column it heads', () => {
     const columnXs = new Set(AWS_NODES.map((node) => AWS_NODE_BOXES[node.id].x));
-    expect(AWS_TIER_LABELS).toHaveLength(5);
+    expect(AWS_TIER_LABELS).toHaveLength(8);
     for (const label of AWS_TIER_LABELS) {
       expect(columnXs.has(label.x), label.label).toBe(true);
     }
   });
 
-  it('wraps only Fargate in the VPC box', () => {
+  it('wraps both Fargate services in the VPC box, and nothing else', () => {
     const inside = AWS_NODES.filter((node) => {
       const box = AWS_NODE_BOXES[node.id];
-      return box.x >= AWS_VPC_BOX.left && box.x + box.width <= AWS_VPC_BOX.left + AWS_VPC_BOX.width;
+      return (
+        box.x >= AWS_VPC_BOX.left &&
+        box.x + AWS_NODE_CARD.width <= AWS_VPC_BOX.left + AWS_VPC_BOX.width &&
+        box.top >= AWS_VPC_BOX.top &&
+        box.top + AWS_NODE_CARD.height <= AWS_VPC_BOX.top + AWS_VPC_BOX.height
+      );
     }).map((node) => node.id);
 
-    expect(inside).toEqual(['fargate']);
+    expect(inside).toEqual(['fargate', 'ac-proxy']);
+  });
+
+  it('draws the VPC box around exactly the nodes the model calls in-VPC', () => {
+    // The two facts have to agree: the dashed border is the only thing telling the
+    // room where the subnet boundary is, and the model is what the tests trust.
+    const drawn = AWS_NODES.filter((node) => {
+      const box = AWS_NODE_BOXES[node.id];
+      return (
+        box.x >= AWS_VPC_BOX.left &&
+        box.x + AWS_NODE_CARD.width <= AWS_VPC_BOX.left + AWS_VPC_BOX.width &&
+        box.top >= AWS_VPC_BOX.top &&
+        box.top + AWS_NODE_CARD.height <= AWS_VPC_BOX.top + AWS_VPC_BOX.height
+      );
+    }).map((node) => node.id);
+
+    expect(drawn).toEqual(AWS_NODES.filter((node) => node.inVpc).map((node) => node.id));
+  });
+
+  it('draws the AgentCore box around exactly the managed primitives', () => {
+    const drawn = AWS_NODES.filter((node) => {
+      const box = AWS_NODE_BOXES[node.id];
+      return (
+        box.x >= AGENTCORE_BOX.left &&
+        box.x + AWS_NODE_CARD.width <= AGENTCORE_BOX.left + AGENTCORE_BOX.width &&
+        box.top >= AGENTCORE_BOX.top &&
+        box.top + AWS_NODE_CARD.height <= AGENTCORE_BOX.top + AGENTCORE_BOX.height
+      );
+    }).map((node) => node.id);
+
+    expect(drawn).toEqual(AWS_NODES.filter((node) => node.inAgentCore).map((node) => node.id));
+  });
+
+  it('lays engine B out along its own spine, left to right', () => {
+    // Same property the engine-A spine has, and for the same reason: the drawer is
+    // read at a glance from a distance, and a row that zig-zags stops reading.
+    const spine: AwsNodeId[] = ['ac-proxy', 'ac-runtime', 'ac-gateway', 'ac-dynamodb'];
+
+    for (const id of spine) {
+      expect(AWS_NODE_BOXES[id].top, id).toBe(AGENTCORE_SPINE_Y - AWS_NODE_CARD.height / 2);
+    }
+    for (let k = 1; k < spine.length; k += 1) {
+      const previous = AWS_NODE_BOXES[spine[k - 1]];
+      expect(AWS_NODE_BOXES[spine[k]].x, spine[k]).toBeGreaterThan(
+        previous.x + AWS_NODE_CARD.width,
+      );
+    }
+  });
+
+  it('keeps engine B clear of engine A, so neither band overlaps the other', () => {
+    const engineA = AWS_NODES.filter((node) => node.engine === 'valentin');
+    const engineB = AWS_NODES.filter((node) => node.engine === 'agentcore');
+    const lowestA = Math.max(...engineA.map((node) => AWS_NODE_BOXES[node.id].top));
+    const highestB = Math.min(...engineB.map((node) => AWS_NODE_BOXES[node.id].top));
+
+    expect(highestB).toBeGreaterThan(lowestA);
+  });
+
+  it('scales the canvas down to something the drawer can hold', () => {
+    expect(AWS_DIAGRAM_SCALE).toBeGreaterThan(0);
+    expect(AWS_DIAGRAM_SCALE).toBeLessThanOrEqual(1);
+    // The drawer reserves its height; a diagram that painted taller than this
+    // would push the composer off screen, which is the failure the scale prevents.
+    expect(AWS_DIAGRAM_CANVAS.height * AWS_DIAGRAM_SCALE).toBeLessThan(320);
+  });
+
+  it('names one band per engine', () => {
+    expect(AWS_ENGINE_BANDS.map((band) => band.engine)).toEqual([...ARCHITECTURE_ENGINES]);
   });
 });
 
@@ -154,11 +283,9 @@ describe('AWS_SEGMENT_GEOMETRY', () => {
       const child = AWS_NODE_BOXES[segment.to];
 
       // Leaves the right-hand edge of the parent, arrives at the left of the child.
-      expect(coordinates[0][0], segment.id).toBe(parent.x + parent.width);
+      expect(coordinates[0][0], segment.id).toBe(parent.x + AWS_NODE_CARD.width);
       expect(coordinates[coordinates.length - 1][0], segment.id).toBeLessThanOrEqual(child.x);
-      expect(coordinates[coordinates.length - 1][0], segment.id).toBeGreaterThan(
-        child.x - 12,
-      );
+      expect(coordinates[coordinates.length - 1][0], segment.id).toBeGreaterThan(child.x - 12);
     }
   });
 
@@ -171,69 +298,86 @@ describe('AWS_SEGMENT_GEOMETRY', () => {
   });
 });
 
-describe('the fan-out column', () => {
+describe('the external APIs column', () => {
   /**
-   * Three cards share x=762 now, and a card is ~87px tall once it is showing a
-   * duration pill — which all three are during a tool call, so that is the normal
-   * case rather than an edge one. This guards the one failure mode of a hand-tuned
-   * pitch: cards that look fine idle and overlap the moment they light.
+   * The integrations card is engine A's alone and sits one column right of the
+   * AI/Data pair, on engine A's spine. It used to be a third card stacked under
+   * DynamoDB in the AI/Data column; engine B's band claimed that space, and the
+   * AgentCore box now starts at y=264, so the stack no longer fits.
+   *
+   * What is asserted here is the reason it moved: it clears both dashed boxes.
+   * Inside either one it would say something false — the external APIs are neither
+   * in the VPC nor managed by AgentCore.
    */
-  it('leaves room for three lit cards without overlapping', () => {
-    const LIT_CARD_HEIGHT = 87;
-    const column = (['bedrock', 'dynamodb', 'integrations'] as const).map(
-      (id) => AWS_NODE_BOXES[id],
-    );
+  it('sits outside the VPC box and outside the AgentCore box', () => {
+    const box = AWS_NODE_BOXES.integrations;
+    const right = box.x + AWS_NODE_CARD.width;
+    const bottom = box.top + AWS_NODE_CARD.height;
 
-    for (const box of column) expect(box.x).toBe(762);
-    expect(column[0].top).toBeGreaterThanOrEqual(0);
+    const clearOf = (frame: { left: number; top: number; width: number; height: number }) =>
+      right <= frame.left ||
+      box.x >= frame.left + frame.width ||
+      bottom <= frame.top ||
+      box.top >= frame.top + frame.height;
 
-    for (let i = 1; i < column.length; i += 1) {
-      expect(column[i].top).toBeGreaterThan(column[i - 1].top + LIT_CARD_HEIGHT);
-    }
-
-    // And the bottom one still fits the canvas it is drawn on.
-    expect(column[column.length - 1].top + LIT_CARD_HEIGHT).toBeLessThanOrEqual(
-      AWS_DIAGRAM_CANVAS.height,
-    );
+    expect(clearOf(AWS_VPC_BOX), 'VPC box').toBe(true);
+    expect(clearOf(AGENTCORE_BOX), 'AgentCore box').toBe(true);
   });
 
-  it('runs the segment to DynamoDB straight down the spine', () => {
-    // The reason the column fits at all: DynamoDB took the spine slot so the third
-    // card could have the space below it.
-    for (const [, y] of pathPoints(awsSegmentGeometry('fargate-dynamodb').path)) {
+  it('rides engine A’s spine, so the link to it is straight', () => {
+    // Centred on the spine at both ends, which is what lets the connector run flat
+    // rather than elbowing — and the flat run is what reads as "the request leaves
+    // the VPC and keeps going" instead of "it turns off somewhere".
+    expect(AWS_NODE_BOXES.integrations.top + AWS_NODE_CARD.height / 2).toBe(
+      AWS_DIAGRAM_SPINE_Y,
+    );
+    for (const [, y] of pathPoints(awsSegmentGeometry('fargate-integrations').path)) {
       expect(y).toBe(AWS_DIAGRAM_SPINE_Y);
     }
+  });
+
+  it('threads the gap between the Bedrock and DynamoDB cards', () => {
+    // The straight run crosses the AI/Data column at spine height. If either card
+    // grew into that gap the line would disappear behind it, so the clearance is
+    // asserted rather than assumed.
+    const bedrockBottom = AWS_NODE_BOXES.bedrock.top + AWS_NODE_CARD.height;
+    expect(bedrockBottom).toBeLessThan(AWS_DIAGRAM_SPINE_Y);
+    expect(AWS_NODE_BOXES.dynamodb.top).toBeGreaterThan(AWS_DIAGRAM_SPINE_Y);
   });
 });
 
 describe('mid-leg chevrons', () => {
-  it('marks exactly the three links that bend', () => {
+  it('marks exactly the links that bend', () => {
     expect([...ELBOWED_SEGMENTS].sort()).toEqual([
+      // Engine B needs two: the drop from the ALB into its own band, and Memory
+      // branching up off its spine.
+      'ac-runtime-ac-memory',
+      'alb-ac-proxy',
       'cloudfront-s3',
       'fargate-bedrock',
-      // DynamoDB sits on the spine now and runs straight, so the below-spine
-      // elbow — and the chevron pair that is easy to get backwards — moved to the
-      // integrations leg.
-      'fargate-integrations',
+      // The below-spine elbow — and the chevron pair that is easy to get
+      // backwards — is DynamoDB's again: the integrations card moved onto the
+      // spine in its own column, so its link runs flat.
+      'fargate-dynamodb',
     ]);
   });
 
   /**
    * The bug this whole mechanism exists for, asserted rather than eyeballed on a
-   * projector: Bedrock is above the spine and External APIs below it, so their
+   * projector: Bedrock is above the spine and DynamoDB below it, so their
    * outbound chevrons must point *opposite* ways. Copying one pair to the other
    * leg is the mistake, and it looks perfectly plausible in code.
    */
   it('points the above-spine and below-spine chevrons opposite ways', () => {
     const bedrock = awsSegmentGeometry('fargate-bedrock');
-    const integrations = awsSegmentGeometry('fargate-integrations');
+    const dynamodb = awsSegmentGeometry('fargate-dynamodb');
 
-    // Bedrock is up the page from the spine, External APIs down it, so "away from
-    // the browser" is a different direction for each.
+    // Bedrock is up the page from the spine, DynamoDB down it, so "away from the
+    // browser" is a different direction for each.
     expect(direction(bedrock.midDownstreamHead!)).toBe('up');
     expect(direction(bedrock.midUpstreamHead!)).toBe('down');
-    expect(direction(integrations.midDownstreamHead!)).toBe('down');
-    expect(direction(integrations.midUpstreamHead!)).toBe('up');
+    expect(direction(dynamodb.midDownstreamHead!)).toBe('down');
+    expect(direction(dynamodb.midUpstreamHead!)).toBe('up');
   });
 
   it('gives every elbowed link a chevron in both directions', () => {
@@ -260,8 +404,10 @@ describe('mid-leg chevrons', () => {
       for (const head of [geometry.midDownstreamHead, geometry.midUpstreamHead]) {
         const [tip] = points(head!);
         expect(tip[0], id).toBe(legX);
-        // Off the spine, where the eye actually travels.
-        expect(Math.abs(tip[1] - AWS_DIAGRAM_SPINE_Y), id).toBeGreaterThan(20);
+        // Off the spine this link leaves — taken from the path's own start rather
+        // than from one spine constant, since engine B runs along a second one.
+        const spineY = pathPoints(geometry.path)[0][1];
+        expect(Math.abs(tip[1] - spineY), id).toBeGreaterThan(20);
       }
     }
   });
@@ -290,10 +436,13 @@ describe('mid-leg chevrons', () => {
       const geometry = awsSegmentGeometry(id);
       const segment = AWS_SEGMENTS.find((s) => s.id === id)!;
       const child = AWS_NODE_BOXES[segment.to];
-      // Bedrock and S3 sit above the spine, DynamoDB below — so "away from the
-      // browser" is up for two of these and down for the third. Hardcoding one
-      // answer for all three is how the pair gets flipped.
-      const expected = child.top < AWS_DIAGRAM_SPINE_Y ? 'up' : 'down';
+      const parent = AWS_NODE_BOXES[segment.from];
+      // Bedrock and S3 sit above their parent, DynamoDB below, and engine B hangs
+      // below the ALB — so "away from the browser" is up for some of these and down
+      // for others. Compared against the parent rather than against a single spine
+      // constant, because there are now two spines. Hardcoding one answer for all
+      // five is how the pair gets flipped.
+      const expected = child.top < parent.top ? 'up' : 'down';
 
       expect(direction(geometry.midDownstreamHead!), id).toBe(expected);
       expect(direction(geometry.midUpstreamHead!), id).toBe(expected === 'up' ? 'down' : 'up');

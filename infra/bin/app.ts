@@ -7,6 +7,7 @@ import { MonitoringStack } from '../lib/monitoring-stack';
 import { ComputeStack } from '../lib/compute-stack';
 import { CdnStack } from '../lib/cdn-stack';
 import { AuthStack } from '../lib/auth-stack';
+import { AgentCoreStack } from '../lib/agentcore-stack';
 import { getConfig } from '../config/environments';
 
 const app = new cdk.App();
@@ -19,6 +20,19 @@ const config = getConfig(env, siteUrl);
 // deploy.sh passes the git SHA so a rollback lands on a different image than
 // the one that failed. Defaults to 'latest' for a bare `cdk synth`/`cdk diff`.
 const imageTag = app.node.tryGetContext('imageTag') ?? 'latest';
+
+// Engine B's agent is a separate ARM64 image in its own repository, so it has its
+// own tag. Defaults to `imageTag` so a single-image deploy still lines up.
+const agentImageTag = app.node.tryGetContext('agentImageTag') ?? imageTag;
+
+/*
+ * Read once, here, and passed to every stack that needs it.
+ *
+ * Deliberately not `safetyStack.guardrailVersion` — see the long note on
+ * ComputeStack below. Both engines must name the same version, and both must
+ * name it without holding a cross-stack export open on it.
+ */
+const guardrailVersion = (app.node.tryGetContext('guardrailVersion') as string) ?? 'DRAFT';
 
 const stackEnv: cdk.Environment = {
   region: config.region,
@@ -52,6 +66,29 @@ const authStack = new AuthStack(app, `Valentin-Auth-${env}`, {
   description: `Valentin Cognito authentication (${env})`,
 });
 
+/*
+ * Engine B's managed half, and the reason ComputeStack comes after it.
+ *
+ * The proxy service in ComputeStack needs the Runtime ARN, the Memory id and the
+ * Gateway URL, none of which exist until AgentCore is deployed. Nothing flows the
+ * other way: the Runtime is not in the VPC and is not an ALB target, so it has no
+ * dependency on compute at all.
+ */
+const agentCoreStack = new AgentCoreStack(app, `Valentin-AgentCore-${env}`, {
+  config,
+  table: dataStack.table,
+  guardrailId: safetyStack.guardrailId,
+  guardrailVersion,
+  userPool: authStack.userPool,
+  cognitoDomainPrefix: authStack.userPoolDomainPrefix,
+  imageTag: agentImageTag,
+  env: stackEnv,
+  description: `Valentin AgentCore Runtime, Memory and Gateway (${env})`,
+});
+agentCoreStack.addStackDependency(dataStack);
+agentCoreStack.addStackDependency(authStack);
+agentCoreStack.addStackDependency(safetyStack);
+
 const computeStack = new ComputeStack(app, `Valentin-Compute-${env}`, {
   config,
   vpc: networkStack.vpc,
@@ -72,7 +109,7 @@ const computeStack = new ComputeStack(app, `Valentin-Compute-${env}`, {
    * this repo reviews, and exactly one service consumes this guardrail. Pass
    * `--context guardrailVersion=<n>` to pin a published version instead.
    */
-  guardrailVersion: (app.node.tryGetContext('guardrailVersion') as string) ?? 'DRAFT',
+  guardrailVersion,
   imageTag,
   userPoolId: authStack.userPool.userPoolId,
   userPoolArn: authStack.userPool.userPoolArn,
@@ -80,6 +117,21 @@ const computeStack = new ComputeStack(app, `Valentin-Compute-${env}`, {
   demoClientId: authStack.demoClient.userPoolClientId,
   demoSecret: authStack.demoSecret,
   cognitoDomainPrefix: authStack.userPoolDomainPrefix,
+  /*
+   * These three do create cross-stack exports that Compute holds open, which is
+   * the same mechanism as the guardrail-version incident above. The difference is
+   * what changes: a guardrail version changes on every policy edit, so the lock
+   * fired immediately. A Runtime ARN, Memory id and Gateway URL only change if
+   * the resource is *replaced*, and replacement only happens on a name change —
+   * and the names are derived from `env`, which never changes within a stack.
+   *
+   * If one of them does need to be replaced, deploy in two steps: set the proxy's
+   * desiredCount to 0 and deploy Compute first to release the export, then deploy
+   * AgentCore.
+   */
+  agentCoreRuntimeArn: agentCoreStack.runtimeArn,
+  agentCoreMemoryId: agentCoreStack.memoryId,
+  agentCoreGatewayUrl: agentCoreStack.gatewayUrl,
   env: stackEnv,
   description: `Valentin ECS Fargate compute (${env})`,
 });
@@ -89,6 +141,11 @@ computeStack.addStackDependency(authStack);
 // The task reads BEDROCK_GUARDRAIL_ID from this stack, so the guardrail must
 // exist first. Without this the guardrail was deployed but never referenced.
 computeStack.addStackDependency(safetyStack);
+// The proxy service names the Runtime, Memory and Gateway in its container
+// environment, so all three must exist before it starts. CDK infers this from
+// the props above, but the explicit call keeps the ordering readable next to the
+// four dependencies it already declares.
+computeStack.addStackDependency(agentCoreStack);
 
 const cdnStack = new CdnStack(app, `Valentin-CDN-${env}`, {
   config,

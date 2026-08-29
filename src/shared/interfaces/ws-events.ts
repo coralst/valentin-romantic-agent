@@ -102,7 +102,16 @@ export interface AwsSpan {
   resourceName: string;
   /** The API call made, e.g. 'PutItem' | 'Converse'. */
   operation: string;
-  durationMs: number;
+  /**
+   * How long the call took, when the emitter is the one that made it.
+   *
+   * Absent for a call that really happened but cannot be timed from where the
+   * span is emitted — a Gateway tool call runs inside the AgentCore Runtime, so
+   * the proxy learns it happened from the reply and never holds a stopwatch on
+   * it. The view renders that as `—`, which is the truth; a `0` would read as a
+   * free call and a made-up number would be worse.
+   */
+  durationMs?: number;
   ok: boolean;
   /** Sort key or category, never raw partner data. */
   detail?: string;

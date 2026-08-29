@@ -1,9 +1,10 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { LiveArchitectureDrawer, DRAWER_COPY } from '../LiveArchitectureDrawer';
 import { ArchitectureToggle } from '../ArchitectureToggle';
 import { ArchitectureDrawerProvider } from '../../context/architecture-drawer-context';
+import { ArchitectureEngineProvider, ENGINE_COPY } from '../../context/architecture-engine-context';
 import { publishInboundWsEvent, resetWsObservers } from '../../utils/ws-event-observer';
 import { demoFlow, DEFAULT_DEMO_FLOW_ID } from '../../utils/aws-demo-flows';
 import type { AwsSpan, ServerEvent } from '../../../shared/interfaces/ws-events';
@@ -280,26 +281,58 @@ describe('LiveArchitectureDrawer', () => {
       );
     });
 
-    it('grows the feed as it steps', async () => {
+    /**
+     * The feed lists the whole script, and moves the highlight rather than growing.
+     *
+     * It used to reveal itself a row at a time, which reads well but leaves nothing
+     * to choose from — on a paused flow at step 0 there is exactly one action in the
+     * list, so "pick an action and replay it" had nothing to pick.
+     */
+    it('lists every step of the flow and marks the current one', async () => {
       const user = userEvent.setup();
       renderDrawer();
       await openDrawer(user);
 
-      expect(screen.getAllByTestId('aws-feed-row')).toHaveLength(1);
+      expect(screen.getAllByTestId('aws-feed-row')).toHaveLength(FLOW.steps.length);
+      const current = () =>
+        screen.getAllByTestId('aws-feed-row').filter((row) => row.dataset.current === 'true');
+      expect(current()).toHaveLength(1);
+
       await user.click(screen.getByRole('button', { name: DRAWER_COPY.next }));
-      expect(screen.getAllByTestId('aws-feed-row')).toHaveLength(2);
+      expect(current()).toHaveLength(1);
     });
 
-    it('lights the node the current step lands on', async () => {
+    it('walks the traffic to the node the current step lands on', async () => {
       const user = userEvent.setup();
       renderDrawer();
       await openDrawer(user);
 
       await user.click(screen.getByRole('button', { name: DRAWER_COPY.next }));
-      expect(screen.getByTestId(`aws-node-${FLOW.steps[1].to}`)).toHaveAttribute(
-        'data-state',
-        'lit',
+
+      // Not instant: the step is animated hop by hop, so the destination lights once
+      // the traffic gets there rather than the moment the step becomes current.
+      await waitFor(() =>
+        expect(screen.getByTestId(`aws-node-${FLOW.steps[1].to}`)).toHaveAttribute(
+          'data-state',
+          'lit',
+        ),
       );
+    });
+
+    it('never highlights more than one node at a time', async () => {
+      // The bug: at step 11 of the AgentCore flow eight cards glowed at once, which
+      // says which resources exist rather than where the request has got to.
+      const user = userEvent.setup();
+      renderDrawer();
+      await openDrawer(user);
+
+      for (let step = 0; step < 4; step += 1) {
+        const highlighted = screen
+          .getAllByTestId(/^aws-node-/)
+          .filter((node) => ['lit', 'response'].includes(node.dataset.state ?? ''));
+        expect(highlighted.length, `step ${step}`).toBeLessThanOrEqual(1);
+        await user.click(screen.getByRole('button', { name: DRAWER_COPY.next }));
+      }
     });
 
     /** Authored durations must not be mistaken for measurements. */
@@ -324,8 +357,14 @@ describe('LiveArchitectureDrawer', () => {
         `Step ${FLOW.steps.length} of ${FLOW.steps.length}`,
       );
       expect(screen.getByRole('button', { name: DRAWER_COPY.next })).toBeDisabled();
-      // The flow ends with the preference landing back in the browser.
-      expect(screen.getByTestId('aws-node-browser')).toHaveAttribute('data-state', 'response');
+      // The flow ends with the preference landing back in the browser — and the last
+      // step is the long one, climbing from DynamoDB all the way home, so it takes
+      // several beats to walk rather than arriving inside `waitFor`'s default second.
+      await waitFor(
+        () =>
+          expect(screen.getByTestId('aws-node-browser')).toHaveAttribute('data-state', 'response'),
+        { timeout: 4000 },
+      );
     });
   });
 
@@ -377,7 +416,10 @@ describe('LiveArchitectureDrawer', () => {
 
       expect(screen.getAllByTestId('aws-feed-row')).toHaveLength(1);
       expect(screen.getByTestId('aws-duration-dynamodb')).toHaveTextContent('18 ms');
-      expect(screen.getByTestId('aws-node-dynamodb')).toHaveAttribute('data-state', 'lit');
+      // Live traffic is walked hop by hop too, so the resource lights on arrival.
+      await waitFor(() =>
+        expect(screen.getByTestId('aws-node-dynamodb')).toHaveAttribute('data-state', 'lit'),
+      );
     });
 
     it('counts spans and model calls honestly', async () => {
@@ -499,9 +541,7 @@ describe('LiveArchitectureDrawer', () => {
       renderDrawer();
       await openDrawer(user);
 
-      expect(
-        screen.getByRole('complementary', { name: DRAWER_COPY.title }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole('complementary', { name: DRAWER_COPY.title })).toBeInTheDocument();
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
 
@@ -593,5 +633,250 @@ describe('LiveArchitectureDrawer', () => {
 
       expect(screen.getByTestId('architecture-drawer')).toHaveAttribute('data-open', 'false');
     });
+  });
+});
+
+/**
+ * The chip that names the engine actually answering.
+ *
+ * It exists because the engine switch now moves the chat's socket, and the socket
+ * can be accepted by the *wrong* engine: `/ws/agentcore` connects on a deployment
+ * with no AgentCore wiring, which then answers as engine A rather than failing. On a
+ * laptop that is the only possible outcome — one process, one `AGENT_ENGINE`. So the
+ * panel has to be able to say "you asked for AgentCore, engine A answered", or every
+ * duration under it is filed under the wrong architecture.
+ */
+describe('the serving-engine chip', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  /** Make `/api/config` answer as a given engine. */
+  function servedBy(engine: string) {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ authDisabled: true, engine }),
+    });
+  }
+
+  /** The drawer with a real engine provider, which is what does the asking. */
+  function renderWithEngine(initialEngine: 'valentin' | 'agentcore' = 'valentin') {
+    return render(
+      <ArchitectureDrawerProvider>
+        <ArchitectureEngineProvider initialEngine={initialEngine}>
+          <ArchitectureToggle />
+          <LiveArchitectureDrawer />
+        </ArchitectureEngineProvider>
+      </ArchitectureDrawerProvider>,
+    );
+  }
+
+  /** Open it and switch to live, which is the only mode an engine answers in. */
+  async function openLive(user: ReturnType<typeof userEvent.setup>) {
+    await openDrawer(user);
+    await user.click(screen.getByRole('button', { name: DRAWER_COPY.liveMode }));
+  }
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    servedBy('valentin');
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('names the engine that answered', async () => {
+    const user = userEvent.setup();
+    renderWithEngine();
+    await openLive(user);
+
+    const chip = await screen.findByTestId('architecture-serving-chip');
+    expect(chip).toHaveTextContent(ENGINE_COPY.valentin);
+    expect(chip).toHaveAttribute('data-serving', 'valentin');
+    expect(chip).toHaveAttribute('data-downgraded', 'false');
+  });
+
+  it('names AgentCore when AgentCore is what answered', async () => {
+    servedBy('agentcore');
+    const user = userEvent.setup();
+    renderWithEngine('agentcore');
+    await openLive(user);
+
+    const chip = await screen.findByTestId('architecture-serving-chip');
+    expect(chip).toHaveTextContent(ENGINE_COPY.agentcore);
+    expect(chip).toHaveAttribute('data-downgraded', 'false');
+  });
+
+  it('flags the engine selected not being the engine serving', async () => {
+    // Asked for AgentCore, answered by engine A — the local case, and the
+    // missing-AgentCore-wiring case. The chip is the only thing on screen that
+    // contradicts the diagram, so it says so and names what really ran.
+    const user = userEvent.setup();
+    renderWithEngine('agentcore');
+    await openLive(user);
+
+    const chip = await screen.findByTestId('architecture-serving-chip');
+    await waitFor(() => expect(chip).toHaveAttribute('data-downgraded', 'true'));
+    expect(chip).toHaveTextContent(ENGINE_COPY.valentin);
+  });
+
+  it('confirms nothing while the question is still open', async () => {
+    // A request that never lands must not read as a downgrade: unreachable and
+    // refused are different faults, and only one of them is the deployment's.
+    fetchMock.mockRejectedValue(new Error('offline'));
+    const user = userEvent.setup();
+    renderWithEngine('agentcore');
+    await openLive(user);
+
+    const chip = await screen.findByTestId('architecture-serving-chip');
+    expect(chip).toHaveTextContent(DRAWER_COPY.servingUnknown);
+    expect(chip).toHaveAttribute('data-downgraded', 'false');
+  });
+
+  /**
+   * Withheld in demo mode: a scripted walkthrough is not being answered by any
+   * engine, so naming one would be a claim about nothing.
+   */
+  it('says nothing while the walkthrough is scripted', async () => {
+    const user = userEvent.setup();
+    renderWithEngine();
+    await openDrawer(user);
+    expect(screen.queryByTestId('architecture-serving-chip')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Replaying one user action.
+ *
+ * The ask this satisfies: pick an action out of the log and watch just that action
+ * again. It is a third source alongside live and demo rather than a mode you switch
+ * into, because the action worth replaying is usually one that just happened for
+ * real — so it has to be reachable from live mode without discarding the live feed.
+ */
+describe('replaying a chosen action', () => {
+  afterEach(() => {
+    resetWsObservers();
+  });
+
+  /** The newest group's header — the control that starts a replay. */
+  function topGroupHeader() {
+    return screen.getAllByTestId('aws-feed-group-header')[0];
+  }
+
+  it('replays the chosen action and names it', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    await openDrawer(user);
+
+    await user.click(topGroupHeader());
+
+    const chip = screen.getByTestId('architecture-replay-chip');
+    expect(chip).toHaveTextContent(FLOW.steps[FLOW.steps.length - 1].action);
+  });
+
+  it('narrows what plays to the action, not the whole flow', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    await openDrawer(user);
+
+    const groups = screen.getAllByTestId('aws-feed-group').length;
+    await user.click(topGroupHeader());
+
+    // Only the chosen action's steps are listed…
+    const rows = screen.getAllByTestId('aws-feed-row').length;
+    expect(rows).toBeLessThan(FLOW.steps.length);
+    expect(screen.getByTestId('architecture-step-count')).toHaveTextContent(`of ${rows}`);
+    // …but every action is still on screen to be chosen. Folding the rest away is
+    // not the same as removing them: without their captions, switching to another
+    // action would mean leaving the replay first.
+    expect(screen.getAllByTestId('aws-feed-group')).toHaveLength(groups);
+  });
+
+  it('lets a different action be chosen without leaving the replay first', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    await openDrawer(user);
+
+    await user.click(topGroupHeader());
+    const first = screen.getByTestId('architecture-replay-chip').textContent;
+
+    await user.click(screen.getAllByTestId('aws-feed-group-header')[1]);
+    expect(screen.getByTestId('architecture-replay-chip').textContent).not.toBe(first);
+    expect(screen.getByTestId('architecture-step-count')).toHaveTextContent('Step 1');
+  });
+
+  it('starts the replay from the top of the action rather than mid-way', async () => {
+    // Choosing "replay" and then having to press Next would not be a replay.
+    const user = userEvent.setup();
+    renderDrawer();
+    await openDrawer(user);
+
+    for (let i = 0; i < 4; i += 1) {
+      await user.click(screen.getByRole('button', { name: DRAWER_COPY.next }));
+    }
+    await user.click(topGroupHeader());
+
+    expect(screen.getByTestId('architecture-step-count')).toHaveTextContent('Step 1');
+  });
+
+  it('hands the drawer back when the same action is chosen again', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    await openDrawer(user);
+
+    await user.click(topGroupHeader());
+    expect(screen.getByTestId('architecture-replay-chip')).toBeInTheDocument();
+
+    await user.click(topGroupHeader());
+    expect(screen.queryByTestId('architecture-replay-chip')).not.toBeInTheDocument();
+    expect(screen.getAllByTestId('aws-feed-row')).toHaveLength(FLOW.steps.length);
+  });
+
+  it('leaves the replay by the chip', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    await openDrawer(user);
+
+    await user.click(topGroupHeader());
+    await user.click(screen.getByRole('button', { name: DRAWER_COPY.exitReplay }));
+
+    expect(screen.queryByTestId('architecture-replay-chip')).not.toBeInTheDocument();
+  });
+
+  /**
+   * The case that makes this worth building: replaying traffic that really happened.
+   * Live mode has no step controls because live traffic cannot be rewound — but a
+   * recording of it can be, which is exactly what a replay is.
+   */
+  it('replays real traffic from live mode, step controls and all', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    await openDrawer(user);
+    await user.click(screen.getByRole('button', { name: DRAWER_COPY.liveMode }));
+
+    act(() => {
+      publishInboundWsEvent(makeSpan());
+    });
+    expect(screen.queryByTestId('architecture-step-count')).not.toBeInTheDocument();
+
+    await user.click(topGroupHeader());
+
+    expect(screen.getByTestId('architecture-replay-chip')).toBeInTheDocument();
+    expect(screen.getByTestId('architecture-step-count')).toHaveTextContent('Step 1 of 1');
+    expect(screen.getByRole('button', { name: DRAWER_COPY.next })).toBeInTheDocument();
+  });
+
+  it('drops the serving chip while replaying, since nothing is being answered', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    await openDrawer(user);
+    await user.click(screen.getByRole('button', { name: DRAWER_COPY.liveMode }));
+
+    act(() => {
+      publishInboundWsEvent(makeSpan());
+    });
+    await user.click(topGroupHeader());
+
+    expect(screen.queryByTestId('architecture-serving-chip')).not.toBeInTheDocument();
   });
 });

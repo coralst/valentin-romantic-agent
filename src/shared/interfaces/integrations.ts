@@ -19,7 +19,19 @@ export type IntegrationId =
   | 'amadeus'
   | 'google-calendar'
   | 'gmail'
-  | 'whatsapp';
+  | 'whatsapp'
+  | 'wolt'
+  | 'events'
+  /**
+   * The headless browser itself, which is a dependency rather than a destination.
+   *
+   * It earns an id because the panel draws it as a node and because it has its own
+   * readiness — Chromium may simply not be installed — but nothing is "booked on
+   * the browser". Every id whose {@link INTEGRATION_TRANSPORT} is `'browser'` is
+   * unreachable when this one is not ready, which is a failure mode none of the
+   * direct integrations have and the reason it is modelled at all.
+   */
+  | 'browser';
 
 /** Every id, for iteration. Same order the tool registry registers them in. */
 export const INTEGRATION_IDS: readonly IntegrationId[] = [
@@ -29,7 +41,48 @@ export const INTEGRATION_IDS: readonly IntegrationId[] = [
   'google-calendar',
   'gmail',
   'whatsapp',
+  'browser',
+  'wolt',
+  'events',
 ] as const;
+
+/**
+ * How Valentin reaches a service: straight over HTTP, or by driving a browser.
+ *
+ * This is the axis the panel's relay layout is drawn from, and it is a real
+ * engineering distinction rather than a presentational one:
+ *
+ * - `direct` is an HTTP client against a documented (or at least stable) endpoint.
+ *   It fails cleanly, costs milliseconds, and needs nothing installed.
+ * - `browser` means there is no usable API and we drive a real page. It is an order
+ *   of magnitude slower, breaks when a site changes its markup, and depends on a
+ *   Chromium binary being present. Telling a visitor which of their capabilities
+ *   rest on that is the honest thing to do — those are the ones that will break
+ *   first, and they will break for reasons nobody controls.
+ *
+ * It is also the demo's whole argument. A hand-rolled browser tier is brittle in
+ * ways a managed one is not, and drawing the dependency makes that visible instead
+ * of merely assertable.
+ */
+export type IntegrationTransport = 'direct' | 'browser';
+
+export const INTEGRATION_TRANSPORT: Record<IntegrationId, IntegrationTransport> = {
+  hebcal: 'direct',
+  // Availability and checkout are a real (undocumented) JSON API. Only
+  // *discovery* needs a browser, and that is the `events`-style scrape below —
+  // see `ontopo/discovery.ts` for why the two halves differ.
+  ontopo: 'direct',
+  amadeus: 'direct',
+  'google-calendar': 'direct',
+  gmail: 'direct',
+  whatsapp: 'direct',
+  // Wolt's consumer API answers lat/lon queries without auth, so the catalogue is
+  // direct. Completing an order is not, but that is a handoff to Wolt's own
+  // checkout rather than something Valentin drives.
+  wolt: 'direct',
+  events: 'browser',
+  browser: 'browser',
+};
 
 /**
  * The body of `GET /api/integrations`.
@@ -47,6 +100,15 @@ export interface IntegrationStatus {
    * tools are not even registered, so the model cannot try and fail.
    */
   configured: boolean;
+  /**
+   * Whether reaching it needs the browser.
+   *
+   * Sent rather than looked up client-side so the drawing follows the deployment.
+   * A browser-backed capability on a container with no Chromium is unreachable, and
+   * the panel should be able to say that from one response rather than inferring it
+   * from a table compiled into the bundle.
+   */
+  transport: IntegrationTransport;
 }
 
 export interface IntegrationStatusResponse {
@@ -67,4 +129,14 @@ export const INTEGRATION_LABELS: Record<IntegrationId, string> = {
   'google-calendar': 'Google Calendar',
   gmail: 'Gmail',
   whatsapp: 'WhatsApp',
+  wolt: 'Wolt',
+  events: 'Event listings',
+  // Named for what it is rather than for Playwright: the visitor is being told
+  // that a real browser is involved, not which library drives it.
+  browser: 'Headless browser',
 };
+
+/** The ids reached by driving a page, for the panel's relay layout. */
+export const BROWSER_BACKED_IDS: readonly IntegrationId[] = INTEGRATION_IDS.filter(
+  (id) => INTEGRATION_TRANSPORT[id] === 'browser' && id !== 'browser',
+);

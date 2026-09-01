@@ -297,11 +297,21 @@ export function BriefRail() {
    * sending it. Valentin is the one who asks questions here, so the user gets to
    * see and edit the line before it goes.
    */
+  /*
+   * Every ask here also has to move the user to the composer it writes into.
+   *
+   * This rail is column 4 on BOTH surfaces, so these buttons are live while her
+   * file is up — but `MessageInput` lives in `ChatPanel`, which `AppLayout`
+   * unmounts for the dossier. Pressing Ask / Plan / Draft from her file set the
+   * line and changed nothing on screen. `returnToChat` is a no-op for the surface
+   * when the chat shell is already showing, so this is safe on both.
+   */
   const askAbout = useCallback(
     (gap: FieldGap) => {
       chatDispatch({ type: 'SET_INPUT', value: `Ask me about her ${gap.label.toLowerCase()}.` });
+      view?.returnToChat();
     },
-    [chatDispatch],
+    [chatDispatch, view],
   );
 
   /**
@@ -317,8 +327,9 @@ export function BriefRail() {
       const field = PROFILE_FIELD_REGISTRY.find((candidate) => candidate.id === fieldId);
       if (!field) return;
       chatDispatch({ type: 'SET_INPUT', value: `Ask me about her ${field.label.toLowerCase()}.` });
+      view?.returnToChat();
     },
-    [chatDispatch],
+    [chatDispatch, view],
   );
 
   /**
@@ -328,8 +339,9 @@ export function BriefRail() {
   const actOnTask = useCallback(
     (task: { title: string }) => {
       chatDispatch({ type: 'SET_INPUT', value: `Help me with this: ${task.title}.` });
+      view?.returnToChat();
     },
-    [chatDispatch],
+    [chatDispatch, view],
   );
 
   const handleLater = useCallback(() => {

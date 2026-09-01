@@ -169,6 +169,30 @@ describe('durable storage is switched on', () => {
   });
 });
 
+describe('engine B can actually invoke its Runtime', () => {
+  // The proxy sends X-Amzn-Bedrock-AgentCore-Runtime-User-Id on every invoke, to
+  // keep one demo visitor's Memory partition off another's. That header makes
+  // AgentCore authorize against InvokeAgentRuntimeForUser *as well as*
+  // InvokeAgentRuntime, and it refuses the call naming both when either is
+  // missing. With only the first granted, every engine-B turn returned
+  // AccessDenied and the UI showed its "having a little trouble" fallback — so
+  // engine B read as broken rather than unauthorized.
+  it('grants both invoke actions, not just InvokeAgentRuntime', () => {
+    computeTemplate.hasResourceProperties('AWS::IAM::Policy', {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: Match.arrayWith([
+              'bedrock-agentcore:InvokeAgentRuntime',
+              'bedrock-agentcore:InvokeAgentRuntimeForUser',
+            ]),
+          }),
+        ]),
+      },
+    });
+  });
+});
+
 describe('the account janitor cannot take the table again', () => {
   // On 2026-09-01 SpringClean — the Isengard account janitor, not anything AWS
   // documents — deleted ValentinTable-dev. Valentin-Data-dev still reported

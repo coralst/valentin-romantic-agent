@@ -259,7 +259,23 @@ export class ComputeStack extends cdk.Stack {
     // number the comparison produces.
     proxyTaskRole.addToPolicy(
       new iam.PolicyStatement({
-        actions: ['bedrock-agentcore:InvokeAgentRuntime'],
+        /*
+         * Both actions, not just the first.
+         *
+         * The proxy sends `X-Amzn-Bedrock-AgentCore-Runtime-User-Id` on every
+         * invoke (see `runtimeUserId` in agent/agentcore-adapter.ts), which is
+         * what keeps one demo visitor's Memory partition separate from the next.
+         * Supplying that header makes AgentCore authorize the call against
+         * `InvokeAgentRuntimeForUser` *as well as* `InvokeAgentRuntime`, and it
+         * refuses the request naming both when either is missing. With only the
+         * first, every engine-B turn died with AccessDenied and the UI served its
+         * "having a little trouble" fallback — engine B looked broken rather than
+         * unauthorized.
+         */
+        actions: [
+          'bedrock-agentcore:InvokeAgentRuntime',
+          'bedrock-agentcore:InvokeAgentRuntimeForUser',
+        ],
         resources: [
           props.agentCoreRuntimeArn,
           // Runtime *endpoints* are children of the runtime ARN and are what an

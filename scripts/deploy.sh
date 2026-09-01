@@ -13,6 +13,16 @@ set -euo pipefail
 #                              -> no Docker, no CDK. ~45s instead of ~7min.
 #                    backend   Docker + ECR + the Compute stack only
 #                    infra     CDK only (no Docker build, no frontend)
+#                    cdn       the CDN stack alone: CloudFront behaviours, origins
+#                              and cache policy. No Docker, no other stack, no
+#                              frontend build. ~2min (a distribution update).
+#                              This exists because a routing change at the edge
+#                              had no scope that could ship it: `frontend` only
+#                              syncs S3, `backend` only touches Compute, and
+#                              `infra`/`all` rebuild images and walk every stack
+#                              — which is unsafe when the backend and agent image
+#                              tags have diverged. Adding /ws/agentcore to
+#                              CloudFront needed exactly this and nothing else.
 #   --bootstrap      run `cdk bootstrap` first (it used to run on every deploy,
 #                    where it reported "no changes" and cost a round trip)
 #   --no-archive     skip copying this build to the release archive
@@ -45,8 +55,8 @@ if [[ ! "$ENV" =~ ^(dev|staging|prod)$ ]]; then
   echo "ERROR: Invalid environment '$ENV'. Must be dev, staging, or prod." >&2
   exit 1
 fi
-if [[ ! "$SCOPE" =~ ^(all|frontend|backend|infra)$ ]]; then
-  echo "ERROR: Invalid scope '$SCOPE'. Must be all, frontend, backend, or infra." >&2
+if [[ ! "$SCOPE" =~ ^(all|frontend|backend|infra|cdn)$ ]]; then
+  echo "ERROR: Invalid scope '$SCOPE'. Must be all, frontend, backend, infra, or cdn." >&2
   exit 1
 fi
 
@@ -215,7 +225,7 @@ else
 fi
 
 # --- 2. Deploy CDK stacks ---
-if [[ "$SCOPE" == "all" || "$SCOPE" == "backend" || "$SCOPE" == "infra" ]]; then
+if [[ "$SCOPE" == "all" || "$SCOPE" == "backend" || "$SCOPE" == "infra" || "$SCOPE" == "cdn" ]]; then
   echo ""
   echo "--- Deploying infrastructure..."
   cd "${ROOT}/infra"
@@ -259,7 +269,30 @@ if [[ "$SCOPE" == "all" || "$SCOPE" == "backend" || "$SCOPE" == "infra" ]]; then
   # agent tag, in which case a redeploy is ~16s of nothing. Any uncertainty
   # (missing stack, unreadable tag, mid-rollback) deploys: a redundant AgentCore
   # deploy is cheap, a missing one costs a Compute rollback.
-  if [[ "$SCOPE" == "backend" ]]; then
+  if [[ "$SCOPE" == "cdn" ]]; then
+    # CloudFront only. --exclusively matters more here than anywhere else: the
+    # CDN stack depends on Compute for the ALB origin, and without it CDK would
+    # walk back into Compute and AgentCore and redeploy them with whatever tag
+    # this invocation happens to hold — which is how an edge-routing change
+    # could take down a working backend.
+    #
+    # The image tag is passed only because bin/app.ts synthesises every stack and
+    # reads the context; the CDN stack itself references no image, so the value
+    # is inert. It is read from the running service rather than HEAD so a synth
+    # of the Compute stack never invents a tag that was never built.
+    CDN_IMAGE_TAG="$(aws ecs describe-task-definition \
+      --task-definition "valentin-task-${ENV}" \
+      --profile "$PROFILE" --region "$REGION" \
+      --query 'taskDefinition.containerDefinitions[0].image' --output text 2>/dev/null | sed 's/.*://')"
+    [[ -z "$CDN_IMAGE_TAG" || "$CDN_IMAGE_TAG" == "None" ]] && CDN_IMAGE_TAG="$IMAGE_TAG"
+    echo "--- scope=cdn: deploying the CDN stack alone (inert tag ${CDN_IMAGE_TAG})"
+    run env AWS_PROFILE="$PROFILE" npx cdk deploy "Valentin-CDN-${ENV}" --exclusively \
+      --context env="$ENV" \
+      --context imageTag="$CDN_IMAGE_TAG" \
+      --context agentImageTag="$(agentcore_deployed_tag)" \
+      --require-approval never \
+      --outputs-file "cdk-outputs-${ENV}.json"
+  elif [[ "$SCOPE" == "backend" ]]; then
     if agentcore_is_healthy && [[ "$(agentcore_deployed_tag)" == "$IMAGE_TAG" ]]; then
       echo "--- AgentCore already healthy at ${IMAGE_TAG}; deploying Compute only"
     else
@@ -424,6 +457,11 @@ echo "  /api/health OK"
 
 STACKS="Valentin-Compute-${ENV},Valentin-CDN-${ENV}"
 [[ "$SCOPE" == "frontend" ]] && STACKS=""
+# A cdn-scoped deploy ships no image and no bundle, so it is not a release: the
+# tag it would record is the one the running service already came from, and
+# writing it again would put a duplicate entry in the manifest that rollback
+# cannot distinguish from the real one.
+[[ "$SCOPE" == "cdn" ]] && STACKS=""
 TASK_DEF=$(aws ecs describe-services \
   --cluster "valentin-cluster-${ENV}" --services "valentin-service-${ENV}" \
   --profile "$PROFILE" --region "$REGION" \

@@ -229,3 +229,59 @@ function usageReport() {
 }
 
 usageReport();
+
+// ============================================================================================
+// Scale: at 100k and 1M users, one Fargate task is no longer enough.
+//
+// Below ~10k users the concurrency fits in a single 0.5 vCPU task, so engine A's compute stays
+// flat at $18.02 and simply amortises. Above that it has to step, and each step is another whole
+// task — whereas AgentCore Runtime has no steps at all. Modelling this matters: leaving Fargate
+// at one task for a million users would understate engine A.
+// ============================================================================================
+
+/** Concurrent WebSocket sessions one task is assumed to carry. ASSUMPTION. */
+export const SESSIONS_PER_TASK = 500;
+/** Wall-clock length of a session: 8 turns of conversation. ASSUMPTION. */
+export const SESSION_MINUTES = 12;
+
+const SESSIONS_PER_USER_MONTH = (USAGE.sessionsPerUserPerWeek * 52) / 12;
+const PEAK_HOURS_PER_MONTH = USAGE.peakHoursPerDay * 30;
+
+/** Peak concurrent sessions at a given user count. */
+export function peakConcurrency(users) {
+  const sessionsPerPeakHour =
+    (USAGE.eveningShare * users * SESSIONS_PER_USER_MONTH) / PEAK_HOURS_PER_MONTH;
+  return sessionsPerPeakHour * (SESSION_MINUTES / 60);
+}
+
+/** Fargate tasks needed to carry that peak — the step function engine A pays in. */
+export function fargateTasks(users) {
+  return Math.max(1, Math.ceil(peakConcurrency(users) / SESSIONS_PER_TASK));
+}
+
+export const scaledA = (users) =>
+  fargateTasks(users) * fargatePerMonth + users * (perUserA + TPU * perTurnA);
+export const scaledB = (users) => fixedB + users * (perUserB + TPU * perTurnB);
+
+function scaleReport() {
+  const usd = (v) =>
+    '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  console.log('\n════ SCALE (Fargate steps with peak concurrency) ════');
+  console.log('   users  tasks   peak    glue code       agentcore     ratio       saved/mo');
+  for (const u of [1, 10, 100, 1000, 10000, 100000, 1000000]) {
+    const a = scaledA(u);
+    const b = scaledB(u);
+    console.log(
+      String(u).padStart(8),
+      String(fargateTasks(u)).padStart(5),
+      peakConcurrency(u).toFixed(0).padStart(7),
+      usd(a).padStart(15),
+      usd(b).padStart(14),
+      ((a / b).toFixed(1) + '×').padStart(8),
+      usd(a - b).padStart(15),
+    );
+  }
+  console.log('  1M users, per year saved:', usd((scaledA(1e6) - scaledB(1e6)) * 12));
+}
+
+scaleReport();

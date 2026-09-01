@@ -20,7 +20,7 @@
          scroll-snap-type: y mandatory; overflow-y: scroll; height: 100vh; }
 
   section { min-height: 100vh; scroll-snap-align: start; display: grid; place-items: center;
-            padding: 60px 40px; position: relative; }
+            padding: 40px 40px; position: relative; }
   .wrap { width: 100%; max-width: 1180px; }
   .wide { max-width: 1440px; }
   h1 { font-family: Gloock, serif; font-weight: 400; font-size: clamp(56px, 9vw, 132px); line-height: 1.0; }
@@ -32,7 +32,7 @@
   .act b { color: var(--claret); font-weight: 500; }
   .lede { font-size: clamp(18px, 1.7vw, 23px); line-height: 1.6; color: var(--ink-2);
           max-width: 700px; margin-top: 16px; }
-  p.note { font-size: 16px; color: var(--ink-3); margin-top: 14px; max-width: 940px; }
+  p.note { font-size: 16px; color: var(--ink-3); margin-top: 14px; max-width: 1080px; }
   /* the bare-paragraph variant; resets the .cta pill below, which it also matches */
   p.cta { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 14px;
           background: none; box-shadow: none; padding: 0; }
@@ -126,18 +126,18 @@
   .who .owns { font-family: ui-monospace, monospace; font-size: 14px; color: var(--claret);
                background: var(--blush); border-radius: 999px; padding: 5px 12px; justify-self: start; }
 
-  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 22px; }
-  .stat { background: var(--cream); border-radius: var(--r-sm); padding: 18px 20px;
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 14px; }
+  .stat { background: var(--cream); border-radius: var(--r-sm); padding: 14px 20px;
           box-shadow: 0 1px 3px rgba(42,34,38,.05), 0 10px 26px rgba(42,34,38,.06); }
   .stat .v { font-family: Gloock, serif; font-size: clamp(28px, 3vw, 40px); color: var(--claret); line-height: 1; }
   .stat b { display: block; font: 500 15.5px Outfit; margin: 9px 0 5px; }
   .stat p { font-size: 14.5px; line-height: 1.45; color: var(--ink-2); }
 
   /* ---- diagram stage ---- */
-  .stage { margin-top: 20px; background: var(--cream); border-radius: var(--r);
+  .stage { margin-top: 12px; background: var(--cream); border-radius: var(--r);
            padding: 18px; display: grid; place-items: center; overflow: hidden;
            box-shadow: 0 2px 6px rgba(42,34,38,.06), 0 18px 44px rgba(42,34,38,.08); }
-  .stage svg, .stage img { max-width: 100%; max-height: 60vh; height: auto; display: block; }
+  .stage svg, .stage img { max-width: 100%; max-height: 55vh; height: auto; display: block; }
 
   /* ---- three turns of the review loop (.beat is taken by the PR-thread slide) ---- */
   .loopcards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 28px; }

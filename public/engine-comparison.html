@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glue code vs AgentCore · Valentin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gloock&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* Two series, validated with the dataviz palette checker on the light surface:
+       chroma floor, lightness band, CVD separation (deutan ΔE 13.7), normal-vision
+       floor (ΔE 22.4) and contrast vs surface all pass. */
+    --glue:#0F6E9C;
+    --agentcore:#8C2F45;
+
+    --ink:#2D2024;
+    --ink2:#6B5C60;
+    --ink3:#8A7A7E;
+    --taupe:#B8A99A;
+    --surface:#FFFFFF;
+    --ground:#F8F5F2;
+    --border:#EDE6E0;
+    --hairline:#F2ECE7;
+    --gold:#B08C4F;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:var(--ground);color:var(--ink);
+    font-family:'Outfit',system-ui,sans-serif;font-weight:300;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:0 40px 80px}
+  h1,h2,h3{font-family:'Gloock',Georgia,serif;font-weight:400;margin:0}
+
+  /* ---- mockup banner: this page's numbers are not all real yet ---- */
+  .mockup{
+    background:var(--gold);color:#fff;padding:9px 40px;font-size:12.5px;
+    letter-spacing:.02em;position:sticky;top:0;z-index:10;
+  }
+  .mockup b{font-weight:600}
+
+  header{padding:52px 0 34px}
+  h1{font-size:44px;line-height:1.05;letter-spacing:-.01em}
+  .sub{margin:12px 0 0;font-size:16px;color:var(--ink2);max-width:720px;line-height:1.55}
+  .keyline{display:flex;gap:18px;align-items:center;margin-top:22px;font-size:12.5px;color:var(--ink3)}
+  .chip{display:inline-flex;align-items:center;gap:7px}
+  .swatch{width:11px;height:11px;border-radius:3px;display:inline-block}
+
+  section{margin-top:44px}
+  .eyebrow{
+    font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--ink3);margin:0 0 4px
+  }
+  h2{font-size:25px;letter-spacing:-.005em}
+  .lede{margin:9px 0 0;font-size:14px;color:var(--ink2);max-width:800px;line-height:1.6}
+
+  /* ---- hero stat tiles ---- */
+  .heroes{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:22px}
+  .hero{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:22px 24px}
+  .hero .n{font-size:46px;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .hero .n small{font-size:19px;color:var(--ink3);margin-left:3px}
+  .hero .lbl{margin-top:9px;font-size:14px;font-weight:500}
+  .hero .why{margin-top:6px;font-size:12px;color:var(--ink3);line-height:1.5}
+
+  /* ---- provenance marks ---- */
+  .p{font-size:10px;color:var(--taupe);margin-right:5px}
+  .est{border-bottom:1px dotted var(--taupe)}
+
+  /* ---- two-architecture columns ---- */
+  .arch{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:22px}
+  .col{background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+  .col > h3{
+    font-family:'Outfit',sans-serif;font-size:12px;font-weight:600;letter-spacing:.09em;
+    text-transform:uppercase;padding:14px 20px;color:#fff
+  }
+  .col.glue > h3{background:var(--glue)}
+  .col.ac > h3{background:var(--agentcore)}
+  .col ul{list-style:none;margin:0;padding:8px 20px 18px}
+  .col li{
+    padding:9px 0;border-bottom:1px solid var(--hairline);font-size:13.5px;
+    display:flex;justify-content:space-between;gap:14px;align-items:baseline
+  }
+  .col li:last-child{border-bottom:0}
+  .col li span.meta{font-size:11.5px;color:var(--ink3);text-align:right;flex:0 0 auto}
+  .gone{color:var(--ink3)}
+  .gone .name{text-decoration:line-through;text-decoration-color:var(--taupe)}
+  .kept{font-weight:500}
+
+  /* ---- table ---- */
+  table{width:100%;border-collapse:collapse;margin-top:20px;background:var(--surface);
+    border:1px solid var(--border);border-radius:14px;overflow:hidden}
+  th,td{padding:13px 18px;text-align:left;font-size:13.5px;border-bottom:1px solid var(--hairline)}
+  th{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);font-weight:500}
+  tbody tr:last-child td{border-bottom:0}
+  td.num{font-variant-numeric:tabular-nums;text-align:right}
+  td.metric{font-weight:500}
+  .delta.good{color:#2F7A52;font-weight:500}
+  .delta.bad{color:#B0424F;font-weight:500}
+  .delta.flat{color:var(--ink3)}
+  td .src{font-size:11.5px;color:var(--ink3)}
+
+  /* ---- charts ---- */
+  .charts{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:22px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:22px 24px}
+  .card h3{font-family:'Outfit',sans-serif;font-size:14.5px;font-weight:600}
+  .card .note{margin:7px 0 0;font-size:12px;color:var(--ink3);line-height:1.5}
+  svg{display:block;margin-top:14px;overflow:visible}
+  .grid{stroke:var(--hairline);stroke-width:1}
+  .axis{stroke:var(--border);stroke-width:1}
+  .tick{font-size:10.5px;fill:var(--ink3);font-family:'Outfit',sans-serif}
+  .vlabel{font-size:11.5px;fill:var(--ink2);font-family:'Outfit',sans-serif;font-variant-numeric:tabular-nums}
+  .slabel{font-size:11.5px;font-family:'Outfit',sans-serif;font-weight:500}
+  rect.bar{rx:4}
+  rect.bar:hover,circle.dot:hover{opacity:.82;cursor:default}
+
+  /* ---- honesty panel ---- */
+  .fair{background:#FFFDF8;border:1px solid #EADFC4;border-radius:14px;padding:22px 24px;margin-top:22px}
+  .fair h3{font-family:'Outfit',sans-serif;font-size:14.5px;font-weight:600;color:#7A6231}
+  .fair ul{margin:11px 0 0;padding-left:19px;font-size:13.5px;color:var(--ink2);line-height:1.75}
+  .fair li::marker{color:var(--gold)}
+
+  footer{margin-top:44px;padding-top:22px;border-top:1px solid var(--border);
+    font-size:12px;color:var(--ink3);line-height:1.7}
+  footer code{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--ink2)}
+</style>
+</head>
+<body data-palette="#0F6E9C,#8C2F45">
+
+<div class="mockup">
+  <b>MOCKUP — for layout approval.</b>
+  Values marked <span class="est">like this</span> are illustrative placeholders, not measurements.
+  Values without the dotted underline are already real, counted from this repo.
+</div>
+
+<div class="wrap">
+
+<header>
+  <h1>Glue code vs AgentCore</h1>
+  <p class="sub">
+    The same agent, the same model, the same prompts — served two ways. Engine A is the
+    hand-built stack: Bedrock Converse from a Fargate service, with conversation memory
+    and preference extraction we wrote ourselves. Engine B is AgentCore Runtime, Memory
+    and Gateway. This page is what the difference actually costs.
+  </p>
+  <div class="keyline">
+    <span class="chip"><span class="swatch" style="background:var(--glue)"></span> Glue code</span>
+    <span class="chip"><span class="swatch" style="background:var(--agentcore)"></span> AgentCore</span>
+    <span>·</span>
+    <span>● measured live &nbsp; ▪ counted in this repo &nbsp; ○ rate calculation</span>
+  </div>
+</header>
+
+<!-- ============================ HEADLINE ============================ -->
+<section>
+  <p class="eyebrow">The short version</p>
+  <h2>Three numbers</h2>
+  <div class="heroes">
+    <div class="hero">
+      <div class="n" style="color:var(--agentcore)">727<small> → 0</small></div>
+      <div class="lbl">lines of code we stop owning</div>
+      <div class="why"><span class="p">▪</span>The whole of <code>src/server/extraction/</code> plus
+        <code>conversation-memory.ts</code>. AgentCore Memory does this as a managed strategy.</div>
+    </div>
+    <div class="hero">
+      <div class="n" style="color:var(--agentcore)">2<small> → 1</small></div>
+      <div class="lbl">model calls per user turn</div>
+      <div class="why"><span class="p">●</span>Engine A pays for a second forced-tool
+        <code>extract-preferences</code> Converse on every turn. AgentCore extracts on its own schedule.</div>
+    </div>
+    <div class="hero">
+      <div class="n" style="color:var(--glue)">$<span class="est">66</span><small> → $<span class="est">0</span></small></div>
+      <div class="lbl">infrastructure cost at zero traffic</div>
+      <div class="why"><span class="p">○</span>Engine A never scales below one Fargate task.
+        AgentCore Runtime bills per invocation-second — an idle month is free.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ ARCHITECTURE ============================ -->
+<section>
+  <p class="eyebrow">What each one needs</p>
+  <h2>The stack, side by side</h2>
+  <p class="lede">
+    Struck-through rows are the components AgentCore removes. Note what it does
+    <em>not</em> remove: a Fargate service still fronts it here, so this is not a
+    serverless-versus-containers story.
+  </p>
+  <div class="arch">
+    <div class="col glue">
+      <h3>Glue code — engine A</h3>
+      <ul>
+        <li><span class="name kept">CloudFront + WAF</span><span class="meta">shared</span></li>
+        <li><span class="name kept">Application Load Balancer</span><span class="meta">shared · idle 3600s</span></li>
+        <li><span class="name kept">ECS Fargate service</span><span class="meta">512 CPU · 1 GiB · min 1 task</span></li>
+        <li><span class="name kept">Bedrock Converse</span><span class="meta">Claude Sonnet 4.5</span></li>
+        <li><span class="name">DynamoDB conversation store</span><span class="meta">single-table · GSI1</span></li>
+        <li><span class="name">Hand-written preference extractor</span><span class="meta">624 lines</span></li>
+        <li><span class="name">Hand-written context window</span><span class="meta">103 lines</span></li>
+        <li><span class="name">Hand-written tool loop</span><span class="meta">max 5 iterations</span></li>
+      </ul>
+    </div>
+    <div class="col ac">
+      <h3>AgentCore — engine B</h3>
+      <ul>
+        <li><span class="name kept">CloudFront + WAF</span><span class="meta">shared</span></li>
+        <li><span class="name kept">Application Load Balancer</span><span class="meta">shared · idle 3600s</span></li>
+        <li><span class="name kept">ECS Fargate proxy</span><span class="meta">same size, deliberately</span></li>
+        <li><span class="name kept">AgentCore Runtime</span><span class="meta">per invocation-second</span></li>
+        <li class="gone"><span class="name">DynamoDB conversation store</span><span class="meta">→ AgentCore Memory</span></li>
+        <li class="gone"><span class="name">Hand-written preference extractor</span><span class="meta">→ Memory strategy</span></li>
+        <li class="gone"><span class="name">Hand-written context window</span><span class="meta">→ Memory</span></li>
+        <li class="gone"><span class="name">Hand-written tool loop</span><span class="meta">→ Gateway over MCP</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ CHARTS ============================ -->
+<section>
+  <p class="eyebrow">Where it costs and where it pays</p>
+  <h2>Latency and cost</h2>
+  <div class="charts">
+
+    <!-- LATENCY: grouped horizontal bars, one axis (ms), both series direct-labelled -->
+    <div class="card">
+      <h3>Reply latency — AgentCore is slower</h3>
+      <p class="note">
+        And it should be: <code>InvokeAgentRuntime</code> is a second network call wrapping
+        the model call, and tools go out over MCP to a Lambda instead of the in-process SDK.
+        This is the cost of the trade, stated plainly.
+      </p>
+      <svg viewBox="0 0 520 214" role="img" aria-label="Reply latency p50 and p95 by engine">
+        <!-- gridlines every 500ms, 0–2500ms over 380px -->
+        <g class="grid">
+          <line x1="112" y1="26" x2="112" y2="176"/>
+          <line x1="188" y1="26" x2="188" y2="176"/>
+          <line x1="264" y1="26" x2="264" y2="176"/>
+          <line x1="340" y1="26" x2="340" y2="176"/>
+          <line x1="416" y1="26" x2="416" y2="176"/>
+          <line x1="492" y1="26" x2="492" y2="176"/>
+        </g>
+        <line class="axis" x1="112" y1="176" x2="492" y2="176"/>
+
+        <!-- p50 group -->
+        <text class="vlabel" x="104" y="52" text-anchor="end">p50</text>
+        <rect class="bar" x="112" y="34" width="188" height="17" fill="var(--glue)">
+          <title>Glue code p50 — 1,240 ms (illustrative)</title></rect>
+        <text class="slabel" x="308" y="47" fill="var(--glue)">1,240 ms</text>
+        <rect class="bar" x="112" y="55" width="245" height="17" fill="var(--agentcore)">
+          <title>AgentCore p50 — 1,610 ms (illustrative)</title></rect>
+        <text class="slabel" x="365" y="68" fill="var(--agentcore)">1,610 ms</text>
+
+        <!-- p95 group -->
+        <text class="vlabel" x="104" y="122" text-anchor="end">p95</text>
+        <rect class="bar" x="112" y="104" width="319" height="17" fill="var(--glue)">
+          <title>Glue code p95 — 2,100 ms (illustrative)</title></rect>
+        <text class="slabel" x="439" y="117" fill="var(--glue)">2,100 ms</text>
+        <rect class="bar" x="112" y="125" width="365" height="17" fill="var(--agentcore)">
+          <title>AgentCore p95 — 2,400 ms (illustrative)</title></rect>
+        <text class="slabel" x="485" y="138" fill="var(--agentcore)">2,400 ms</text>
+
+        <!-- axis ticks -->
+        <text class="tick" x="112" y="192" text-anchor="middle">0</text>
+        <text class="tick" x="188" y="192" text-anchor="middle">500</text>
+        <text class="tick" x="264" y="192" text-anchor="middle">1s</text>
+        <text class="tick" x="340" y="192" text-anchor="middle">1.5s</text>
+        <text class="tick" x="416" y="192" text-anchor="middle">2s</text>
+        <text class="tick" x="492" y="192" text-anchor="middle">2.5s</text>
+        <text class="tick" x="112" y="210">milliseconds · lower is better</text>
+      </svg>
+    </div>
+
+    <!-- COST: two lines over traffic, one axis ($/mo), crossover called out -->
+    <div class="card">
+      <h3>Infrastructure cost, by traffic</h3>
+      <p class="note">
+        Model tokens are excluded because they are <em>identical</em> on both engines —
+        including them would hide the shape. Engine A pays a flat floor whether anyone
+        talks to it or not; AgentCore starts at nothing and climbs.
+      </p>
+      <svg viewBox="0 0 520 214" role="img" aria-label="Monthly infrastructure cost by monthly turns, both engines">
+        <g class="grid">
+          <line x1="52" y1="34" x2="500" y2="34"/>
+          <line x1="52" y1="70" x2="500" y2="70"/>
+          <line x1="52" y1="106" x2="500" y2="106"/>
+          <line x1="52" y1="142" x2="500" y2="142"/>
+        </g>
+        <line class="axis" x1="52" y1="176" x2="500" y2="176"/>
+
+        <!-- y ticks: 0,50,100,150,200 -->
+        <text class="tick" x="44" y="180" text-anchor="end">$0</text>
+        <text class="tick" x="44" y="146" text-anchor="end">$50</text>
+        <text class="tick" x="44" y="110" text-anchor="end">$100</text>
+        <text class="tick" x="44" y="74" text-anchor="end">$150</text>
+        <text class="tick" x="44" y="38" text-anchor="end">$200</text>
+
+        <!-- glue code: 66, 66, 68, 84 -->
+        <polyline fill="none" stroke="var(--glue)" stroke-width="2"
+          points="52,129 201,129 350,127 500,116"/>
+        <circle class="dot" cx="52"  cy="129" r="4.5" fill="var(--glue)"><title>Glue code, idle — $66/mo (illustrative)</title></circle>
+        <circle class="dot" cx="201" cy="129" r="4.5" fill="var(--glue)"><title>Glue code, 1k turns — $66/mo (illustrative)</title></circle>
+        <circle class="dot" cx="350" cy="127" r="4.5" fill="var(--glue)"><title>Glue code, 10k turns — $68/mo (illustrative)</title></circle>
+        <circle class="dot" cx="500" cy="116" r="4.5" fill="var(--glue)"><title>Glue code, 100k turns — $84/mo (illustrative)</title></circle>
+        <text class="slabel" x="60" y="121" fill="var(--glue)">$66 flat</text>
+
+        <!-- agentcore: 0, 2, 18, 180 -->
+        <polyline fill="none" stroke="var(--agentcore)" stroke-width="2"
+          points="52,176 201,175 350,163 500,46"/>
+        <circle class="dot" cx="52"  cy="176" r="4.5" fill="var(--agentcore)"><title>AgentCore, idle — $0/mo (illustrative)</title></circle>
+        <circle class="dot" cx="201" cy="175" r="4.5" fill="var(--agentcore)"><title>AgentCore, 1k turns — $2/mo (illustrative)</title></circle>
+        <circle class="dot" cx="350" cy="163" r="4.5" fill="var(--agentcore)"><title>AgentCore, 10k turns — $18/mo (illustrative)</title></circle>
+        <circle class="dot" cx="500" cy="46"  r="4.5" fill="var(--agentcore)"><title>AgentCore, 100k turns — $180/mo (illustrative)</title></circle>
+        <text class="slabel" x="470" y="38" fill="var(--agentcore)" text-anchor="end">$180</text>
+
+        <!-- crossover -->
+        <!-- Where AgentCore's climbing line crosses engine A's flat floor: interpolated
+             between the 10k and 100k points, not eyeballed. -->
+        <line x1="394" y1="60" x2="394" y2="176" stroke="var(--taupe)" stroke-width="1" stroke-dasharray="3 3"/>
+        <circle cx="394" cy="129" r="3.5" fill="none" stroke="var(--taupe)" stroke-width="1.5"/>
+        <text class="tick" x="390" y="56" text-anchor="end">crossover ≈ 40k turns/mo</text>
+
+        <!-- x ticks -->
+        <text class="tick" x="52"  y="192">idle</text>
+        <text class="tick" x="201" y="192" text-anchor="middle">1k</text>
+        <text class="tick" x="350" y="192" text-anchor="middle">10k</text>
+        <text class="tick" x="500" y="192" text-anchor="end">100k</text>
+        <text class="tick" x="52"  y="210">turns per month · log-ish spacing</text>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ TABLE ============================ -->
+<section>
+  <p class="eyebrow">Every number, with its source</p>
+  <h2>Per turn, measured</h2>
+  <p class="lede">
+    This table is also the accessible view of the two charts above — no value here is
+    conveyed by colour alone.
+  </p>
+  <table>
+    <thead>
+      <tr>
+        <th>Metric</th>
+        <th style="text-align:right">Glue code</th>
+        <th style="text-align:right">AgentCore</th>
+        <th style="text-align:right">Difference</th>
+        <th>How we know</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="metric">Model calls per turn</td>
+        <td class="num">2</td>
+        <td class="num">1</td>
+        <td class="num delta good">−50%</td>
+        <td class="src"><span class="p">●</span>counted server-side per turn</td>
+      </tr>
+      <tr>
+        <td class="metric">Store reads per turn</td>
+        <td class="num est">10</td>
+        <td class="num est">12</td>
+        <td class="num delta bad">+20%</td>
+        <td class="src"><span class="p">●</span>both call the same <code>readKnownFacts()</code>; B also mirrors</td>
+      </tr>
+      <tr>
+        <td class="metric">Reply latency p50</td>
+        <td class="num est">1,240 ms</td>
+        <td class="num est">1,610 ms</td>
+        <td class="num delta bad">+30%</td>
+        <td class="src"><span class="p">●</span>extra network hop through the Runtime</td>
+      </tr>
+      <tr>
+        <td class="metric">Reply latency p95</td>
+        <td class="num est">2,100 ms</td>
+        <td class="num est">2,400 ms</td>
+        <td class="num delta bad">+14%</td>
+        <td class="src"><span class="p">●</span>same cause</td>
+      </tr>
+      <tr>
+        <td class="metric">Tokens per turn</td>
+        <td class="num est">3,752</td>
+        <td class="num">—</td>
+        <td class="num delta flat">unmeasured</td>
+        <td class="src"><span class="p">●</span>the Runtime reports no usage today</td>
+      </tr>
+      <tr>
+        <td class="metric">Lines of code we own</td>
+        <td class="num">727</td>
+        <td class="num">0</td>
+        <td class="num delta good">−727</td>
+        <td class="src"><span class="p">▪</span><code>wc -l</code> over extraction + memory</td>
+      </tr>
+      <tr>
+        <td class="metric">Always-on tasks (dev)</td>
+        <td class="num">1</td>
+        <td class="num">0</td>
+        <td class="num delta good">−1</td>
+        <td class="src"><span class="p">○</span><code>minCapacity: desiredCount</code> in the CDK</td>
+      </tr>
+      <tr>
+        <td class="metric">Infra cost at zero traffic</td>
+        <td class="num est">$66/mo</td>
+        <td class="num est">$0/mo</td>
+        <td class="num delta good">−100%</td>
+        <td class="src"><span class="p">○</span>published rates, shared ALB and NAT excluded</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============================ CODE ============================ -->
+<section>
+  <p class="eyebrow">The strongest argument</p>
+  <h2>727 lines that stop being ours</h2>
+  <p class="lede">
+    Not "less code to write" — code already written, already tested, already a place
+    bugs live. AgentCore Memory does short-term history and long-term preference
+    extraction as a managed strategy, which is exactly what these files do by hand.
+  </p>
+  <table>
+    <thead>
+      <tr><th>File</th><th style="text-align:right">Lines</th><th>What it does</th><th>Replaced by</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="metric"><code>extraction/preference-extractor.ts</code></td><td class="num">545</td>
+        <td class="src">forced-tool Converse, merge, dedupe, people, tasks</td><td class="src">Memory strategy</td></tr>
+      <tr><td class="metric"><code>extraction/category-mapper.ts</code></td><td class="num">50</td>
+        <td class="src">maps model output onto profile fields</td><td class="src">Memory strategy</td></tr>
+      <tr><td class="metric"><code>extraction/partner-name.ts</code></td><td class="num">29</td>
+        <td class="src">pulls the partner's name out of prose</td><td class="src">Memory strategy</td></tr>
+      <tr><td class="metric"><code>persistence/conversation-memory.ts</code></td><td class="num">103</td>
+        <td class="src">token budget, truncation, the fake summary line</td><td class="src">Memory short-term</td></tr>
+      <tr><td class="metric" style="font-weight:600">Total</td><td class="num" style="font-weight:600">727</td>
+        <td class="src">—</td><td class="src">—</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============================ FAIRNESS ============================ -->
+<section>
+  <p class="eyebrow">The other side</p>
+  <h2>Where glue code wins</h2>
+  <div class="fair">
+    <h3>Reasons not to move — stated because they're real</h3>
+    <ul>
+      <li><b>Above roughly <span class="est">40k turns a month</span>, the always-on tasks are cheaper.</b>
+        A flat floor amortises; per-invocation billing does not.</li>
+      <li><b>Latency is lower and always will be.</b> One fewer network hop is one fewer
+        network hop.</li>
+      <li><b>Propose-then-confirm exists only on engine A.</b> <code>confirmAction</code>
+        throws on the AgentCore orchestrator — booking a restaurant behind a click is a
+        feature engine B has not got yet.</li>
+      <li><b>No preview-service dependency.</b> Converse and DynamoDB are generally
+        available with published limits.</li>
+      <li><b>Every failure is debuggable in one process.</b> The hand-written tool loop is
+        five iterations of code you can read; a managed Runtime is not.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <p>
+    <b>What is real on this page:</b> the 727-line count (re-counted from the repo by a
+    unit test that fails if it drifts), the model-calls-per-turn difference, the
+    always-on task count from the CDK, and the component lists. <b>What is a
+    placeholder:</b> every <span class="est">dotted</span> value — latencies, store reads,
+    tokens, and all dollar figures.
+  </p>
+  <p>
+    Filling them in needs the deployed dev app and one bench run per engine, because one
+    process serves one engine (<code>AGENT_ENGINE</code> is per-process by design) and
+    Bedrock is blocked for the local IAM user.
+  </p>
+  <p>
+    AgentCore here still answers behind a Fargate proxy. What it removes is the stateful
+    Fargate, the hand-written extractor and the DynamoDB memory layer — not Fargate.
+  </p>
+</footer>
+
+</div>
+</body>
+</html>

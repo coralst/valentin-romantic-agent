@@ -204,12 +204,27 @@ export class BedrockAgentCoreRuntime implements AgentCoreRuntime {
       const body = await collectBody(response.response);
       const parsed = parseRuntimeReply(body);
 
-      logger.info('agentcore.invoke', {
+      /*
+       * A 200 is not the same as a turn that worked.
+       *
+       * agent.py returns `{content: '', error: ...}` when the Strands agent threw
+       * inside the Runtime, so the transport succeeded while the turn did not.
+       * Logging that as `ok: true` is how an unusable engine B looked healthy in
+       * the proxy's log group: the only visible symptom was a downstream
+       * CreateEvent complaining that the assistant text was empty, which reads
+       * like a memory bug rather than a failed model call.
+       */
+      const failed = Boolean(parsed.error) || !parsed.content.trim();
+      logger[failed ? 'error' : 'info']('agentcore.invoke', {
         sessionId: turn.sessionId,
         durationMs: Date.now() - started,
         runtimeSessionId: response.runtimeSessionId,
         toolsUsed: parsed.toolsUsed.length,
-        ok: true,
+        ok: !failed,
+        // Truncated: a Python traceback can be long, and the type plus message is
+        // what names the fault.
+        ...(parsed.error ? { runtimeError: parsed.error.slice(0, 500) } : {}),
+        ...(failed && !parsed.error ? { reason: 'the Runtime returned no content' } : {}),
       });
 
       // One line per tool the Runtime says it called, so the Gateway lights in
@@ -247,6 +262,25 @@ export class BedrockAgentCoreRuntime implements AgentCoreRuntime {
     agentText: string,
   ): Promise<void> {
     const started = Date.now();
+
+    /*
+     * CreateEvent rejects a zero-length `content.text`, and a failed turn has
+     * exactly that: agent.py answers with `content: ''` when the Runtime threw.
+     * Writing it anyway turned one failure into two log lines, the second of
+     * which ("Member must have length greater than or equal to 1") described the
+     * symptom rather than the cause. There is also nothing worth remembering
+     * about a turn the agent never completed, so skip it and say why.
+     */
+    if (!userText.trim() || !agentText.trim()) {
+      logger.warn('agentcore.memory.skipped', {
+        sessionId,
+        operation: 'CreateEvent',
+        reason: 'a turn with empty text cannot be stored, and holds nothing to recall',
+        emptySide: !agentText.trim() ? 'assistant' : 'user',
+      });
+      return;
+    }
+
     try {
       await this.client.send(
         new CreateEventCommand({
@@ -405,6 +439,8 @@ async function collectBody(body: unknown): Promise<string> {
 export function parseRuntimeReply(body: string): {
   content: string;
   toolsUsed: string[];
+  /** The Runtime's own diagnosis when it failed inside the container. */
+  error?: string;
 } {
   const trimmed = body.trim();
   if (!trimmed) return { content: '', toolsUsed: [] };
@@ -436,7 +472,19 @@ export function parseRuntimeReply(body: string): {
     ? rawTools.filter((name): name is string => typeof name === 'string')
     : [];
 
-  return { content, toolsUsed };
+  /*
+   * agent.py catches its own exceptions and answers 200 with
+   * `{content: '', tools_used: [], error: '<Type>: <message>'}` rather than
+   * raising, so the proxy gets a diagnosable body instead of the Runtime's
+   * generic error page. This field was being dropped on the floor — the turn was
+   * logged `ok: true` with empty content, the user got the apology, and the one
+   * string naming the cause went nowhere. The Runtime's own log group does not
+   * exist until the container writes to it, so for a failure this early the
+   * reply body is the *only* place the reason appears.
+   */
+  const error = typeof record.error === 'string' && record.error.trim() ? record.error : undefined;
+
+  return { content, toolsUsed, error };
 }
 
 /**

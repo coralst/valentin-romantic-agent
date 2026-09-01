@@ -147,7 +147,7 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
   } = useProfileStoreContext();
   const { dispatch: chatDispatch } = useChatContext();
   const discovery = useOptionalDiscoveryContext();
-  const { closeDossier } = useViewContext();
+  const { closeDossier, returnToChat } = useViewContext();
 
   /**
    * Escape closes her file, which also returns focus to her portrait in the brief.
@@ -267,14 +267,26 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
    * Identical to the rail's `askAbout`: Valentin is the one who asks questions
    * here, so the user sees and can edit the line before it goes.
    */
+  /*
+   * `returnToChat` alongside every `SET_INPUT` on this surface.
+   *
+   * The composer that renders `inputValue` is `MessageInput`, inside `ChatPanel`
+   * — and `AppLayout` unmounts `ChatPanel` for as long as her file is up. So the
+   * line was written into state nobody was displaying: the user pressed an ask
+   * button, the dossier did not move, no text appeared, and the prompt was
+   * waiting in a composer they had to go and find. `returnToChat` is the
+   * existing "take me to the conversation" — it leaves the dossier and puts the
+   * caret in the composer, which is where the line now visibly is.
+   */
   const askAbout = useCallback(
     (label: string) => {
       chatDispatch({
         type: 'SET_INPUT',
         value: `Ask me about her ${label.toLowerCase()}.`,
       });
+      returnToChat();
     },
-    [chatDispatch],
+    [chatDispatch, returnToChat],
   );
 
   /**
@@ -290,7 +302,10 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
         ? 'What else would help you plan something for her?'
         : `Ask me about her ${top.join(', ')}.`;
     chatDispatch({ type: 'SET_INPUT', value });
-  }, [gaps, chatDispatch]);
+    // The header's primary CTA. Without this it was the most prominent button on
+    // the surface and the one that appeared to do the least.
+    returnToChat();
+  }, [gaps, chatDispatch, returnToChat]);
 
   const saveField = useCallback(
     (fieldId: string, value: string) => {
@@ -344,8 +359,9 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
         type: 'SET_INPUT',
         value: `Remind me — what's her ${person.relationship.toLowerCase()}'s name?`,
       });
+      returnToChat();
     },
-    [chatDispatch],
+    [chatDispatch, returnToChat],
   );
 
   /**

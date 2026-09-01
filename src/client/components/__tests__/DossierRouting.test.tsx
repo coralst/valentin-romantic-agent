@@ -118,6 +118,51 @@ describe('dossier surface routing', () => {
   });
 
   /*
+   * The whole class of bug this file exists to catch, asserted at the surface
+   * rather than at the state the control writes.
+   *
+   * Every one of these controls is reachable while her file is up, and every one
+   * of them writes somewhere only the chat shell renders — a session's transcript,
+   * or the composer inside `ChatPanel`, which `AppLayout` unmounts for the
+   * dossier. Each shipped setting its state and leaving the dossier on screen, so
+   * the button looked broken while the app was working exactly as written.
+   *
+   * Asserting `data-surface` is the point: the previous tests for these buttons
+   * checked the chat *state* and passed throughout, and would pass again if the
+   * `returnToChat` calls were deleted.
+   */
+  describe('controls that write to the chat shell also travel to it', () => {
+    it('leaves her file when the header CTA is pressed', async () => {
+      const user = userEvent.setup();
+      renderApp();
+
+      await user.click(screen.getByTestId('brief-cameo'));
+      expect(screen.getByTestId('app-layout')).toHaveAttribute('data-surface', 'dossier');
+
+      await user.click(screen.getByTestId('dossier-ask-all'));
+      await waitFor(() =>
+        expect(screen.getByTestId('app-layout')).toHaveAttribute('data-surface', 'chat'),
+      );
+    });
+
+    // "+ New conversation" is pinned beside her file too, and it was the report
+    // that started this: the conversation was created and made active while the
+    // dossier stayed up, so there was no way into the thing just created.
+    it('leaves her file when + New conversation is pressed', async () => {
+      const user = userEvent.setup();
+      renderApp();
+
+      await user.click(screen.getByTestId('brief-cameo'));
+      expect(screen.getByTestId('app-layout')).toHaveAttribute('data-surface', 'dossier');
+
+      await user.click(screen.getByRole('button', { name: 'New chat' }));
+      await waitFor(() =>
+        expect(screen.getByTestId('app-layout')).toHaveAttribute('data-surface', 'chat'),
+      );
+    });
+  });
+
+  /*
    * There were two doors into her file and now there are three, none of which is
    * the brief's old footer link. The tally footer that carried it is deleted —
    * "21 of 21 known" was a score for the app, not a fact about her — so the ways

@@ -148,7 +148,7 @@ interface DemoToolbarProps {
  * click, and reset back to a clean slate between rehearsals.
  */
 export function DemoToolbar({ children }: DemoToolbarProps) {
-  const { activeSession, adoptSession, switchSession } = useSessionContext();
+  const { activeSession, refreshSessions } = useSessionContext();
   const { dispatch: chatDispatch } = useChatContext();
   const { state: preferencesState, dispatch: preferencesDispatch } = usePreferencesContext();
   const { dispatch: profileDispatch } = useProfileStoreContext();
@@ -183,17 +183,26 @@ export function DemoToolbar({ children }: DemoToolbarProps) {
        * hydrate over HTTP with everything else — and survive a new device, which
        * a localStorage seed never did.
        */
-      // Adopt then switch, so SessionSyncer sees a real session change and
-      // rehydrates chat + preferences for us.
-      adoptSession(buildDemoSession(sessionId, preferences));
-      switchSession(sessionId);
+      /*
+       * Re-read the list rather than inventing a row for it.
+       *
+       * The seed creates one conversation per fixture conversation — five for
+       * Samantha, each with its own server-set title and back-dated activity. This
+       * used to `adoptSession(buildDemoSession(...))`, a single fabricated
+       * "Demo profile" row with no messages, so the sidebar showed one entry where
+       * the account had five and the other four surfaced only after a reload.
+       *
+       * `refreshSessions` focuses the seeded id and hydrates it, so SessionSyncer
+       * still sees a real session change and rehydrates chat + preferences.
+       */
+      await refreshSessions(sessionId);
       announce(`Demo profile loaded — ${preferenceCount} preferences`, 'info');
     } catch (error) {
       announce(`Couldn't load the demo profile — ${describeError(error)}.`, 'error');
     } finally {
       setPending(null);
     }
-  }, [adoptSession, switchSession, announce]);
+  }, [refreshSessions, announce]);
 
   const clearVisibleState = useCallback(() => {
     chatDispatch({ type: 'SWITCH_SESSION', sessionId: activeSession?.id ?? null, messages: [] });

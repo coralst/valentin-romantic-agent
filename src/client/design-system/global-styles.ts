@@ -63,6 +63,53 @@ export const globalStyles = `@import url('https://fonts.googleapis.com/css2?fami
     background: none;
   }
 
+  /*
+   * Feedback for every control, in one place.
+   *
+   * This block did not exist. There was no \`button:hover\` and no \`:focus\` rule
+   * anywhere in the repository, so roughly sixty controls — every rail button, every
+   * chip, every "Ask" pill, every dossier row — did nothing at all under the cursor
+   * and showed nothing under the keyboard. That is the same signal a genuinely dead
+   * control gives, which made the real dead ones impossible to spot by looking.
+   *
+   * Done globally rather than per component on purpose: two components had
+   * hand-rolled hover states and fifty-eight did not, and the next one added would
+   * have made it fifty-nine.
+   */
+  button:not(:disabled):hover {
+    filter: brightness(0.95) saturate(1.03);
+  }
+
+  /*
+   * \`not-allowed\`, so a button that cannot be pressed stops claiming it can. The
+   * base rule above sets \`cursor: pointer\` on every button including disabled ones,
+   * which is what made GuidedIntro's dimmed CTA and PersonEditor's Save read as live.
+   */
+  button:disabled {
+    cursor: not-allowed;
+  }
+
+  /*
+   * \`:focus-visible\`, not \`:focus\` — a mouse click on a button should not leave a
+   * ring behind, which is why the outline was removed in the first place.
+   *
+   * Gold with an offset, copying \`IconRail\`'s crest: the ring follows the control
+   * instead of boxing it, and gold is legible on claret and on porcelain alike.
+   * \`[role="button"]\` and \`[role="separator"]\` are included because the session
+   * row's rename/delete and the drawer's resize edge are those, not \`<button>\`.
+   */
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  [role="button"]:focus-visible,
+  [role="separator"]:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid ${colors.gold};
+    outline-offset: 2px;
+    border-radius: inherit;
+  }
+
   input, textarea {
     font-family: ${typography.bodyFontFamily};
     font-size: ${typography.sizes.base};

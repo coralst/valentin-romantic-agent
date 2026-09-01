@@ -63,7 +63,13 @@ export function SectionHead({ label, count, warn }: SectionHeadProps) {
           &#9888;
         </span>
       )}
-      {count !== undefined && <span style={countStyle}>{count}</span>}
+      {/* The number alone announces as "21", which tells a screen-reader user
+          nothing. The visible glyph stays bare; the name says what it counts. */}
+      {count !== undefined && (
+        <span style={countStyle} aria-label={`${count} in ${label}`}>
+          {count}
+        </span>
+      )}
     </div>
   );
 }

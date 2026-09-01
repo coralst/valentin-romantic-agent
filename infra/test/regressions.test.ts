@@ -9,7 +9,8 @@
  */
 import { describe, expect, it, beforeAll } from 'vitest';
 import * as cdk from 'aws-cdk-lib';
-import { Template } from 'aws-cdk-lib/assertions';
+import { Match, Template } from 'aws-cdk-lib/assertions';
+import { applySpringCleanExemption } from '../lib/springclean-exemption';
 import { getConfig } from '../config/environments';
 import { NetworkStack } from '../lib/network-stack';
 import { DataStack } from '../lib/data-stack';
@@ -165,6 +166,57 @@ describe('durable storage is switched on', () => {
   // spellings, so a typo here degrades to memory without erroring.
   it('uses a backend the server actually recognises', () => {
     expect(['dynamodb', 'memory']).toContain(containerEnv().STORAGE_BACKEND);
+  });
+});
+
+describe('the account janitor cannot take the table again', () => {
+  // On 2026-09-01 SpringClean — the Isengard account janitor, not anything AWS
+  // documents — deleted ValentinTable-dev. Valentin-Data-dev still reported
+  // UPDATE_COMPLETE and still listed the table among its resources; the table
+  // was simply gone. Every POST /api/demo/login then returned 500 ("Requested
+  // resource not found") and the deployed app could not be signed in to at all.
+  //
+  // Two independent guards, tested separately because either one alone leaves a
+  // real hole: the tags stop SpringClean from selecting the table, and deletion
+  // protection refuses DeleteTable at the API if the tags are ever lost.
+  it('carries deletion protection even in dev', () => {
+    // Deliberately not config.deletionProtection — that flag is false in dev
+    // and is shared with the ALB, so reading it here is what left the table
+    // unprotected. Dev is the only deployed environment and holds real data.
+    dataTemplate.hasResourceProperties('AWS::DynamoDB::Table', {
+      DeletionProtectionEnabled: true,
+    });
+  });
+
+  it('carries the exemption tags SpringClean honours', () => {
+    // Applied at app scope in bin/app.ts, so this asserts the helper's output
+    // on a stack rather than the entry point's wiring.
+    const app = new cdk.App();
+    const stack = new DataStack(app, 'TaggedData', {
+      config,
+      env: { account: '111111111111', region: config.region },
+    });
+    applySpringCleanExemption(app);
+
+    Template.fromStack(stack).hasResourceProperties('AWS::DynamoDB::Table', {
+      Tags: Match.arrayWith([
+        { Key: 'auto-delete', Value: 'no' },
+        { Key: 'springclean', Value: 'exempt' },
+      ]),
+    });
+  });
+
+  // A resource added to a later stack must inherit the exemption rather than
+  // becoming a seven-day fuse nobody remembers to tag.
+  it('exempts every stack, not just the data stack', () => {
+    const app = new cdk.App();
+    const stackEnv = { account: '111111111111', region: config.region };
+    const net = new NetworkStack(app, 'TaggedNet', { config, env: stackEnv });
+    applySpringCleanExemption(app);
+
+    Template.fromStack(net).hasResourceProperties('AWS::EC2::VPC', {
+      Tags: Match.arrayWith([{ Key: 'auto-delete', Value: 'no' }]),
+    });
   });
 });
 

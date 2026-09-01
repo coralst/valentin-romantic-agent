@@ -166,6 +166,11 @@ export function HerSizes({ getFieldValue, onAsk }: HerSizesProps) {
                 type="button"
                 style={askPillStyle}
                 onClick={() => onAsk(askLabel(row.fieldId, row.label))}
+                // Names the row it belongs to. `SIZE_ROWS` renders one of these per
+                // unfilled size, and three sibling tiles render one each, so a sparse
+                // profile put up to eight buttons all called "Ask" — indistinguishable
+                // to a screen reader and unusable by voice.
+                aria-label={`Ask about her ${row.label.toLowerCase()}`}
                 data-testid={`dossier-size-ask-${row.fieldId}`}
               >
                 Ask

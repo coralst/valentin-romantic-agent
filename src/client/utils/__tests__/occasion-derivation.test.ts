@@ -2,9 +2,11 @@ import { describe, it, expect } from 'vitest';
 import {
   deriveOccasions,
   getNextOccasion,
+  getNextOccurrenceDate,
   getDaysUntilOccasion,
   occasionFallsOnDay,
 } from '../occasion-derivation';
+import { daysBetween } from '../calendar-days';
 import type { ProfileFieldDefinition } from '../profile-field-registry';
 
 const birthdayField: ProfileFieldDefinition = {
@@ -233,5 +235,81 @@ describe('occasionFallsOnDay', () => {
       recurrence: 'one-time' as const,
     };
     expect(occasionFallsOnDay(occasion, 2025, 11, 25)).toBe(false);
+  });
+});
+
+/*
+ * The bug this whole family was fixed for.
+ *
+ * A stored birthday of "March 14" rendered three ways at once in August 2026:
+ * "March 14" in the header, "Monday 15 March / 198 days" in `NextUp`, and
+ * "13 Mar / 196d" in `PinnedEveryYear`. 14 March 2027 is a **Sunday**, 197 days
+ * after 29 August 2026.
+ *
+ * The reference date is fixed so the assertion is a date, not a shape — and 29
+ * August was chosen because the span to the following March crosses a
+ * daylight-saving boundary, which is what the old `Math.ceil` rounded into an
+ * extra day.
+ */
+describe('a year-less birthday, agreed across every surface', () => {
+  const REFERENCE = new Date(2026, 7, 29); // Saturday 29 August 2026
+
+  const occasionsFor = (value: string) =>
+    deriveOccasions([birthdayField], { birthday: { value } });
+
+  it('derives one occasion from a value with no year', () => {
+    expect(occasionsFor('March 14')).toHaveLength(1);
+  });
+
+  it('counts 197 days, not 198 — the daylight-saving hour is not a day', () => {
+    const [occasion] = occasionsFor('March 14');
+    expect(getDaysUntilOccasion(occasion, REFERENCE)).toBe(197);
+  });
+
+  it('lands on the 14th, and on a Sunday', () => {
+    const [occasion] = occasionsFor('March 14');
+    const next = getNextOccurrenceDate(occasion, REFERENCE);
+
+    expect(next.getFullYear()).toBe(2027);
+    expect(next.getMonth()).toBe(2);
+    expect(next.getDate()).toBe(14);
+    expect(next.getDay()).toBe(0); // Sunday
+  });
+
+  it('agrees whichever way the user wrote it', () => {
+    for (const written of ['March 14', '14 March', 'Mar 14', '14th March']) {
+      const [occasion] = occasionsFor(written);
+      expect(getNextOccurrenceDate(occasion, REFERENCE).getDate()).toBe(14);
+      expect(getDaysUntilOccasion(occasion, REFERENCE)).toBe(197);
+    }
+  });
+
+  /*
+   * The invariant that makes the family safe. The count and the date used to be
+   * computed independently — the date by adding the count back onto today — so
+   * they could not disagree without one of them being wrong. Now the date is
+   * primary; assert the round trip.
+   */
+  it('keeps the count and the date in step', () => {
+    const [occasion] = occasionsFor('March 14');
+    const days = getDaysUntilOccasion(occasion, REFERENCE);
+    const next = getNextOccurrenceDate(occasion, REFERENCE);
+
+    expect(daysBetween(REFERENCE, next)).toBe(days);
+  });
+});
+
+describe('deriveOccasions refuses what it cannot read', () => {
+  it('drops a value that carries no day', () => {
+    expect(deriveOccasions([birthdayField], { birthday: { value: 'June 1988' } })).toEqual([]);
+    expect(deriveOccasions([birthdayField], { birthday: { value: 'June' } })).toEqual([]);
+  });
+
+  it('drops a bare age, which `new Date` used to read as a year', () => {
+    expect(deriveOccasions([birthdayField], { birthday: { value: '32' } })).toEqual([]);
+  });
+
+  it('drops prose it cannot parse', () => {
+    expect(deriveOccasions([birthdayField], { birthday: { value: 'next spring' } })).toEqual([]);
   });
 });

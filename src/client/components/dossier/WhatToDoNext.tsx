@@ -232,7 +232,15 @@ export function WhatToDoNext({ tasks, onToggle, note, now = new Date() }: WhatTo
         </p>
       ) : (
         ordered.map((task, index) => {
-          const label = dueLabel(task.due, now);
+          /*
+           * A finished task has no deadline left to miss.
+           *
+           * `done` used to short-circuit only the pill's *style*, never its text, so
+           * a row struck through as complete still read "Overdue" — and, because the
+           * row is a button, that word was part of its accessible name too. Two of
+           * the demo profile's ticked tasks shipped looking like failures.
+           */
+          const label = task.done ? 'Done' : dueLabel(task.due, now);
           return (
             <button
               key={task.id}

@@ -7,6 +7,7 @@ import { ProfileStoreProvider } from '../context/profile-store-context';
 import { DiscoveryProvider } from '../context/discovery-context';
 import { ViewProvider, useViewState } from '../context/view-context';
 import { usePreferenceIngestion } from '../hooks/use-preference-ingestion';
+import { useViewportHeight } from '../hooks/use-viewport-height';
 import { useChatContext } from '../context/chat-context';
 import { SessionSidebar } from './SessionSidebar';
 import {
@@ -168,8 +169,16 @@ function AppLayoutContent() {
 
   // Read here rather than inside the drawer: the *layout* is what has to give up
   // the space, and only the layout owns the regions whose height it takes from.
-  const { isOpen: isDrawerOpen } = useArchitectureDrawer();
-  const reserved = reservedDrawerSpace(isDrawerOpen);
+  const { isOpen: isDrawerOpen, height: drawerHeight } = useArchitectureDrawer();
+  /*
+   * Clamped against the window's height, so the drawer cannot starve the shell.
+   *
+   * The reservation is `paddingBottom` on the frame, which means every column pays
+   * it at once. Unclamped at 454px on a 900px screen that left each track ~418px,
+   * and the brief rail's pinned strip and nudge are `flex: none` — so the entire
+   * loss came out of its scroll region and opening the drawer buried half the rail.
+   */
+  const reserved = reservedDrawerSpace(isDrawerOpen, drawerHeight);
 
   /*
    * The app's only surface state: chat shell vs full-page dossier.
@@ -216,7 +225,10 @@ function AppLayoutContent() {
   // The brief needs to know the breakpoint itself: on mobile it goes full-width
   // and drops the scroll fade, which at the foot of a full-height panel reads as
   // a rendering fault rather than as depth.
-  const profilePanel = <BriefRail isMobile={isMobile} />;
+  // No `isMobile`: the rail's fade and padding are identical on every viewport now.
+  // The mobile branch used to drop the mask, which made the Profile tab the surface
+  // with the hardest clipped edge rather than the softest.
+  const profilePanel = <BriefRail />;
 
   /* Live region for screen reader announcements (R8.4) */
   const liveRegion = (

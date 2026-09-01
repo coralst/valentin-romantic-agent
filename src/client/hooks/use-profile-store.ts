@@ -52,6 +52,14 @@ export type ProfileStoreAction =
    */
   | { type: 'CLEAR_DISCOVERED_VALUE'; fieldId: string }
   | { type: 'RESTORE'; state: Partial<ProfileStoreState> }
+  /**
+   * Empty the store because we are now looking at a different conversation.
+   *
+   * Distinct from `CLEAR_ALL_VALUES`, which is the *user* asking to forget her —
+   * that one is exported through `dispatch` and deletes every manual value on the
+   * server too. This one is local bookkeeping and must never reach the network.
+   */
+  | { type: 'RESET_FOR_SESSION' }
   | { type: 'CLEAR_ALL_VALUES' }
   | { type: 'STORAGE_ERROR'; message: string }
   | { type: 'CLEAR_STORAGE_ERROR' };
@@ -65,7 +73,8 @@ interface StorageSchema {
   manualValues: Record<string, ProfileFieldValue>;
 }
 
-const initialState: ProfileStoreState = {
+/** An empty store. Exported so `RESET_FOR_SESSION` has one definition of "empty". */
+export const initialState: ProfileStoreState = {
   partnerPhoto: null,
   manualValues: {},
   discoveredValues: {},
@@ -136,6 +145,20 @@ export function profileStoreReducer(
         partnerPhoto: action.state.partnerPhoto ?? null,
         manualValues: action.state.manualValues ?? {},
       };
+
+    /*
+     * Every field of the store is scoped to one conversation, so all of it goes.
+     *
+     * `RESTORE` spreading `...state` was the bug: it replaced the photo and the
+     * manual values but carried `discoveredValues` and `rejectedFieldIds` across a
+     * session switch. Ingestion only ever *adds* (`SET_DISCOVERED_VALUE` merges),
+     * so nothing downstream could unset them — and her brief showed the previous
+     * partner's colour, cuisine and star sign next to the new partner's name.
+     * `rejectedFieldIds` leaked the same way, so declining a guess in one
+     * conversation silently suppressed the field in another.
+     */
+    case 'RESET_FOR_SESSION':
+      return initialState;
 
     case 'CLEAR_ALL_VALUES':
       return {
@@ -277,6 +300,34 @@ export function useProfileStore(sessionId: string | null) {
   /** The corrections as the reducer last left them — see `usePeopleStore`. */
   const manualRef = useRef(state.manualValues);
   manualRef.current = state.manualValues;
+
+  /*
+   * Empty the store the moment the conversation changes — during render, not in an
+   * effect.
+   *
+   * `RESTORE` alone was not enough: it spreads `...state`, so a session switch
+   * replaced the photo and the corrections but carried the previous partner's
+   * `discoveredValues` and `rejectedFieldIds` across, and her brief showed one
+   * partner's colour and star sign beside another partner's name.
+   *
+   * The reset has to happen in the render phase because the hook that refills the
+   * store — `usePreferenceIngestion` — is mounted in `AppLayoutContent`, a *child*
+   * of this provider. React runs passive effects children-first, so an effect here
+   * would fire *after* ingestion had already written the incoming session's values,
+   * and would then wipe those instead of the outgoing ones. Adjusting state during
+   * render is React's documented answer to "a prop changed and my state is stale":
+   * the dispatch is discarded-and-rerun before this component commits, so no child
+   * ever renders against, or ingests into, the previous session's store.
+   *
+   * A `key` on the provider would also work, and is wrong here for a different
+   * reason: it would remount the whole subtree, closing the architecture drawer and
+   * resetting the layout every time the user picked a different conversation.
+   */
+  const storeSessionRef = useRef(sessionId);
+  if (storeSessionRef.current !== sessionId) {
+    storeSessionRef.current = sessionId;
+    localDispatch({ type: 'RESET_FOR_SESSION' });
+  }
 
   // Cache first (the photo, and last-known corrections), then the server.
   useEffect(() => {

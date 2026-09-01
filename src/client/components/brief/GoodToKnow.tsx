@@ -6,8 +6,18 @@ export interface Chip {
   fieldId: string;
   /** The faint prefix — "Coffee", "Flowers". Kept short enough to stay one line. */
   label: string;
-  /** The answer, or null when the field is still empty and the chip is a prompt. */
+  /** The answer as it fits the pill, or null when the field is still empty. */
   value: string | null;
+  /**
+   * The answer in full, before it was cut to fit.
+   *
+   * Separate from `value` because the truncation happens in the data, not in CSS —
+   * so building the accessible name from `value` put the ellipsis in it too, and
+   * "Food: Northern Italian —…" was all a screen reader could ever say. The full
+   * text is what goes in `aria-label` and `title`; the pill still shows the short
+   * form. Absent when nothing was cut.
+   */
+  fullValue?: string | null;
 }
 
 interface GoodToKnowProps {
@@ -110,6 +120,9 @@ export function GoodToKnow({ chips, onChipClick }: GoodToKnowProps) {
         {chips.length === 0 && <span style={emptyAllStyle}>Nothing noted yet.</span>}
         {chips.map((chip) => {
           const isEmpty = chip.value === null;
+          // The full answer where one is available, so neither the accessible name
+          // nor the tooltip inherits the pill's ellipsis.
+          const spoken = chip.fullValue ?? chip.value;
           return (
             <button
               key={chip.fieldId}
@@ -118,7 +131,8 @@ export function GoodToKnow({ chips, onChipClick }: GoodToKnowProps) {
               onClick={() => onChipClick?.(chip.fieldId)}
               data-testid="brief-chip"
               data-empty={isEmpty ? 'true' : 'false'}
-              aria-label={isEmpty ? `Add ${chip.label}` : `${chip.label}: ${chip.value}`}
+              title={isEmpty ? undefined : `${chip.label}: ${spoken}`}
+              aria-label={isEmpty ? `Add ${chip.label}` : `${chip.label}: ${spoken}`}
             >
               {isEmpty ? (
                 `+ ${chip.label}`

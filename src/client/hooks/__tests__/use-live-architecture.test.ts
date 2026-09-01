@@ -348,3 +348,73 @@ describe('useLiveArchitecture', () => {
     });
   });
 });
+
+/*
+ * The heartbeat is transport, not architecture.
+ *
+ * `use-websocket.ts` pings every 30 seconds and the server answers, and both halves
+ * were routed into beats on purpose ("Browser keeps the socket alive"). So an idle
+ * tab accrued two beats a minute for ever, and the drawer's counter — the number the
+ * demo points at — read "23 events" of which every single one was `Proxy → ping`. It
+ * measured how long the tab had been open.
+ */
+describe('useLiveArchitecture — keepalives are not events', () => {
+  afterEach(() => {
+    resetWsObservers();
+  });
+
+  /** A bare server event of the given type. Cast because the union is per-type. */
+  const beat = (type: string) =>
+    ({
+      type,
+      payload: {},
+      timestamp: '2026-08-29T17:00:00.000Z',
+    }) as unknown as Parameters<typeof publishInboundWsEvent>[0];
+
+  it('records no beat for a ping', () => {
+    const { result } = renderHook(() => useLiveArchitecture());
+
+    act(() => {
+      publishInboundWsEvent(beat('ping'));
+    });
+
+    expect(result.current.beats).toEqual([]);
+  });
+
+  it('records no beat for a pong', () => {
+    const { result } = renderHook(() => useLiveArchitecture());
+
+    act(() => {
+      publishInboundWsEvent(beat('pong'));
+    });
+
+    expect(result.current.beats).toEqual([]);
+  });
+
+  it('stays empty however long the socket is kept alive', () => {
+    const { result } = renderHook(() => useLiveArchitecture());
+
+    act(() => {
+      for (let i = 0; i < 20; i += 1) {
+        publishInboundWsEvent(beat('ping'));
+        publishInboundWsEvent(beat('pong'));
+      }
+    });
+
+    expect(result.current.beats).toHaveLength(0);
+  });
+
+  it('still records the events that are real work', () => {
+    // The guard must drop the heartbeat without dropping anything else.
+    const { result } = renderHook(() => useLiveArchitecture());
+
+    act(() => {
+      publishInboundWsEvent(beat('ping'));
+      publishInboundWsEvent(beat('preference_update'));
+      publishInboundWsEvent(beat('pong'));
+    });
+
+    expect(result.current.beats).toHaveLength(1);
+    expect(result.current.beats[0].operation).toBe('preference_update');
+  });
+});

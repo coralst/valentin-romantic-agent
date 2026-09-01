@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { daysUntilAnnual, derivePinnedDates, nextTuBAv } from '../pinned-dates';
+import { deriveOccasions, getDaysUntilOccasion } from '../occasion-derivation';
+import type { ProfileFieldDefinition } from '../profile-field-registry';
 
 const NOW = new Date(2026, 7, 28, 9, 0, 0);
 
@@ -78,5 +80,51 @@ describe('derivePinnedDates', () => {
     expect(dates.find((date) => date.id === 'valentines')?.icon).toBe('heart');
     const tuBAv = dates.find((date) => date.id === 'tu-bav');
     if (tuBAv) expect(tuBAv.icon).toBe('heart-star');
+  });
+});
+
+/*
+ * This block used to read the birthday a day EARLY, while `NextUp` read it a day
+ * LATE — one stored value, two opposite off-by-ones, both on screen at once.
+ *
+ * The cause was `parsed.getUTCMonth()`/`getUTCDate()` applied to a value that had
+ * parsed as *local* midnight. The UTC getters were correct for a bare
+ * `YYYY-MM-DD` (which parses as UTC) and wrong for everything else, so east of
+ * Greenwich "March 14" came back as 13 March.
+ */
+describe('a birthday is pinned on the day the user said', () => {
+  const REFERENCE = new Date(2026, 7, 29); // Saturday 29 August 2026
+
+  const BIRTHDAY_FIELD: ProfileFieldDefinition = {
+    id: 'birthday',
+    label: 'Birthday',
+    valueType: 'date',
+    section: 'basics',
+    mappings: [{ category: 'important_dates', key: 'birthday' }],
+  };
+
+  const birthdayRow = (value: string) =>
+    derivePinnedDates(value, REFERENCE).find((entry) => entry.id === 'birthday');
+
+  it('reads a year-less prose birthday on the right day', () => {
+    expect(birthdayRow('March 14')?.when).toBe('14 Mar');
+  });
+
+  it('reads an ISO birthday on the right day', () => {
+    expect(birthdayRow('1990-03-14')?.when).toBe('14 Mar');
+  });
+
+  it('agrees with the occasion countdown to the day', () => {
+    // The two blocks are computed by different modules and were 2 days apart.
+    const [occasion] = deriveOccasions([BIRTHDAY_FIELD], { birthday: { value: 'March 14' } });
+
+    expect(birthdayRow('March 14')?.daysUntil).toBe(
+      getDaysUntilOccasion(occasion, REFERENCE),
+    );
+  });
+
+  it('drops a birthday it cannot read rather than pinning a guess', () => {
+    expect(birthdayRow('June 1988')).toBeUndefined();
+    expect(birthdayRow('32')).toBeUndefined();
   });
 });

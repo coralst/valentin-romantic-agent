@@ -50,7 +50,23 @@ describe('design tokens', () => {
   });
 
   it('breakpoints defines mobile threshold', () => {
-    expect(breakpoints.mobile).toBe(768);
+    expect(breakpoints.mobile).toBe(930);
+  });
+
+  it('the mobile breakpoint leaves the collapsed shell its minimum chat column', () => {
+    // The same derivation as `conversationList` below, one step further in: with the
+    // list column already yielded, this is everything left that cannot compress. Was
+    // 768 — a phone-vs-tablet number, not a fact about this shell — which left the
+    // desktop tree rendering at 768 and 1024 with ~250px of usable measure.
+    const fixedChrome = 2 * insets.tight + layout.iconRailWidth + layout.briefRailWidth;
+
+    expect(breakpoints.mobile - fixedChrome).toBeGreaterThanOrEqual(layout.chatColumnMinWidth);
+  });
+
+  it('keeps the two breakpoints in the right order', () => {
+    // Between them the desktop shell runs without its list column. If mobile ever
+    // rose above this, that middle band would have no layout at all.
+    expect(breakpoints.mobile).toBeLessThan(breakpoints.conversationList);
   });
 
   it('breakpoints defines the conversation-list threshold above mobile', () => {
@@ -218,7 +234,6 @@ describe('vitrine design tokens', () => {
     expect(layout.cameoSize).toBe(56);
     expect(layout.chatColumnMaxWidth).toBe(620);
     expect(layout.chatColumnMinWidth).toBe(520);
-    expect(layout.windowMaxWidth).toBe(1440);
     expect(layout.menuWidth).toBe(268);
     expect(layout.menuControlHeight).toBe(38);
   });
@@ -227,16 +242,12 @@ describe('vitrine design tokens', () => {
    * The chat column's two bounds, as a relationship. A minimum above the maximum
    * would mean the column had no legal width at all, and the breakpoint derived
    * from the minimum would be arguing with the measure derived from the maximum.
+   *
+   * There is no longer a `windowMaxWidth` to check the shell against: the frame
+   * fills whatever window it is given, so the only ceiling is the screen.
    */
   it('the chat column may not be floored above its own cap', () => {
     expect(layout.chatColumnMinWidth).toBeLessThan(layout.chatColumnMaxWidth);
-    // And the window has to be able to hold the whole shell at its widest.
-    expect(layout.windowMaxWidth).toBeGreaterThan(
-      layout.iconRailWidth +
-        layout.conversationListWidth +
-        layout.briefRailWidth +
-        layout.chatColumnMaxWidth,
-    );
   });
 
   /**

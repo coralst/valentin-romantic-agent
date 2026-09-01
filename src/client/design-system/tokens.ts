@@ -233,19 +233,6 @@ export const layout = {
    * when all three fixed tracks are held at once on a 1000px window.
    */
   chatColumnMinWidth: 520,
-  /**
-   * Widest the app window is allowed to grow.
-   *
-   * Every track but the chat column is a fixed pixel measurement, and the chat
-   * column's *content* is capped at `chatColumnMaxWidth`. So without a ceiling the
-   * only thing an extra 1000px of screen buys is 1000px of empty cream: on a
-   * 2400px display the 306px brief rail is 13% of the frame instead of 21%, the
-   * composer is a small pill adrift in a 1764px column, and the shell reads as a
-   * stretched ribbon rather than as the window the mockups describe. Capping and
-   * centring means the proportions from here up are identical, and the surplus
-   * becomes linen — a margin, which is what the design already uses at 14px.
-   */
-  windowMaxWidth: 1440,
 } as const;
 
 export const animation = {
@@ -280,7 +267,26 @@ export const shadows = {
 } as const;
 
 export const breakpoints = {
-  mobile: 768,
+  /**
+   * Below this the shell becomes the single-panel, tabbed mobile layout.
+   *
+   * Was 768, which is a phone-vs-tablet number and not a fact about this shell. It
+   * left a dead zone: at 768 and at 1024 you got the *desktop* tree, and because
+   * three of its four grid tracks are fixed pixel measurements every lost pixel
+   * comes out of the chat column alone. At 768 that column was ~358px, and once the
+   * transcript's 26px gutters and the composer's padding were taken, ~250px of
+   * measure — three or four words a line, with the send button sitting on the rim of
+   * a composer narrower than its own placeholder.
+   *
+   * Derived the way `conversationList` is, one step further in. With the list column
+   * already yielded, what the shell still cannot compress is `2 × insets.tight` of
+   * window margin, the 76px icon rail and the 306px brief — and below
+   * `layout.chatColumnMinWidth` on top of that, the desktop shell can no longer
+   * honour its own declared minimum. `28 + 76 + 306 + 520 = 930`. Above it you get
+   * columns; below it the tabs, which are a better answer than a column nobody can
+   * read. `tokens.test.ts` asserts the derivation so the number moves if a track does.
+   */
+  mobile: 930,
   /**
    * Below this the conversation list stops being a column and becomes the ☰
    * overlay it already is on mobile.

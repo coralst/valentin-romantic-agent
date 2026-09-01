@@ -206,6 +206,20 @@ interface SessionContextValue {
    * store without focusing it. Pair with switchSession to bring it forward.
    */
   adoptSession: (session: StoredSession) => void;
+  /**
+   * Re-read the whole conversation list from the server.
+   *
+   * Needed by anything that makes the server mint conversations the client did not
+   * ask for one at a time — `POST /session/seed` creates one per fixture
+   * conversation, five for the demo profile. Those callers used to `adoptSession` a
+   * single locally-invented row instead, so the sidebar showed "Demo profile" where
+   * the account had five real, titled, back-dated conversations, and the other four
+   * only appeared after a page reload.
+   *
+   * `focusId` is hydrated before the list is dispatched, so the transcript is
+   * present the moment the conversation is focused.
+   */
+  refreshSessions: (focusId?: string | null) => Promise<void>;
   switchSession: (id: string) => Promise<void>;
   /**
    * Tell the store what the *live* transcript currently holds, and for which
@@ -269,6 +283,81 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const hydrated = useRef<Set<string>>(new Set());
   const booted = useRef(false);
 
+  /**
+   * Fetch the list, hydrate the conversation about to be focused, and dispatch.
+   *
+   * Extracted from the boot effect so `refreshSessions` cannot drift from it: a
+   * second copy of "which one do we open, and is its transcript loaded" is how the
+   * sidebar and the server come to disagree.
+   *
+   * `focusId` undefined means "decide as if booting" — the sign-in session, else the
+   * newest. Passing an explicit id (the seeder does) focuses that one.
+   */
+  const loadSessionList = useCallback(async (focusId?: string | null): Promise<void> => {
+    const sessions = await fetchSessions();
+
+    /*
+     * Which conversation to open.
+     *
+     * The one the sign-in just created wins over the newest one in the list,
+     * and it wins even when the list does not mention it. `listSessions` is a
+     * GSI query and a GSI is eventually consistent, so a session seeded
+     * milliseconds ago can be missing from the answer — and then the app
+     * would decide the account is empty and create a second conversation,
+     * beside the one it was handed. Trusting the id the login returned makes
+     * a fresh sign-in land on exactly one conversation, deterministically.
+     */
+    const activeId = focusId !== undefined ? focusId : takeSignInSession() ?? sessions[0]?.id ?? null;
+
+    // Hydrate the conversation we are about to open *before* focusing it.
+    // SessionSyncer reacts to the active id changing and reads whatever
+    // messages are present at that moment, so filling them in afterwards
+    // would leave the transcript blank until the next switch.
+    if (activeId) {
+      try {
+        const detail = await fetchSessionDetail(activeId);
+        // Only a detail that is actually the conversation we asked for. A
+        // malformed or mismatched answer used to be pushed into the list as a row
+        // with the wrong id — or no id — which then failed the `some()` check
+        // below and silently left nothing selected.
+        if (detail.id !== activeId) throw new Error('session detail id mismatch');
+        const index = sessions.findIndex((s) => s.id === activeId);
+        // Appended rather than dropped when the list has not caught up: it
+        // is a real conversation, and `LOAD_SESSIONS` sorts by recency, so
+        // it lands where it belongs.
+        if (index >= 0) sessions[index] = detail;
+        else sessions.push(detail);
+        hydrated.current.add(detail.id);
+      } catch {
+        // A list we can show beats a blank sidebar; the transcript will
+        // arrive when they click the conversation.
+      }
+    }
+
+    dispatch({
+      type: 'LOAD_SESSIONS',
+      sessions,
+      // Only if it survived hydration: focusing an id that is in no row
+      // leaves the sidebar with nothing selected beside a live transcript.
+      activeId: sessions.some((s) => s.id === activeId) ? activeId : null,
+      collapsed: loadSidebarCollapsed(),
+    });
+  }, []);
+
+  const refreshSessions = useCallback(
+    async (focusId?: string | null) => {
+      try {
+        await loadSessionList(focusId);
+      } catch (error) {
+        dispatch({
+          type: 'SET_ERROR',
+          error: `Couldn't load your conversations — ${describe(error)}.`,
+        });
+      }
+    },
+    [loadSessionList],
+  );
+
   useEffect(() => {
     // React 19 StrictMode mounts effects twice; the list load is idempotent but
     // the legacy discard notice is not.
@@ -280,51 +369,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
     void (async () => {
       try {
-        const sessions = await fetchSessions();
-
-        /*
-         * Which conversation to open.
-         *
-         * The one the sign-in just created wins over the newest one in the list,
-         * and it wins even when the list does not mention it. `listSessions` is a
-         * GSI query and a GSI is eventually consistent, so a session seeded
-         * milliseconds ago can be missing from the answer — and then the app
-         * would decide the account is empty and create a second conversation,
-         * beside the one it was handed. Trusting the id the login returned makes
-         * a fresh sign-in land on exactly one conversation, deterministically.
-         */
-        const signedInTo = takeSignInSession();
-        const activeId = signedInTo ?? sessions[0]?.id ?? null;
-
-        // Hydrate the conversation we are about to open *before* focusing it.
-        // SessionSyncer reacts to the active id changing and reads whatever
-        // messages are present at that moment, so filling them in afterwards
-        // would leave the transcript blank until the next switch.
-        if (activeId) {
-          try {
-            const detail = await fetchSessionDetail(activeId);
-            const index = sessions.findIndex((s) => s.id === activeId);
-            // Appended rather than dropped when the list has not caught up: it
-            // is a real conversation, and `LOAD_SESSIONS` sorts by recency, so
-            // it lands where it belongs.
-            if (index >= 0) sessions[index] = detail;
-            else sessions.push(detail);
-            hydrated.current.add(detail.id);
-          } catch {
-            // A list we can show beats a blank sidebar; the transcript will
-            // arrive when they click the conversation.
-          }
-        }
-
+        await loadSessionList();
         if (cancelled) return;
-        dispatch({
-          type: 'LOAD_SESSIONS',
-          sessions,
-          // Only if it survived hydration: focusing an id that is in no row
-          // leaves the sidebar with nothing selected beside a live transcript.
-          activeId: sessions.some((s) => s.id === activeId) ? activeId : null,
-          collapsed: loadSidebarCollapsed(),
-        });
         if (discarded > 0) {
           dispatch({
             type: 'SET_NOTICE',
@@ -545,6 +591,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         activeSession,
         createSession,
         adoptSession,
+        refreshSessions,
         switchSession,
         reportLiveTranscript,
         removeSession,

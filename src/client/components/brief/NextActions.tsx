@@ -44,6 +44,21 @@ const firstRowStyle: React.CSSProperties = {
 
 const bodyStyle: React.CSSProperties = { flex: 1, minWidth: 0 };
 
+/**
+ * The overflow line, when the list is showing fewer rows than are open.
+ *
+ * Says where the rest are rather than offering to expand: three rows is the most
+ * this column can carry (see the note above), and the dossier is the surface built
+ * to hold the whole list.
+ */
+const moreRowStyle: React.CSSProperties = {
+  ...rowStyle,
+  borderTop: ROW_HAIRLINE,
+  fontFamily: typography.bodyFontFamily,
+  fontSize: typography.px.label,
+  color: onClaret(0.55),
+};
+
 const titleStyle: React.CSSProperties = {
   display: 'block',
   fontFamily: typography.bodyFontFamily,
@@ -114,14 +129,25 @@ interface NextActionsProps {
 }
 
 export function NextActions({ tasks, onAct, limit = 3 }: NextActionsProps) {
-  const open = openTasks(tasks).slice(0, limit);
-  if (open.length === 0) return null;
+  /*
+   * The full list and the visible slice are separate values on purpose.
+   *
+   * They used to be one: `openTasks(tasks).slice(0, limit)`, with the badge reading
+   * that array's length. So the badge silently stopped counting at three — the rail
+   * said "3" while the dossier said "4 open" about the same tasks, on screen at the
+   * same time. The badge is the true count; `+N more` is how the list admits it is
+   * showing you fewer.
+   */
+  const open = openTasks(tasks);
+  const visible = open.slice(0, limit);
+  const hidden = open.length - visible.length;
+  if (visible.length === 0) return null;
 
   return (
     <>
       <SectionHead label="What to do next" count={open.length} />
       <div style={stackStyle} data-testid="brief-next-actions">
-        {open.map((task, index) => {
+        {visible.map((task, index) => {
           const { action, icon } = actionFor(task.title);
           return (
             <div
@@ -147,6 +173,11 @@ export function NextActions({ tasks, onAct, limit = 3 }: NextActionsProps) {
             </div>
           );
         })}
+        {hidden > 0 && (
+          <div style={moreRowStyle} data-testid="brief-next-actions-more">
+            {hidden} more on her file
+          </div>
+        )}
       </div>
     </>
   );

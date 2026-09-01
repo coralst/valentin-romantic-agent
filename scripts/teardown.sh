@@ -134,7 +134,7 @@ if [[ $PROBLEMS -eq 0 ]]; then
   echo "    - ECS Fargate tasks         DELETED"
   echo "    - CloudFront distribution   DELETED"
   echo "    - VPC endpoints (\$7/mo ea) DELETED"
-  echo "    - DynamoDB table            DELETED"
+  echo "    - DynamoDB table            RETAINED (on purpose — holds real data)"
   echo "    - S3 buckets                DELETED"
   echo "    - ECR images                DELETED"
   echo ""

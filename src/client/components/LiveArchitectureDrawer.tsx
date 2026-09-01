@@ -38,9 +38,12 @@ import { barFeather, barGround, resolveBarTheme } from '../design-system/bar-the
  * Total height the drawer occupies when open, bar included.
  *
  * Grew by 30 with the External APIs node, which is exactly what the canvas grew
- * by — the diagram row has no `overflowY`, so anything less would clip the bottom
- * card silently rather than scroll to it. `reservedDrawerSpace` passes the change
- * on to the composer, so nothing else needs touching.
+ * by. `reservedDrawerSpace` passes the change on to the composer, so nothing else
+ * needs touching.
+ *
+ * A ceiling rather than a fixed height, as of the viewport clamp in
+ * `reservedDrawerSpace`: on a short window the drawer gives up height so the shell
+ * above it stays usable, and the diagram row scrolls instead of clipping.
  */
 export const DRAWER_HEIGHT = 454;
 /**
@@ -78,8 +81,16 @@ const LENS_SIZE = 26;
 const LENS_LEFT = 14;
 /** Vertically centred in the bar. */
 const LENS_RESTING_BOTTOM = (REOPEN_BAR_HEIGHT - LENS_SIZE) / 2;
-const LENS_OPEN_BOTTOM = DRAWER_HEIGHT - 38;
-const LENS_TRAVEL = LENS_OPEN_BOTTOM - LENS_RESTING_BOTTOM;
+/**
+ * How far the lens rises, for a drawer of the given total height.
+ *
+ * A function of the height rather than a constant, because the drawer now shrinks
+ * on a short viewport — a fixed travel would send the lens through the panel's
+ * ceiling on a laptop and leave it short of the title on a monitor.
+ */
+function lensTravel(drawerHeight: number): number {
+  return drawerHeight - 38 - LENS_RESTING_BOTTOM;
+}
 /** Left padding on the bar and the panel header: clears the lens in both places. */
 const HEADER_INSET = LENS_LEFT + LENS_SIZE + 6;
 
@@ -100,8 +111,8 @@ const BAR_FEATHER_HEIGHT = 16;
  * agreement with the drawer it is making room for. Open reserves the full
  * drawer; closed reserves just the reopen bar, which is always on screen.
  */
-export function reservedDrawerSpace(isOpen: boolean): number {
-  return isOpen ? DRAWER_HEIGHT : REOPEN_BAR_HEIGHT;
+export function reservedDrawerSpace(isOpen: boolean, drawerHeight = DRAWER_HEIGHT): number {
+  return isOpen ? drawerHeight : REOPEN_BAR_HEIGHT;
 }
 
 /**
@@ -211,6 +222,161 @@ function ServingChip({
   );
 }
 
+/** Height of the grab strip at the drawer's top edge. */
+const RESIZE_HANDLE_HEIGHT = 12;
+
+/** How much one arrow key press moves the edge. Shift multiplies it. */
+const RESIZE_STEP_PX = 24;
+const RESIZE_STEP_COARSE_PX = 96;
+
+/**
+ * The drawer's top edge, as a control.
+ *
+ * `role="separator"` with `aria-valuenow/min/max` rather than a bare `<div>` with a
+ * pointer cursor: this is the pattern screen readers already announce as a movable
+ * divider, and it is the one shape that makes the thing operable without a mouse.
+ * A drag handle reachable only by dragging is the same defect as a button wired to
+ * `() => undefined` — it looks interactive to exactly one kind of user.
+ *
+ * Pointer capture rather than window listeners. `setPointerCapture` keeps the moves
+ * coming to this element even when the cursor outruns it, which a drag along a 12px
+ * strip does constantly, and it means there is nothing to unbind on unmount.
+ *
+ * Up is taller: the drawer grows from the bottom of the window, so dragging the edge
+ * upward has to *increase* the height, hence `startY - event.clientY`.
+ */
+function DrawerResizeHandle({
+  height,
+  bounds,
+  onResize,
+  onReset,
+  isCustom,
+  onDraggingChange,
+}: {
+  height: number;
+  bounds: { min: number; max: number };
+  onResize: (next: number) => void;
+  onReset: () => void;
+  isCustom: boolean;
+  /** Lets the panel drop its slide transition while the edge is being dragged. */
+  onDraggingChange?: (dragging: boolean) => void;
+}) {
+  const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
+  const [isDragging, setDraggingState] = useState(false);
+
+  const setDragging = useCallback(
+    (next: boolean) => {
+      setDraggingState(next);
+      onDraggingChange?.(next);
+    },
+    [onDraggingChange],
+  );
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    // Primary button only: a right-click drag is not a resize gesture.
+    if (event.button !== 0) return;
+    dragRef.current = { startY: event.clientY, startHeight: height };
+    setDragging(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    // Stops the drag selecting the heading text underneath it.
+    event.preventDefault();
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    onResize(drag.startHeight + (drag.startY - event.clientY));
+  };
+
+  const endDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragRef.current) return;
+    dragRef.current = null;
+    setDragging(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const step = event.shiftKey ? RESIZE_STEP_COARSE_PX : RESIZE_STEP_PX;
+    switch (event.key) {
+      case 'ArrowUp':
+        onResize(height + step);
+        break;
+      case 'ArrowDown':
+        onResize(height - step);
+        break;
+      case 'Home':
+        onResize(bounds.max);
+        break;
+      case 'End':
+        onResize(bounds.min);
+        break;
+      // Back to the height the drawer would have chosen for itself. Without this the
+      // only way out of an awkward drag is another drag.
+      case 'Escape':
+        if (!isCustom) return;
+        onReset();
+        break;
+      default:
+        return;
+    }
+    // Only for keys handled above, so Tab still moves on.
+    event.preventDefault();
+  };
+
+  return (
+    <div
+      role="separator"
+      aria-orientation="horizontal"
+      aria-label="Resize the architecture drawer"
+      aria-valuenow={Math.round(height)}
+      aria-valuemin={bounds.min}
+      aria-valuemax={bounds.max}
+      tabIndex={0}
+      data-testid="architecture-drawer-resize"
+      data-dragging={isDragging ? 'true' : 'false'}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      onKeyDown={handleKeyDown}
+      onDoubleClick={onReset}
+      title="Drag to resize · double-click to reset"
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        height: RESIZE_HANDLE_HEIGHT,
+        cursor: 'ns-resize',
+        // Above the header so the grab strip wins the pointer along the edge.
+        zIndex: 6,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        // `row-resize` on the whole strip but no background: the affordance is the
+        // grip below, so the edge does not read as a second toolbar.
+        background: 'transparent',
+        touchAction: 'none',
+      }}
+    >
+      {/* The visible grip. Widens and darkens while dragging, which is the only
+          feedback a 12px strip can give that the gesture was picked up. */}
+      <span
+        aria-hidden="true"
+        style={{
+          width: isDragging ? 56 : 34,
+          height: 3,
+          borderRadius: 999,
+          background: isDragging ? colors.claret : '#D9C9C2',
+          transition: 'width 120ms ease, background 120ms ease',
+        }}
+      />
+    </div>
+  );
+}
+
 /** One step of a replayed action, and the key the feed knows it by. */
 interface FeedEntry {
   key: string;
@@ -281,6 +447,8 @@ const drawerStyle: React.CSSProperties = {
   right: 0,
   // Above the bar, not over it: the bar stays put in both states.
   bottom: REOPEN_BAR_HEIGHT,
+  // Overridden at the call site with the clamped height on short viewports. The
+  // constant is the ceiling, and stays here so the common case reads plainly.
   height: DRAWER_PANEL_HEIGHT,
   background: '#FAF4F0',
   // Soft top edge rather than a drawn rule: a translucent hairline over a wide,
@@ -326,7 +494,7 @@ const ghostButtonStyle: React.CSSProperties = {
  * A magnifier with a ⊕ in it reads as "there is more to look at here" in a way a
  * bare chevron does not, and the sign is the whole of the open/closed signal —
  * nothing else about the bar changes between states. It rides up with the panel
- * (see `LENS_TRAVEL`), so the ⊕ becoming a ⊖ happens *while* it moves. Drawn
+ * (see `lensTravel`), so the ⊕ becoming a ⊖ happens *while* it moves. Drawn
  * rather than a glyph so
  * the stroke weight matches the label beside it at any size, and it matches the
  * magnifier on the sidebar's `ArchitectureToggle`, which opens the same drawer.
@@ -418,6 +586,14 @@ const MODE_OPTIONS: readonly { value: ArchitectureMode; label: string }[] = [
 
 export function LiveArchitectureDrawer() {
   const { isOpen, isMounted, toggle, close } = useArchitectureDrawer();
+  /*
+   * The same clamp the layout uses to reserve space, so the panel and the hole it
+   * sits in are computed from one expression. If they disagree the panel either
+   * covers the composer or floats above a gap.
+   */
+  const { height: drawerHeight, bounds, setHeight, reset, isCustom } = useArchitectureDrawer();
+  /** True only while the edge is under the pointer — see the panel's `transition`. */
+  const [isResizing, setResizing] = useState(false);
   // Read once per mount: the candidate is chosen from the URL, and re-reading it
   // mid-session would repaint the bar under whoever is presenting.
   const theme = useMemo(() => resolveBarTheme(), []);
@@ -640,16 +816,32 @@ export function LiveArchitectureDrawer() {
           data-open={isOpen ? 'true' : 'false'}
           style={{
             ...drawerStyle,
+            // Must match what the layout reserved, or the panel covers the very
+            // composer the reservation exists to keep clear.
+            height: drawerHeight - REOPEN_BAR_HEIGHT,
             transform: isOpen ? 'translateY(0)' : 'translateY(100%)',
+            // No slide transition mid-drag: the panel would lag the cursor by the
+            // easing duration and the edge would feel detached from the pointer.
+            transition: isResizing ? 'none' : drawerStyle.transition,
           }}
         >
+          <DrawerResizeHandle
+            height={drawerHeight}
+            bounds={bounds}
+            onResize={setHeight}
+            onReset={reset}
+            isCustom={isCustom}
+            onDraggingChange={setResizing}
+          />
+
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: 11,
-              // Left inset leaves the landing space the lens rises into.
-              padding: `14px 20px 10px ${HEADER_INSET}px`,
+              // Left inset leaves the landing space the lens rises into, and clears
+              // the resize strip above.
+              padding: `${14 + RESIZE_HANDLE_HEIGHT / 2}px 20px 10px ${HEADER_INSET}px`,
             }}
           >
             <div>
@@ -759,6 +951,15 @@ export function LiveArchitectureDrawer() {
               padding: '0 20px 18px',
               minHeight: 0,
               overflowX: 'auto',
+              /*
+               * Scrolls rather than clips, now that the drawer's height is clamped
+               * against the viewport. This row deliberately had no `overflowY` back
+               * when `DRAWER_HEIGHT` was always tall enough to hold the whole
+               * diagram — but on a short window the drawer gives up height to leave
+               * the shell usable, and without this the bottom cards were cut off
+               * silently instead of being reachable.
+               */
+              overflowY: 'auto',
             }}
           >
             <AwsTopologyDiagram {...diagram} engine={engine} />
@@ -874,7 +1075,7 @@ export function LiveArchitectureDrawer() {
           color: isOpen ? colors.ink : theme.copy,
           cursor: 'pointer',
           zIndex: 7,
-          transform: isOpen ? `translateY(-${LENS_TRAVEL}px)` : 'translateY(0)',
+          transform: isOpen ? `translateY(-${lensTravel(drawerHeight)}px)` : 'translateY(0)',
           transition: `transform ${PANEL_SLIDE_MS}ms cubic-bezier(0.4, 0, 0.2, 1), color ${PANEL_SLIDE_MS}ms ease`,
         }}
       >

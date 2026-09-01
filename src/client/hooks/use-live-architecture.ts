@@ -92,8 +92,8 @@ const EVENT_STORY: Readonly<Record<string, { actor: string; action: string }>> =
   typing_stop: { actor: 'Valentin', action: 'writes a reply' },
   agent_message: { actor: 'Valentin', action: 'writes a reply' },
   preference_update: { actor: 'Valentin', action: 'learns something new' },
-  ping: { actor: 'Browser', action: 'keeps the socket alive' },
-  pong: { actor: 'Browser', action: 'keeps the socket alive' },
+  // No `ping`/`pong`: they are dropped before a story is looked up. See the note in
+  // `EVENT_ENDPOINTS`.
   error: { actor: 'System', action: 'reports a problem' },
   // Two halves of one beat, and the actor changes hands between them — which is
   // the sentence the drawer exists to show a room. Valentin only ever offers.
@@ -163,10 +163,24 @@ const EVENT_ENDPOINTS: Readonly<Record<string, { from: AwsNodeId; to: AwsNodeId 
   preference_update: { from: 'dynamodb', to: 'browser' },
   connection_status: { from: 'browser', to: 'alb' },
   error: { from: 'fargate', to: 'browser' },
-  ping: { from: 'browser', to: 'fargate' },
-  pong: { from: 'fargate', to: 'browser' },
   action_proposal: { from: 'integrations', to: 'browser' },
   confirm_action: { from: 'browser', to: 'integrations' },
+  /*
+   * `ping` and `pong` are deliberately absent, so the `!routed` guard below drops
+   * them.
+   *
+   * The heartbeat fires every 30 seconds and the server answers it, so an idle tab
+   * accrued two beats a minute for ever. The drawer's counter is what the demo
+   * points at, and leaving a tab open long enough made it read "23 events" of which
+   * every one was `Proxy → ping` — the counter measured how long the tab had been
+   * open, not what Valentin had done. Keeping the socket alive is transport, not
+   * architecture.
+   *
+   * Filtered here rather than at the emit site: `publishOutboundWsEvent` in
+   * `use-websocket.ts` is a general diagnostic seam that other observers legitimately
+   * want the heartbeat from, and silencing it there would make a dead socket
+   * impossible to diagnose.
+   */
 };
 
 function beatFromEvent(
@@ -230,6 +244,13 @@ function beatFromSpan(
   };
 }
 
+/** Whether a span's operation is the model actually being called. */
+function isModelCall(operation: string): boolean {
+  // `Converse` is engine A's model call; on engine B the model runs inside the
+  // Runtime, so `InvokeAgentRuntime` is the closest measurable equivalent.
+  return operation === 'Converse' || operation === 'InvokeAgentRuntime';
+}
+
 function nodeServiceName(id: AwsNodeId): string {
   switch (id) {
     case 'browser':
@@ -282,10 +303,11 @@ export function useLiveArchitecture(
       if (observed.event.type === 'aws_span') {
         const span = observed.event.payload as AwsSpan | undefined;
         if (span && typeof span.resourceId === 'string') {
+          // Counted before the beat is built, and deliberately: a span the topology
+          // cannot place still arrived, and under-reporting it would make the drawer
+          // look quieter than the system is. See the test that pins this.
           setSpanCount((count) => count + 1);
-          // `Converse` is engine A's model call; on engine B the model runs inside
-          // the Runtime, so `InvokeAgentRuntime` is the closest measurable equivalent.
-          if (span.operation === 'Converse' || span.operation === 'InvokeAgentRuntime') {
+          if (isModelCall(span.operation)) {
             setModelCallCount((count) => count + 1);
           }
           beat = beatFromSpan(span, key, engine);

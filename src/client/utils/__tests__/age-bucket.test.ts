@@ -87,4 +87,27 @@ describe('getAgeBucketFromValue', () => {
   it('returns null for a value that is not a date', () => {
     expect(getAgeBucketFromValue('sometime in the nineties', TODAY)).toBeNull();
   });
+
+  /*
+   * The regression. A birthday with no year cannot yield an age, and the app used
+   * to state one anyway: `new Date('March 14')` is 14 March *2001* in V8, which the
+   * old `isNaN` guard accepted, so the header read "March 14 · mid-twenties" for a
+   * partner whose age nobody had mentioned.
+   */
+  it('withholds an age when the birthday carries no year', () => {
+    expect(getAgeBucketFromValue('March 14', TODAY)).toBeNull();
+    expect(getAgeBucketFromValue('14 March', TODAY)).toBeNull();
+    expect(getAgeBucketFromValue('2 October', TODAY)).toBeNull();
+  });
+
+  it('withholds an age for a bare age or a bare year', () => {
+    // `new Date('32')` and `new Date('1994')` are both valid dates in 2032 / 1994.
+    expect(getAgeBucketFromValue('32', TODAY)).toBeNull();
+    expect(getAgeBucketFromValue('1994', TODAY)).toBeNull();
+  });
+
+  it('still reads a full date written as prose', () => {
+    expect(getAgeBucketFromValue('17 June 1990', TODAY)).toBe('mid-thirties');
+    expect(getAgeBucketFromValue('June 17, 1990', TODAY)).toBe('mid-thirties');
+  });
 });

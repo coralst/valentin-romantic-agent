@@ -1,4 +1,5 @@
 import { resolveStorageBackend } from './persistence/create-store';
+import { countingStore } from './persistence/counting-store';
 import { InMemoryStoreFactory } from './persistence/in-memory-store';
 import { DynamoDBStoreFactory } from './persistence/dynamodb-store';
 import { InMemoryConversationMemory } from './persistence/conversation-memory';
@@ -159,9 +160,16 @@ function defaultStoreFactory(): ScopedStorageFactory {
   // way to tell a durable deployment from an amnesiac one.
   logger.info('storage.initialized', { backend });
 
-  return backend === 'dynamodb'
-    ? new DynamoDBStoreFactory()
-    : new InMemoryStoreFactory();
+  const factory = backend === 'dynamodb' ? new DynamoDBStoreFactory() : new InMemoryStoreFactory();
+
+  // Wrapped here, at the one place a store is constructed, so BOTH engines' stores
+  // are counted identically. `agentcore-orchestrator.ts` documents which variables are
+  // held constant between the engines so a measured difference is attributable to
+  // AgentCore; instrumenting one engine's reads and not the other's would make this
+  // counter the difference.
+  return {
+    forUser: (userId, opts) => countingStore(factory.forUser(userId, opts)),
+  };
 }
 
 /** Initialize all dependencies and start the server */

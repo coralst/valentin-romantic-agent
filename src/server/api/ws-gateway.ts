@@ -8,6 +8,7 @@ import type {
 } from '../persistence/storage-interface';
 import type { EventRouter } from './event-router';
 import { withUserScope } from '../logging';
+import { withTurn } from '../telemetry/turn-metrics';
 
 /** Minimal WebSocket connection abstraction — actual WS library wired in server entry point */
 export interface WsConnection {
@@ -249,12 +250,20 @@ export class WsGateway {
       // shared Bedrock client — logs under this user, which is what lets the
       // single process-wide span bridge route `aws_span` events back to the
       // connection that caused them instead of guessing from a session id.
-      await withUserScope(state.storageId ?? state.auth.userId, () =>
-        eventRouter.routeEvent(
-          parsed.type,
-          (parsed.payload ?? {}) as Record<string, unknown>,
-        ),
-      );
+      await withUserScope(state.storageId ?? state.auth.userId, () => {
+        const route = () =>
+          eventRouter.routeEvent(
+            parsed.type,
+            (parsed.payload ?? {}) as Record<string, unknown>,
+          );
+
+        // Only `send_message` is a turn. `ping`, `auth` and `confirm_action` cost
+        // model calls and store reads too, but folding them in would mean a
+        // "calls per turn" figure that counted things no user turn paid for.
+        if (parsed.type !== 'send_message' || !conn.sessionId) return route();
+
+        return withTurn({ sessionId: conn.sessionId }, route);
+      });
     } catch (err) {
       this.sendError(
         conn,

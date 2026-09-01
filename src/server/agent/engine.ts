@@ -1,8 +1,9 @@
 import { config } from '../config';
 import { logger } from '../logging';
+import type { EngineId } from '../../shared/interfaces/engine';
 
 /** Which of the two backends a task is serving. */
-export type AgentEngine = 'valentin' | 'agentcore';
+export type AgentEngine = EngineId;
 
 /** The engine a task falls back to, and the one every existing test exercises. */
 export const DEFAULT_ENGINE: AgentEngine = 'valentin';

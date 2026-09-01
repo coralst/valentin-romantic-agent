@@ -1,3 +1,4 @@
+import type { EngineId } from '../../shared/interfaces/engine';
 import type { ServerEvent } from '../../shared/interfaces/ws-events';
 
 /**
@@ -53,7 +54,7 @@ export type AwsNodeId =
  * Also the value the server reports as `engine` on `/api/config`, so the label in
  * the drawer and the label on the process are the same word.
  */
-export type ArchitectureEngine = 'valentin' | 'agentcore';
+export type ArchitectureEngine = EngineId;
 
 export const ARCHITECTURE_ENGINES: readonly ArchitectureEngine[] = ['valentin', 'agentcore'];
 

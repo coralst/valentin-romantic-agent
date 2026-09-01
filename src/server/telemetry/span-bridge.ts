@@ -1,6 +1,13 @@
 import { subscribeToServerLogs, type ServerLogRecord } from '../logging';
 import { config } from '../config';
-import type { AwsSpan, ServerEvent } from '../../shared/interfaces/ws-events';
+import { resolveEngine } from '../agent/engine';
+import type { EngineId } from '../../shared/interfaces/engine';
+import type {
+  AwsSpan,
+  ServerEvent,
+  SpanTokenUsage,
+  TurnMetrics,
+} from '../../shared/interfaces/ws-events';
 import type { IntegrationId } from '../../shared/interfaces/integrations';
 import {
   INTEGRATION_IDS,
@@ -68,6 +75,85 @@ function agentCoreGatewayName(): string {
 }
 
 /**
+ * Read token counts off a log record, or undefined when it carried none.
+ *
+ * Undefined rather than `{inputTokens: 0}` when absent, so the client can tell "nobody
+ * counted" from "counted zero" — the rule `AwsSpan.durationMs` already sets.
+ */
+function tokenUsage(data: Record<string, unknown> | undefined): SpanTokenUsage | undefined {
+  const inputTokens = num(data, 'inputTokens');
+  const outputTokens = num(data, 'outputTokens');
+  if (inputTokens === undefined && outputTokens === undefined) return undefined;
+  return { inputTokens, outputTokens };
+}
+
+/**
+ * Which engine this process serves.
+ *
+ * Resolved lazily and once. Per-process by design — see `agent/engine.ts` — so it
+ * cannot be read off the record, and re-resolving per span would repeat the downgrade
+ * error line on every call.
+ */
+let cachedEngine: EngineId | undefined;
+
+function spanEngine(): EngineId {
+  cachedEngine ??= resolveEngine();
+  return cachedEngine;
+}
+
+/** Forget the cached engine. Test helper. */
+export function resetSpanEngine(): void {
+  cachedEngine = undefined;
+}
+
+/**
+ * Translate an `agent.turn` record into per-turn metrics, or undefined.
+ *
+ * A sibling of {@link logRecordToSpan} rather than a case inside it, because a turn is
+ * not a span: it has no resource, no operation and no single duration, and widening
+ * `logRecordToSpan`'s return type would have meant editing every one of its existing
+ * tests to prove nothing new.
+ *
+ * Absent token fields stay absent. `'inputTokens' in data` is the distinction the
+ * emitter went to trouble to preserve, and defaulting them to `0` here would throw it
+ * away at the last step.
+ */
+export function logRecordToTurnMetrics(record: ServerLogRecord): TurnMetrics | undefined {
+  if (record.event !== 'agent.turn') return undefined;
+
+  const { data } = record;
+  const sessionId = str(data, 'sessionId');
+  const engine = str(data, 'engine');
+  const storeBackend = str(data, 'storeBackend');
+  const modelCalls = num(data, 'modelCalls');
+  const storeReads = num(data, 'storeReads');
+  const replyLatencyMs = num(data, 'replyLatencyMs');
+
+  // A malformed line is dropped rather than published with holes in it. The panel
+  // divides by `modelCalls`, and a partial frame would skew an average silently.
+  if (!sessionId || modelCalls === undefined || storeReads === undefined) return undefined;
+  if (replyLatencyMs === undefined) return undefined;
+  if (engine !== 'valentin' && engine !== 'agentcore') return undefined;
+  if (storeBackend !== 'memory' && storeBackend !== 'dynamodb') return undefined;
+
+  const inputTokens = num(data, 'inputTokens');
+  const outputTokens = num(data, 'outputTokens');
+  const tokens =
+    inputTokens === undefined && outputTokens === undefined ? {} : { inputTokens, outputTokens };
+
+  return {
+    sessionId,
+    engine,
+    storeBackend,
+    modelCalls,
+    storeReads,
+    replyLatencyMs,
+    ok: data?.ok !== false,
+    ...tokens,
+  };
+}
+
+/**
  * Translate a structured log record into a span, or undefined to ignore it.
  *
  * Only recognised events map. That asymmetry is deliberate: the server logs
@@ -119,6 +205,8 @@ export function logRecordToSpan(record: ServerLogRecord): AwsSpan | undefined {
         durationMs,
         ok: data?.ok !== false,
         detail: str(data, 'operation'),
+        usage: tokenUsage(data),
+        engine: spanEngine(),
       };
     }
 
@@ -143,6 +231,13 @@ export function logRecordToSpan(record: ServerLogRecord): AwsSpan | undefined {
         ok: data?.ok !== false,
         // The count, never the tool arguments — those carry partner data.
         detail: toolsUsed ? `${toolsUsed} tool call${toolsUsed === 1 ? '' : 's'}` : undefined,
+        // TODO(yellow): engine B tokens are unreported. `agentcore/agent.py` returns
+        // `content` and `tools_used` only, so `tokenUsage` finds nothing here and the
+        // scoreboard's token tile shows `—` for AgentCore. That is the correct display
+        // for an unmeasured value, not a gap to paper over — fixing it means extending
+        // the Runtime container and redeploying it.
+        usage: tokenUsage(data),
+        engine: spanEngine(),
       };
     }
 
@@ -251,8 +346,11 @@ function integrationSpan(record: ServerLogRecord): AwsSpan | undefined {
  */
 export function startSpanBridge(emit: SpanEmitter): () => void {
   return subscribeToServerLogs((record) => {
-    const span = logRecordToSpan(record);
-    if (!span) return;
+    // Read before the span, because an `agent.turn` line is never a span and the
+    // two mappers are mutually exclusive by event name.
+    const metrics = logRecordToTurnMetrics(record);
+    const span = metrics ? undefined : logRecordToSpan(record);
+    if (!metrics && !span) return;
 
     // No user, nowhere to send it. `logging.ts` supplies this from the ambient
     // user scope for anything logged while serving a socket message, so a
@@ -261,10 +359,18 @@ export function startSpanBridge(emit: SpanEmitter): () => void {
     const userId = str(record.data, 'userId');
     if (!userId) return;
 
+    const timestamp = new Date().toISOString();
+
+    if (metrics) {
+      emit(userId, { type: 'turn_metrics', payload: metrics, timestamp });
+      return;
+    }
+
     emit(userId, {
       type: 'aws_span',
-      payload: span,
-      timestamp: new Date().toISOString(),
+      // Narrowed by the guard above; `span` is defined whenever `metrics` is not.
+      payload: span as AwsSpan,
+      timestamp,
     });
   });
 }

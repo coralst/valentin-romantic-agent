@@ -379,11 +379,11 @@
 <body>
 
 <nav class="dots" id="dots"></nav>
-<div class="counter" id="counter">01 / 15</div>
+<div class="counter" id="counter">01 / 18</div>
 <div class="mark"><img src="logo.png" alt="Valentin"></div>
 <div class="editbadge">Editing · Esc to stop · ⌘S downloads the edited deck</div>
 
-<!-- ═══ 1 · COVER ═══════════════════════════════════════ -->
+<!-- ═══ 1 · COVER ═════════════════════════════════ -->
 <section class="cover" id="cover" data-title="Cover">
   <div class="wrap">
     <div class="crest"><img src="logo.png" alt="Valentin"></div>
@@ -398,15 +398,17 @@
   <div class="hint">scroll</div>
 </section>
 
-<!-- ═══ 2 · AGENDA ══════════════════════════════════════ -->
+<!-- ═══ 2 · AGENDA ════════════════════════════════ -->
 <section id="agenda" data-title="Agenda">
   <div class="wrap">
     <div class="kicker">Agenda</div>
     <h2>What we’ll cover.</h2>
     <div class="agenda">
       <div class="ag"><div class="n">01</div>
-        <div><b>What I built</b>
-          <p>A romantic concierge that listens and remembers — live, and on real AWS.</p></div></div>
+        <div><b>What I built — twice</b>
+          <p>A romantic concierge that listens and remembers, live on real AWS — then the same
+            product again on Bedrock AgentCore, so the two architectures can be compared on cost,
+            blast radius and how much of the agent loop I still had to own.</p></div></div>
       <div class="ag"><div class="n">02</div>
         <div><b>Who really built it</b>
           <p>Six AI agents, the tools that drove them, and a human who mostly said yes or no.</p></div></div>
@@ -417,7 +419,45 @@
   </div>
 </section>
 
-<!-- ═══ 3 · DEMO ════════════════════════════════════════ -->
+<!-- ═══ 3 · THE ARCHITECTURE CHANGED ══════════════ -->
+<section id="shift" data-title="The shift">
+  <div class="wrap wide">
+    <div class="act"><b>Part 1</b> · What I built</div>
+    <h2>The interesting part isn't the app. It's what happened to its architecture.</h2>
+    <p class="lede" style="max-width: 1060px">It started as a chat loop with a database — one Node
+      process doing the conversation, the extraction, the tools and the storage. It ended as two
+      architectures of the same product, running side by side so they can be measured against
+      each other.</p>
+    <div class="loopcards">
+      <div class="lp" style="--c: var(--claret)">
+        <span class="t">Where it started</span>
+        <h3>One process, four jobs</h3>
+        <p>Conversation, a second Bedrock call for extraction, an in-process tool registry and a
+          DynamoDB store — all inside a single always-on Fargate task. Everything in the agent
+          loop was <em>mine to write, host and keep alive</em>.</p>
+      </div>
+      <div class="lp" style="--c: var(--olive)">
+        <span class="t">What it became</span>
+        <h3>Four managed primitives</h3>
+        <p>Amazon Bedrock AgentCore: <em>Runtime</em> for a microVM per session, <em>Memory</em> for
+          extraction and recall, <em>Gateway</em> for tools over MCP, <em>Observability</em> for
+          traces. One CDK stack, and no server of mine left in the agent path.</p>
+      </div>
+      <div class="lp" style="--c: var(--master)">
+        <span class="t">Why it's built twice</span>
+        <h3>A measurement harness</h3>
+        <p>Both engines still run, on the same persona and the same model. That costs more than
+          either alone — and it's the only reason the next three slides are <em>evidence</em>
+          rather than opinion.</p>
+      </div>
+    </div>
+    <p class="note">The rest of Part 1 is that comparison: the two stacks service for service, what
+      makes the agent loop more than a chat box, the four faults that kept engine B from serving a
+      single turn, and then the two arguments that decide it — cost and blast radius.</p>
+  </div>
+</section>
+
+<!-- ═══ 4 · DEMO ══════════════════════════════════ -->
 <section class="demo" id="demo" data-title="Demo">
   <div class="wrap wide">
     <div class="act"><b>Part 1</b> · What I built</div>
@@ -442,7 +482,7 @@
   </div>
 </section>
 
-<!-- ═══ 4 · WHAT IT IS ══════════════════════════════════ -->
+<!-- ═══ 5 · WHAT IT IS ════════════════════════════ -->
 <section id="what" data-title="What it is">
   <div class="wrap wide">
     <div class="act"><b>Part 1</b> · What I built</div>
@@ -471,7 +511,7 @@
   </div>
 </section>
 
-<!-- ═══ 5 · REAL INFRASTRUCTURE ═════════════════════════ -->
+<!-- ═══ 6 · REAL INFRASTRUCTURE ═══════════════════ -->
 <section id="infra" data-title="Real infrastructure">
   <div class="wrap wide">
     <div class="act"><b>Part 1</b> · What I built</div>
@@ -506,7 +546,7 @@
   </div>
 </section>
 
-<!-- ═══ 6 · TWO ENGINES ═════════════════════════════════ -->
+<!-- ═══ 7 · TWO ENGINES ═══════════════════════════ -->
 <section id="engines" data-title="Two engines">
   <div class="wrap wide">
     <div class="act"><b>Part 1</b> · What I built</div>
@@ -549,7 +589,85 @@
   </div>
 </section>
 
-<!-- ═══ 7 · COST ════════════════════════════════════════ -->
+<!-- ═══ 8 · WHAT MAKES IT AGENTIC ═════════════════ -->
+<section id="agentic" data-title="Actually agentic">
+  <div class="wrap wide">
+    <div class="act"><b>Part 1</b> · What I built</div>
+    <h2>Not a chat box with a system prompt.</h2>
+    <p class="lede" style="max-width: 1060px">The fair criticism of most "AI agents" is that the
+      agentic part is a thin wrapper — one model call, one string back. Here is what the loop
+      actually does, and where AgentCore takes it over.</p>
+    <div class="stats">
+      <div class="stat"><div class="v">14</div><b>real tools, six integrations</b>
+        <p>Ontopo restaurants · Amadeus hotels and activities · Wolt gift delivery · Google
+          Calendar and Gmail · WhatsApp · Hebcal. Live APIs, not stubs.</p></div>
+      <div class="stat"><div class="v">5</div><b>model round-trips per turn</b>
+        <p><code>MAX_TOOL_ITERATIONS</code> — the model calls a tool, reads the result, and decides
+          what to do next, up to five times before it has to answer.</p></div>
+      <div class="stat"><div class="v">6</div><b>tools that propose, never act</b>
+        <p>Every <code>propose_*</code> tool returns a card she confirms. The agent drafts the
+          email and books nothing — a human is in the loop by construction.</p></div>
+      <div class="stat"><div class="v">8</div><b>tools that just look things up</b>
+        <p>Availability, Shabbat times, Hebrew dates, occasions. The agent has to plan around real
+          constraints, not invent them.</p></div>
+    </div>
+    <div class="flow">
+      <div class="step"><div class="num">1</div><b>Plan</b>
+        <p>Reads the partner profile, decides whether this turn needs a tool at all — about
+          <b>40%</b> do.</p></div>
+      <div class="step"><div class="num">2</div><b>Call</b>
+        <p>Engine B reaches tools through <b>AgentCore Gateway over MCP</b>, so the tool
+          contract is the platform's, not a function in my process.</p></div>
+      <div class="step"><div class="num">3</div><b>Remember</b>
+        <p><b>AgentCore Memory</b> holds the turn and the long-term records — the extraction
+          engine A pays a second Bedrock call for is inside the platform's rate.</p></div>
+      <div class="step"><div class="num">4</div><b>Explain</b>
+        <p><b>Observability</b> traces the whole turn. Engine A's equivalent is whatever
+          <code>console.log</code> I remembered to write.</p></div>
+    </div>
+    <p class="note">This is the part the platform genuinely changes. Tool use, memory and tracing
+      stop being code I maintain and become primitives with contracts — which is also why the
+      failure modes moved from my bugs to <em>its</em> configuration, as the next slide shows.</p>
+  </div>
+</section>
+
+<!-- ═══ 9 · THE FOUR FAULTS ═══════════════════════ -->
+<section class="dark" id="faults" data-title="Four faults">
+  <div class="wrap wide">
+    <div class="act"><b>Part 1</b> · What I built</div>
+    <h2>Engine B was "healthy" for weeks. It had never served a turn.</h2>
+    <p class="lede" style="max-width: 1060px">The stack deployed green. CloudFormation said
+      <code>CREATE_COMPLETE</code>, the Runtime reported healthy, and the proxy logged
+      <code>invoke ok: true</code>. Not one request had ever reached the model. Four faults, each
+      hiding the next.</p>
+    <div class="faults">
+      <div class="fault"><b>1 · No CloudFront route</b>
+        <p>The <code>/ws/agentcore</code> behaviour existed in <code>cdn-stack.ts</code> for weeks
+          — the CDN stack had simply never been deployed. The wss handshake 403'd and the UI sat on
+          "Reconnecting…". No deploy scope shipped it, so I added one.</p></div>
+      <div class="fault"><b>2 · Half an IAM permission</b>
+        <p>The proxy sends a <code>Runtime-User-Id</code>, which makes AgentCore require
+          <em>both</em> invoke actions — and refuse to name either when one is missing.</p></div>
+      <div class="fault"><b>3 · A region that wasn't there</b>
+        <p>The model ARN was pinned to the stack's region, but <code>us.anthropic.*</code> is a
+          <em>cross-region inference profile</em>: Bedrock fulfils from any US region and authorises
+          against the fulfilling one. A us-east-1 stack failed citing us-east-2.</p></div>
+      <div class="fault"><b>4 · One illegal character</b>
+        <p>A demo visitor's id is <code>&lt;sub&gt;#&lt;visitorId&gt;</code>, and <code>#</code> is
+          outside AgentCore's allowed <code>actorId</code> pattern — so every single
+          <code>CreateEvent</code> was rejected.</p></div>
+    </div>
+    <p class="note">The lesson I'd actually hand over: <b>don't trust "healthy"</b>. Twice in one day
+      the control plane and the logs agreed everything was fine while the app was unusable — a
+      stack reported <code>UPDATE_COMPLETE</code> listing a DynamoDB table that no longer existed,
+      and the proxy logged success on turns that produced no reply, because the container returns
+      its failure as a <b>200</b> with an empty body and an <code>error</code> field. There is also
+      no log group until the container writes to it, so the earliest failures existed <em>only</em>
+      in that reply body. First working turn: <b>1 September</b>.</p>
+  </div>
+</section>
+
+<!-- ═══ 10 · COST ═════════════════════════════════ -->
 <section id="cost" data-title="Two bills">
   <div class="wrap wide">
     <div class="act"><b>Part 1</b> · What I built</div>
@@ -595,7 +713,7 @@
   </div>
 </section>
 
-<!-- ═══ 8 · BLAST RADIUS ════════════════════════════════ -->
+<!-- ═══ 11 · BLAST RADIUS ═════════════════════════ -->
 <section class="dark" id="blast" data-title="Blast radius">
   <div class="wrap wide">
     <div class="act"><b>Part 1</b> · What I built</div>
@@ -656,7 +774,7 @@
   </div>
 </section>
 
-<!-- ═══ 9 · THE TEAM ════════════════════════════════════ -->
+<!-- ═══ 12 · THE TEAM ═════════════════════════════ -->
 <section id="team" data-title="The team">
   <div class="wrap wide">
     <div class="act"><b>Part 2</b> · Who really built it</div>
@@ -731,7 +849,7 @@
   </div>
 </section>
 
-<!-- ═══ 10 · THE WORKFLOW ═══════════════════════════════ -->
+<!-- ═══ 13 · THE WORKFLOW ═════════════════════════ -->
 <section id="workflow" data-title="The workflow">
   <div class="wrap wide">
     <div class="act"><b>Part 2</b> · Who really built it</div>
@@ -770,7 +888,7 @@
   </div>
 </section>
 
-<!-- ═══ 11 · THE TOOLS ══════════════════════════════════ -->
+<!-- ═══ 14 · THE TOOLS ════════════════════════════ -->
 <section id="tools" data-title="The tools">
   <div class="wrap wide">
     <div class="act"><b>Part 2</b> · Who really built it</div>
@@ -804,7 +922,7 @@
   </div>
 </section>
 
-<!-- ═══ 12 · THE WORK, VISUALIZED ═══════════════════════ -->
+<!-- ═══ 15 · THE WORK, VISUALIZED ═════════════════ -->
 <section id="graph" data-title="The work">
   <div class="wrap wide">
     <div class="act"><b>Part 2</b> · Who really built it</div>
@@ -836,7 +954,7 @@
   </div>
 </section>
 
-<!-- ═══ 13 · AGENTS ARGUING ═════════════════════════════ -->
+<!-- ═══ 16 · AGENTS ARGUING ═══════════════════════ -->
 <section id="thread" data-title="Agents arguing">
   <div class="wrap wide">
     <div class="act"><b>Part 2</b> · Who really built it</div>
@@ -868,7 +986,7 @@
   </div>
 </section>
 
-<!-- ═══ 14 · WHAT I LEARNED ═════════════════════════════ -->
+<!-- ═══ 17 · WHAT I LEARNED ═══════════════════════ -->
 <section class="dark" id="learned" data-title="What I learned">
   <div class="wrap wide">
     <div class="act"><b>Part 3</b> · What I learned</div>
@@ -902,7 +1020,7 @@
   </div>
 </section>
 
-<!-- ═══ 15 · HONEST SCOPE + THANKS ══════════════════════ -->
+<!-- ═══ 18 · HONEST SCOPE + THANKS ════════════════ -->
 <section class="dark" id="thanks" data-title="Honest scope · thanks">
   <div class="wrap wide">
     <div class="act"><b>Part 3</b> · What I learned</div>

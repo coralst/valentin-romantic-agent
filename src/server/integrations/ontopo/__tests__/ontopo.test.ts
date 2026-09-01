@@ -28,6 +28,16 @@ import { CURATED_VENUES, findVenues, resolveVenueName, venueBySlug } from '../ve
 
 const SLUG = '15172114'; // NOEMA, from the curated list.
 
+/**
+ * The venue argument `fetchAvailability` now takes.
+ *
+ * It used to take a bare slug and look the rest up in the curated list, which made
+ * that list a hard ceiling: Ontopo would quote tables at a venue and Valentin
+ * refused before sending a request. Passing the venue in is what lets a *discovered*
+ * one be booked; these tests still use a curated slug so the fixtures are unchanged.
+ */
+const VENUE = { slug: SLUG, name: 'NOEMA', city: 'Tel Aviv' };
+
 const NOEMA_AVAILABILITY = {
   page: { title: "There's a few seats available for you" },
   areas: [
@@ -205,7 +215,7 @@ describe('fetchAvailability', () => {
   it('sends the verified payload shape and no authorization header', async () => {
     stubFetch(() => NOEMA_AVAILABILITY);
 
-    await fetchAvailability(SLUG, { date: '20260905', time: '2000', size: 2 });
+    await fetchAvailability(VENUE, { date: '20260905', time: '2000', size: 2 });
 
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toBe('https://ontopo.com/api/availability_search');
@@ -227,7 +237,7 @@ describe('fetchAvailability', () => {
   it('flattens areas into one time-sorted slot list', async () => {
     stubFetch(() => NOEMA_AVAILABILITY);
 
-    const result = await fetchAvailability(SLUG, { date: '20260905', time: '2000', size: 2 });
+    const result = await fetchAvailability(VENUE, { date: '20260905', time: '2000', size: 2 });
 
     expect(result?.venue.name).toBe('NOEMA');
     expect(result?.availabilityId).toBe('6a9174b28a3792002c557e1e');
@@ -237,7 +247,7 @@ describe('fetchAvailability', () => {
   it('marks only method:seat as bookable', async () => {
     stubFetch(() => NOEMA_AVAILABILITY);
 
-    const result = await fetchAvailability(SLUG, { date: '20260905', time: '2000', size: 2 });
+    const result = await fetchAvailability(VENUE, { date: '20260905', time: '2000', size: 2 });
 
     // 19:30 comes back as `disabled` — shown to the user by Ontopo, but not
     // bookable. Treating it as free is how you promise a table that isn't there.
@@ -248,7 +258,7 @@ describe('fetchAvailability', () => {
   it('keeps a Hebrew area id intact for the round trip', async () => {
     stubFetch(() => NOEMA_AVAILABILITY);
 
-    const result = await fetchAvailability(SLUG, { date: '20260905', time: '2000', size: 2 });
+    const result = await fetchAvailability(VENUE, { date: '20260905', time: '2000', size: 2 });
 
     // The area id is opaque and frequently Hebrew; it has to go back byte for
     // byte or the checkout call fails.
@@ -259,7 +269,7 @@ describe('fetchAvailability', () => {
   it('returns an empty slot list, not null, when the venue is simply full', async () => {
     stubFetch(() => NO_TABLES);
 
-    const result = await fetchAvailability(SLUG, { date: '20260905', time: '2000', size: 2 });
+    const result = await fetchAvailability(VENUE, { date: '20260905', time: '2000', size: 2 });
 
     // "Full" and "unreachable" are different answers and the tools say different
     // things about them.
@@ -271,21 +281,33 @@ describe('fetchAvailability', () => {
     stubFetch(() => null);
 
     await expect(
-      fetchAvailability(SLUG, { date: '20260905', time: '2000', size: 2 }),
+      fetchAvailability(VENUE, { date: '20260905', time: '2000', size: 2 }),
     ).resolves.toBeNull();
   });
 
-  it('returns null for a venue that is not in the curated list', async () => {
+  /*
+   * This test used to assert the opposite — that an uncurated slug returned null
+   * without making a request — and that assertion was the bug, written down and
+   * guarded. Ontopo books Buckaroo in Ra'anana and had tables free on six of the
+   * next seven nights; Valentin refused, because five Tel Aviv restaurants were
+   * the whole of what it could name. The curated list is a source of *taste*, not
+   * a list of what exists, and the request is now sent for any venue a caller can
+   * name a slug for.
+   */
+  it('checks a venue that is not in the curated list, because Ontopo will', async () => {
     stubFetch(() => NOEMA_AVAILABILITY);
 
-    const result = await fetchAvailability('99999999', {
-      date: '20260905',
-      time: '2000',
-      size: 2,
-    });
+    const result = await fetchAvailability(
+      { slug: '58310837', name: 'Buckaroo', city: "Ra'anana" },
+      { date: '20260905', time: '2000', size: 2 },
+    );
 
-    expect(result).toBeNull();
-    expect(calls).toHaveLength(0);
+    expect(calls).toHaveLength(1);
+    expect((calls[0].body as { slug: string }).slug).toBe('58310837');
+    // The venue comes back as given, so the caller can say what it asked about
+    // rather than looking it up again.
+    expect(result?.venue.name).toBe('Buckaroo');
+    expect(result?.slots.length).toBeGreaterThan(0);
   });
 });
 

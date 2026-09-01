@@ -8,9 +8,11 @@ import {
   toOntopoDate,
   toOntopoTime,
   type Availability,
+  type BookableVenue,
   type OntopoSlot,
 } from './client';
 import { findVenues, resolveVenueName, type CuratedVenue } from './venues';
+import { resolveAnyVenue, venuesInCity, knownCities } from './discovery';
 
 /**
  * Booking a table, in three tools that match how the conversation actually goes.
@@ -56,10 +58,40 @@ function parseSize(value: unknown): number {
   return Math.min(Math.max(Math.round(value), 1), 20);
 }
 
-/** Resolve whatever the model called the venue to a curated entry. */
-function resolveVenue(value: unknown): CuratedVenue | undefined {
+/**
+ * Resolve whatever the model called the venue to something bookable.
+ *
+ * Curated list first, then live discovery from Ontopo's city page. The order is the
+ * safety property: the curated entries are instant, need no browser, and carry the
+ * notes that let Valentin say *why* a room suits an anniversary, so the common case
+ * never depends on a scrape. Discovery is what stops "we do not book there" from
+ * being false — Ontopo lists Buckaroo in Ra'anana with tables free most nights, and
+ * before this it was refused before a request was ever sent.
+ *
+ * `city` is what makes the fallback possible at all: Ontopo has no all-Israel
+ * listing, only per-city pages, so without a city there is no page to read.
+ */
+async function resolveVenue(
+  value: unknown,
+  city: unknown,
+): Promise<BookableVenue | undefined> {
   if (typeof value !== 'string') return undefined;
-  return resolveVenueName(value);
+  const curated = resolveVenueName(value);
+  if (curated) return curated;
+  const where = typeof city === 'string' ? city : undefined;
+  return (await resolveAnyVenue(value, where)) ?? undefined;
+}
+
+/**
+ * Where a venue is, in the finest grain we actually have.
+ *
+ * Curated entries carry a neighbourhood, which is the more useful thing to say —
+ * "in Montefiore" locates a room, "in Tel Aviv" barely narrows it. A discovered
+ * venue has only its city, and that still orients someone reading the card.
+ */
+function placeOf(venue: BookableVenue | CuratedVenue): string | undefined {
+  if ('neighbourhood' in venue && venue.neighbourhood) return venue.neighbourhood;
+  return venue.city;
 }
 
 /** One line per venue, for the model to quote from. */
@@ -192,7 +224,7 @@ export const checkAvailabilityTool: AgentTool = {
   service: 'ontopo',
   requiresConfirmation: false,
   async execute(input) {
-    const venue = resolveVenue(input.restaurant);
+    const venue = await resolveVenue(input.restaurant, input.city);
     if (!venue) {
       return {
         ok: false,
@@ -214,7 +246,7 @@ export const checkAvailabilityTool: AgentTool = {
     const time = toOntopoTime(typeof input.time === 'string' ? input.time : '20:00') ?? '2000';
     const size = parseSize(input.party_size);
 
-    const availability = await fetchAvailability(venue.slug, { date: date.ontopo, time, size });
+    const availability = await fetchAvailability(venue, { date: date.ontopo, time, size });
     if (!availability) {
       return {
         ok: false,
@@ -327,7 +359,7 @@ export const proposeReservationTool: AgentTool = {
   service: 'ontopo',
   requiresConfirmation: true,
   async execute(input, ctx) {
-    const venue = resolveVenue(input.restaurant);
+    const venue = await resolveVenue(input.restaurant, input.city);
     if (!venue) {
       return {
         ok: false,
@@ -358,7 +390,7 @@ export const proposeReservationTool: AgentTool = {
     // Re-check rather than trust the earlier call. Minutes have passed and these
     // are popular rooms; proposing a slot that went while the user was talking is
     // the failure this whole tool exists to avoid.
-    const availability = await fetchAvailability(venue.slug, { date: date.ontopo, time, size });
+    const availability = await fetchAvailability(venue, { date: date.ontopo, time, size });
     if (!availability || !availability.availabilityId) {
       return {
         ok: false,
@@ -393,7 +425,9 @@ export const proposeReservationTool: AgentTool = {
       title: `${venue.name}, ${date.readable} at ${formatSlotTime(slot.time)}`,
       summary:
         `Table for ${size}${occasion} — ${areaLabel} at ${venue.name}` +
-        `${venue.neighbourhood ? ` in ${venue.neighbourhood}` : ''}. ` +
+        // A neighbourhood only exists on the curated entries; a discovered venue
+        // has its city and nothing finer, and "in Ra'anana" still orients someone.
+        `${placeOf(venue) ? ` in ${placeOf(venue)}` : ''}. ` +
         `Confirming opens Ontopo's booking page, where you finish the reservation. ` +
         `Nothing is held until you do.`,
       expiresAt: new Date(Date.now() + CHECKOUT_TTL_MS).toISOString(),
@@ -448,7 +482,7 @@ export const proposeReservationTool: AgentTool = {
     // the proposal is minutes old. Re-searching also re-confirms the slot still
     // exists, so a table taken in the meantime fails here rather than handing
     // over a link to a full restaurant.
-    const availability = await fetchAvailability(slug, { date, time, size });
+    const availability = await fetchAvailability({ slug, name: venueName }, { date, time, size });
     if (!availability?.availabilityId) {
       return {
         ok: false,

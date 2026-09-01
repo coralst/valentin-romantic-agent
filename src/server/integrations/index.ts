@@ -6,6 +6,8 @@ import { gmailTools, googleCalendarTools } from './google/tools';
 import { hebcalTools } from './hebcal/tools';
 import { ontopoTools } from './ontopo/tools';
 import { whatsappTools } from './whatsapp/tools';
+import { browserReadyCached } from './browser/session';
+import { woltTools } from './wolt/tools';
 
 export type { ToolRegistry, AgentTool, ActionProposal, IntegrationId } from './tool-registry';
 
@@ -21,6 +23,14 @@ export type { ToolRegistry, AgentTool, ActionProposal, IntegrationId } from './t
  * missing: Hebcal is a local calculation, and Ontopo's availability and checkout
  * endpoints turn out to need no authentication at all. The site does mint an
  * anonymous JWT, but it is not required — see the note in `ontopo/client.ts`.
+ *
+ * The browser tier is ready or not for a different reason than everything else
+ * here. There is no credential to supply: it depends on a Chromium binary existing
+ * in this deployment, which is an environmental fact a visitor cannot fix from the
+ * panel. So `browser` reflects a launch probe, and the capabilities behind it are
+ * only as ready as it is — an events scrape with no browser is not "unconfigured",
+ * it is impossible, and reporting it as ready would have the model confidently
+ * offer something that cannot run.
  */
 export function integrationReadiness(): Record<IntegrationId, boolean> {
   const { integrations } = config;
@@ -29,6 +39,7 @@ export function integrationReadiness(): Record<IntegrationId, boolean> {
       integrations.googleClientSecret &&
       integrations.googleRefreshToken,
   );
+  const browser = browserReadyCached();
 
   return {
     hebcal: true,
@@ -41,6 +52,11 @@ export function integrationReadiness(): Record<IntegrationId, boolean> {
     whatsapp: Boolean(
       integrations.whatsappPhoneNumberId && integrations.whatsappToken,
     ),
+    browser,
+    // Wolt's catalogue is an unauthenticated JSON API, so it needs nothing — the
+    // same shape as Ontopo.
+    wolt: true,
+    events: browser,
   };
 }
 
@@ -93,6 +109,9 @@ export function buildToolRegistry(): ToolRegistry {
   if (ready['google-calendar']) tools.push(...googleCalendarTools);
   if (ready.gmail) tools.push(...gmailTools);
   if (ready.whatsapp) tools.push(...whatsappTools);
+  // Flowers, wine and gifts. Needs no credential — Wolt's catalogue endpoint is
+  // unauthenticated — so this is on wherever the process can reach the internet.
+  if (ready.wolt) tools.push(...woltTools);
 
   // Cleared first, so a *disconnect* actually removes tools. Refilling without
   // clearing would leave the old ones registered and let the model keep calling

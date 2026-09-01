@@ -20,6 +20,7 @@ import { EventRouter } from './api/event-router';
 import { WsGateway } from './api/ws-gateway';
 import { createHttpRoutes } from './api/http-routes';
 import { buildToolRegistry } from './integrations';
+import { probeBrowserReadiness } from './integrations/browser/session';
 import { startSpanBridge } from './telemetry/span-bridge';
 import {
   ANONYMOUS_USER_ID,
@@ -326,6 +327,20 @@ export function createServer(deps: ServerDeps = {}) {
   // Not load-bearing: remove this and the drawer still opens and still
   // highlights from WebSocket events, it just loses the measured durations.
   startSpanBridge((userId, event) => emitFor(userId)(event));
+
+  /*
+   * Find out whether this deployment can drive a browser, and register the tools
+   * that depend on it if so.
+   *
+   * Deliberately not awaited. Launching Chromium takes a second or two and no
+   * request needs the answer to be served — `integrationReadiness()` reports the
+   * browser as unready until this lands, which is the safe direction to be briefly
+   * wrong in. Blocking boot on it would delay the health check the load balancer is
+   * waiting for, on behalf of a capability that may not even be installed.
+   */
+  void probeBrowserReadiness().then((ready) => {
+    if (ready) buildToolRegistry();
+  });
 
   // Register the agent on startup
   runtime.registerAgent().then((agentId) => {

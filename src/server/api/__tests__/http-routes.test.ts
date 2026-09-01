@@ -653,6 +653,9 @@ describe('createHttpRoutes', () => {
           'configured',
           'id',
           'label',
+          // Whether reaching it needs a browser. A transport is not a secret — it
+          // is the same fact the panel draws its relay layout from.
+          'transport',
         ]);
         expect(typeof entry.configured).toBe('boolean');
       }

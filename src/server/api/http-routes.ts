@@ -17,6 +17,7 @@ import type { IntegrationStatusResponse } from '../../shared/interfaces/integrat
 import {
   INTEGRATION_IDS,
   INTEGRATION_LABELS,
+  INTEGRATION_TRANSPORT,
 } from '../../shared/interfaces/integrations';
 import {
   applyIntegrationCredentials,
@@ -343,6 +344,9 @@ export function createHttpRoutes(storage: StorageInterface) {
           id,
           label: INTEGRATION_LABELS[id],
           configured: ready[id],
+          // Sent rather than inferred client-side, so the panel's relay layout
+          // follows this deployment instead of a table baked into the bundle.
+          transport: INTEGRATION_TRANSPORT[id],
         })),
       };
     },

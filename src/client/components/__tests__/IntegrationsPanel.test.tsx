@@ -222,13 +222,19 @@ describe('IntegrationsPanel', () => {
       const user = userEvent.setup();
       await renderPanel();
 
-      await user.click(screen.getByTestId('integration-node-flowers'));
-      // The catalogue's default for flowers, echoed next to the slider.
-      expect(screen.getByTestId('integration-cap-slider')).toHaveValue('80');
-      expect(screen.getByTestId('integration-cap-value')).toHaveTextContent('$80');
+      /*
+       * `travel`, not `flowers`. Flowers used to stand here, back when the catalogue
+       * claimed Valentin could "place an order" for $80 — he never could, because
+       * the Wolt handoff ends at the shop's own page. Travel is the real example: an
+       * Amadeus hold is money moving.
+       */
+      await user.click(screen.getByTestId('integration-node-travel'));
+      // The catalogue's default for travel, echoed next to the slider.
+      expect(screen.getByTestId('integration-cap-slider')).toHaveValue('400');
+      expect(screen.getByTestId('integration-cap-value')).toHaveTextContent('$400');
 
       await user.click(screen.getByTestId('integration-confirm-button'));
-      expect(screen.getByTestId('integration-node-flowers')).toHaveTextContent('up to $80');
+      expect(screen.getByTestId('integration-node-travel')).toHaveTextContent('up to $400');
     });
 
     it('offers no cap on a service that cannot spend', async () => {

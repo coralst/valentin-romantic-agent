@@ -110,9 +110,10 @@ test.describe('Integrations — propose and confirm', () => {
 
     /*
      * The fan-out is organised by *capability*, not by vendor — the visitor cares
-     * that Valentin can book dinner, not that Ontopo exists. So these are the six
-     * capabilities the integration layer backs, and `flowers`, `grocery`, `music`
-     * and `rides` are deliberately present-but-unbuilt alongside them.
+     * that Valentin can book dinner, not that Ontopo exists. So these are the
+     * capabilities the integration layer backs — `flowers` and `grocery` among them,
+     * both carried by Wolt — and only `music` and `rides` are deliberately
+     * present-but-unbuilt alongside them.
      */
     for (const id of ['dining', 'calendar', 'travel', 'messages', 'occasions']) {
       await expect(panel.getByTestId(`integration-node-${id}`)).toBeVisible();
@@ -124,9 +125,18 @@ test.describe('Integrations — propose and confirm', () => {
       'live',
     );
 
-    // And the honest half: a capability with nothing behind it says so, rather than
-    // showing a dot that implies it is merely unconfigured.
+    // Wolt needs no credential — its catalogue endpoint is unauthenticated — so the
+    // florist row is live for the same reason `occasions` is, and this assertion is
+    // the one that would fail if the Wolt tools were ever unregistered.
     await expect(panel.getByTestId('integration-readiness-flowers').first()).toContainText(
+      'live',
+    );
+
+    // And the honest half: a capability with nothing behind it says so, rather than
+    // showing a dot that implies it is merely unconfigured. `music` is the example
+    // because there is no music provider anywhere in src/server/integrations —
+    // `flowers` used to stand here, which is how it stayed mislabelled for so long.
+    await expect(panel.getByTestId('integration-readiness-music').first()).toContainText(
       'not built yet',
     );
   });

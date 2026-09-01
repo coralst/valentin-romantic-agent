@@ -98,6 +98,19 @@ export const INTEGRATION_CATALOGUE: readonly IntegrationService[] = [
     category: 'florists',
     glyph: '💐',
     blurb: 'Tulips, not roses — he is the one who remembers which.',
+    /*
+     * Wolt, and it has been real since the browser tier landed.
+     *
+     * This entry carried no `backing`, so the panel badged it "not built yet"
+     * while `buildToolRegistry` was registering `woltTools` on every boot —
+     * `ready.wolt` needs no credential, because Wolt's catalogue endpoint is
+     * unauthenticated. The visitor was told a working capability contacts
+     * nobody, which is the one direction this panel must never be wrong in.
+     *
+     * `find_gift_delivery` maps `flowers` to Wolt's `florist` product line, so
+     * this row is the same real code as Ontopo behind the dining row.
+     */
+    backing: ['wolt'],
     scopes: [
       { label: 'browse what is in season', detail: 'Read-only', reach: 'read' },
       { label: 'place an order', detail: 'Asks you in the conversation first, every time', reach: 'spend' },
@@ -110,6 +123,10 @@ export const INTEGRATION_CATALOGUE: readonly IntegrationService[] = [
     category: 'retail',
     glyph: '🛒',
     blurb: 'Breakfast in bed, ordered the night before.',
+    // The same Wolt tools as the florist row above: `find_gift_delivery` covers
+    // `groceries`, `gift`, `wine` and `sweets` as well as `flowers`, so this row
+    // was mislabelled "not built yet" for exactly the same reason.
+    backing: ['wolt'],
     scopes: [
       { label: 'search the catalogue', detail: 'Read-only', reach: 'read' },
       { label: 'build a basket', detail: 'Nothing is charged for a basket', reach: 'write' },

@@ -228,6 +228,104 @@
   a.src { color: var(--claret); text-decoration: none; border-bottom: 1px solid rgba(140,47,69,.35); }
   .dark a.src, .demo a.src { color: var(--blush); border-color: rgba(246,222,226,.4); }
 
+  /* ---- engine A vs engine B: two panels either side of a hairline ---- */
+  .versus { display: grid; grid-template-columns: 1fr 54px 1fr; gap: 0; margin-top: 22px;
+            align-items: stretch; }
+  .panel { background: var(--cream); border-radius: var(--r-sm); padding: 20px 22px;
+           border-top: 3px solid var(--c, var(--claret));
+           box-shadow: 0 1px 3px rgba(42,34,38,.05), 0 12px 30px rgba(42,34,38,.06); }
+  .panel .t { display: block; font: 500 12px Outfit; letter-spacing: .2em; text-transform: uppercase;
+              color: var(--c, var(--claret)); }
+  .panel h3 { font-family: Gloock, serif; font-weight: 400; font-size: clamp(19px, 1.9vw, 25px);
+              line-height: 1.15; margin-top: 6px; }
+  .panel .sub { font-size: 14.5px; line-height: 1.45; color: var(--ink-3); margin-top: 7px; }
+  .vs { display: grid; place-items: center; position: relative; }
+  .vs::before { content: ''; position: absolute; top: 12px; bottom: 12px; width: 1px;
+                background: rgba(42,34,38,.16); }
+  .vs span { position: relative; z-index: 1; background: var(--bg); border-radius: 999px;
+             padding: 6px 0; width: 34px; text-align: center; font: 500 11px Outfit;
+             letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+  .dark .vs span { background: var(--ink); }
+  .dark .panel { background: rgba(255,253,251,.06); box-shadow: none; }
+  .dark .panel h3 { color: #fff; }
+  .dark .panel .sub { color: rgba(255,253,251,.5); }
+
+  /* service-for-service pairing rows */
+  .pairs { list-style: none; margin-top: 14px; }
+  .pairs li { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: baseline;
+              font-size: 15.5px; line-height: 1.4; padding: 9px 0;
+              border-top: 1px solid rgba(42,34,38,.1); }
+  .pairs li:first-child { border-top: none; }
+  .pairs li s { text-decoration: none; font-family: ui-monospace, monospace; font-size: 13.5px;
+                color: var(--ink-3); }
+  .dark .pairs li { border-color: rgba(255,253,251,.14); }
+  .pairs li b { font-weight: 500; }
+
+  /* ---- cost ledger ---- */
+  .ledger { list-style: none; margin-top: 13px; }
+  .ledger li { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: baseline;
+               padding: 8px 0; border-top: 1px solid rgba(42,34,38,.1); font-size: 15.5px; }
+  .ledger li:first-child { border-top: none; }
+  .ledger li.sum { border-top: 1px solid rgba(42,34,38,.28); margin-top: 4px; font-weight: 500; }
+  .ledger li s { text-decoration: none; display: block; font-size: 13.5px; color: var(--ink-3);
+                 margin-top: 2px; }
+  .ledger .amt { font-family: Gloock, serif; font-size: 19px; color: var(--c, var(--claret));
+                 white-space: nowrap; }
+  .dark .ledger li { border-color: rgba(255,253,251,.14); }
+  .dark .ledger li.sum { border-color: rgba(255,253,251,.34); }
+  .dark .ledger li s { color: rgba(255,253,251,.45); }
+
+  /* the headline multiple, sitting between the two ledgers */
+  .mult { text-align: center; margin-top: 20px; }
+  .mult .x { font-family: Gloock, serif; font-size: clamp(40px, 5.4vw, 74px); line-height: 1;
+             color: var(--claret); }
+  .dark .mult .x { color: var(--blush); }
+  .mult p { font-size: 16px; line-height: 1.5; color: var(--ink-2); margin-top: 8px;
+            max-width: 620px; margin-inline: auto; }
+  .dark .mult p { color: rgba(255,253,251,.68); }
+
+  /* scale table */
+  .scale { width: 100%; margin-top: 20px; border-collapse: collapse; font-size: 15.5px; }
+  .scale th { font: 500 11.5px Outfit; letter-spacing: .16em; text-transform: uppercase;
+              color: var(--ink-3); text-align: right; padding: 0 0 9px; }
+  .scale th:first-child { text-align: left; }
+  .scale td { padding: 8px 0; border-top: 1px solid rgba(42,34,38,.1); text-align: right;
+              font-variant-numeric: tabular-nums; }
+  .scale td:first-child { text-align: left; }
+  .scale tr.peak td { font-weight: 500; }
+  .scale .save { color: var(--olive); font-weight: 500; }
+  .dark .scale td { border-color: rgba(255,253,251,.14); }
+  .dark .scale th { color: rgba(255,253,251,.45); }
+
+  /* ---- blast radius: 40 sessions as 40 dots ---- */
+  .radius { display: grid; grid-template-columns: 1fr 54px 1fr; margin-top: 22px; align-items: stretch; }
+  .vessel { margin-top: 13px; border-radius: var(--r-sm); padding: 12px;
+            display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px;
+            max-width: 370px; }
+  /* engine A's dots share one bordered vessel, because they share one Node process */
+  .vessel.shared { border: 1px solid rgba(140,47,69,.4); background: rgba(140,47,69,.05); }
+  /* engine B's are 40 separate cells — there is no single container to draw */
+  .vessel.isolated { border: 1px dashed rgba(124,132,100,.35); background: none; }
+  .vessel i { aspect-ratio: 1; border-radius: 999px; background: var(--olive); opacity: .75; }
+  .vessel i.hit { background: var(--claret); opacity: 1; }
+  .tally { margin-top: 13px; display: flex; align-items: baseline; gap: 10px; }
+  .tally .n { font-family: Gloock, serif; font-size: clamp(30px, 3.4vw, 46px); line-height: 1; }
+  .tally.bad .n { color: var(--claret); }
+  .tally.good .n { color: var(--olive); }
+  .tally p { font-size: 15.5px; line-height: 1.4; color: var(--ink-2); }
+  .dark .tally p { color: rgba(255,253,251,.68); }
+  .dark .tally.good .n { color: #B6C08F; }
+  .dark .tally.bad .n { color: var(--claret-2); }
+
+  /* the four faults that actually cross a process boundary */
+  .faults { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 22px; }
+  .fault { border-radius: var(--r-sm); padding: 15px 17px; background: rgba(140,47,69,.06);
+           border-left: 3px solid var(--claret); }
+  .dark .fault { background: rgba(255,253,251,.06); }
+  .fault b { display: block; font: 500 15.5px Outfit; margin-bottom: 5px; }
+  .fault p { font-size: 14px; line-height: 1.45; color: var(--ink-2); }
+  .dark .fault p { color: rgba(255,253,251,.6); }
+
   /* ---- chrome ---- */
   .dots { position: fixed; right: 20px; top: 50%; transform: translateY(-50%); z-index: 50;
           display: flex; flex-direction: column; gap: 10px; }
@@ -266,6 +364,9 @@
   @media (max-width: 1000px) {
     section { padding: 48px 20px; }
     .flow, .split, .split.lean, .stats, .lessons, .crew, .loopcards { grid-template-columns: 1fr; }
+    .versus, .radius, .faults { grid-template-columns: 1fr; gap: 12px; }
+    .vs { display: none; }
+    .scale { font-size: 13.5px; }
     .drops { display: none; }
     .who { grid-template-columns: 12px 1fr; }
     .who .owns, .who p { grid-column: 2; }
@@ -278,11 +379,11 @@
 <body>
 
 <nav class="dots" id="dots"></nav>
-<div class="counter" id="counter">01 / 12</div>
+<div class="counter" id="counter">01 / 15</div>
 <div class="mark"><img src="logo.png" alt="Valentin"></div>
 <div class="editbadge">Editing · Esc to stop · ⌘S downloads the edited deck</div>
 
-<!-- ═══ 1 · COVER ═══════════════════════════════════════════════ -->
+<!-- ═══ 1 · COVER ═══════════════════════════════════════ -->
 <section class="cover" id="cover" data-title="Cover">
   <div class="wrap">
     <div class="crest"><img src="logo.png" alt="Valentin"></div>
@@ -297,7 +398,7 @@
   <div class="hint">scroll</div>
 </section>
 
-<!-- ═══ 2 · AGENDA ══════════════════════════════════════════════ -->
+<!-- ═══ 2 · AGENDA ══════════════════════════════════════ -->
 <section id="agenda" data-title="Agenda">
   <div class="wrap">
     <div class="kicker">Agenda</div>
@@ -316,7 +417,7 @@
   </div>
 </section>
 
-<!-- ═══ 3 · DEMO ════════════════════════════════════════════════ -->
+<!-- ═══ 3 · DEMO ════════════════════════════════════════ -->
 <section class="demo" id="demo" data-title="Demo">
   <div class="wrap wide">
     <div class="act"><b>Part 1</b> · What I built</div>
@@ -341,7 +442,7 @@
   </div>
 </section>
 
-<!-- ═══ 4 · WHAT IT IS ══════════════════════════════════════════ -->
+<!-- ═══ 4 · WHAT IT IS ══════════════════════════════════ -->
 <section id="what" data-title="What it is">
   <div class="wrap wide">
     <div class="act"><b>Part 1</b> · What I built</div>
@@ -370,7 +471,7 @@
   </div>
 </section>
 
-<!-- ═══ 5 · REAL INFRASTRUCTURE ═════════════════════════════════ -->
+<!-- ═══ 5 · REAL INFRASTRUCTURE ═════════════════════════ -->
 <section id="infra" data-title="Real infrastructure">
   <div class="wrap wide">
     <div class="act"><b>Part 1</b> · What I built</div>
@@ -405,7 +506,157 @@
   </div>
 </section>
 
-<!-- ═══ 6 · THE TEAM ════════════════════════════════════════════ -->
+<!-- ═══ 6 · TWO ENGINES ═════════════════════════════════ -->
+<section id="engines" data-title="Two engines">
+  <div class="wrap wide">
+    <div class="act"><b>Part 1</b> · What I built</div>
+    <h2>Then I built it a second time.</h2>
+    <p class="lede">The same conversation runs on two engines. One is the pipeline I hand-wrote against
+      Bedrock; the other routes it through Amazon Bedrock AgentCore. Same persona, same model, same
+      reply call — so any difference between them belongs to the platform, not to two different agents.</p>
+    <div class="versus">
+      <div class="panel" style="--c: var(--claret)">
+        <span class="t">Engine A</span>
+        <h3>Glue code I wrote</h3>
+        <p class="sub">A Node process on Fargate. Every line below is something I had to build,
+          host and keep alive.</p>
+        <ul class="pairs">
+          <li><div><b>AWS Fargate</b><br><s>one always-on task</s></div></li>
+          <li><div><b>Amazon DynamoDB</b><br><s>profile + conversation store</s></div></li>
+          <li><div><b>A second Bedrock call</b><br><s>my own extraction pass, every turn</s></div></li>
+          <li><div><b>In-process tool calls</b><br><s>a registry inside the task</s></div></li>
+        </ul>
+      </div>
+      <div class="vs"><span>vs</span></div>
+      <div class="panel" style="--c: var(--olive)">
+        <span class="t">Engine B</span>
+        <h3>Bedrock AgentCore</h3>
+        <p class="sub">The same four jobs, as managed primitives. One CDK stack, no servers of
+          my own in the path.</p>
+        <ul class="pairs">
+          <li><div><b>AgentCore Runtime</b><br><s>microVM per session, billed per second</s></div></li>
+          <li><div><b>AgentCore Memory</b><br><s>replaces the store <em>and</em> the extractor</s></div></li>
+          <li><div><b>AgentCore Gateway</b><br><s>tools over MCP</s></div></li>
+          <li><div><b>AgentCore Observability</b><br><s>traces without instrumenting</s></div></li>
+        </ul>
+      </div>
+    </div>
+    <p class="note">Engine B is <code>agentcore/agent.py</code> behind <code>infra/lib/agentcore-stack.ts</code> —
+      an eighth CDK stack. The persona is not duplicated there: <code>system_prompt</code> arrives in
+      the payload from the same <code>prompts.ts</code> engine A uses, because a second copy of
+      Valentin's character would drift and the comparison would stop being a comparison.
+      It served its first working turn on <b>1 September</b>, after four faults that each hid the next.</p>
+  </div>
+</section>
+
+<!-- ═══ 7 · COST ════════════════════════════════════════ -->
+<section id="cost" data-title="Two bills">
+  <div class="wrap wide">
+    <div class="act"><b>Part 1</b> · What I built</div>
+    <h2>Two bills, split into what's fixed and what grows.</h2>
+    <p class="lede" style="max-width: 1060px">Every rate from a vendor pricing page, every quantity
+      counted out of this repo. The reply call to Bedrock is identical on both sides, so it's excluded
+      from both.</p>
+    <div class="versus">
+      <div class="panel" style="--c: var(--claret)">
+        <span class="t">Engine A · glue code</span>
+        <h3>$18.02 fixed, $1.386 per user</h3>
+        <ul class="ledger">
+          <li><div>AWS Fargate<s>0.5 vCPU · 730 h · never scales below 1</s></div><span class="amt">$18.02</span></li>
+          <li><div>2nd Bedrock extraction<s>104 turns × $0.01332</s></div><span class="amt">$1.385</span></li>
+          <li><div>Amazon DynamoDB<s>on-demand reads, writes, storage</s></div><span class="amt">$0.0006</span></li>
+          <li class="sum"><div>At one user, per month</div><span class="amt">$19.41</span></li>
+        </ul>
+      </div>
+      <div class="vs"><span>vs</span></div>
+      <div class="panel" style="--c: var(--olive)">
+        <span class="t">Engine B · AgentCore</span>
+        <h3>$0.0006 fixed, $0.103 per user</h3>
+        <ul class="ledger" style="--c: var(--olive)">
+          <li><div>AgentCore Gateway<s>3 tools indexed — the only fixed line</s></div><span class="amt">$0.0006</span></li>
+          <li><div>AgentCore Memory<s>1 event + 1 retrieval per turn, extraction included</s></div><span class="amt">$0.098</span></li>
+          <li><div>AgentCore Runtime<s>3 s × 104 turns, per-second billing</s></div><span class="amt">$0.0047</span></li>
+          <li class="sum"><div>At one user, per month</div><span class="amt">$0.10</span></li>
+        </ul>
+      </div>
+    </div>
+    <table class="scale">
+      <tr><th>Users</th><th>Engine A</th><th>Engine B</th><th>Ratio</th><th>Saved / month</th></tr>
+      <tr><td>1</td><td>$19.41</td><td>$0.10</td><td>187×</td><td class="save">$19</td></tr>
+      <tr><td>10,000</td><td>$13,877</td><td>$1,029</td><td>13.5×</td><td class="save">$12,848</td></tr>
+      <tr class="peak"><td>1,000,000</td><td>$1.39 M</td><td>$103 k</td><td>13.5×</td><td class="save">$1.28 M</td></tr>
+    </table>
+    <p class="note">The last two columns move in opposite directions: the <b>ratio</b> falls from 187× to
+      13.5× as Fargate's fixed $18 amortises, while the <b>money</b> grows without limit — about
+      <b>$15.4 M a year</b> at a million users. AgentCore loses on unit price (Runtime 2.20× dearer per
+      hour, Memory ~124× per turn) and wins on billing granularity. And if Memory meters retrievals per
+      <em>record</em> rather than per call, engine B becomes <b>3.8× worse</b> — confirm with AWS before
+      quoting any of this. <code>scripts/cost-model.mjs</code> reproduces every figure.</p>
+  </div>
+</section>
+
+<!-- ═══ 8 · BLAST RADIUS ════════════════════════════════ -->
+<section class="dark" id="blast" data-title="Blast radius">
+  <div class="wrap wide">
+    <div class="act"><b>Part 1</b> · What I built</div>
+    <h2>One fault. Forty sessions.</h2>
+    <p class="lede" style="max-width: 1060px">Cost is not the strongest argument for AgentCore — this is.
+      Both sides are the same forty live sessions, one process-level fault injected into the same
+      session on each.</p>
+    <div class="radius">
+      <div class="panel" style="--c: var(--claret)">
+        <span class="t">Engine A</span>
+        <h3>One Node process</h3>
+        <p class="sub">Forty WebSockets in one <code>Set</code>, one heap, one event loop —
+          <code>attach-websocket.ts:31</code>.</p>
+        <div class="vessel shared">
+        <i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i>
+        <i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i>
+        <i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i>
+        <i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i>
+        <i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i>
+        </div>
+        <div class="tally bad"><span class="n">40</span>
+          <p>of 40 sessions lost<br>every user, and every partner profile in flight</p></div>
+      </div>
+      <div class="vs"><span>vs</span></div>
+      <div class="panel" style="--c: var(--olive)">
+        <span class="t">Engine B</span>
+        <h3>One microVM per session</h3>
+        <p class="sub">Forty sessions, forty isolated execution environments. The fault has
+          nowhere to travel.</p>
+        <div class="vessel isolated">
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        <i></i><i></i><i></i><i class="hit"></i><i></i><i></i><i></i><i></i>
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        </div>
+        <div class="tally good"><span class="n">1</span>
+          <p>of 40 sessions lost<br>the other 39 never notice</p></div>
+      </div>
+    </div>
+    <div class="faults">
+      <div class="fault"><b>Unhandled rejection</b>
+        <p>One turn throws without a handler; Node exits, taking all 40 sockets with it.</p></div>
+      <div class="fault"><b>Out of memory</b>
+        <p>One runaway conversation exhausts the 1 GiB task. The OOM killer doesn't ask whose
+          request it was.</p></div>
+      <div class="fault"><b>Event-loop block</b>
+        <p>One synchronous hot spot stalls the single loop — the other 39 see the app stop.</p></div>
+      <div class="fault"><b>Injection that pivots</b>
+        <p>Reaches a process-wide singleton — the Bedrock client, the tool registry — holding
+          everyone's credentials.</p></div>
+    </div>
+    <p class="note">Two limits, both real. Engine A <em>does</em> isolate per-user <b>state</b>
+      (<code>forUser</code>) — one user's logic bug can't read another's data; what they share is the
+      process. And engine B isn't fully isolated in <em>this</em> deployment either — it still answers
+      through <code>valentin-ac-proxy</code>, one shared Fargate task holding the sockets. The right panel
+      is what AgentCore Runtime gives you, not yet what this repo deploys.</p>
+  </div>
+</section>
+
+<!-- ═══ 9 · THE TEAM ════════════════════════════════════ -->
 <section id="team" data-title="The team">
   <div class="wrap wide">
     <div class="act"><b>Part 2</b> · Who really built it</div>
@@ -480,7 +731,7 @@
   </div>
 </section>
 
-<!-- ═══ 7 · THE WORKFLOW ════════════════════════════════════════ -->
+<!-- ═══ 10 · THE WORKFLOW ═══════════════════════════════ -->
 <section id="workflow" data-title="The workflow">
   <div class="wrap wide">
     <div class="act"><b>Part 2</b> · Who really built it</div>
@@ -519,7 +770,7 @@
   </div>
 </section>
 
-<!-- ═══ 8 · THE TOOLS ═══════════════════════════════════════════ -->
+<!-- ═══ 11 · THE TOOLS ══════════════════════════════════ -->
 <section id="tools" data-title="The tools">
   <div class="wrap wide">
     <div class="act"><b>Part 2</b> · Who really built it</div>
@@ -553,7 +804,7 @@
   </div>
 </section>
 
-<!-- ═══ 9 · THE WORK, VISUALIZED ════════════════════════════════ -->
+<!-- ═══ 12 · THE WORK, VISUALIZED ═══════════════════════ -->
 <section id="graph" data-title="The work">
   <div class="wrap wide">
     <div class="act"><b>Part 2</b> · Who really built it</div>
@@ -585,7 +836,7 @@
   </div>
 </section>
 
-<!-- ═══ 10 · AGENTS ARGUING ══════════════════════════════════════ -->
+<!-- ═══ 13 · AGENTS ARGUING ═════════════════════════════ -->
 <section id="thread" data-title="Agents arguing">
   <div class="wrap wide">
     <div class="act"><b>Part 2</b> · Who really built it</div>
@@ -617,7 +868,7 @@
   </div>
 </section>
 
-<!-- ═══ 11 · WHAT I LEARNED ══════════════════════════════════════ -->
+<!-- ═══ 14 · WHAT I LEARNED ═════════════════════════════ -->
 <section class="dark" id="learned" data-title="What I learned">
   <div class="wrap wide">
     <div class="act"><b>Part 3</b> · What I learned</div>
@@ -651,7 +902,7 @@
   </div>
 </section>
 
-<!-- ═══ 12 · HONEST SCOPE + THANKS ═══════════════════════════════ -->
+<!-- ═══ 15 · HONEST SCOPE + THANKS ══════════════════════ -->
 <section class="dark" id="thanks" data-title="Honest scope · thanks">
   <div class="wrap wide">
     <div class="act"><b>Part 3</b> · What I learned</div>

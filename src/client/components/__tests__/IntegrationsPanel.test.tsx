@@ -355,13 +355,19 @@ describe('IntegrationsPanel', () => {
     it('says an unbuilt capability is not built yet, not merely unconfigured', async () => {
       await renderPanel();
       /*
-       * The distinction the visitor cannot see by looking: flowers is a drawing,
+       * The distinction the visitor cannot see by looking: music is a drawing,
        * whereas travel is real code waiting on an Amadeus key. Both are dark, and
        * conflating them either overpromises or slanders working code.
+       *
+       * `music` rather than `flowers`, which this used to assert: flowers is Wolt
+       * and has been real since the browser tier landed, so using it here was the
+       * test agreeing with the bug — it badged working code "not built yet". Music
+       * has no provider anywhere in src/server/integrations, so it is the honest
+       * example of a row that contacts nobody.
        */
-      const flowers = await screen.findByTestId('integration-readiness-flowers');
-      expect(flowers).toHaveAttribute('data-readiness', 'aspirational');
-      expect(flowers).toHaveTextContent('not built yet');
+      const music = await screen.findByTestId('integration-readiness-music');
+      expect(music).toHaveAttribute('data-readiness', 'aspirational');
+      expect(music).toHaveTextContent('not built yet');
 
       const travel = screen.getByTestId('integration-readiness-travel');
       expect(travel).toHaveAttribute('data-readiness', 'unconfigured');
@@ -390,7 +396,7 @@ describe('IntegrationsPanel', () => {
 
       // Deliberately no badge rather than a guess in either direction. The
       // aspirational rows still show theirs — those need no server to be true.
-      await screen.findByTestId('integration-readiness-flowers');
+      await screen.findByTestId('integration-readiness-music');
       expect(screen.queryByTestId('integration-readiness-dining')).not.toBeInTheDocument();
       expect(screen.queryByTestId('integration-readiness-messages')).not.toBeInTheDocument();
     });

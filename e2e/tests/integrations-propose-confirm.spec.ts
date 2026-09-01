@@ -110,11 +110,15 @@ test.describe('Integrations — propose and confirm', () => {
 
     /*
      * The fan-out is organised by *capability*, not by vendor — the visitor cares
-     * that Valentin can book dinner, not that Ontopo exists. So these are the six
-     * capabilities the integration layer backs, and `flowers`, `grocery`, `music`
-     * and `rides` are deliberately present-but-unbuilt alongside them.
+     * that Valentin can book dinner, not that Ontopo exists. So these are the
+     * capabilities the integration layer backs, and `music` and `rides` are
+     * deliberately present-but-unbuilt alongside them.
+     *
+     * `flowers` and `grocery` moved out of that unbuilt list: both are Wolt, whose
+     * catalogue endpoint needs no credential, and the server has been registering
+     * `woltTools` on every boot since the browser tier landed.
      */
-    for (const id of ['dining', 'calendar', 'travel', 'messages', 'occasions']) {
+    for (const id of ['dining', 'calendar', 'travel', 'messages', 'occasions', 'flowers']) {
       await expect(panel.getByTestId(`integration-node-${id}`)).toBeVisible();
     }
 
@@ -124,9 +128,17 @@ test.describe('Integrations — propose and confirm', () => {
       'live',
     );
 
-    // And the honest half: a capability with nothing behind it says so, rather than
-    // showing a dot that implies it is merely unconfigured.
+    // Wolt needs no credential either, so the florist row is live for the same
+    // reason `occasions` is. This assertion used to expect "not built yet" here,
+    // which made the spec agree with the bug it should have caught.
     await expect(panel.getByTestId('integration-readiness-flowers').first()).toContainText(
+      'live',
+    );
+
+    // And the honest half: a capability with nothing behind it says so, rather than
+    // showing a dot that implies it is merely unconfigured. `music` has no provider
+    // anywhere in src/server/integrations.
+    await expect(panel.getByTestId('integration-readiness-music').first()).toContainText(
       'not built yet',
     );
   });

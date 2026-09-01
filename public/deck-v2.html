@@ -138,6 +138,44 @@
            padding: 18px; display: grid; place-items: center; overflow: hidden;
            box-shadow: 0 2px 6px rgba(42,34,38,.06), 0 18px 44px rgba(42,34,38,.08); }
   .stage svg, .stage img { max-width: 100%; max-height: 55vh; height: auto; display: block; }
+  /* The architecture board is near-square, so on a 16:9 slide it has to be given
+     the full column height and be paired with text beside it rather than under. */
+  .stage.tall { padding: 8px; }
+  .stage.tall img { max-height: 75vh; }
+  /* give the board the wider column; the prose beside it is deliberately terse */
+  .split.board { grid-template-columns: 1.45fr 1fr; gap: 26px; }
+
+  /* ---- tool surface: one card per integration, its tools listed ---- */
+  .kits { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
+  .kit { background: var(--cream); border-radius: var(--r-sm); padding: 16px 18px;
+         border-top: 3px solid var(--c, var(--claret));
+         box-shadow: 0 1px 3px rgba(42,34,38,.05), 0 10px 26px rgba(42,34,38,.06); }
+  .kit b { display: block; font: 500 16.5px Outfit; }
+  .kit .what { font-size: 13.5px; color: var(--ink-3); margin-top: 2px; }
+  .kit ul { list-style: none; margin-top: 10px; border-top: 1px solid #F2E9E4; padding-top: 8px; }
+  .kit li { font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.5;
+            color: var(--ink-2); display: flex; gap: 7px; align-items: baseline; }
+  /* a filled dot is a tool that can change the world; hollow is read-only */
+  .kit li::before { content: ''; width: 6px; height: 6px; border-radius: 999px; flex: 0 0 6px;
+                    border: 1.5px solid var(--olive); }
+  .kit li.acts::before { background: var(--claret); border-color: var(--claret); }
+  .dark .kit { background: rgba(255,253,251,.06); box-shadow: none; }
+  .dark .kit ul { border-color: rgba(255,253,251,.14); }
+  .dark .kit li { color: rgba(255,253,251,.72); }
+
+  /* ---- anatomy of a turn: numbered vertical steps ---- */
+  .anatomy { display: grid; gap: 9px; margin-top: 18px; }
+  .an { display: grid; grid-template-columns: 30px 210px 1fr; gap: 16px; align-items: baseline;
+        background: var(--cream); border-radius: var(--r-sm); padding: 13px 18px;
+        box-shadow: 0 1px 3px rgba(42,34,38,.05), 0 8px 22px rgba(42,34,38,.05); }
+  .an .i { width: 26px; height: 26px; border-radius: 999px; background: var(--blush);
+           color: var(--claret); display: grid; place-items: center; font: 500 13px Outfit; }
+  .an b { font: 500 16.5px Outfit; }
+  .an p { font-size: 15.5px; line-height: 1.45; color: var(--ink-2); }
+  .an.owned { border-left: 3px solid var(--olive); }
+  .dark .an { background: rgba(255,253,251,.06); box-shadow: none; }
+  .dark .an p { color: rgba(255,253,251,.68); }
+  .dark .an .i { background: rgba(246,222,226,.16); color: var(--blush); }
 
   /* ---- three turns of the review loop (.beat is taken by the PR-thread slide) ---- */
   .loopcards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 28px; }
@@ -364,7 +402,10 @@
   @media (max-width: 1000px) {
     section { padding: 48px 20px; }
     .flow, .split, .split.lean, .stats, .lessons, .crew, .loopcards { grid-template-columns: 1fr; }
-    .versus, .radius, .faults { grid-template-columns: 1fr; gap: 12px; }
+    .versus, .radius, .faults, .kits, .split.board { grid-template-columns: 1fr; gap: 12px; }
+    .an { grid-template-columns: 30px 1fr; }
+    .an p { grid-column: 2; }
+    .stage.tall img { max-height: none; }
     .vs { display: none; }
     .scale { font-size: 13.5px; }
     .drops { display: none; }
@@ -379,7 +420,7 @@
 <body>
 
 <nav class="dots" id="dots"></nav>
-<div class="counter" id="counter">01 / 18</div>
+<div class="counter" id="counter">01 / 21</div>
 <div class="mark"><img src="logo.png" alt="Valentin"></div>
 <div class="editbadge">Editing · Esc to stop · ⌘S downloads the edited deck</div>
 
@@ -589,7 +630,44 @@
   </div>
 </section>
 
-<!-- ═══ 8 · WHAT MAKES IT AGENTIC ═════════════════ -->
+<!-- ═══ 8 · ARCHITECTURE GRAPH ════════════════════ -->
+<section id="topology" data-title="The topology">
+  <div class="wrap wide">
+    <div class="act"><b>Part 1</b> · What I built</div>
+    <h2>Both engines, one diagram.</h2>
+    <div class="split board">
+      <div class="stage tall">
+        <img src="deck-assets/diagram-two-engines.png"
+             alt="Two-lane architecture: browser through CloudFront and one ALB, splitting to engine A's Fargate service and engine B's AgentCore proxy, then to Bedrock, AgentCore Runtime, Memory, Gateway, Lambda, DynamoDB and CloudWatch">
+      </div>
+      <div>
+        <p class="lede">Every box carries the name of a resource that actually exists in
+          <code>us-east-1</code>. Read it across a row and you are comparing the two engines at the
+          same tier.</p>
+        <ul class="bullets">
+          <li><b>One front door.</b> One CloudFront distribution, one ALB, one listener. Three rules
+            on <code>/api/agentcore/*</code>, <code>/ws/agentcore</code> and an
+            <code>X-Valentin-Engine</code> header pick the lane — so the <em>same request</em> can be
+            served either way and measured.</li>
+          <li><b>Deliberately shared.</b> Bedrock, the guardrail, the Cognito pool and one DynamoDB
+            table are held fixed across both lanes. That is what makes a cost or latency delta
+            attributable to the orchestration layer instead of to a different model.</li>
+          <li><b>The proxy is not an accident.</b> AgentCore Runtime cannot be an ALB target — it is
+            a Bedrock API reached by <code>InvokeAgentRuntime</code>. So engine B keeps a thin
+            Fargate proxy in front, which is also why its blast radius isn't yet the full story.</li>
+          <li><b>Where the seam is.</b> <code>AgentOrchestratorInterface</code> is two methods wide.
+            Engine B is a second implementation behind it — not a fork of the app.</li>
+        </ul>
+        <p class="note">Rendered straight from <code>public/agentcore-compare.html</code> by
+          <code>scripts/render-arch-diagram.mts</code>, so the slide cannot drift from the page it
+          came from.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══ 9 · WHAT MAKES IT AGENTIC ═════════════════ -->
 <section id="agentic" data-title="Actually agentic">
   <div class="wrap wide">
     <div class="act"><b>Part 1</b> · What I built</div>
@@ -631,7 +709,107 @@
   </div>
 </section>
 
-<!-- ═══ 9 · THE FOUR FAULTS ═══════════════════════ -->
+<!-- ═══ 10 · THE TOOL SURFACE ═════════════════════ -->
+<section id="toolsurface" data-title="Tool surface">
+  <div class="wrap wide">
+    <div class="act"><b>Part 1</b> · What I built</div>
+    <h2>Fourteen tools against six live APIs.</h2>
+    <p class="lede" style="max-width: 1060px">This is the part that makes it an agent rather than a
+      chatbot: it can look the world up and it can offer to act on it. Six integrations, none of
+      them stubbed.</p>
+    <div class="kits">
+      <div class="kit" style="--c: #E4572E"><b>Ontopo</b>
+        <div class="what">Restaurant booking, Israel</div>
+        <ul>
+          <li>find_restaurants</li>
+          <li>check_availability</li>
+          <li class="acts">propose_reservation</li>
+        </ul>
+      </div>
+      <div class="kit" style="--c: var(--front)"><b>Amadeus</b>
+        <div class="what">Hotels and activities</div>
+        <ul>
+          <li>search_hotels</li>
+          <li>search_activities</li>
+          <li class="acts">propose_hotel_booking</li>
+        </ul>
+      </div>
+      <div class="kit" style="--c: var(--olive)"><b>Google</b>
+        <div class="what">Calendar and Gmail, via OAuth</div>
+        <ul>
+          <li>find_occasions</li>
+          <li class="acts">propose_calendar_event</li>
+          <li class="acts">propose_email</li>
+        </ul>
+      </div>
+      <div class="kit" style="--c: var(--design)"><b>Wolt</b>
+        <div class="what">Gift and flower delivery</div>
+        <ul>
+          <li>find_gift_delivery</li>
+          <li class="acts">propose_gift</li>
+        </ul>
+      </div>
+      <div class="kit" style="--c: var(--master)"><b>Hebcal</b>
+        <div class="what">Hebrew calendar and Shabbat</div>
+        <ul>
+          <li>check_shabbat</li>
+          <li>get_hebrew_occasions</li>
+        </ul>
+      </div>
+      <div class="kit" style="--c: #25D366"><b>WhatsApp</b>
+        <div class="what">Business API, template messages</div>
+        <ul>
+          <li class="acts">propose_whatsapp_nudge</li>
+        </ul>
+      </div>
+    </div>
+    <p class="note">Hollow dot = read-only lookup (eight of them). Filled dot = a
+      <code>propose_*</code> tool (six) — and those <em>propose</em>. Each one returns a card she has
+      to confirm; the agent drafts the email, picks the restaurant and reserves nothing. That is a
+      product decision, not a limitation: an agent with her calendar, her partner's address and her
+      WhatsApp should not be one hallucination away from sending something. Engine B reaches this
+      same surface through <b>AgentCore Gateway over MCP</b>; engine A calls it in-process.
+      Hebcal is why he knows not to suggest Friday night.</p>
+  </div>
+</section>
+
+<!-- ═══ 11 · ANATOMY OF A TURN ════════════════════ -->
+<section class="dark" id="turn" data-title="One turn">
+  <div class="wrap wide">
+    <div class="act"><b>Part 1</b> · What I built</div>
+    <h2>What actually happens when she sends one message.</h2>
+    <p class="lede" style="max-width: 1060px">Not one model call. A loop that can reason, act, read
+      the result and decide again — up to five times — before it says anything back.</p>
+    <div class="anatomy">
+      <div class="an"><div class="i">1</div><b>Guardrail, then plan</b>
+        <p>The message passes a Bedrock Guardrail (content filters, PII blocking), then goes to
+          Claude Sonnet 4.5 with the persona and all fourteen tool schemas attached.</p></div>
+      <div class="an"><div class="i">2</div><b>The model asks for tools</b>
+        <p>It can request <em>several at once</em> — "check Shabbat times <em>and</em> find
+          restaurants" — and they resolve concurrently, not one after another.</p></div>
+      <div class="an"><div class="i">3</div><b>Results go back in, and it decides again</b>
+        <p>Tool output is appended to the transcript and the model runs again. That is the agentic
+          part: it reads what came back and changes its plan. <code>MAX_TOOL_ITERATIONS = 5</code>.</p></div>
+      <div class="an"><div class="i">4</div><b>Actions become proposals</b>
+        <p>A <code>propose_*</code> tool returns a card, not a side effect. Nothing is booked, sent
+          or charged until she taps confirm.</p></div>
+      <div class="an"><div class="i">5</div><b>The cap degrades, it doesn't throw</b>
+        <p>If the chain hits five iterations mid-thought, the last thing the model actually said is
+          returned rather than an exception — a partly useful answer beats an apology.</p></div>
+      <div class="an owned"><div class="i">6</div><b>Then memory, off the critical path</b>
+        <p>Engine A spends a <em>second</em> Bedrock call extracting preferences after replying.
+          Engine B doesn't: <b>AgentCore Memory</b> does it inside its own rate — which is the single
+          biggest line in the cost comparison.</p></div>
+    </div>
+    <p class="note">The loop is <code>tool-loop.ts</code>; the registry is
+      <code>src/server/integrations/tool-registry.ts</code>. Step 6 is the whole reason the two
+      engines cost what they do — everything above it is identical on both, which is exactly why the
+      comparison is worth anything.</p>
+  </div>
+</section>
+
+
+<!-- ═══ 12 · THE FOUR FAULTS ══════════════════════ -->
 <section class="dark" id="faults" data-title="Four faults">
   <div class="wrap wide">
     <div class="act"><b>Part 1</b> · What I built</div>
@@ -667,7 +845,7 @@
   </div>
 </section>
 
-<!-- ═══ 10 · COST ═════════════════════════════════ -->
+<!-- ═══ 13 · COST ═════════════════════════════════ -->
 <section id="cost" data-title="Two bills">
   <div class="wrap wide">
     <div class="act"><b>Part 1</b> · What I built</div>
@@ -713,7 +891,7 @@
   </div>
 </section>
 
-<!-- ═══ 11 · BLAST RADIUS ═════════════════════════ -->
+<!-- ═══ 14 · BLAST RADIUS ═════════════════════════ -->
 <section class="dark" id="blast" data-title="Blast radius">
   <div class="wrap wide">
     <div class="act"><b>Part 1</b> · What I built</div>
@@ -774,7 +952,7 @@
   </div>
 </section>
 
-<!-- ═══ 12 · THE TEAM ═════════════════════════════ -->
+<!-- ═══ 15 · THE TEAM ═════════════════════════════ -->
 <section id="team" data-title="The team">
   <div class="wrap wide">
     <div class="act"><b>Part 2</b> · Who really built it</div>
@@ -849,7 +1027,7 @@
   </div>
 </section>
 
-<!-- ═══ 13 · THE WORKFLOW ═════════════════════════ -->
+<!-- ═══ 16 · THE WORKFLOW ═════════════════════════ -->
 <section id="workflow" data-title="The workflow">
   <div class="wrap wide">
     <div class="act"><b>Part 2</b> · Who really built it</div>
@@ -888,7 +1066,7 @@
   </div>
 </section>
 
-<!-- ═══ 14 · THE TOOLS ════════════════════════════ -->
+<!-- ═══ 17 · THE TOOLS ════════════════════════════ -->
 <section id="tools" data-title="The tools">
   <div class="wrap wide">
     <div class="act"><b>Part 2</b> · Who really built it</div>
@@ -922,7 +1100,7 @@
   </div>
 </section>
 
-<!-- ═══ 15 · THE WORK, VISUALIZED ═════════════════ -->
+<!-- ═══ 18 · THE WORK, VISUALIZED ═════════════════ -->
 <section id="graph" data-title="The work">
   <div class="wrap wide">
     <div class="act"><b>Part 2</b> · Who really built it</div>
@@ -954,7 +1132,7 @@
   </div>
 </section>
 
-<!-- ═══ 16 · AGENTS ARGUING ═══════════════════════ -->
+<!-- ═══ 19 · AGENTS ARGUING ═══════════════════════ -->
 <section id="thread" data-title="Agents arguing">
   <div class="wrap wide">
     <div class="act"><b>Part 2</b> · Who really built it</div>
@@ -986,7 +1164,7 @@
   </div>
 </section>
 
-<!-- ═══ 17 · WHAT I LEARNED ═══════════════════════ -->
+<!-- ═══ 20 · WHAT I LEARNED ═══════════════════════ -->
 <section class="dark" id="learned" data-title="What I learned">
   <div class="wrap wide">
     <div class="act"><b>Part 3</b> · What I learned</div>
@@ -1020,7 +1198,7 @@
   </div>
 </section>
 
-<!-- ═══ 18 · HONEST SCOPE + THANKS ════════════════ -->
+<!-- ═══ 21 · HONEST SCOPE + THANKS ════════════════ -->
 <section class="dark" id="thanks" data-title="Honest scope · thanks">
   <div class="wrap wide">
     <div class="act"><b>Part 3</b> · What I learned</div>

@@ -38,7 +38,21 @@ export class DataStack extends cdk.Stack {
       pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       encryption: dynamodb.TableEncryption.AWS_MANAGED,
       timeToLiveAttribute: 'ttl',
-      deletionProtection: config.deletionProtection,
+      /*
+       * Always on, dev included — deliberately *not* `config.deletionProtection`
+       * (false in dev), which is the ALB's setting and is shared.
+       *
+       * `removalPolicy: RETAIN` below only binds CloudFormation. SpringClean,
+       * the Isengard account janitor, calls `DeleteTable` directly and never
+       * reads a stack policy, so on 2026-09-01 it removed `ValentinTable-dev`
+       * while the stack still reported UPDATE_COMPLETE. Deletion protection is
+       * the only guard that lives at the API and refuses that call. The
+       * `auto-delete=no` tag in `bin/app.ts` should stop SpringClean before it
+       * gets this far; this is the layer that holds when a tag is lost.
+       *
+       * `teardown.sh` does not delete the table, so this costs it nothing.
+       */
+      deletionProtection: true,
       // RETAIN in every environment, dev included. This used to be
       // `env === 'prod' ? RETAIN : DESTROY`, and that is precisely how
       // `ValentinTable-dev` came to be missing: a stack teardown took the table

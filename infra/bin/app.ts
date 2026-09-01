@@ -9,6 +9,7 @@ import { CdnStack } from '../lib/cdn-stack';
 import { AuthStack } from '../lib/auth-stack';
 import { AgentCoreStack } from '../lib/agentcore-stack';
 import { getConfig } from '../config/environments';
+import { applySpringCleanExemption } from '../lib/springclean-exemption';
 
 const app = new cdk.App();
 const env = app.node.tryGetContext('env') || 'dev';
@@ -172,3 +173,8 @@ monitoringStack.addStackDependency(computeStack);
 cdk.Tags.of(app).add('Project', 'Valentin');
 cdk.Tags.of(app).add('Environment', env);
 cdk.Tags.of(app).add('ManagedBy', 'CDK');
+
+// Keep the Isengard account janitor off everything here. See the helper for
+// what SpringClean is, why CloudFormation's retain policies do not stop it, and
+// what it cost us on 2026-09-01.
+applySpringCleanExemption(app);

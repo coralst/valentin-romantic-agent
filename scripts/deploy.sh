@@ -121,6 +121,57 @@ for stack, outs in data.items():
   echo "$value"
 }
 
+# The agent image tag baked into the deployed AgentCore Runtime, or empty.
+#
+# `containerUri` in the live template is a CloudFormation `Fn::Join` of the ECR
+# host, the URL suffix, and `:<tag>`, so the tag is the text after the final `:`.
+# Read straight from the deployed template rather than a local outputs file: this
+# is asked before deciding whether AgentCore even needs a deploy, when no local
+# state is trustworthy. Empty on any failure — a missing stack, a shape change,
+# no python — which the caller treats as "deploy it", the safe direction.
+agentcore_deployed_tag() {
+  aws cloudformation get-template \
+    --stack-name "Valentin-AgentCore-${ENV}" \
+    --profile "$PROFILE" --region "$REGION" \
+    --query 'TemplateBody' --output json 2>/dev/null \
+  | python3 -c "
+import json,sys
+try:
+    t = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+for name, res in t.get('Resources', {}).items():
+    if res.get('Type') == 'AWS::BedrockAgentCore::Runtime':
+        uri = res.get('Properties', {}).get('AgentRuntimeArtifact', {}) \
+                 .get('ContainerConfiguration', {}).get('ContainerUri', '')
+        # ContainerUri is usually an Fn::Join: ['', [host, {Ref: URLSuffix}, ':tag']].
+        parts = []
+        if isinstance(uri, dict):
+            for join in uri.values():
+                if isinstance(join, list) and len(join) == 2 and isinstance(join[1], list):
+                    parts = [p for p in join[1] if isinstance(p, str)]
+        elif isinstance(uri, str):
+            parts = [uri]
+        joined = ''.join(parts)
+        if ':' in joined:
+            print(joined.rsplit(':', 1)[1])
+        break
+" 2>/dev/null || true
+}
+
+# True when the AgentCore stack exists in a healthy, non-rolled-back state.
+agentcore_is_healthy() {
+  local status
+  status=$(aws cloudformation describe-stacks \
+    --stack-name "Valentin-AgentCore-${ENV}" \
+    --profile "$PROFILE" --region "$REGION" \
+    --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)
+  case "$status" in
+    CREATE_COMPLETE|UPDATE_COMPLETE|IMPORT_COMPLETE) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # --- 1. Build & push Docker image ---
 if [[ "$SCOPE" == "all" || "$SCOPE" == "backend" ]]; then
   echo ""
@@ -197,7 +248,29 @@ if [[ "$SCOPE" == "all" || "$SCOPE" == "backend" || "$SCOPE" == "infra" ]]; then
   # `backend` touches only the service, so deploy just Compute. --exclusively is
   # load-bearing: without it CDK walks the addStackDependency chains in
   # bin/app.ts and re-checks Network/Data/Safety at ~16s each.
+  #
+  # But Compute cannot deploy alone. `bin/app.ts` feeds the AgentCore Runtime
+  # ARN, Memory id and Gateway URL into ComputeStack, which makes them
+  # CloudFormation cross-stack imports; with --exclusively and no AgentCore, the
+  # import cannot resolve and Compute rolls back with "No export named
+  # Valentin-AgentCore-dev:...RuntimeAgentRuntimeArn... found". That is precisely
+  # how a scope=backend deploy failed the first time engine B shipped. So deploy
+  # AgentCore first — unless it is already healthy AND already running this exact
+  # agent tag, in which case a redeploy is ~16s of nothing. Any uncertainty
+  # (missing stack, unreadable tag, mid-rollback) deploys: a redundant AgentCore
+  # deploy is cheap, a missing one costs a Compute rollback.
   if [[ "$SCOPE" == "backend" ]]; then
+    if agentcore_is_healthy && [[ "$(agentcore_deployed_tag)" == "$IMAGE_TAG" ]]; then
+      echo "--- AgentCore already healthy at ${IMAGE_TAG}; deploying Compute only"
+    else
+      echo "--- Deploying AgentCore first (Compute imports its exports)"
+      run env AWS_PROFILE="$PROFILE" npx cdk deploy "Valentin-AgentCore-${ENV}" --exclusively \
+        --context env="$ENV" \
+        --context imageTag="$IMAGE_TAG" \
+        --context agentImageTag="$IMAGE_TAG" \
+        --require-approval never \
+        --outputs-file "cdk-outputs-${ENV}.json"
+    fi
     run env AWS_PROFILE="$PROFILE" npx cdk deploy "Valentin-Compute-${ENV}" --exclusively \
       --context env="$ENV" \
       --context imageTag="$IMAGE_TAG" \
@@ -218,7 +291,7 @@ if [[ "$SCOPE" == "all" || "$SCOPE" == "backend" || "$SCOPE" == "infra" ]]; then
         --exclusively \
         --context env="$ENV" \
         --context imageTag="$IMAGE_TAG" \
-      --context agentImageTag="$IMAGE_TAG" \
+        --context agentImageTag="$IMAGE_TAG" \
         --require-approval never \
         --outputs-file "cdk-outputs-${ENV}.json"
     done
@@ -281,8 +354,26 @@ if [[ "$SCOPE" == "all" || "$SCOPE" == "frontend" ]]; then
       echo "  NOTE: archive sync failed (is the ReleaseBucket deployed yet?) — continuing."
   fi
 
+  # Two passes, because the entry point and the assets want opposite caching.
+  #
+  # The first sync ships everything; the hashed files under assets/ are safe to
+  # cache forever because a content change changes their name. index.html is the
+  # one file whose name never changes, and it is the map to those hashes — so if
+  # a browser or CloudFront caches it, a returning visitor keeps loading the
+  # PREVIOUS build's JS long after a deploy, with no error to show for it. That
+  # is exactly what happened after the engine-B deploy: the app was live but
+  # every returning tab ran the Aug-28 bundle until its heuristic cache expired,
+  # because S3 sent index.html with no Cache-Control at all. The second cp
+  # rewrites just the HTML with no-cache so the edge and the browser always
+  # revalidate it; the hashed assets it points at are still served from cache.
   run aws s3 sync dist/ "s3://valentin-static-${ENV}/" --delete \
     --profile "$PROFILE" --region "$REGION"
+
+  run aws s3 cp "s3://valentin-static-${ENV}/index.html" "s3://valentin-static-${ENV}/index.html" \
+    --content-type text/html \
+    --cache-control "no-cache, must-revalidate" \
+    --metadata-directive REPLACE \
+    --profile "$PROFILE" --region "$REGION" --only-show-errors
 
   DIST_ID=$(cdn_output DistributionId)
   if [[ -n "$DIST_ID" ]]; then

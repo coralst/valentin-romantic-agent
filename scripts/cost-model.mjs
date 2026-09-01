@@ -151,3 +151,81 @@ function main() {
 }
 
 main();
+
+// ============================================================================================
+// Usage model, stated explicitly because every figure above depends on it.
+//
+// The point of writing these down rather than picking a round number: "500 turns/month" reads
+// like a deployment-wide figure, but the 26-record storage line is ONE partner profile. Mixing
+// per-deployment, per-turn and per-user quantities in one column is how a cost model quietly
+// becomes wrong.
+// ============================================================================================
+
+/** What one engaged user of a romantic assistant plausibly does. */
+export const USAGE = {
+  sessionsPerUserPerWeek: 3, // opens the app about every other evening
+  turnsPerSession: 8, // a real conversation about a partner, not a one-shot query
+  get turnsPerUserPerMonth() {
+    return Math.round((this.sessionsPerUserPerWeek * 52 / 12) * this.turnsPerSession);
+  },
+  /** Share of turns falling in the 19:00–23:00 window. It is a date-planning assistant. */
+  eveningShare: 0.7,
+  peakHoursPerDay: 4,
+  /** Turns that actually reach for a tool (a restaurant search, a calendar check). */
+  toolCallShare: 0.4,
+  /** AgentCore Gateway also does one ListTools per invoke, so this is 1 + toolCallShare. */
+  get gatewayInvokesPerTurn() {
+    return 1 + this.toolCallShare;
+  },
+  /** One AgentCore Memory record per profile field. */
+  memoryRecordsPerUser: 26,
+  /** Rough DynamoDB footprint of one user's messages + preferences. */
+  dynamoGbPerUser: 0.00005,
+};
+
+const TPU = USAGE.turnsPerUserPerMonth;
+
+// Per-turn, both engines (the reply Converse is identical and excluded from both).
+export const perTurnA = dynamoPerTurn + extractionPerTurn;
+export const perTurnB =
+  runtimePerTurn + memoryPerTurn + USAGE.gatewayInvokesPerTurn * AC_GATEWAY_INVOKE;
+
+// Per-user-per-month, independent of how much they talk.
+export const perUserA = USAGE.dynamoGbPerUser * (0.25 + 0.2); // storage + PITR
+export const perUserB = USAGE.memoryRecordsPerUser * AC_RECORD_MO;
+
+// Fixed: paid at zero usage, shared by every user.
+export const fixedA = fargatePerMonth;
+export const fixedB = toolIndexPerMonth;
+
+export const monthlyA = (users) => fixedA + users * (perUserA + TPU * perTurnA);
+export const monthlyB = (users) => fixedB + users * (perUserB + TPU * perTurnB);
+
+function usageReport() {
+  const usd = (v, dp = 2) => '$' + v.toFixed(dp);
+  console.log('\n════ USAGE MODEL ════');
+  console.log('  turns/user/month', TPU, `(${USAGE.sessionsPerUserPerWeek}/wk × ${USAGE.turnsPerSession})`);
+  console.log('  Gateway invokes/turn', USAGE.gatewayInvokesPerTurn.toFixed(1));
+  console.log('\n  FIXED (zero usage)   A', usd(fixedA), '  B', usd(fixedB, 4));
+  console.log('  PER USER / month     A', usd(perUserA, 6), '  B', usd(perUserB, 4));
+  console.log('  PER TURN             A', usd(perTurnA, 6), '  B', usd(perTurnB, 7),
+    ' →', (perTurnA / perTurnB).toFixed(1) + '× gap');
+
+  console.log('\n users        glue    agentcore   ratio      saved/mo');
+  for (const u of [1, 10, 100, 1000, 10000]) {
+    const a = monthlyA(u);
+    const b = monthlyB(u);
+    console.log(
+      String(u).padStart(6),
+      usd(a).padStart(11),
+      usd(b).padStart(11),
+      ((a / b).toFixed(1) + '×').padStart(7),
+      usd(a - b).padStart(12),
+    );
+  }
+  const bigA = monthlyA(1e6);
+  const bigB = monthlyB(1e6);
+  console.log('  asymptotic ratio', (bigA / bigB).toFixed(1) + '×');
+}
+
+usageReport();

@@ -48,7 +48,7 @@ export const SCOREBOARD_COPY = {
     'Glue code wins at: fixed cost under steady load, no preview-service dependency, and propose-then-confirm — engine B has none.',
   scope:
     'AgentCore still answers behind a Fargate proxy here. What it removes is the stateful Fargate, the hand-written extractor and the DynamoDB memory layer — not Fargate.',
-  legend: '● measured live · ▪ counted in this repo · ○ published-rate calculation',
+  legend: '● measured live · ▪ counted in this repo · cost: see /engine-comparison.html',
   notRun: 'not yet run',
 } as const;
 
@@ -79,16 +79,15 @@ export const EXTRACTION_LINES = 624;
 export const MEMORY_LINES = 103;
 export const REPLACED_LINES = EXTRACTION_LINES + MEMORY_LINES;
 
-/**
- * Idle floor, from the CDK rather than from a price list.
+/*
+ * There is deliberately no always-on-task tile here any more.
  *
- * `minCapacity: config.desiredCount` with dev `desiredCount: 1`
- * (`infra/config/environments.ts`), so engine A never scales below one task. Stated as
- * a shape rather than a dollar figure on purpose: the NAT gateway and the ALB are
- * shared by both engines, and the second always-on dev task is engine B's *own* proxy,
- * so a "$/month for engine A" number would be double-billing AgentCore for its own hop.
+ * It read `1 → 0`, and that was false: `valentin-ac-proxy-<env>` is engine B's *own* Fargate
+ * service and it carries the same `minCapacity: config.desiredCount` as engine A's, so in this
+ * deployment the always-on task count is 1 vs 1. Cost belongs on the standalone comparison page
+ * (`public/engine-comparison.html`), which has room to state its rates and assumptions; a tile
+ * this size could only assert a number, and the number it asserted was wrong.
  */
-const IDLE_FLOOR = { valentin: '1', agentcore: '0' };
 
 /** One number, or `—` when nobody measured it. */
 function Value({ text, dim }: { text: string; dim: boolean }) {
@@ -274,13 +273,6 @@ export function EngineScoreboard({ metrics, isLive, serving }: EngineScoreboardP
               left={String(REPLACED_LINES)}
               right="0"
               title={`${EXTRACTION_LINES} lines of src/server/extraction/ plus ${MEMORY_LINES} of conversation-memory.ts.`}
-            />
-            <Tile
-              caption="always-on tasks (dev)"
-              provenance="calculated"
-              left={IDLE_FLOOR.valentin}
-              right={IDLE_FLOOR.agentcore}
-              title="minCapacity: config.desiredCount, with dev desiredCount: 1, so engine A never scales to nothing; AgentCore Runtime bills per invocation-second. The NAT gateway and the ALB are shared by both engines and are not counted here."
             />
           </div>
 

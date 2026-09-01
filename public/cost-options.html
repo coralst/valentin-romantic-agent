@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cost visualisation — five options to choose from</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gloock&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --glue:#0F6E9C; --ac:#8C2F45;
+    --ink:#2D2024; --ink2:#6B5C60; --ink3:#8A7A7E; --taupe:#B8A99A;
+    --surface:#FFFFFF; --ground:#F8F5F2; --border:#EDE6E0; --hairline:#F2ECE7;
+    --gold:#B08C4F; --good:#2F7A52; --bad:#B0424F;
+    /* AWS icon-category tiles, lifted from AWS_NODE_VISUALS / agentcore-compare.html */
+    --t-compute:linear-gradient(135deg,#FF9A3E,#ED7100);
+    --t-ml:linear-gradient(135deg,#21C8AC,#01A88D);
+    --t-core:linear-gradient(135deg,#3FD9BE,#01A88D);
+    --t-db:linear-gradient(135deg,#7A9DFF,#527FFF);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);
+    font-family:'Outfit',system-ui,sans-serif;font-weight:300;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 40px 90px}
+  h1,h2{font-family:'Gloock',Georgia,serif;font-weight:400;margin:0}
+  h1{font-size:38px}
+  header{padding:44px 0 26px}
+  .sub{margin:11px 0 0;font-size:15px;color:var(--ink2);max-width:820px;line-height:1.55}
+
+  .opt{background:var(--surface);border:1px solid var(--border);border-radius:16px;
+    padding:26px 30px 30px;margin-top:26px}
+  .optlbl{display:inline-block;font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;
+    color:#fff;background:var(--ink);border-radius:20px;padding:4px 11px;margin-bottom:12px}
+  .opt h2{font-size:22px}
+  .opt .why{margin:8px 0 20px;font-size:13px;color:var(--ink3);line-height:1.55;max-width:800px}
+
+  /* AWS service icon tile — same contract as AWS_NODE_VISUALS: 26px tile, glyph on a
+     24×24 viewBox stroked white. */
+  .tile{width:26px;height:26px;border-radius:6px;flex-shrink:0;display:inline-flex;
+    align-items:center;justify-content:center;vertical-align:middle}
+  .tile.sm{width:20px;height:20px;border-radius:5px}
+  svg{display:block;overflow:visible}
+  .tick{font-size:10.5px;fill:var(--ink3);font-family:'Outfit',sans-serif}
+  .grid{stroke:var(--hairline);stroke-width:1}
+  .axis{stroke:var(--border);stroke-width:1}
+  .onbar{font-size:11.5px;font-weight:500;fill:#fff;font-family:'Outfit',sans-serif}
+  .num{font-variant-numeric:tabular-nums}
+
+  /* ---------- option 1: receipts ---------- */
+  .receipts{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+  .receipt{border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .receipt header{padding:13px 18px;margin:0;color:#fff;font-size:12px;font-weight:600;
+    letter-spacing:.07em;text-transform:uppercase}
+  .receipt.a header{background:var(--glue)} .receipt.b header{background:var(--ac)}
+  .line{display:flex;align-items:center;gap:11px;padding:12px 18px;
+    border-bottom:1px solid var(--hairline);font-size:13px}
+  .line .svc{flex:1;line-height:1.35}
+  .line .svc b{font-weight:500}
+  .line .svc span{display:block;font-size:11px;color:var(--ink3)}
+  .line .amt{font-size:14.5px;font-weight:600;font-variant-numeric:tabular-nums}
+  .line.sum{background:#FCFAF8;border-bottom:0;padding:15px 18px}
+  .line.sum .svc{font-weight:600;font-size:14px}
+  .line.sum .amt{font-size:21px}
+  .line .zero{color:var(--ink3);font-weight:400}
+
+  /* ---------- option 3: multiple cards ---------- */
+  .mults{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+  .mult{border:1px solid var(--border);border-radius:12px;padding:18px}
+  .mult .pair{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+  .mult .big{font-size:34px;font-weight:600;line-height:1;font-variant-numeric:tabular-nums}
+  .mult .cap{font-size:12px;font-weight:500;margin-top:7px}
+  .mult .det{font-size:11px;color:var(--ink3);margin-top:5px;line-height:1.45}
+  .mult .track{height:5px;border-radius:3px;background:var(--hairline);margin-top:12px;overflow:hidden}
+  .mult .track i{display:block;height:100%;border-radius:3px}
+
+  footer{margin-top:34px;padding-top:18px;border-top:1px solid var(--border);
+    font-size:11.5px;color:var(--ink3);line-height:1.7}
+  code{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--ink2)}
+  .note{font-size:11.5px;color:var(--ink3);line-height:1.55;margin:16px 0 0;max-width:820px}
+</style>
+</head>
+<body>
+
+<!-- Glyph sprite. Copied from AWS_NODE_VISUALS and public/agentcore-compare.html so the marks
+     here are the same ones the live architecture diagram draws. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <g id="gFargate"><rect x="3" y="3.5" width="7.5" height="7.5" rx="1"/><rect x="13.5" y="3.5" width="7.5" height="7.5" rx="1"/><rect x="3" y="13" width="7.5" height="7.5" rx="1"/><rect x="13.5" y="13" width="7.5" height="7.5" rx="1"/></g>
+  <g id="gBedrock"><path d="M12 3 3.2 7.6 12 12.2l8.8-4.6L12 3Z"/><path d="M3.2 12.3 12 16.9l8.8-4.6M3.2 16.6 12 21.2l8.8-4.6"/></g>
+  <g id="gDynamo"><ellipse cx="12" cy="5.8" rx="7.4" ry="2.9"/><path d="M4.6 5.8v12.4c0 1.6 3.3 2.9 7.4 2.9s7.4-1.3 7.4-2.9V5.8"/><path d="M4.6 12c0 1.6 3.3 2.9 7.4 2.9s7.4-1.3 7.4-2.9"/></g>
+  <g id="gRuntime"><rect x="2.8" y="4" width="18.4" height="16" rx="2.6"/><path d="M2.8 9.2h18.4M8.6 14.6h6.8"/><circle cx="6" cy="6.6" r="0.85"/></g>
+  <g id="gMemory"><path d="M11.4 4.6c-2.5 0-4.4 1.9-4.4 4.2 0 .8.2 1.5.6 2.1-.6.7-1 1.6-1 2.6 0 2.3 1.9 4.1 4.2 4.1h.6V4.6Z"/><path d="M12.6 4.6c2.5 0 4.4 1.9 4.4 4.2 0 .8-.2 1.5-.6 2.1.6.7 1 1.6 1 2.6 0 2.3-1.9 4.1-4.2 4.1h-.6M12 4.6v13.1M12 20.4v-2.7"/></g>
+  <g id="gGateway"><path d="M8.2 4 4 8.2v7.6L8.2 20M15.8 4 20 8.2v7.6L15.8 20"/><circle cx="12" cy="12" r="2.5"/><path d="M12 4v5M12 15v5"/></g>
+  <g id="gCode"><path d="M13.5 4.5H6A1.5 1.5 0 0 0 4.5 6v12A1.5 1.5 0 0 0 6 19.5h7.5"/><path d="M10.5 12h10M17 8.2l3.5 3.8-3.5 3.8"/></g>
+</defs></svg>
+
+<div class="wrap">
+<header>
+  <h1>Five ways to show it — pick one</h1>
+  <p class="sub">
+    Same verified numbers in all five, same AWS icons the live architecture diagram uses, and every
+    AgentCore product named in full: <b>AgentCore Runtime</b>, <b>AgentCore Memory</b>,
+    <b>AgentCore Gateway</b>. Only the visual form differs. Tell me which one to build out and I'll
+    delete the other four.
+  </p>
+</header>
+
+<!-- ═════════════════════ OPTION 1 · TWO RECEIPTS ═════════════════════ -->
+<div class="opt">
+  <span class="optlbl">Option 1 · Two receipts</span>
+  <h2>Two itemised bills, side by side</h2>
+  <p class="why">
+    No chart at all — an invoice is a form every audience already knows how to read, and there is no
+    scale to distort. Best when the room includes people who don't read charts. Weakest at conveying
+    <em>how big</em> 58× is, since 100× and 5× look the same in a column of numbers.
+  </p>
+  <div class="receipts">
+    <div class="receipt a">
+      <header>Glue code</header>
+      <div class="line">
+        <span class="tile" style="background:var(--t-compute)"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7"><use href="#gFargate"/></svg></span>
+        <span class="svc"><b>AWS Fargate</b><span>0.5 vCPU · 1 GiB · 730 h, always on</span></span>
+        <span class="amt" style="color:var(--glue)">$18.02</span>
+      </div>
+      <div class="line">
+        <span class="tile" style="background:var(--t-ml)"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7"><use href="#gBedrock"/></svg></span>
+        <span class="svc"><b>Amazon Bedrock</b><span>2nd extraction Converse, every turn</span></span>
+        <span class="amt" style="color:var(--glue)">$6.66</span>
+      </div>
+      <div class="line">
+        <span class="tile" style="background:var(--t-db)"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7"><use href="#gDynamo"/></svg></span>
+        <span class="svc"><b>Amazon DynamoDB</b><span>on-demand · 7 reads + 9 WRU per turn</span></span>
+        <span class="amt" style="color:var(--glue)">$0.003</span>
+      </div>
+      <div class="line">
+        <span class="tile" style="background:var(--t-compute)"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7"><use href="#gCode"/></svg></span>
+        <span class="svc"><b>Tools, in-process</b><span>inside the Fargate task above</span></span>
+        <span class="amt zero">$0.00</span>
+      </div>
+      <div class="line sum"><span class="svc">Total / month</span><span class="amt" style="color:var(--glue)">$24.68</span></div>
+    </div>
+
+    <div class="receipt b">
+      <header>Bedrock AgentCore</header>
+      <div class="line">
+        <span class="tile" style="background:var(--t-core)"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7"><use href="#gRuntime"/></svg></span>
+        <span class="svc"><b>AgentCore Runtime</b><span>3 s × 500 turns, billed per second</span></span>
+        <span class="amt" style="color:var(--ac)">$0.02</span>
+      </div>
+      <div class="line">
+        <span class="tile" style="background:var(--t-core)"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7"><use href="#gMemory"/></svg></span>
+        <span class="svc"><b>AgentCore Memory</b><span>1 event + 1 retrieval per turn · extraction included</span></span>
+        <span class="amt" style="color:var(--ac)">$0.375</span>
+      </div>
+      <div class="line">
+        <span class="tile" style="background:var(--t-core)"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7"><use href="#gMemory"/></svg></span>
+        <span class="svc"><b>AgentCore Memory</b><span>long-term storage · 26 records</span></span>
+        <span class="amt" style="color:var(--ac)">$0.020</span>
+      </div>
+      <div class="line">
+        <span class="tile" style="background:var(--t-core)"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7"><use href="#gGateway"/></svg></span>
+        <span class="svc"><b>AgentCore Gateway</b><span>MCP · 2 invocations per turn · 3 tools indexed</span></span>
+        <span class="amt" style="color:var(--ac)">$0.006</span>
+      </div>
+      <div class="line sum"><span class="svc">Total / month</span><span class="amt" style="color:var(--ac)">$0.42</span></div>
+    </div>
+  </div>
+  <p class="note"><b>58× cheaper.</b> 500 turns/month, us-east-1.</p>
+</div>
+
+<!-- ═════════════════════ OPTION 2 · WATERFALL ═════════════════════ -->
+<div class="opt">
+  <span class="optlbl">Option 2 · Waterfall</span>
+  <h2>From $24.68 down to $0.42, one service at a time</h2>
+  <p class="why">
+    The exec-deck standard. It answers "where did the money go?" in one read, and it's the only form
+    here that shows the two rows where AgentCore <em>adds</em> cost as visible upward steps. Best for
+    a finance or leadership audience. Weakest if the audience wants per-service unit prices.
+  </p>
+  <svg viewBox="0 0 900 300" role="img" aria-label="Waterfall from 24.68 dollars to 0.42 dollars per month">
+    <g class="grid">
+      <line x1="70" y1="30" x2="880" y2="30"/><line x1="70" y1="85" x2="880" y2="85"/>
+      <line x1="70" y1="140" x2="880" y2="140"/><line x1="70" y1="195" x2="880" y2="195"/>
+    </g>
+    <line class="axis" x1="70" y1="250" x2="880" y2="250"/>
+    <text class="tick" x="62" y="254" text-anchor="end">$0</text>
+    <text class="tick" x="62" y="199" text-anchor="end">$6</text>
+    <text class="tick" x="62" y="144" text-anchor="end">$12</text>
+    <text class="tick" x="62" y="89"  text-anchor="end">$18</text>
+    <text class="tick" x="62" y="34"  text-anchor="end">$24</text>
+
+    <!-- scale: $24.68 = 226px, so 9.158px per dollar. baseline y=250 -->
+    <!-- 1. start 24.68 -->
+    <rect x="90" y="24" width="96" height="226" fill="var(--glue)" rx="3"><title>Glue code total — $24.68/month</title></rect>
+    <text class="onbar" x="138" y="140" text-anchor="middle" font-size="13">$24.68</text>
+    <text class="tick" x="138" y="266" text-anchor="middle" font-weight="500" fill="var(--ink)">Glue code</text>
+
+    <!-- 2. −18.00 Fargate → AgentCore Runtime : from 24.68 down to 6.68 -->
+    <rect x="222" y="24" width="96" height="165" fill="var(--good)" opacity="0.85" rx="3">
+      <title>AWS Fargate $18.02 → AgentCore Runtime $0.02 — saves $18.00/month</title></rect>
+    <text class="onbar" x="270" y="110" text-anchor="middle" font-size="13">−$18.00</text>
+    <text class="tick" x="270" y="266" text-anchor="middle">Fargate →</text>
+    <text class="tick" x="270" y="279" text-anchor="middle" font-weight="500" fill="var(--ink)">AgentCore Runtime</text>
+
+    <!-- 3. −6.285 extraction → AgentCore Memory : 6.68 → 0.395 -->
+    <rect x="354" y="189" width="96" height="58" fill="var(--good)" opacity="0.85" rx="3">
+      <title>Bedrock extraction call $6.66 → AgentCore Memory $0.375 — saves $6.285/month</title></rect>
+    <text class="onbar" x="402" y="222" text-anchor="middle" font-size="12">−$6.29</text>
+    <text class="tick" x="402" y="266" text-anchor="middle">Bedrock extraction →</text>
+    <text class="tick" x="402" y="279" text-anchor="middle" font-weight="500" fill="var(--ink)">AgentCore Memory</text>
+
+    <!-- 4. +0.017 store, +0.006 gateway — tiny upward steps, floored to 4px so they're visible -->
+    <rect x="486" y="243" width="96" height="4" fill="var(--bad)" rx="2">
+      <title>DynamoDB $0.003 → AgentCore Memory storage $0.020 — adds $0.017/month</title></rect>
+    <text class="tick" x="534" y="238" text-anchor="middle" fill="var(--bad)" font-weight="500">+$0.017</text>
+    <text class="tick" x="534" y="266" text-anchor="middle">DynamoDB →</text>
+    <text class="tick" x="534" y="279" text-anchor="middle" font-weight="500" fill="var(--ink)">AgentCore Memory</text>
+
+    <rect x="618" y="243" width="96" height="4" fill="var(--bad)" rx="2">
+      <title>In-process tools $0 → AgentCore Gateway $0.006 — adds $0.006/month</title></rect>
+    <text class="tick" x="666" y="238" text-anchor="middle" fill="var(--bad)" font-weight="500">+$0.006</text>
+    <text class="tick" x="666" y="266" text-anchor="middle">in-process tools →</text>
+    <text class="tick" x="666" y="279" text-anchor="middle" font-weight="500" fill="var(--ink)">AgentCore Gateway</text>
+
+    <!-- 5. end 0.42 -->
+    <rect x="750" y="246" width="96" height="4" fill="var(--ac)" rx="2">
+      <title>AgentCore total — $0.42/month</title></rect>
+    <text class="tick" x="798" y="240" text-anchor="middle" fill="var(--ac)" font-weight="600" font-size="13">$0.42</text>
+    <text class="tick" x="798" y="266" text-anchor="middle" font-weight="500" fill="var(--ink)">AgentCore</text>
+
+    <!-- connectors -->
+    <g stroke="var(--taupe)" stroke-width="1" stroke-dasharray="3 3">
+      <line x1="186" y1="24" x2="222" y2="24"/><line x1="318" y1="189" x2="354" y2="189"/>
+      <line x1="450" y1="247" x2="486" y2="247"/><line x1="582" y1="243" x2="618" y2="243"/>
+      <line x1="714" y1="243" x2="750" y2="246"/>
+    </g>
+  </svg>
+  <p class="note">
+    The two red steps are drawn at a 4-pixel minimum so they remain visible; at true scale they are
+    under a pixel. That is the point — <b>AgentCore's two extra line items total $0.026/month.</b>
+  </p>
+</div>
+
+<!-- ═════════════════════ OPTION 3 · MULTIPLE CARDS ═════════════════════ -->
+<div class="opt">
+  <span class="optlbl">Option 3 · Multiple cards</span>
+  <h2>One card per service pair, the multiple as the hero</h2>
+  <p class="why">
+    Made for a slide. Each card is one comparison with the ratio at display size, the two AWS icons
+    facing each other, and a bar for proportion. Scans in about two seconds. Weakest on absolute
+    dollars — a reader sees 798× before they see $18.
+  </p>
+  <div class="mults">
+    <div class="mult">
+      <div class="pair">
+        <span class="tile sm" style="background:var(--t-compute)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9"><use href="#gFargate"/></svg></span>
+        <span style="color:var(--taupe)">→</span>
+        <span class="tile sm" style="background:var(--t-core)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9"><use href="#gRuntime"/></svg></span>
+      </div>
+      <div class="big" style="color:var(--good)">798×</div>
+      <div class="cap">cheaper — agent host</div>
+      <div class="det">AWS Fargate $18.02 → <b>AgentCore Runtime</b> $0.02</div>
+      <div class="track"><i style="width:100%;background:var(--good)"></i></div>
+    </div>
+    <div class="mult">
+      <div class="pair">
+        <span class="tile sm" style="background:var(--t-ml)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9"><use href="#gBedrock"/></svg></span>
+        <span style="color:var(--taupe)">→</span>
+        <span class="tile sm" style="background:var(--t-core)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9"><use href="#gMemory"/></svg></span>
+      </div>
+      <div class="big" style="color:var(--good)">17.8×</div>
+      <div class="cap">cheaper — extraction</div>
+      <div class="det">Bedrock 2nd Converse $6.66 → <b>AgentCore Memory</b> $0.375</div>
+      <div class="track"><i style="width:22%;background:var(--good)"></i></div>
+    </div>
+    <div class="mult">
+      <div class="pair">
+        <span class="tile sm" style="background:var(--t-db)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9"><use href="#gDynamo"/></svg></span>
+        <span style="color:var(--taupe)">→</span>
+        <span class="tile sm" style="background:var(--t-core)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9"><use href="#gMemory"/></svg></span>
+      </div>
+      <div class="big" style="color:var(--bad)">6.4×</div>
+      <div class="cap">dearer — conversation store</div>
+      <div class="det">DynamoDB $0.003 → <b>AgentCore Memory</b> storage $0.020</div>
+      <div class="track"><i style="width:8%;background:var(--bad)"></i></div>
+    </div>
+    <div class="mult">
+      <div class="pair">
+        <span class="tile sm" style="background:var(--t-compute)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9"><use href="#gCode"/></svg></span>
+        <span style="color:var(--taupe)">→</span>
+        <span class="tile sm" style="background:var(--t-core)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9"><use href="#gGateway"/></svg></span>
+      </div>
+      <div class="big" style="color:var(--bad)">new</div>
+      <div class="cap">line item — tool execution</div>
+      <div class="det">in-process SDK $0.00 → <b>AgentCore Gateway</b> $0.006</div>
+      <div class="track"><i style="width:4%;background:var(--bad)"></i></div>
+    </div>
+  </div>
+  <p class="note">
+    Two of four rows go against AgentCore and are shown in red at the same size as the wins.
+    Total: <b>$24.68 → $0.42, 58× cheaper.</b>
+  </p>
+</div>
+
+<!-- ═════════════════════ OPTION 4 · PROPORTIONAL AREA ═════════════════════ -->
+<div class="opt">
+  <span class="optlbl">Option 4 · Proportional area</span>
+  <h2>The two bills, drawn to area</h2>
+  <p class="why">
+    The most visceral of the five: two squares whose <em>areas</em> are the monthly totals, each cut
+    into its services. 58× in two dimensions is something you feel rather than read. Weakest for
+    precision — area is famously hard to judge, so every block is labelled and the ledger stays
+    below it.
+  </p>
+  <svg viewBox="0 0 900 300" role="img" aria-label="Two squares with area proportional to monthly cost, subdivided by service">
+    <!-- Glue: total 24.68 → 250×250 = 62500 px² → 2532 px² per dollar.
+         Fargate 18.02 → 73%, Bedrock 6.66 → 27%, rest ~0. Split vertically by share. -->
+    <rect x="60" y="26" width="250" height="250" fill="none" stroke="var(--border)"/>
+    <rect x="60" y="26" width="250" height="182.5" fill="var(--glue)"><title>AWS Fargate — $18.02, 73% of the glue-code bill</title></rect>
+    <rect x="60" y="208.5" width="250" height="67.5" fill="var(--glue)" opacity="0.72"><title>Amazon Bedrock, the 2nd extraction Converse — $6.66, 27%</title></rect>
+    <text class="onbar" x="72" y="56" font-size="12.5">AWS Fargate · $18.02</text>
+    <text class="onbar" x="72" y="72" font-size="10.5" opacity="0.85">0.5 vCPU · 1 GiB · always on</text>
+    <text class="onbar" x="72" y="240" font-size="12.5">Amazon Bedrock · $6.66</text>
+    <text class="onbar" x="72" y="256" font-size="10.5" opacity="0.85">2nd extraction Converse, every turn</text>
+    <text class="tick" x="60" y="294" font-size="13" font-weight="600" fill="var(--glue)">Glue code — $24.68 / month</text>
+
+    <!-- AgentCore: total 0.42 → area 0.42×2532 = 1063 px² → side 32.6px -->
+    <rect x="480" y="243.4" width="32.6" height="32.6" fill="var(--ac)"><title>AgentCore total — $0.42/month. AgentCore Memory $0.395, Runtime $0.02, Gateway $0.006</title></rect>
+    <rect x="480" y="243.4" width="32.6" height="32.6" fill="none" stroke="var(--border)"/>
+    <line x1="520" y1="259" x2="560" y2="259" stroke="var(--taupe)" stroke-width="1"/>
+    <text class="tick" x="566" y="250" font-size="12" font-weight="600" fill="var(--ac)">AgentCore — $0.42 / month</text>
+    <text class="tick" x="566" y="265">AgentCore Memory $0.395 · Runtime $0.02 · Gateway $0.006</text>
+    <text class="tick" x="566" y="279">the whole square, at the same scale as the one on the left</text>
+
+    <!-- the 58x callout -->
+    <text x="380" y="150" font-size="30" font-weight="700" fill="var(--good)"
+          font-family="'Outfit',sans-serif" text-anchor="middle">58×</text>
+    <text class="tick" x="380" y="170" text-anchor="middle" font-size="12">smaller</text>
+  </svg>
+  <p class="note">
+    Areas are exact: 2,532 px² per dollar in both squares. AgentCore's square is 32.6 px on a side
+    against 250 px — too small to subdivide legibly, which is why its three services are listed
+    beside it instead of drawn inside it.
+  </p>
+</div>
+
+<!-- ═════════════════════ OPTION 5 · DUMBBELL ═════════════════════ -->
+<div class="opt">
+  <span class="optlbl">Option 5 · Dumbbell on a log axis</span>
+  <h2>Every layer on one shared scale</h2>
+  <p class="why">
+    The most information per square inch, and the only form here that puts all four layers on
+    <em>one</em> axis honestly — a log scale spans four orders of magnitude without flattening
+    anything, and the length of each connector <em>is</em> the ratio. Best for an engineering
+    audience. Weakest for anyone who doesn't read log axes.
+  </p>
+  <svg viewBox="0 0 900 290" role="img" aria-label="Dumbbell chart, each layer's cost on both engines on a shared logarithmic axis">
+    <!-- log x: $0.001 → $100, five decades over 640px from x=210. 128px per decade. -->
+    <g class="grid">
+      <line x1="210" y1="26" x2="210" y2="222"/><line x1="338" y1="26" x2="338" y2="222"/>
+      <line x1="466" y1="26" x2="466" y2="222"/><line x1="594" y1="26" x2="594" y2="222"/>
+      <line x1="722" y1="26" x2="722" y2="222"/><line x1="850" y1="26" x2="850" y2="222"/>
+    </g>
+    <line class="axis" x1="210" y1="222" x2="850" y2="222"/>
+    <text class="tick" x="210" y="238" text-anchor="middle">$0.001</text>
+    <text class="tick" x="338" y="238" text-anchor="middle">$0.01</text>
+    <text class="tick" x="466" y="238" text-anchor="middle">$0.10</text>
+    <text class="tick" x="594" y="238" text-anchor="middle">$1</text>
+    <text class="tick" x="722" y="238" text-anchor="middle">$10</text>
+    <text class="tick" x="850" y="238" text-anchor="middle">$100</text>
+    <text class="tick" x="210" y="256">dollars per month, logarithmic · 500 turns</text>
+
+    <!-- row 1: host — Fargate 18.02 (x=754) vs Runtime 0.0226 (x=354) -->
+    <text class="tick" x="0" y="52" font-size="12" font-weight="600" fill="var(--ink)">Agent host</text>
+    <text class="tick" x="0" y="66">Fargate → AgentCore Runtime</text>
+    <line x1="383" y1="48" x2="755" y2="48" stroke="var(--good)" stroke-width="7" opacity="0.28"/>
+    <circle cx="755" cy="48" r="7" fill="var(--glue)"><title>AWS Fargate — $18.02</title></circle>
+    <circle cx="383" cy="48" r="7" fill="var(--ac)"><title>AgentCore Runtime — $0.0226</title></circle>
+    <text class="tick" x="767" y="52" font-weight="600" fill="var(--glue)">$18.02</text>
+    <text class="tick" x="375" y="52" text-anchor="end" font-weight="600" fill="var(--ac)">$0.02</text>
+    <text class="tick" x="569" y="40" text-anchor="middle" font-size="13" font-weight="700" fill="var(--good)">798×</text>
+
+    <!-- row 2: extraction — Bedrock 6.66 (x=699) vs Memory 0.375 (x=545) -->
+    <text class="tick" x="0" y="100" font-size="12" font-weight="600" fill="var(--ink)">Preference extraction</text>
+    <text class="tick" x="0" y="114">Bedrock → AgentCore Memory</text>
+    <line x1="539" y1="96" x2="699" y2="96" stroke="var(--good)" stroke-width="7" opacity="0.28"/>
+    <circle cx="699" cy="96" r="7" fill="var(--glue)"><title>Amazon Bedrock, 2nd extraction Converse — $6.66</title></circle>
+    <circle cx="539" cy="96" r="7" fill="var(--ac)"><title>AgentCore Memory events + retrievals — $0.375</title></circle>
+    <text class="tick" x="711" y="100" font-weight="600" fill="var(--glue)">$6.66</text>
+    <text class="tick" x="531" y="100" text-anchor="end" font-weight="600" fill="var(--ac)">$0.375</text>
+    <text class="tick" x="619" y="88" text-anchor="middle" font-size="13" font-weight="700" fill="var(--good)">17.8×</text>
+
+    <!-- row 3: store — DynamoDB 0.00303 (x=271) vs Memory storage 0.0195 (x=375) -->
+    <text class="tick" x="0" y="148" font-size="12" font-weight="600" fill="var(--ink)">Conversation store</text>
+    <text class="tick" x="0" y="162">DynamoDB → AgentCore Memory</text>
+    <line x1="271" y1="144" x2="375" y2="144" stroke="var(--bad)" stroke-width="7" opacity="0.24"/>
+    <circle cx="271" cy="144" r="7" fill="var(--glue)"><title>Amazon DynamoDB on-demand — $0.003</title></circle>
+    <circle cx="375" cy="144" r="7" fill="var(--ac)"><title>AgentCore Memory long-term storage — $0.0195</title></circle>
+    <text class="tick" x="263" y="148" text-anchor="end" font-weight="600" fill="var(--glue)">$0.003</text>
+    <text class="tick" x="387" y="148" font-weight="600" fill="var(--ac)">$0.020</text>
+    <text class="tick" x="323" y="136" text-anchor="middle" font-size="13" font-weight="700" fill="var(--bad)">6.4× dearer</text>
+
+    <!-- row 4: tools — in-process $0 (off scale) vs Gateway 0.0056 (x=306) -->
+    <text class="tick" x="0" y="196" font-size="12" font-weight="600" fill="var(--ink)">Tool execution</text>
+    <text class="tick" x="0" y="210">in-process → AgentCore Gateway</text>
+    <circle cx="306" cy="192" r="7" fill="var(--ac)"><title>AgentCore Gateway — $0.006. The Lambda behind it is not counted.</title></circle>
+    <text class="tick" x="318" y="196" font-weight="600" fill="var(--ac)">$0.006</text>
+    <text class="tick" x="380" y="196" fill="var(--ink3)">glue code is $0 here — off a log scale entirely</text>
+
+    <!-- total -->
+    <line class="axis" x1="0" y1="270" x2="900" y2="270" opacity="0"/>
+    <text class="tick" x="0" y="282" font-size="13" font-weight="600" fill="var(--ink)">Total / month</text>
+    <text class="tick" x="140" y="282" font-size="13" font-weight="600" fill="var(--glue)">$24.68</text>
+    <text class="tick" x="200" y="282" font-size="13" font-weight="600" fill="var(--ac)">$0.42</text>
+    <text class="tick" x="258" y="282" font-size="14" font-weight="700" fill="var(--good)">58× cheaper</text>
+  </svg>
+  <p class="note">
+    A dot left of another means cheaper. Green connectors are AgentCore wins, red are losses, and
+    the connector's length is literally the log of the ratio.
+  </p>
+</div>
+
+<footer>
+  <p>
+    Identical numbers in all five, produced by <code>scripts/cost-model.mjs</code>. Rates from the
+    AWS Fargate, Bedrock AgentCore and DynamoDB on-demand pricing pages; quantities counted from this
+    repository. Assumes 500 turns/month, 3 s of AgentCore Runtime time per turn, Bedrock Sonnet 4.5
+    at $3/$15 per MTok (not sourced — assumed), AgentCore Memory retrievals billed per API call, and
+    the built-in strategy's extraction model inside the $0.75/1k-records rate.
+  </p>
+  <p>
+    <b>Not counted, and it counts against AgentCore:</b> the Lambda behind AgentCore Gateway bills its
+    own requests and GB-seconds. Icons and category colours are the ones
+    <code>src/client/utils/aws-diagram-layout.ts</code> uses for the live architecture diagram.
+  </p>
+</footer>
+
+</div>
+</body>
+</html>

@@ -18,10 +18,14 @@ const FARGATE_GB_HR = 0.004446;
 const AC_VCPU_HR = 0.0895;
 const AC_GB_HR = 0.00945;
 
-// Bedrock AgentCore pricing page, Memory.
+// Bedrock AgentCore pricing page, AgentCore Memory.
 const AC_EVENT = 0.25 / 1000; // per new event
 const AC_RETRIEVAL = 0.5 / 1000; // per retrieval — see the sensitivity note at the bottom
 const AC_RECORD_MO = 0.75 / 1000; // per long-term record per month, built-in strategy
+
+// Bedrock AgentCore pricing page, AgentCore Gateway.
+const AC_GATEWAY_INVOKE = 0.005 / 1000; // per API invocation (ListTools, InvokeTool, Ping)
+const AC_TOOL_INDEX_MO = 0.02 / 100; // per tool indexed per month
 
 // DynamoDB on-demand pricing page, us-east-1 standard table class.
 const DDB_WRU = 0.625 / 1e6; // 1 WRU per 1 KB
@@ -51,6 +55,12 @@ const EXTRACT_OUT_TOKENS = 300;
 const PROFILE_RECORDS = 26; // the 26 profile fields in PROFILE_FIELD_IDS
 const MAX_MEMORY_RECORDS = 100; // agentcore-adapter.ts:138
 
+// agentcore/agent.py:190 calls gateway.list_tools_sync() once per invoke, then the model chooses
+// how many tools to call. Two Gateway API invocations per turn is the conservative floor: one
+// ListTools plus one InvokeTool.
+const GATEWAY_INVOKES_PER_TURN = 2;
+const TOOLS_INDEXED = 3; // get_partner_profile, save_preference, list_preferences
+
 // ---- Layer 1: compute -------------------------------------------------------------------
 export const fargatePerHour = VCPU * FARGATE_VCPU_HR + GIB * FARGATE_GB_HR;
 export const fargatePerMonth = fargatePerHour * HOURS;
@@ -70,11 +80,20 @@ export const memoryStoragePerMonth = PROFILE_RECORDS * AC_RECORD_MO;
 // happens inside Memory's built-in strategy rate (ASSUMPTION 4 on the page).
 export const extractionPerTurn = EXTRACT_IN_TOKENS * SONNET_IN + EXTRACT_OUT_TOKENS * SONNET_OUT;
 
+// ---- Layer 4: tool execution -------------------------------------------------------------
+// Engine A runs tools in-process inside the Fargate task already paid for above, so its
+// marginal cost here is zero. Engine B routes them through AgentCore Gateway to a Lambda.
+export const gatewayPerTurn = GATEWAY_INVOKES_PER_TURN * AC_GATEWAY_INVOKE;
+export const toolIndexPerMonth = TOOLS_INDEXED * AC_TOOL_INDEX_MO;
+// NOT COUNTED, and it counts against engine B: the Lambda behind the Gateway bills requests and
+// GB-seconds of its own. Left out because Lambda's rates were not sourced for this model, so it
+// is an understatement of engine B's cost rather than an overstatement of its advantage.
+
 // ---- Totals ------------------------------------------------------------------------------
 export const A_FIXED = fargatePerMonth;
 export const A_VAR = dynamoPerTurn + extractionPerTurn;
-export const B_FIXED = memoryStoragePerMonth;
-export const B_VAR = runtimePerTurn + memoryPerTurn;
+export const B_FIXED = memoryStoragePerMonth + toolIndexPerMonth;
+export const B_VAR = runtimePerTurn + memoryPerTurn + gatewayPerTurn;
 
 export const totalA = (n) => A_FIXED + n * A_VAR;
 export const totalB = (n) => B_FIXED + n * B_VAR;
@@ -99,9 +118,14 @@ function main() {
   console.log('  AC Memory /turn', usd(memoryPerTurn, 6), ' storage', usd(memoryStoragePerMonth, 4), '/mo');
   console.log('  ratio', (memoryPerTurn / dynamoPerTurn).toFixed(0) + '×  (DynamoDB is CHEAPER)');
 
-  console.log('LAYER 3  Bedrock delta');
+  console.log('LAYER 3  Bedrock delta  (→ AgentCore Memory)');
   console.log('  A extraction /turn', usd(extractionPerTurn, 6));
-  console.log('  B extraction /turn  $0 (inside Memory rate)');
+  console.log('  B extraction /turn  $0 (inside the AgentCore Memory rate)');
+
+  console.log('LAYER 4  tool execution  (→ AgentCore Gateway)');
+  console.log('  A in-process /turn  $0 (inside the Fargate task above)');
+  console.log('  B Gateway /turn', usd(gatewayPerTurn, 7),
+    ' tool indexing', usd(toolIndexPerMonth, 4), '/mo');
 
   console.log('\nA =', usd(A_FIXED), '+ n ×', usd(A_VAR, 6));
   console.log('B =', usd(B_FIXED, 4), '+ n ×', usd(B_VAR, 7));

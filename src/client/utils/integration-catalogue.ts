@@ -111,11 +111,23 @@ export const INTEGRATION_CATALOGUE: readonly IntegrationService[] = [
      * this row is the same real code as Ontopo behind the dining row.
      */
     backing: ['wolt'],
+    /*
+     * These scopes used to read "place an order" as a `spend`, with an $80 cap.
+     * Neither was ever true, and marking the row live is what made it matter: a
+     * visitor reading "live" plus "place an order · $80" concludes Valentin holds a
+     * card. He does not. `propose_gift` cannot order and cannot pay — Wolt checkout
+     * needs a logged-in account and a stored card, so confirming a gift card opens
+     * the shop's own Wolt page and stops there. The human pays Wolt directly.
+     *
+     * So the reach is `write`, not `spend`, and the cap is null. A slider on a
+     * capability that cannot spend is the same theatre as a slider on "create a
+     * playlist", and the whole point of this panel is that its limits are real.
+     */
     scopes: [
-      { label: 'browse what is in season', detail: 'Read-only', reach: 'read' },
-      { label: 'place an order', detail: 'Asks you in the conversation first, every time', reach: 'spend' },
+      { label: 'see which florists deliver to you today', detail: "Read-only — Wolt's public catalogue, and no account is needed", reach: 'read' },
+      { label: 'offer you a shop to confirm', detail: 'Confirming opens that shop on Wolt, where you choose the bouquet and pay Wolt yourself — he never orders and never pays', reach: 'write' },
     ],
-    defaultCapUsd: 80,
+    defaultCapUsd: null,
   },
   {
     id: 'grocery',
@@ -127,12 +139,18 @@ export const INTEGRATION_CATALOGUE: readonly IntegrationService[] = [
     // `groceries`, `gift`, `wine` and `sweets` as well as `flowers`, so this row
     // was mislabelled "not built yet" for exactly the same reason.
     backing: ['wolt'],
+    /*
+     * Same correction as the florist row, and the same reason. "Build a basket" and
+     * "check out" were both fiction: the Wolt tools read a venue list and hand over
+     * a link, so there is no basket anywhere in this codebase to put anything in and
+     * nothing that can be charged. Claiming a basket is worse than claiming nothing,
+     * because it is specific enough to be believed.
+     */
     scopes: [
-      { label: 'search the catalogue', detail: 'Read-only', reach: 'read' },
-      { label: 'build a basket', detail: 'Nothing is charged for a basket', reach: 'write' },
-      { label: 'check out', detail: 'Asks you in the conversation first, every time', reach: 'spend' },
+      { label: 'search what is deliverable near you', detail: "Read-only — Wolt's public catalogue, and no account is needed", reach: 'read' },
+      { label: 'offer you a shop to confirm', detail: 'Confirming opens that shop on Wolt, where you fill the basket and pay Wolt yourself — he never checks out', reach: 'write' },
     ],
-    defaultCapUsd: 60,
+    defaultCapUsd: null,
   },
   {
     id: 'music',

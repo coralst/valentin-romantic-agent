@@ -169,6 +169,52 @@ describe('durable storage is switched on', () => {
   });
 });
 
+describe('engine B can reach the model it is configured to use', () => {
+  // BEDROCK_MODEL_ID is `us.anthropic.claude-sonnet-4-5-...`. The `us.` prefix
+  // makes it a cross-region inference profile, so Bedrock fulfils the call from
+  // whichever US region has capacity and authorizes against THAT region's
+  // foundation-model ARN. Pinned to the stack's own region, every engine-B turn
+  // died with "not authorized ... on resource: arn:aws:bedrock:us-east-2::
+  // foundation-model/..." from a stack deployed to us-east-1 — and because
+  // agent.py returns its failure as a 200 body, it surfaced only as the UI's
+  // apology.
+  //
+  // Asserted on both roles: the Runtime invokes per turn, and Memory invokes on
+  // its own schedule to extract preferences. The Memory one fails silently —
+  // engine B just never learns anything.
+  // The policies attach by `Ref` to the role's logical id, not by role name, so
+  // match on that rather than on `valentin-agentcore-*`.
+  it.each([
+    ['the Runtime role', 'RuntimeRole'],
+    ['the Memory extraction role', 'MemoryRole'],
+  ])('does not pin the foundation model to one region for %s', (_label, roleLogicalId) => {
+    const policies = agentCoreTemplate.findResources('AWS::IAM::Policy');
+
+    const invokeStatements = Object.values(policies)
+      .filter((policy) => {
+        const props = policy.Properties as { Roles?: unknown; PolicyDocument?: unknown };
+        return (
+          JSON.stringify(props?.Roles ?? '').includes(roleLogicalId) &&
+          JSON.stringify(props?.PolicyDocument ?? '').includes(
+            'bedrock:InvokeModelWithResponseStream',
+          )
+        );
+      })
+      .flatMap((policy) => {
+        const doc = (policy.Properties as { PolicyDocument?: { Statement?: unknown[] } })
+          .PolicyDocument;
+        return (doc?.Statement ?? []).filter((statement) =>
+          JSON.stringify((statement as { Action?: unknown }).Action ?? '').includes(
+            'bedrock:InvokeModelWithResponseStream',
+          ),
+        );
+      });
+
+    expect(invokeStatements.length).toBeGreaterThan(0);
+    expect(JSON.stringify(invokeStatements)).toContain('arn:aws:bedrock:*::foundation-model/*');
+  });
+});
+
 describe('engine B can actually invoke its Runtime', () => {
   // The proxy sends X-Amzn-Bedrock-AgentCore-Runtime-User-Id on every invoke, to
   // keep one demo visitor's Memory partition off another's. That header makes

@@ -136,6 +136,8 @@
   .replay button{font-family:'Outfit',sans-serif;font-size:12px;font-weight:500;cursor:pointer;
     background:var(--ink);color:#fff;border:0;border-radius:20px;padding:8px 16px}
   .replay button:hover{background:#43323a}
+  .replay button.ghost{background:transparent;color:var(--ink2);border:1px solid var(--border)}
+  .replay button.ghost:hover{background:var(--ground);color:var(--ink)}
   .replay .rnote{font-size:11px;color:var(--ink3)}
   .faults{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:18px}
   .fault{border:1px solid var(--border);border-radius:9px;padding:11px 13px;background:var(--surface)}
@@ -478,8 +480,8 @@
         <span class="vlabel">valentin-service &middot; 1 task</span>
         <div class="grid40" id="gridA"></div>
       </div>
-      <p class="tally"><b id="tallyA" style="color:var(--bad)">40</b>
-        <span>of 40 sessions lost<br>every user, and every partner profile in flight</span></p>
+      <p class="tally"><b id="tallyA" style="color:var(--bad)">0</b>
+        <span>of 40 sessions lost<br>one process &mdash; one shared failure domain</span></p>
     </div>
 
     <div class="bpanel" id="bpB">
@@ -490,14 +492,15 @@
       <div class="vessel" style="border-color:transparent;padding:13px">
         <div class="cells40" id="gridB"></div>
       </div>
-      <p class="tally"><b id="tallyB" style="color:var(--good)">1</b>
-        <span>of 40 sessions lost<br>the other 39 never notice</span></p>
+      <p class="tally"><b id="tallyB" style="color:var(--good)">0</b>
+        <span>of 40 sessions lost<br>one microVM per session &mdash; nothing to spread through</span></p>
     </div>
   </div>
 
   <div class="replay">
-    <button type="button" id="blastReplay">&#9654;&nbsp; Replay the fault</button>
-    <span class="rnote">Runs once when it scrolls into view. Honours <code>prefers-reduced-motion</code>.</span>
+    <button type="button" id="blastPlay">&#9654;&nbsp; Play failure</button>
+    <button type="button" id="blastReset" class="ghost">Reset</button>
+    <span class="rnote">Both sides start healthy. Honours <code>prefers-reduced-motion</code>.</span>
   </div>
 
   <p class="lede" style="margin-top:26px"><b>Which faults actually behave this way</b></p>
@@ -684,19 +687,12 @@
     });
   }
 
-  document.getElementById('blastReplay').addEventListener('click', run);
+  document.getElementById('blastPlay').addEventListener('click', run);
+  document.getElementById('blastReset').addEventListener('click', reset);
 
-  // Fire once when it comes into view, so the page isn't animating off-screen.
-  var seen = false;
-  if ('IntersectionObserver' in window) {
-    new IntersectionObserver(function (entries) {
-      entries.forEach(function (e) {
-        if (e.isIntersecting && !seen) { seen = true; setTimeout(run, 260); }
-      });
-    }, { threshold: 0.4 }).observe(document.getElementById('bpA'));
-  } else {
-    run();
-  }
+  // Deliberately no auto-play on scroll. The point of the visualisation is the moment the
+  // fault spreads, and a panel that is already red when you reach it has nothing left to show.
+  reset();
 })();
 </script>
 </body>

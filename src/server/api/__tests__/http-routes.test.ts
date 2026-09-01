@@ -511,6 +511,27 @@ describe('createHttpRoutes', () => {
       expect(detail.preferences).toHaveLength(DEMO_PROFILE_PREFERENCES.length);
     });
 
+    // The partner belongs to the account, not to one conversation. Before this,
+    // `getSessionDetail` read only the active session's rows, so a new chat inside
+    // a fully-profiled account drew Name / Birthday / Anniversary as empty
+    // placeholders — while Valentin, who reads the union for his prompt, answered
+    // the next message using her cuisine. The screen was the half that lied.
+    it('returns the profile from the whole account, not just this conversation', async () => {
+      const seeded = await routes.seedSession();
+      const { sessionId: profiledSession } = seeded.body as SeedBody;
+
+      // A brand-new conversation, which owns no preferences of its own.
+      const fresh = await routes.createSession();
+      const freshId = (fresh.body as { sessionId: string }).sessionId;
+
+      const detail = await routes.getSessionDetail(freshId);
+
+      expect(detail.status).toBe(200);
+      const { preferences } = detail.body as { preferences: { key: string }[] };
+      expect(preferences.length).toBe(DEMO_PROFILE_PREFERENCES.length);
+      expect(profiledSession).not.toBe(freshId);
+    });
+
     it('responds 404 for an unknown session id', async () => {
       const result = await routes.getSessionDetail('no-such-session');
 

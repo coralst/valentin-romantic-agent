@@ -13,6 +13,7 @@ import type { Person } from '../../shared/interfaces/person';
 import type { Task } from '../../shared/interfaces/task';
 import { isProfileFieldId } from '../../shared/constants/profile-fields';
 import { buildToolRegistry, integrationReadiness } from '../integrations';
+import { readAccountPreferences } from '../agent/partner-profile';
 import type { IntegrationStatusResponse } from '../../shared/interfaces/integrations';
 import {
   INTEGRATION_IDS,
@@ -392,7 +393,12 @@ export function createHttpRoutes(storage: StorageInterface) {
       // separately would show the board filling in four visible stages.
       const [messages, preferences, people, tasks, manualValues] = await Promise.all([
         storage.getMessagesBySession(sessionId),
-        storage.getPreferencesBySession(sessionId),
+        // Account-wide, not this session's rows alone. The partner belongs to the
+        // account, so a new conversation must not redraw her brief as a screen of
+        // empty placeholders while Valentin — who reads the same union for his
+        // prompt — answers the next message using her cuisine and her colours.
+        // See readAccountPreferences.
+        readAccountPreferences(storage, sessionId),
         storage.getPeopleBySession(sessionId),
         storage.getTasksBySession(sessionId),
         storage.getManualValues(sessionId),

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { INTEGRATION_CATALOGUE, findIntegration } from '../integration-catalogue';
+import { INTEGRATION_CATALOGUE, canSpend, findIntegration } from '../integration-catalogue';
 import { INTEGRATION_IDS } from '../../../shared/interfaces/integrations';
 
 /*
@@ -62,5 +62,36 @@ describe('integration catalogue', () => {
     const ids = INTEGRATION_CATALOGUE.map((service) => service.id);
     expect(ids).not.toContain('browser');
     expect(ids).not.toContain('events');
+  });
+
+  /*
+   * The other direction of the same honesty, and the one that bit hardest.
+   *
+   * Marking the Wolt rows live fixed "this reaches nobody" and immediately created a
+   * worse claim: "live" beside "place an order · up to $80" tells a visitor Valentin
+   * holds a card. He does not, and cannot — `propose_gift` confirms by opening the
+   * shop's own Wolt page, because Wolt checkout needs a logged-in account and a
+   * stored card that Valentin must never have. So no Wolt-backed row may claim a
+   * `spend` scope or carry a cap.
+   *
+   * Pinned per-service rather than as a comment because the failure mode is a scope
+   * label edited in isolation, months from now, by someone who reasonably assumes a
+   * delivery capability can buy things.
+   */
+  it('never claims a Wolt row can spend, because the order is always handed off', () => {
+    const woltBacked = INTEGRATION_CATALOGUE.filter((service) =>
+      service.backing?.includes('wolt'),
+    );
+
+    // If this is empty the assertions below are vacuous, which is its own bug.
+    expect(woltBacked.map((service) => service.id)).toEqual(['flowers', 'grocery']);
+
+    for (const service of woltBacked) {
+      expect(canSpend(service)).toBe(false);
+      expect(service.defaultCapUsd).toBeNull();
+      // And the row still has to say what confirming does, or removing the spend
+      // claim would just leave the visitor guessing.
+      expect(service.scopes.some((scope) => /wolt/i.test(scope.detail))).toBe(true);
+    }
   });
 });

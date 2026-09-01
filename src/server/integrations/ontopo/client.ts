@@ -85,8 +85,25 @@ export interface OntopoSlot {
   bookable: boolean;
 }
 
+/**
+ * The least a caller has to know about a venue to book it.
+ *
+ * `fetchAvailability` used to take a slug and look it up in the curated list,
+ * returning null when it was not there. That made the list a hard ceiling on the
+ * whole integration: Ontopo would happily quote tables at Buckaroo in Ra'anana, and
+ * Valentin refused before sending a request, because five Tel Aviv restaurants were
+ * all it could name. The slug is what Ontopo needs; the name is what a person needs
+ * read back to them. Anything richer — vibes, a concierge's note — is a property of
+ * the *curated* entries and belongs to callers that have one.
+ */
+export interface BookableVenue {
+  slug: string;
+  name: string;
+  city?: string;
+}
+
 export interface Availability {
-  venue: CuratedVenue;
+  venue: BookableVenue;
   /** Names this search to Ontopo; required to mint a checkout from it. */
   availabilityId: string | null;
   slots: OntopoSlot[];
@@ -205,12 +222,10 @@ function readSlots(areas: unknown): OntopoSlot[] {
  * two are different answers and the caller says different things about them.
  */
 export async function fetchAvailability(
-  slug: string,
+  venue: BookableVenue,
   query: AvailabilityQuery,
 ): Promise<Availability | null> {
-  const venue = venueBySlug(slug);
-  if (!venue) return null;
-
+  const { slug } = venue;
   const locale = query.locale ?? 'en';
   const body = await post('/availability_search', {
     slug,

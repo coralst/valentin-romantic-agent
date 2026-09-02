@@ -222,13 +222,19 @@ describe('IntegrationsPanel', () => {
       const user = userEvent.setup();
       await renderPanel();
 
-      await user.click(screen.getByTestId('integration-node-flowers'));
-      // The catalogue's default for flowers, echoed next to the slider.
-      expect(screen.getByTestId('integration-cap-slider')).toHaveValue('80');
-      expect(screen.getByTestId('integration-cap-value')).toHaveTextContent('$80');
+      /*
+       * `travel`, not `flowers`. Flowers used to stand here, back when the catalogue
+       * claimed Valentin could "place an order" for $80 — he never could, because
+       * the Wolt handoff ends at the shop's own page. Travel is the real example: an
+       * Amadeus hold is money moving.
+       */
+      await user.click(screen.getByTestId('integration-node-travel'));
+      // The catalogue's default for travel, echoed next to the slider.
+      expect(screen.getByTestId('integration-cap-slider')).toHaveValue('400');
+      expect(screen.getByTestId('integration-cap-value')).toHaveTextContent('$400');
 
       await user.click(screen.getByTestId('integration-confirm-button'));
-      expect(screen.getByTestId('integration-node-flowers')).toHaveTextContent('up to $80');
+      expect(screen.getByTestId('integration-node-travel')).toHaveTextContent('up to $400');
     });
 
     it('offers no cap on a service that cannot spend', async () => {
@@ -355,13 +361,19 @@ describe('IntegrationsPanel', () => {
     it('says an unbuilt capability is not built yet, not merely unconfigured', async () => {
       await renderPanel();
       /*
-       * The distinction the visitor cannot see by looking: flowers is a drawing,
+       * The distinction the visitor cannot see by looking: music is a drawing,
        * whereas travel is real code waiting on an Amadeus key. Both are dark, and
        * conflating them either overpromises or slanders working code.
+       *
+       * `music` rather than `flowers`, which this used to assert: flowers is Wolt
+       * and has been real since the browser tier landed, so using it here was the
+       * test agreeing with the bug — it badged working code "not built yet". Music
+       * has no provider anywhere in src/server/integrations, so it is the honest
+       * example of a row that contacts nobody.
        */
-      const flowers = await screen.findByTestId('integration-readiness-flowers');
-      expect(flowers).toHaveAttribute('data-readiness', 'aspirational');
-      expect(flowers).toHaveTextContent('not built yet');
+      const music = await screen.findByTestId('integration-readiness-music');
+      expect(music).toHaveAttribute('data-readiness', 'aspirational');
+      expect(music).toHaveTextContent('not built yet');
 
       const travel = screen.getByTestId('integration-readiness-travel');
       expect(travel).toHaveAttribute('data-readiness', 'unconfigured');
@@ -390,7 +402,7 @@ describe('IntegrationsPanel', () => {
 
       // Deliberately no badge rather than a guess in either direction. The
       // aspirational rows still show theirs — those need no server to be true.
-      await screen.findByTestId('integration-readiness-flowers');
+      await screen.findByTestId('integration-readiness-music');
       expect(screen.queryByTestId('integration-readiness-dining')).not.toBeInTheDocument();
       expect(screen.queryByTestId('integration-readiness-messages')).not.toBeInTheDocument();
     });

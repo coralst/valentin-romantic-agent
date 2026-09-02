@@ -61,6 +61,24 @@ function stamp(text: string): string {
 }
 
 /**
+ * What confirming this card will actually do, as three states rather than a
+ * boolean.
+ *
+ * It was a boolean — "is there an account?" — with fixture mode folded in as
+ * true, and that produced a card reading "no Spotify account is contacted" and
+ * "confirming saves it to the connected Spotify account" in the same sentence.
+ * Two true facts about different modes, contradicting each other in front of the
+ * user. Fixture is a third state because it behaves like neither of the others:
+ * it records something, but not anywhere real.
+ */
+type Outcome = 'fixture' | 'saves' | 'links';
+
+function outcome(): Outcome {
+  if (spotifyFixtureMode()) return 'fixture';
+  return config.integrations.spotifyRefreshToken ? 'saves' : 'links';
+}
+
+/**
  * What to say when Spotify could not be reached or is not configured.
  *
  * One wording, because the model must not learn two different stories about the
@@ -237,7 +255,7 @@ export const proposePlaylistTool: AgentTool = {
     const occasion = readText(input.occasion);
     const note = readText(input.note);
     const dropped = ids.length - tracks.length;
-    const connected = Boolean(config.integrations.spotifyRefreshToken) || spotifyFixtureMode();
+    const will = outcome();
 
     const proposal: ActionProposal = {
       id: randomUUID(),
@@ -247,11 +265,17 @@ export const proposePlaylistTool: AgentTool = {
       summary: stamp(
         `${note ? `${note} — ` : ''}${tracks.length} track(s), opening with ` +
           `${describeTrack(tracks[0])}. ` +
-          (connected
-            ? `Confirming saves it as a private playlist on the connected Spotify account. ` +
-              `Nothing is saved until you do.`
-            : `No Spotify account is connected here, so confirming gives you the tracks as ` +
-              `links to open yourself rather than saving a playlist.`),
+          {
+            fixture:
+              'Confirming records it in the demo catalogue only — nothing reaches Spotify ' +
+              'and there is no playlist to open afterwards.',
+            saves:
+              'Confirming saves it as a private playlist on the connected Spotify account ' +
+              'and gives you the link. Nothing is saved until you do.',
+            links:
+              'No Spotify account is connected here, so confirming gives you the tracks as ' +
+              'links to open yourself rather than saving a playlist.',
+          }[will],
       ),
       expiresAt: new Date(Date.now() + SPOTIFY_PROPOSAL_TTL_MS).toISOString(),
       // Ids and titles both: the ids are what gets written, and the titles let the
@@ -275,10 +299,17 @@ export const proposePlaylistTool: AgentTool = {
             ? `${dropped} of the ids you gave did not resolve and were left out; do not mention ` +
               `songs that are not on this list. `
             : '') +
-          (connected
-            ? `Tell them what you chose and why, and that confirming saves it. Do not say it is saved.`
-            : `Tell them what you chose and why, and that confirming hands over the links because ` +
-              `no Spotify account is connected. Do not say it is saved.`),
+          {
+            fixture:
+              'Tell them what you chose and why, and that this build is running on a demo ' +
+              'catalogue so nothing will reach Spotify. Do not say it is saved.',
+            saves:
+              'Tell them what you chose and why, and that confirming saves it. Do not say it ' +
+              'is saved.',
+            links:
+              'Tell them what you chose and why, and that confirming hands over the links ' +
+              'because no Spotify account is connected. Do not say it is saved.',
+          }[will],
       ),
       data: {
         name,
@@ -349,15 +380,32 @@ export const proposePlaylistTool: AgentTool = {
       };
     }
 
+    if (spotifyFixtureMode()) {
+      /*
+       * No `url`. The fixture has no playlist to link to, and inventing an
+       * `open.spotify.com/playlist/...` that 404s would be worse than omitting
+       * one — a link that looks real and is dead reads as a broken save rather
+       * than as a demo, which is the opposite of what the notice is for.
+       */
+      return {
+        ok: true,
+        summary: stamp(
+          `Recorded "${name}" with ${created.trackCount} track(s) in the demo catalogue. ` +
+            `There is no playlist to open — say so if they ask for the link — but you can ` +
+            `name the songs: ${titles.slice(0, 3).join(' | ')}.`,
+        ),
+        data: { saved: false, demo: true, name, trackCount: created.trackCount },
+      };
+    }
+
     return {
       ok: true,
-      summary: stamp(
-        `Saved "${name}" with ${created.trackCount} track(s)` +
-          `${spotifyFixtureMode() ? ' in the demo catalogue' : ' as a private playlist'}. ` +
-          `Tell them it is ready and name a couple of the songs: ${titles.slice(0, 3).join(' | ')}.`,
-      ),
+      summary:
+        `Saved "${name}" as a private playlist with ${created.trackCount} track(s). ` +
+        `Give them the link — ${created.url} — and name a couple of the songs: ` +
+        `${titles.slice(0, 3).join(' | ')}.`,
       data: {
-        saved: !spotifyFixtureMode(),
+        saved: true,
         name,
         url: created.url,
         trackCount: created.trackCount,

@@ -117,18 +117,22 @@ export const CONNECT_RECIPES: Record<ConnectableId, ConnectRecipe> = {
     fields: [
       { name: 'clientId', label: 'Client ID', secret: false },
       { name: 'clientSecret', label: 'Client secret', secret: true },
-      {
-        name: 'refreshToken',
-        label: 'Refresh token (optional)',
-        secret: true,
-        placeholder: 'only needed to save playlists',
-      },
     ],
     where:
-      'Spotify Developer Dashboard → Create app. The client ID and secret are on the app\'s settings page, and are enough for Valentin to search the catalogue.',
+      'Spotify Developer Dashboard → Create app. Copy the client ID and secret from its settings, and register this server\'s /api/integrations/spotify/callback as a Redirect URI on the same page.',
     href: 'https://developer.spotify.com/dashboard',
+    /*
+     * Consent, like Google — but for a different half of the capability.
+     *
+     * The id and secret are verified by the connect POST and buy catalogue
+     * search on their own. What they cannot do is write to a library, so the
+     * popup that follows is what upgrades "here are the songs as links" into a
+     * saved playlist. Declining it leaves a working search rather than nothing,
+     * and the hook's copy says so.
+     */
+    needsConsent: true,
     caution:
-      'Without a refresh token he can choose the songs but not save them: confirming a playlist hands you the tracks as links instead. A refresh token is minted once by authorising your own account for the playlist-modify-private scope, and whatever account you use is the library every playlist lands in — so use a spare one, not your main.',
+      'Signing in asks for one scope — playlist-modify-private — and nothing else: he cannot read your listening history, and every playlist he makes is private. Whatever account you approve is the library the playlists land in, so use a spare rather than your main. Skip the sign-in and he can still choose the songs; he just hands them to you as links instead of saving them.',
   },
   whatsapp: {
     id: 'whatsapp',

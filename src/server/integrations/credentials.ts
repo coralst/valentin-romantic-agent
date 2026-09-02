@@ -222,9 +222,14 @@ export async function applyIntegrationCredentials(
     config.integrations.spotifyClientId = clientId;
     config.integrations.spotifyClientSecret = clientSecret;
 
-    // Optional, and the only way to get a *saving* playlist rather than one that
-    // hands over links. Minted out of band — see CONNECT_RECIPES.spotify — so it
-    // arrives as a third field on the same form rather than through a redirect.
+    /*
+     * Still accepted, though the panel no longer asks for it.
+     *
+     * The normal route to a refresh token is now the consent popup, which ends in
+     * `applySpotifyRefreshToken`. This field stays because a deployed environment
+     * may well have one already minted and prefer to hand it over directly rather
+     * than run a browser flow against a Fargate task.
+     */
     const refreshToken = fieldValue(body, 'refreshToken');
     if (refreshToken) config.integrations.spotifyRefreshToken = refreshToken;
 
@@ -241,8 +246,8 @@ export async function applyIntegrationCredentials(
           ok: true,
           status: 200,
           message:
-            'Spotify connected for search. Add a refresh token to let playlists be saved ' +
-            'to a library — without one, confirming a playlist hands over track links.',
+            'Spotify credentials accepted. Now sign in to the account playlists should be ' +
+            'saved to — until then, confirming a playlist hands over track links.',
         };
   }
 
@@ -268,6 +273,20 @@ export function applyGoogleRefreshToken(refreshToken: string): void {
   resetGoogleTokenCache();
   persistEnv({ GOOGLE_REFRESH_TOKEN: refreshToken });
   logger.info('integration.connected', { integration: 'google' });
+}
+
+/**
+ * Store the refresh token the Spotify OAuth callback earned.
+ *
+ * Called only after a real code exchange, which is what makes this the moment the
+ * playlist tool stops handing over links and starts saving. Same contract as
+ * {@link applyGoogleRefreshToken}: the value goes in and never comes back out.
+ */
+export function applySpotifyRefreshToken(refreshToken: string): void {
+  config.integrations.spotifyRefreshToken = refreshToken;
+  resetSpotifyTokenCache();
+  persistEnv({ SPOTIFY_REFRESH_TOKEN: refreshToken });
+  logger.info('integration.connected', { integration: 'spotify' });
 }
 
 /** Forget one service's credentials, in memory and in `.env`. */

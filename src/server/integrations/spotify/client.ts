@@ -97,8 +97,14 @@ export interface SpotifyTrack {
 
 export interface CreatedPlaylist {
   id: string;
-  /** Spotify's link to the playlist, for the confirmation message. */
-  url: string;
+  /**
+   * Spotify's link to the playlist, for the confirmation message.
+   *
+   * Absent in fixture mode, where there is no playlist to open. Optional rather
+   * than a placeholder so a caller cannot accidentally hand a visitor a dead
+   * `open.spotify.com` URL and have it read as a broken save.
+   */
+  url?: string;
   /** How many of the requested tracks actually went in. */
   trackCount: number;
 }
@@ -346,7 +352,7 @@ export async function createPlaylist(input: {
 
   if (spotifyFixtureMode()) {
     const created = fixtureCreatePlaylist(input.name, ids);
-    return { id: created.id, url: created.url, trackCount: ids.length };
+    return { id: created.id, trackCount: ids.length };
   }
 
   const token = await userAccessToken();

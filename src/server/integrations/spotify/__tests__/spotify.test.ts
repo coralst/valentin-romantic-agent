@@ -9,6 +9,11 @@ import {
   spotifyAuthorizeUrl,
   SPOTIFY_SCOPES,
 } from '../client';
+import {
+  buildSpotifyAuthUrl,
+  consumeSpotifyState,
+  exchangeSpotifyCode,
+} from '../oauth';
 import { findMusicTool, proposePlaylistTool } from '../tools';
 import { runTool } from '../../tool-registry';
 import { fixturePlaylists, resetFixturePlaylists } from '../fixture';
@@ -584,6 +589,184 @@ describe('readiness', () => {
     config.integrations.spotifyClientId = undefined;
     config.integrations.spotifyClientSecret = undefined;
     expect(integrationReadiness().spotify).toBe(false);
+  });
+});
+
+/*
+ * What confirming will do has three answers, and the card has to give the right
+ * one. It was a boolean with fixture folded into "connected", which produced a
+ * card saying "no Spotify account is contacted" and "saves it to the connected
+ * Spotify account" in the same sentence. These pin each state's wording against
+ * the wording of the other two.
+ */
+describe('what the card promises', () => {
+  const IDS = ['1aBcDeFgHiJkLmNoPqRsTu'];
+
+  async function cardSummary(): Promise<string> {
+    const proposed = await runTool(proposePlaylistTool, { name: 'x', trackIds: IDS }, CTX);
+    return proposed.proposal!.summary;
+  }
+
+  it('promises a save and a link when an account is connected', async () => {
+    config.integrations.spotifyRefreshToken = 'refresh-token';
+    stubFetch([
+      { match: /accounts\.spotify\.com/, body: TOKEN_RESPONSE },
+      BATCH_TRACKS_ROUTE,
+    ]);
+
+    const summary = await cardSummary();
+    expect(summary).toMatch(/saves it as a private playlist/i);
+    expect(summary).toMatch(/gives you the link/i);
+    expect(summary).not.toMatch(/demo catalogue/i);
+  });
+
+  it('promises links, not a save, with no account', async () => {
+    stubFetch([
+      { match: /accounts\.spotify\.com/, body: TOKEN_RESPONSE },
+      BATCH_TRACKS_ROUTE,
+    ]);
+
+    const summary = await cardSummary();
+    expect(summary).toMatch(/no Spotify account is connected/i);
+    expect(summary).toMatch(/links to open yourself/i);
+    expect(summary).not.toMatch(/saves it as a private playlist/i);
+  });
+
+  it('promises neither in fixture mode, and does not claim a connected account', async () => {
+    config.integrations.spotifyFixture = true;
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('no network'); }));
+
+    // Fixture ids, since the live-shaped ones above exist only in the stub.
+    const found = await findMusicTool.execute({ query: 'romantic', limit: 2 }, CTX);
+    const ids = (found.data as { tracks: { id: string }[] }).tracks.map((t) => t.id);
+    const proposed = await runTool(proposePlaylistTool, { name: 'x', trackIds: ids }, CTX);
+    const summary = proposed.proposal!.summary;
+    expect(summary).toMatch(/demo catalogue/i);
+    expect(summary).toMatch(/nothing reaches Spotify/i);
+    // The contradiction this state exists to prevent.
+    expect(summary).not.toMatch(/connected Spotify account/i);
+  });
+
+  /*
+   * A dead `open.spotify.com/playlist/...` would read as a broken save rather
+   * than as a demo, so the fixture hands back no link at all and says so.
+   */
+  it('offers no playlist link in fixture mode rather than a dead one', async () => {
+    config.integrations.spotifyFixture = true;
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('no network'); }));
+
+    const found = await findMusicTool.execute({ query: 'romantic', limit: 2 }, CTX);
+    const ids = (found.data as { tracks: { id: string }[] }).tracks.map((t) => t.id);
+    const proposed = await runTool(proposePlaylistTool, { name: 'x', trackIds: ids }, CTX);
+    const confirmed = await proposePlaylistTool.confirm!(proposed.proposal!, CTX);
+
+    expect(confirmed.summary).toMatch(/no playlist to open/i);
+    expect(confirmed.summary).not.toMatch(/open\.spotify\.com/);
+    expect((confirmed.data as { url?: string }).url).toBeUndefined();
+  });
+});
+
+/*
+ * The consent leg. Without it the "create a playlist" half of the music row is
+ * only reachable by hand-running a script, which on most deployments means never.
+ */
+describe('oauth', () => {
+  it('refuses to build a consent URL before an app credential is saved', () => {
+    config.integrations.spotifyClientId = undefined;
+    const result = buildSpotifyAuthUrl();
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(400);
+  });
+
+  it('asks only for the playlist scope, and carries a state', () => {
+    const result = buildSpotifyAuthUrl();
+    expect(result.ok).toBe(true);
+
+    const url = new URL(result.url!);
+    expect(url.origin + url.pathname).toBe('https://accounts.spotify.com/authorize');
+    expect(url.searchParams.get('scope')).toBe('playlist-modify-private');
+    expect(url.searchParams.get('response_type')).toBe('code');
+    expect(url.searchParams.get('state')).toBeTruthy();
+    // Forces the approval screen, so re-authorising a *different* account works.
+    expect(url.searchParams.get('show_dialog')).toBe('true');
+    // The redirect must be the loopback IP form: Spotify rejects `localhost` on
+    // apps created since 2025, and the failure is an opaque invalid-redirect error.
+    expect(url.searchParams.get('redirect_uri')).toBe(
+      'http://127.0.0.1:5173/api/integrations/spotify/callback',
+    );
+  });
+
+  /*
+   * The state is the entire security of an unauthenticated callback: it stops any
+   * page on the internet from navigating a visitor's browser at our callback with
+   * a code of its own and binding *their* Spotify account to this deployment.
+   */
+  it('accepts a state exactly once, and never one it did not mint', () => {
+    const state = new URL(buildSpotifyAuthUrl().url!).searchParams.get('state')!;
+
+    expect(consumeSpotifyState(state)).toBe(true);
+    expect(consumeSpotifyState(state)).toBe(false);
+    expect(consumeSpotifyState('a-state-we-never-issued')).toBe(false);
+    expect(consumeSpotifyState(undefined)).toBe(false);
+  });
+
+  it('trades a code for a refresh token with the documented grant', async () => {
+    const calls = stubFetch([
+      {
+        match: /accounts\.spotify\.com\/api\/token/,
+        body: { access_token: 'a', refresh_token: 'the-refresh-token', expires_in: 3600 },
+      },
+    ]);
+
+    const result = await exchangeSpotifyCode('the-code');
+    expect(result.ok).toBe(true);
+    expect(result.refreshToken).toBe('the-refresh-token');
+
+    const body = String(calls[0]?.init?.body);
+    expect(body).toContain('grant_type=authorization_code');
+    expect(body).toContain('code=the-code');
+    // The redirect URI must be sent again on the exchange and match the one on the
+    // consent URL, or Spotify refuses with an opaque error.
+    expect(body).toContain(encodeURIComponent('/api/integrations/spotify/callback'));
+    expect(
+      (calls[0]?.init?.headers as Record<string, string> | undefined)?.authorization,
+    ).toMatch(/^Basic /);
+  });
+
+  it('reports a failure without leaking the provider body', async () => {
+    stubFetch([
+      {
+        match: /accounts\.spotify\.com/,
+        status: 400,
+        body: { error: 'invalid_client', error_description: 'client id 123abc is wrong' },
+      },
+    ]);
+
+    const result = await exchangeSpotifyCode('bad');
+    expect(result.ok).toBe(false);
+    expect(result.refreshToken).toBeUndefined();
+    // Spotify's body can name the client id, and this text lands on a page the
+    // visitor could screenshot.
+    expect(result.message).not.toContain('123abc');
+    expect(result.message).toMatch(/redirect URI/i);
+  });
+
+  it('treats a response with no refresh token as a failure', async () => {
+    stubFetch([
+      {
+        match: /accounts\.spotify\.com/,
+        body: { access_token: 'only-an-access-token', expires_in: 3600 },
+      },
+    ]);
+    const result = await exchangeSpotifyCode('code');
+    expect(result.ok).toBe(false);
+  });
+
+  it('does not exchange at all when the app credential is gone', async () => {
+    config.integrations.spotifyClientSecret = undefined;
+    const result = await exchangeSpotifyCode('code');
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/no Spotify client configured/i);
   });
 });
 

@@ -192,13 +192,20 @@ const savedPlaylists = new Map<string, { name: string; trackIds: string[] }>();
 
 let nextPlaylist = 1;
 
+/**
+ * Record a playlist locally and return its fixture id.
+ *
+ * No URL, deliberately. There is nothing at the other end of one, and a
+ * plausible-looking `open.spotify.com/playlist/...` that 404s is worse than no
+ * link at all — the caller must be able to say "there is no playlist to open"
+ * rather than hand over something that reads as a broken save.
+ */
 export function fixtureCreatePlaylist(name: string, trackIds: readonly string[]): {
   id: string;
-  url: string;
 } {
   const id = `fixture:playlist-${nextPlaylist++}`;
   savedPlaylists.set(id, { name, trackIds: [...trackIds] });
-  return { id, url: 'https://open.spotify.com/' };
+  return { id };
 }
 
 /** For tests: what the fixture believes it holds. */

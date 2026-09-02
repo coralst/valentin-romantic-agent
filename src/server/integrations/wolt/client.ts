@@ -167,8 +167,32 @@ function readVenue(raw: Record<string, unknown>): WoltVenue | null {
     priceRange: typeof raw.price_range === 'number' ? raw.price_range : null,
     address: typeof raw.address === 'string' ? raw.address : '',
     tags: Array.isArray(raw.tags) ? raw.tags.filter((t): t is string => typeof t === 'string') : [],
-    url: `https://wolt.com/en/isr/${encodeURIComponent(slug)}`,
+    url: woltVenueUrl(slug),
   };
+}
+
+/**
+ * The public page a human finishes the order on.
+ *
+ * This shape was `https://wolt.com/en/isr/<slug>`, which 404s for every venue —
+ * checked against three real florists. That was the worst possible bug for this
+ * integration in particular: the entire design is a *handoff*, so the link is not a
+ * nicety on the card, it is the deliverable. A confirmed gift proposal sent the
+ * human to Wolt's 404 page, and Valentin said "Opened Pirchei Hakerem for them"
+ * while doing nothing of the kind.
+ *
+ * `/venue/<slug>` is the real path. Verified against the live site:
+ * - `/en/isr/venue/<slug>` → 200, and no redirect, so no city segment is needed.
+ * - `/en/isr/<any-city>/venue/<slug>` → 200 too, because Wolt rewrites the city
+ *   segment to the venue's own city and ignores whatever was passed. That is worth
+ *   recording, because it is why we do not have to thread a city down here: the
+ *   `front` payload returns `city: ''` for every venue, so we could not supply a
+ *   correct one anyway.
+ * - `/en/isr/tel-aviv/venue/definitely-not-a-real-venue-xyz` → 404, which confirms
+ *   a 200 means the venue really exists rather than the site swallowing anything.
+ */
+export function woltVenueUrl(slug: string): string {
+  return `https://wolt.com/en/isr/venue/${encodeURIComponent(slug)}`;
 }
 
 /** Flatten one page response into venues, whatever sections it happens to have. */

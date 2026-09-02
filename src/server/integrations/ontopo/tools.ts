@@ -13,6 +13,30 @@ import {
 } from './client';
 import { findVenues, resolveVenueName, type CuratedVenue } from './venues';
 import { resolveAnyVenue, venuesInCity, knownCities } from './discovery';
+import { completeCheckout, type CheckoutGuest } from './checkout-form';
+import { config } from '../../config';
+import { logger } from '../../logging';
+
+/**
+ * The guest to book under, or null if this deployment should not complete bookings.
+ *
+ * All four fields or none. A partial identity cannot be submitted — Ontopo's form
+ * requires every one of them — and guessing the missing piece is exactly the
+ * failure worth avoiding: a reservation with a wrong phone number is one the
+ * restaurant cannot confirm and the guest cannot cancel. So an incomplete
+ * configuration means the link handoff, which always works.
+ */
+export function guestForCheckout(): CheckoutGuest | null {
+  if (!config.integrations.ontopoAutoComplete) return null;
+
+  const firstName = config.integrations.ontopoGuestFirstName?.trim();
+  const lastName = config.integrations.ontopoGuestLastName?.trim();
+  const email = config.integrations.ontopoGuestEmail?.trim();
+  const phone = config.integrations.ontopoGuestPhone?.trim();
+
+  if (!firstName || !lastName || !email || !phone) return null;
+  return { firstName, lastName, email, phone };
+}
 
 /**
  * Booking a table, in three tools that match how the conversation actually goes.
@@ -317,20 +341,32 @@ function chooseSlot(
  * already be burning its fifteen minutes while the user read the card, and
  * Valentin would be holding a live booking page for a decision nobody made.
  *
- * Even after confirmation nothing is reserved. Ontopo holds the table when the
- * human completes the form the link opens, which means Valentin can hand over a
- * working link and still say, accurately, that the table is not yet booked. That
- * happens to be the most honest possible shape for this integration, and it is
- * worth not "improving".
+ * What happens after confirmation depends on how the deployment is configured, and
+ * both shapes are honest:
+ *
+ * - **No guest identity set** (the default) — `confirm` mints the link and stops.
+ *   Nothing is reserved; Ontopo holds the table when the human completes the form.
+ * - **Guest identity set** — `confirm` also completes that form, and the table is
+ *   genuinely booked. See {@link guestForCheckout} and `checkout-form.ts`.
+ *
+ * This used to be link-only, on the reasoning that the last step belonged to a
+ * human. That reasoning conflated two different things: the *authority* to book,
+ * and the *typing* required to book. The authority still belongs to the human and
+ * is still enforced — `confirm` is unreachable until someone presses Confirm on the
+ * proposal card. Only the typing moved. What must never happen is claiming a
+ * booking that did not complete, so the summary this returns is driven by whether
+ * Ontopo actually showed its confirmation, and the fallback says "not booked".
  */
 export const proposeReservationTool: AgentTool = {
   name: 'propose_reservation',
   description:
-    'Offer the user a specific table at a specific time. This does NOT book ' +
-    'anything — it shows them a card to confirm, and only then produces an Ontopo ' +
-    'checkout link where they finish the booking themselves. Use only after ' +
-    'check_availability returned that exact time. Never tell the user a table is ' +
-    'booked or held; say you have found one and it is waiting for them to confirm.',
+    'Offer the user a specific table at a specific time. Calling this books ' +
+    'NOTHING — it puts a card in front of them, and only their confirmation acts. ' +
+    'Use only after check_availability returned that exact time. When you call ' +
+    'this, say you have found a table and it is waiting for them to confirm; never ' +
+    'say it is booked or held. After they confirm, the result tells you whether the ' +
+    'reservation completed or whether they still need to finish it on a link — ' +
+    'report exactly what that result says and never upgrade a link into a booking.',
   input_schema: {
     type: 'object',
     properties: {
@@ -428,8 +464,14 @@ export const proposeReservationTool: AgentTool = {
         // A neighbourhood only exists on the curated entries; a discovered venue
         // has its city and nothing finer, and "in Ra'anana" still orients someone.
         `${placeOf(venue) ? ` in ${placeOf(venue)}` : ''}. ` +
-        `Confirming opens Ontopo's booking page, where you finish the reservation. ` +
-        `Nothing is held until you do.`,
+        // The card has to promise what confirming will actually do, and that
+        // differs by deployment. Saying "nothing is held" where confirming books
+        // outright would be the worst possible wording to get wrong.
+        (guestForCheckout()
+          ? `Confirming books this table with Ontopo and sends you the confirmation. ` +
+            `Nothing is held until you confirm.`
+          : `Confirming opens Ontopo's booking page, where you finish the reservation. ` +
+            `Nothing is held until you do.`),
       expiresAt: new Date(Date.now() + CHECKOUT_TTL_MS).toISOString(),
       // Read back in `confirm`. Never sent to the client.
       payload: {
@@ -521,13 +563,65 @@ export const proposeReservationTool: AgentTool = {
       };
     }
 
+    const when = `${readableDate ? ` on ${readableDate}` : ''} at ${formatSlotTime(time)}`;
+
+    /*
+     * Finish the form ourselves when we can, and hand over the link when we cannot.
+     *
+     * `guestForCheckout` returns null unless a full identity is configured, so the
+     * default deployment behaves exactly as this tool always has. When it does
+     * return one, the reservation is completed here — the authority for that came
+     * from the human who pressed Confirm to reach this method at all.
+     */
+    const guest = guestForCheckout();
+    if (guest) {
+      const outcome = await completeCheckout(checkout.url, guest);
+      if (outcome.booked) {
+        return {
+          ok: true,
+          summary:
+            `Booked. ${venueName}${when} for ${size}, under the name ${outcome.guestName}. ` +
+            `Ontopo confirmed it and sends the confirmation and the cancellation link by ` +
+            `SMS and email. Tell them it is booked, tell them the name the table is under, ` +
+            `and mention they can cancel from that message.`,
+          data: {
+            booked: true,
+            venue: venueName,
+            time: formatSlotTime(time),
+            guestName: outcome.guestName,
+            url: checkout.url,
+          },
+        };
+      }
+
+      // Fell short of a confirmation. The link is still live, so this degrades to
+      // the handoff rather than to a failure — and it must not claim a booking.
+      logger.warn('ontopo.auto-complete-fell-back', {
+        venue: venueName,
+        cause: (outcome.reason ?? 'unknown').slice(0, 200),
+      });
+      return {
+        ok: true,
+        summary:
+          `I could not finish the booking form for ${venueName}${when}, so nothing is ` +
+          `booked yet — but the page is open and holding. Give them the link and say they ` +
+          `need to complete it themselves. Do not say it is booked.`,
+        data: {
+          booked: false,
+          venue: venueName,
+          time: formatSlotTime(time),
+          url: checkout.url,
+          fellBackBecause: outcome.reason,
+        },
+      };
+    }
+
     return {
       ok: true,
       summary:
-        `Ontopo's booking page is open for ${venueName}${readableDate ? ` on ${readableDate}` : ''} ` +
-        `at ${formatSlotTime(time)} for ${size}. Give them the link and be clear that the ` +
-        `table is theirs once they finish the form there.`,
-      data: { url: checkout.url, venue: venueName, time: formatSlotTime(time) },
+        `Ontopo's booking page is open for ${venueName}${when} for ${size}. Give them the ` +
+        `link and be clear that the table is theirs once they finish the form there.`,
+      data: { booked: false, url: checkout.url, venue: venueName, time: formatSlotTime(time) },
     };
   },
 };

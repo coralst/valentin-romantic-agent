@@ -31,6 +31,25 @@ import { logger } from '../../logging';
  * "absent rather than broken" contract every credential-gated integration follows.
  */
 
+/**
+ * What a locator can do here.
+ *
+ * Split out because the write half — `fill`, `click`, `waitFor` — exists for one
+ * caller: completing an Ontopo checkout, which is a web form and nothing else.
+ * Everything that only reads a page uses `evaluateAll` and `innerText` and is
+ * unaffected.
+ */
+interface BrowserLocator {
+  evaluateAll<T>(fn: (els: Element[]) => T): Promise<T>;
+  first(): BrowserLocator;
+  innerText(): Promise<string>;
+  isVisible(): Promise<boolean>;
+  count(): Promise<number>;
+  fill(value: string): Promise<void>;
+  click(opts?: Record<string, unknown>): Promise<void>;
+  waitFor(opts?: Record<string, unknown>): Promise<void>;
+}
+
 /** Minimal shapes, so this file needs no Playwright types at compile time. */
 interface BrowserPage {
   goto(url: string, opts?: Record<string, unknown>): Promise<unknown>;
@@ -38,10 +57,10 @@ interface BrowserPage {
   title(): Promise<string>;
   waitForTimeout(ms: number): Promise<void>;
   route(pattern: string, handler: (route: PageRoute) => unknown): Promise<void>;
-  locator(selector: string): {
-    evaluateAll<T>(fn: (els: Element[]) => T): Promise<T>;
-    first(): { innerText(): Promise<string>; isVisible(): Promise<boolean> };
-  };
+  locator(selector: string): BrowserLocator;
+  getByPlaceholder(text: string): BrowserLocator;
+  getByText(text: string, opts?: Record<string, unknown>): BrowserLocator;
+  getByRole(role: string, opts?: Record<string, unknown>): BrowserLocator;
   evaluate<T>(fn: () => T): Promise<T>;
   url(): string;
 }
@@ -327,4 +346,4 @@ export async function fetchRendered(
 }
 
 export const BROWSER_NAV_TIMEOUT_MS = NAV_TIMEOUT_MS;
-export type { BrowserPage };
+export type { BrowserPage, BrowserLocator };

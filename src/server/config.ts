@@ -65,6 +65,35 @@ export const config = {
     /** WhatsApp Cloud API, via the Graph endpoint for one phone number id. */
     whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
     whatsappToken: process.env.WHATSAPP_TOKEN,
+
+    /**
+     * Who the table is booked for, when Ontopo's checkout is completed here.
+     *
+     * Ontopo has no booking API: the last step is a two-page web form asking for a
+     * name, an email and a phone. So finishing a reservation on the server means
+     * driving that form, and driving it means having someone to put on it.
+     *
+     * Deliberately not defaulted. A reservation carries a real obligation to a real
+     * restaurant, and an invented phone number is worse than no booking at all —
+     * the restaurant cannot reach the guest and the guest never receives the
+     * cancellation link, so a change of plan becomes a no-show. With any of these
+     * unset, `confirm` falls back to handing over the checkout link, which is the
+     * behaviour this integration shipped with and is always safe.
+     */
+    ontopoGuestFirstName: process.env.ONTOPO_GUEST_FIRST_NAME,
+    ontopoGuestLastName: process.env.ONTOPO_GUEST_LAST_NAME,
+    ontopoGuestEmail: process.env.ONTOPO_GUEST_EMAIL,
+    ontopoGuestPhone: process.env.ONTOPO_GUEST_PHONE,
+
+    /**
+     * Escape hatch back to the link handoff, with the guest details still set.
+     *
+     * Set `ONTOPO_AUTO_COMPLETE=false` to keep the identity configured — the panel
+     * and the proof script both read it — while forcing every confirm to stop at a
+     * link. Useful for a demo where nobody wants a real table booked, and for
+     * bisecting whether a booking failure is the form driver or Ontopo itself.
+     */
+    ontopoAutoComplete: process.env.ONTOPO_AUTO_COMPLETE !== 'false',
   },
 
   /**

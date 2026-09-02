@@ -123,6 +123,23 @@ if (CHECK_LIVE) {
   skip('followed real traffic into live mode (--no-live-resources)');
 }
 
+// The engine comparison sheet. Opened here, while the drawer is in live mode, and
+// checked for the property that matters most: it must not print a number nobody
+// measured. On a laptop no turn has completed yet, so every measured tile is an em
+// dash and the two counted tiles carry their real figures.
+const scoreboardToggle = p.getByTestId('scoreboard-toggle');
+ok('comparison sheet has a trigger in the drawer', await scoreboardToggle.isVisible());
+await scoreboardToggle.click();
+const scoreboard = p.getByTestId('engine-scoreboard');
+ok('comparison sheet opens', await waitFor(() => scoreboard.isVisible(), { label: 'scoreboard' }));
+const scoreboardText = await scoreboard.innerText();
+ok('unmeasured tiles show an em dash, not a zero', scoreboardText.includes('—'));
+ok('the sheet says where glue code wins', /Glue code wins at/.test(scoreboardText));
+ok('the sheet does not claim AgentCore removes Fargate',
+  /still answers behind a Fargate proxy/.test(scoreboardText));
+await p.screenshot({ path: `${SHOT_DIR}/rehearsal-${RUN}-scoreboard.png` });
+await scoreboardToggle.click();
+
 const composer = p.locator('textarea, input[type="text"]').first();
 ok('composer usable with drawer open', await composer.isVisible().catch(() => false));
 // Visibility is not enough: the drawer is an absolute overlay pinned to the
@@ -184,7 +201,7 @@ await p.screenshot({ path: `${SHOT_DIR}/rehearsal-${RUN}.png` });
 await b.close();
 
 const secs = ((Date.now() - started) / 1000).toFixed(1);
-console.log(`  screenshots: ${SHOT_DIR}/rehearsal-${RUN}.png, ${SHOT_DIR}/rehearsal-${RUN}-drawer.png`);
+console.log(`  screenshots: ${SHOT_DIR}/rehearsal-${RUN}.png, ${SHOT_DIR}/rehearsal-${RUN}-drawer.png, ${SHOT_DIR}/rehearsal-${RUN}-scoreboard.png`);
 console.log(fail.length
   ? `RESULT ${RUN}: ${fail.length} FAILED in ${secs}s -> ${fail.join('; ')}`
   : `RESULT ${RUN}: ALL PASS in ${secs}s`);

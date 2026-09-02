@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cost: glue code vs Bedrock AgentCore · Valentin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gloock&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --glue:#0F6E9C; --ac:#8C2F45;
+    --ink:#2D2024; --ink2:#6B5C60; --ink3:#8A7A7E; --taupe:#B8A99A;
+    --surface:#FFFFFF; --ground:#F8F5F2; --border:#EDE6E0; --hairline:#F2ECE7;
+    --gold:#B08C4F; --good:#2F7A52; --bad:#B0424F;
+    /* AWS icon-category tiles, from AWS_NODE_VISUALS in src/client/utils/aws-diagram-layout.ts */
+    --t-compute:linear-gradient(135deg,#FF9A3E,#ED7100);
+    --t-ml:linear-gradient(135deg,#21C8AC,#01A88D);
+    --t-core:linear-gradient(135deg,#3FD9BE,#01A88D);
+    --t-db:linear-gradient(135deg,#7A9DFF,#527FFF);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);
+    font-family:'Outfit',system-ui,sans-serif;font-weight:300;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 40px 80px}
+  h1,h2{font-family:'Gloock',Georgia,serif;font-weight:400;margin:0}
+  h1{font-size:40px;line-height:1.06}
+  header.page{padding:46px 0 8px}
+  .sub{margin:12px 0 0;font-size:15px;color:var(--ink2);max-width:800px;line-height:1.55}
+
+  section{margin-top:40px}
+  .eyebrow{font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink3);margin:0 0 4px}
+  h2{font-size:25px}
+  .lede{margin:9px 0 0;font-size:14px;color:var(--ink2);max-width:840px;line-height:1.6}
+
+  /* ---- receipts ---- */
+  .receipts{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:20px}
+  .receipt{background:var(--surface);border:1px solid var(--border);border-radius:13px;overflow:hidden}
+  .receipt .head{padding:13px 18px;color:#fff;font-size:12px;font-weight:600;
+    letter-spacing:.07em;text-transform:uppercase;display:flex;justify-content:space-between}
+  .receipt.a .head{background:var(--glue)} .receipt.b .head{background:var(--ac)}
+  .line{display:flex;align-items:center;gap:11px;padding:12px 18px;
+    border-bottom:1px solid var(--hairline);font-size:13px}
+  .line .svc{flex:1;line-height:1.35}
+  .line .svc b{font-weight:500}
+  .line .svc span{display:block;font-size:11px;color:var(--ink3);margin-top:1px}
+  .line .amt{font-size:14.5px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .line.sum{background:#FCFAF8;border-bottom:0;padding:15px 18px}
+  .line.sum .svc{font-weight:600;font-size:13.5px}
+  .line.sum .amt{font-size:20px}
+  .line .zero{color:var(--ink3);font-weight:400}
+  .tile{width:26px;height:26px;border-radius:6px;flex-shrink:0;display:inline-flex;
+    align-items:center;justify-content:center}
+  svg{display:block;overflow:visible}
+
+  .verdict{margin-top:14px;font-size:14px;display:flex;align-items:baseline;gap:10px}
+  .verdict b{font-size:24px;font-weight:600;color:var(--good);font-variant-numeric:tabular-nums}
+  .verdict span{color:var(--ink3);font-size:12.5px}
+
+  /* ---- scale table ---- */
+  table{width:100%;border-collapse:collapse;margin-top:20px;background:var(--surface);
+    border:1px solid var(--border);border-radius:13px;overflow:hidden}
+  th,td{padding:12px 16px;text-align:left;font-size:13px;border-bottom:1px solid var(--hairline)}
+  th{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink3);font-weight:500}
+  tbody tr:last-child td{border-bottom:0}
+  td.n{font-variant-numeric:tabular-nums;text-align:right}
+  td.users{font-weight:600}
+  .bar{height:7px;border-radius:4px;background:var(--good);display:block}
+  .bartrack{background:var(--hairline);border-radius:4px;height:7px;width:150px}
+  tr.hi td{background:#F7FBF8}
+
+  /* ---- panels ---- */
+  .panel{border-radius:13px;padding:20px 24px;margin-top:20px}
+  .assume{background:#FFFDF8;border:1px solid #EADFC4}
+  .assume h3{color:#7A6231}
+  .fair{background:#F7F9FB;border:1px solid #DCE6EC}
+  .fair h3{color:#2A5A73}
+  .panel h3{font-family:'Outfit',sans-serif;font-size:14px;font-weight:600;margin:0}
+  .panel ul,.panel ol{margin:11px 0 0;padding-left:19px;font-size:12.5px;color:var(--ink2);line-height:1.8}
+  .assume li::marker{color:var(--gold)} .fair li::marker{color:var(--glue)}
+  .ugrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:14px}
+  .ucard{background:var(--surface);border:1px solid #EADFC4;border-radius:10px;padding:13px 15px}
+  .ucard .k{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1}
+  .ucard .v{font-size:11.5px;color:var(--ink2);margin-top:5px;line-height:1.45}
+  code{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--ink2)}
+  footer{margin-top:36px;padding-top:20px;border-top:1px solid var(--border);
+    font-size:11.5px;color:var(--ink3);line-height:1.7}
+  .note{font-size:11.5px;color:var(--ink3);line-height:1.6;margin:14px 0 0;max-width:840px}
+
+  /* ══════════ blast radius ══════════
+     Two grids of the same 40 sessions. A single process-level fault is injected into one of
+     them; the animation shows what it reaches. Engine A's dots share a heap and an event loop,
+     so the wave crosses all of them; engine B's each sit in their own microVM.
+     Delays are computed per dot from its distance to the origin, in JS, so the spread reads as
+     a wave rather than a flash. */
+  .blast{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:20px}
+  .bpanel{background:var(--surface);border:1px solid var(--border);border-radius:13px;
+    padding:20px 22px;position:relative;overflow:hidden}
+  .bpanel h4{font-family:'Outfit',sans-serif;font-size:13px;font-weight:600;margin:0 0 3px;
+    display:flex;align-items:center;gap:8px}
+  .bpanel .bsub{font-size:11.5px;color:var(--ink3);margin:0 0 16px;line-height:1.45;min-height:32px}
+
+  /* engine A: one bordered vessel around every dot — the shared process */
+  .vessel{border:1.5px solid var(--border);border-radius:10px;padding:13px;position:relative;
+    transition:border-color .5s ease,background .5s ease}
+  .vessel.hit{border-color:var(--bad);background:rgba(176,66,79,.045)}
+  .vessel .vlabel{position:absolute;top:-8px;left:12px;background:var(--surface);padding:0 6px;
+    font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink3)}
+
+  .grid40{display:grid;grid-template-columns:repeat(8,24px);gap:8px;justify-content:center}
+  .dot{width:24px;height:24px;border-radius:5px;background:var(--good);opacity:.4;
+    transition:background .28s ease,opacity .28s ease,transform .28s ease}
+  .dot.hit{background:var(--bad);opacity:1;transform:scale(1.16)}
+  .dot.origin{box-shadow:0 0 0 2px var(--surface),0 0 0 3.5px var(--bad)}
+
+  /* engine B: each dot in its own cell — the per-session microVM */
+  .cells40{display:grid;grid-template-columns:repeat(8,32px);gap:8px;justify-content:center}
+  .cell{width:32px;height:32px;border:1px solid var(--border);border-radius:7px;
+    display:flex;align-items:center;justify-content:center;
+    transition:border-color .4s ease,background .4s ease}
+  .cell.hit{border-color:var(--bad);background:rgba(176,66,79,.06)}
+  .cell .dot{width:14px;height:14px;border-radius:3px}
+
+  .shock{position:absolute;border-radius:50%;border:2px solid var(--bad);
+    pointer-events:none;opacity:0;transform:translate(-50%,-50%) scale(0)}
+  .shock.go{animation:shockwave 1.5s cubic-bezier(.2,.7,.3,1) forwards}
+  @keyframes shockwave{
+    0%{opacity:.75;transform:translate(-50%,-50%) scale(0)}
+    100%{opacity:0;transform:translate(-50%,-50%) scale(1)}
+  }
+
+  .tally{display:flex;align-items:baseline;gap:9px;margin-top:15px}
+  .tally b{font-size:27px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1}
+  .tally span{font-size:11.5px;color:var(--ink3);line-height:1.4}
+  .replay{margin-top:18px;display:flex;align-items:center;gap:12px}
+  .replay button{font-family:'Outfit',sans-serif;font-size:12px;font-weight:500;cursor:pointer;
+    background:var(--ink);color:#fff;border:0;border-radius:20px;padding:8px 16px}
+  .replay button:hover{background:#43323a}
+  .replay button.ghost{background:transparent;color:var(--ink2);border:1px solid var(--border)}
+  .replay button.ghost:hover{background:var(--ground);color:var(--ink)}
+  .replay .rnote{font-size:11px;color:var(--ink3)}
+  .faults{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:18px}
+  .fault{border:1px solid var(--border);border-radius:9px;padding:11px 13px;background:var(--surface)}
+  .fault .ft{font-size:12px;font-weight:600}
+  .fault .fd{font-size:10.5px;color:var(--ink3);margin-top:4px;line-height:1.45}
+  @media (prefers-reduced-motion: reduce){
+    .dot,.cell,.vessel{transition:none}
+    .shock.go{animation:none}
+  }
+</style>
+</head>
+<body>
+
+<!-- AWS glyph sprite, copied from AWS_NODE_VISUALS and public/agentcore-compare.html so the marks
+     are the same ones the live architecture diagram draws. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <g id="gFargate"><rect x="3" y="3.5" width="7.5" height="7.5" rx="1"/><rect x="13.5" y="3.5" width="7.5" height="7.5" rx="1"/><rect x="3" y="13" width="7.5" height="7.5" rx="1"/><rect x="13.5" y="13" width="7.5" height="7.5" rx="1"/></g>
+  <g id="gBedrock"><path d="M12 3 3.2 7.6 12 12.2l8.8-4.6L12 3Z"/><path d="M3.2 12.3 12 16.9l8.8-4.6M3.2 16.6 12 21.2l8.8-4.6"/></g>
+  <g id="gDynamo"><ellipse cx="12" cy="5.8" rx="7.4" ry="2.9"/><path d="M4.6 5.8v12.4c0 1.6 3.3 2.9 7.4 2.9s7.4-1.3 7.4-2.9V5.8"/><path d="M4.6 12c0 1.6 3.3 2.9 7.4 2.9s7.4-1.3 7.4-2.9"/></g>
+  <g id="gRuntime"><rect x="2.8" y="4" width="18.4" height="16" rx="2.6"/><path d="M2.8 9.2h18.4M8.6 14.6h6.8"/><circle cx="6" cy="6.6" r="0.85"/></g>
+  <g id="gMemory"><path d="M11.4 4.6c-2.5 0-4.4 1.9-4.4 4.2 0 .8.2 1.5.6 2.1-.6.7-1 1.6-1 2.6 0 2.3 1.9 4.1 4.2 4.1h.6V4.6Z"/><path d="M12.6 4.6c2.5 0 4.4 1.9 4.4 4.2 0 .8-.2 1.5-.6 2.1.6.7 1 1.6 1 2.6 0 2.3-1.9 4.1-4.2 4.1h-.6M12 4.6v13.1M12 20.4v-2.7"/></g>
+  <g id="gGateway"><path d="M8.2 4 4 8.2v7.6L8.2 20M15.8 4 20 8.2v7.6L15.8 20"/><circle cx="12" cy="12" r="2.5"/><path d="M12 4v5M12 15v5"/></g>
+  <g id="gCode"><path d="M13.5 4.5H6A1.5 1.5 0 0 0 4.5 6v12A1.5 1.5 0 0 0 6 19.5h7.5"/><path d="M10.5 12h10M17 8.2l3.5 3.8-3.5 3.8"/></g>
+</defs></svg>
+
+<div class="wrap">
+<header class="page">
+  <h1>Two bills, split into what's fixed and what grows</h1>
+  <p class="sub">
+    Each AWS service against the one that replaces it. <b>AgentCore Runtime</b> in front of
+    <b>AWS Fargate</b>; <b>AgentCore Memory</b> in front of <b>Amazon DynamoDB</b> and the second
+    <b>Amazon Bedrock</b> call our extractor makes every turn; <b>AgentCore Gateway</b> in front of
+    in-process tool calls. The reply Bedrock call is identical on both engines and excluded from both.
+    Every rate is quoted from a vendor pricing page; every quantity is counted from this repository;
+    the usage assumptions are stated in full at the bottom.
+  </p>
+</header>
+
+<!-- ═══════════════ 1 · FIXED ═══════════════ -->
+<section>
+  <p class="eyebrow">Part one</p>
+  <h2>Fixed cost — what you pay with nobody using it</h2>
+  <p class="lede">
+    This is the bill at 3 a.m. with zero users signed in. It does not move with traffic, and it is
+    shared across every user you ever add. <b>It is the whole reason AgentCore wins at small scale.</b>
+  </p>
+  <div class="receipts">
+    <div class="receipt a">
+      <div class="head"><span>Glue code</span><span>fixed</span></div>
+      <div class="line">
+        <span class="tile" style="background:var(--t-compute)"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7"><use href="#gFargate"/></svg></span>
+        <span class="svc"><b>AWS Fargate</b><span>0.5 vCPU · 1 GiB · 730 h/month · never scales below 1 task</span></span>
+        <span class="amt" style="color:var(--glue)">$18.02</span>
+      </div>
+      <div class="line">
+        <span class="tile" style="background:var(--t-db)"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7"><use href="#gDynamo"/></svg></span>
+        <span class="svc"><b>Amazon DynamoDB</b><span>on-demand — no provisioned capacity, so nothing is fixed</span></span>
+        <span class="amt zero">$0.00</span>
+      </div>
+      <div class="line sum"><span class="svc">Fixed / month</span><span class="amt" style="color:var(--glue)">$18.02</span></div>
+    </div>
+    <div class="receipt b">
+      <div class="head"><span>Bedrock AgentCore</span><span>fixed</span></div>
+      <div class="line">
+        <span class="tile" style="background:var(--t-core)"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7"><use href="#gGateway"/></svg></span>
+        <span class="svc"><b>AgentCore Gateway</b><span>tool indexing · 3 tools at $0.02 per 100/month</span></span>
+        <span class="amt" style="color:var(--ac)">$0.0006</span>
+      </div>
+      <div class="line">
+        <span class="tile" style="background:var(--t-core)"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7"><use href="#gRuntime"/></svg></span>
+        <span class="svc"><b>AgentCore Runtime</b><span>billed per second of use — nothing runs, nothing bills</span></span>
+        <span class="amt zero">$0.00</span>
+      </div>
+      <div class="line sum"><span class="svc">Fixed / month</span><span class="amt" style="color:var(--ac)">$0.0006</span></div>
+    </div>
+  </div>
+  <p class="verdict"><b>30,000×</b> <span>lower fixed cost. Fargate bills 730 hours to do minutes of work; AgentCore Runtime bills seconds.</span></p>
+</section>
+
+<!-- ═══════════════ 2 · PER USER ═══════════════ -->
+<section>
+  <p class="eyebrow">Part two</p>
+  <h2>Variable cost — what each additional user adds</h2>
+  <p class="lede">
+    One engaged user, 104 turns a month (see the assumptions below). This is the part that multiplies,
+    and it is where the durable argument lives: <b>engine A costs 13.5× more per user, at every
+    scale.</b> The fixed floor above eventually amortises away; this gap never does.
+  </p>
+  <div class="receipts">
+    <div class="receipt a">
+      <div class="head"><span>Glue code</span><span>per user / month</span></div>
+      <div class="line">
+        <span class="tile" style="background:var(--t-ml)"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7"><use href="#gBedrock"/></svg></span>
+        <span class="svc"><b>Amazon Bedrock</b><span>2nd extraction Converse · 104 turns × $0.01332</span></span>
+        <span class="amt" style="color:var(--glue)">$1.385</span>
+      </div>
+      <div class="line">
+        <span class="tile" style="background:var(--t-db)"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7"><use href="#gDynamo"/></svg></span>
+        <span class="svc"><b>Amazon DynamoDB</b><span>on-demand · 7 reads + 9 write units per turn</span></span>
+        <span class="amt" style="color:var(--glue)">$0.0006</span>
+      </div>
+      <div class="line">
+        <span class="tile" style="background:var(--t-db)"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7"><use href="#gDynamo"/></svg></span>
+        <span class="svc"><b>Amazon DynamoDB</b><span>storage + PITR · ~50 KB per user</span></span>
+        <span class="amt zero">$0.00002</span>
+      </div>
+      <div class="line">
+        <span class="tile" style="background:var(--t-compute)"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7"><use href="#gCode"/></svg></span>
+        <span class="svc"><b>Tools, in-process</b><span>run inside the Fargate task already paid for above</span></span>
+        <span class="amt zero">$0.00</span>
+      </div>
+      <div class="line sum"><span class="svc">Per user / month</span><span class="amt" style="color:var(--glue)">$1.386</span></div>
+    </div>
+    <div class="receipt b">
+      <div class="head"><span>Bedrock AgentCore</span><span>per user / month</span></div>
+      <div class="line">
+        <span class="tile" style="background:var(--t-core)"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7"><use href="#gMemory"/></svg></span>
+        <span class="svc"><b>AgentCore Memory</b><span>1 event + 1 retrieval per turn · extraction inside the rate</span></span>
+        <span class="amt" style="color:var(--ac)">$0.078</span>
+      </div>
+      <div class="line">
+        <span class="tile" style="background:var(--t-core)"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7"><use href="#gMemory"/></svg></span>
+        <span class="svc"><b>AgentCore Memory</b><span>long-term storage · 26 records — one partner profile</span></span>
+        <span class="amt" style="color:var(--ac)">$0.0195</span>
+      </div>
+      <div class="line">
+        <span class="tile" style="background:var(--t-core)"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7"><use href="#gRuntime"/></svg></span>
+        <span class="svc"><b>AgentCore Runtime</b><span>3 s × 104 turns, billed per second</span></span>
+        <span class="amt" style="color:var(--ac)">$0.0047</span>
+      </div>
+      <div class="line">
+        <span class="tile" style="background:var(--t-core)"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7"><use href="#gGateway"/></svg></span>
+        <span class="svc"><b>AgentCore Gateway</b><span>MCP · 1.4 invocations per turn</span></span>
+        <span class="amt" style="color:var(--ac)">$0.0007</span>
+      </div>
+      <div class="line sum"><span class="svc">Per user / month</span><span class="amt" style="color:var(--ac)">$0.103</span></div>
+    </div>
+  </div>
+  <p class="verdict"><b>13.5×</b> <span>cheaper per user — and this multiple is scale-invariant, because it is a ratio of per-turn rates.</span></p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Users</th><th>Turns / month</th><th>Fargate tasks</th>
+        <th style="text-align:right">Glue code</th><th style="text-align:right">AgentCore</th>
+        <th style="text-align:right">Ratio</th><th style="text-align:right">Saved / month</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="users">1</td><td>104</td><td>1</td>
+        <td class="n">$19.41</td><td class="n">$0.10</td><td class="n">187&#215;</td><td class="n">$19</td></tr>
+      <tr><td class="users">10</td><td>1,040</td><td>1</td>
+        <td class="n">$31.88</td><td class="n">$1.03</td><td class="n">31&#215;</td><td class="n">$31</td></tr>
+      <tr><td class="users">100</td><td>10,400</td><td>1</td>
+        <td class="n">$156.61</td><td class="n">$10.29</td><td class="n">15.2&#215;</td><td class="n">$146</td></tr>
+      <tr><td class="users">1,000</td><td>104,000</td><td>1</td>
+        <td class="n">$1,404</td><td class="n">$103</td><td class="n">13.6&#215;</td><td class="n">$1,301</td></tr>
+      <tr><td class="users">10,000</td><td>1.04 M</td><td>1</td>
+        <td class="n">$13,877</td><td class="n">$1,029</td><td class="n">13.5&#215;</td><td class="n">$12,848</td></tr>
+      <tr><td class="users">100,000</td><td>10.4 M</td><td>4</td>
+        <td class="n">$138,665</td><td class="n">$10,293</td><td class="n">13.5&#215;</td><td class="n">$128,373</td></tr>
+      <tr class="hi"><td class="users">1,000,000</td><td>104 M</td><td>31</td>
+        <td class="n">$1,386,492</td><td class="n">$102,925</td><td class="n">13.5&#215;</td>
+        <td class="n" style="font-weight:600;color:var(--good)">$1,283,566</td></tr>
+    </tbody>
+  </table>
+  <p class="note">
+    <b>Read the two right-hand columns together, because they move in opposite directions.</b>
+    The <em>ratio</em> falls from 187&#215; to 13.5&#215; as you add users &mdash; that is Fargate's fixed $18
+    spreading across more people, and it is the honest shape of the thing. What grows without limit
+    is the <em>money</em>: $19/month at one user, <b>$1.28 M/month at a million</b> &mdash; about
+    <b>$15.4 M a year</b>. The floor is what hurts at small scale; the 13.5&#215; per-turn gap is what
+    hurts at large scale. Both favour AgentCore, for different reasons, which is why this page is
+    split in two.
+  </p>
+
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:13px;padding:22px 26px;margin-top:22px">
+    <h3 style="font-family:'Outfit',sans-serif;font-size:14.5px;font-weight:600;margin:0">
+      The trend: two straight lines that never cross, settling 13.5&#215; apart</h3>
+    <p class="note" style="margin-top:7px">
+      Both axes logarithmic, so a constant ratio is a constant vertical gap. The gap <em>narrows</em>
+      over the first two decades &mdash; Fargate's fixed cost amortising &mdash; then locks at 13.5&#215;
+      and stays there. Engine A is above engine B at every user count on the chart.
+    </p>
+    <svg viewBox="0 0 900 300" role="img" style="margin-top:12px"
+         aria-label="Monthly cost versus user count, logarithmic on both axes, glue code above AgentCore at every scale">
+      <defs>
+        <pattern id="gapHatch" width="6" height="6" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+          <line x1="0" y1="0" x2="0" y2="6" stroke="#2F7A52" stroke-width="1.4" opacity="0.22"/>
+        </pattern>
+      </defs>
+
+      <g class="grid">
+        <line x1="110" y1="30" x2="830" y2="30"/><line x1="110" y1="57.5" x2="830" y2="57.5"/>
+        <line x1="110" y1="85" x2="830" y2="85"/><line x1="110" y1="112.5" x2="830" y2="112.5"/>
+        <line x1="110" y1="140" x2="830" y2="140"/><line x1="110" y1="167.5" x2="830" y2="167.5"/>
+        <line x1="110" y1="195" x2="830" y2="195"/><line x1="110" y1="222.5" x2="830" y2="222.5"/>
+      </g>
+      <line class="axis" x1="110" y1="250" x2="830" y2="250"/>
+
+      <text class="tick" x="102" y="34"  text-anchor="end">$10 M</text>
+      <text class="tick" x="102" y="61"  text-anchor="end">$1 M</text>
+      <text class="tick" x="102" y="89"  text-anchor="end">$100 k</text>
+      <text class="tick" x="102" y="116" text-anchor="end">$10 k</text>
+      <text class="tick" x="102" y="144" text-anchor="end">$1 k</text>
+      <text class="tick" x="102" y="171" text-anchor="end">$100</text>
+      <text class="tick" x="102" y="199" text-anchor="end">$10</text>
+      <text class="tick" x="102" y="226" text-anchor="end">$1</text>
+      <text class="tick" x="102" y="254" text-anchor="end">$0.10</text>
+
+      <path fill="url(#gapHatch)" stroke="none" d="M110,187.1 L230,181.2 L350,162.1 L470,136.0 L590,108.6 L710,81.1 L830,53.6 L830,84.7 L710,112.2 L590,139.7 L470,167.2 L350,194.7 L230,222.2 L110,249.7 Z"/>
+
+      <polyline fill="none" stroke="var(--glue)" stroke-width="2.5"
+        points="110,187.1 230,181.2 350,162.1 470,136.0 590,108.6 710,81.1 830,53.6"/>
+      <circle cx="110" cy="187.1" r="4.5" fill="var(--glue)"><title>1 user &mdash; $19.41/month</title></circle>
+      <circle cx="230" cy="181.2" r="4.5" fill="var(--glue)"><title>10 users &mdash; $31.88/month</title></circle>
+      <circle cx="350" cy="162.1" r="4.5" fill="var(--glue)"><title>100 users &mdash; $156.61/month</title></circle>
+      <circle cx="470" cy="136.0" r="4.5" fill="var(--glue)"><title>1,000 users &mdash; $1,403.95/month</title></circle>
+      <circle cx="590" cy="108.6" r="4.5" fill="var(--glue)"><title>10,000 users &mdash; $13,877/month, still 1 Fargate task</title></circle>
+      <circle cx="710" cy="81.1"  r="4.5" fill="var(--glue)"><title>100,000 users &mdash; $138,665/month, 4 Fargate tasks</title></circle>
+      <circle cx="830" cy="53.6"  r="4.5" fill="var(--glue)"><title>1,000,000 users &mdash; $1,386,492/month, 31 Fargate tasks</title></circle>
+      <text x="826" y="44" text-anchor="end" fill="var(--glue)" style="font-size:12.5px;font-weight:600;font-family:'Outfit',sans-serif">$1.39 M</text>
+      <text x="118" y="181" fill="var(--glue)" style="font-size:11.5px;font-weight:600;font-family:'Outfit',sans-serif">$19</text>
+
+      <polyline fill="none" stroke="var(--ac)" stroke-width="2.5"
+        points="110,249.7 230,222.2 350,194.7 470,167.2 590,139.7 710,112.2 830,84.7"/>
+      <circle cx="110" cy="249.7" r="4.5" fill="var(--ac)"><title>1 user &mdash; $0.10/month</title></circle>
+      <circle cx="230" cy="222.2" r="4.5" fill="var(--ac)"><title>10 users &mdash; $1.03/month</title></circle>
+      <circle cx="350" cy="194.7" r="4.5" fill="var(--ac)"><title>100 users &mdash; $10.29/month</title></circle>
+      <circle cx="470" cy="167.2" r="4.5" fill="var(--ac)"><title>1,000 users &mdash; $102.93/month</title></circle>
+      <circle cx="590" cy="139.7" r="4.5" fill="var(--ac)"><title>10,000 users &mdash; $1,029/month</title></circle>
+      <circle cx="710" cy="112.2" r="4.5" fill="var(--ac)"><title>100,000 users &mdash; $10,293/month</title></circle>
+      <circle cx="830" cy="84.7"  r="4.5" fill="var(--ac)"><title>1,000,000 users &mdash; $102,925/month</title></circle>
+      <text x="826" y="101" text-anchor="end" fill="var(--ac)" style="font-size:12.5px;font-weight:600;font-family:'Outfit',sans-serif">$103 k</text>
+      <text x="118" y="263" fill="var(--ac)" style="font-size:11.5px;font-weight:600;font-family:'Outfit',sans-serif">$0.10</text>
+
+      <text x="110" y="221" fill="var(--good)" style="font-size:15px;font-weight:700;font-family:'Outfit',sans-serif">187&#215;</text>
+      <text x="232" y="205" fill="var(--good)" style="font-size:12.5px;font-weight:700;font-family:'Outfit',sans-serif">31&#215;</text>
+      <text x="352" y="182" fill="var(--good)" style="font-size:12.5px;font-weight:700;font-family:'Outfit',sans-serif">15&#215;</text>
+      <text x="472" y="155" fill="var(--good)" style="font-size:12.5px;font-weight:700;font-family:'Outfit',sans-serif">13.6&#215;</text>
+      <text x="592" y="128" fill="var(--good)" style="font-size:12.5px;font-weight:700;font-family:'Outfit',sans-serif">13.5&#215;</text>
+      <text x="712" y="100" fill="var(--good)" style="font-size:12.5px;font-weight:700;font-family:'Outfit',sans-serif">13.5&#215;</text>
+      <text x="786" y="72"  fill="var(--good)" style="font-size:12.5px;font-weight:700;font-family:'Outfit',sans-serif">13.5&#215;</text>
+
+      <line x1="710" y1="36" x2="710" y2="250" stroke="var(--taupe)" stroke-width="1" stroke-dasharray="3 3"/>
+      <text class="tick" x="706" y="32" text-anchor="end">Fargate &#8594; 4 tasks</text>
+      <line x1="830" y1="36" x2="830" y2="250" stroke="var(--taupe)" stroke-width="1" stroke-dasharray="3 3"/>
+      <text class="tick" x="826" y="20" text-anchor="end">&#8594; 31 tasks</text>
+
+      <text class="tick" x="110" y="266" text-anchor="middle">1</text>
+      <text class="tick" x="230" y="266" text-anchor="middle">10</text>
+      <text class="tick" x="350" y="266" text-anchor="middle">100</text>
+      <text class="tick" x="470" y="266" text-anchor="middle">1 k</text>
+      <text class="tick" x="590" y="266" text-anchor="middle">10 k</text>
+      <text class="tick" x="710" y="266" text-anchor="middle">100 k</text>
+      <text class="tick" x="830" y="266" text-anchor="middle">1 M</text>
+      <text class="tick" x="110" y="288">users &#183; dollars per month &#183; both axes logarithmic</text>
+      <text class="tick" x="830" y="288" text-anchor="end" fill="var(--ink2)">hatched band = the saving</text>
+    </svg>
+    <p class="note">
+      The dashed verticals are where engine A has to add whole Fargate tasks to carry the evening
+      peak &mdash; 4 tasks at 100 k users, 31 at a million. AgentCore Runtime has no steps: it bills
+      only the seconds it runs, so its line is straight all the way across. At a million users the
+      saving is <b>$1.28 M a month, about $15.4 M a year.</b>
+    </p>
+  </div>
+</section>
+
+<!-- ═══════════════ 3 · ASSUMPTIONS ═══════════════ -->
+<section>
+  <p class="eyebrow">Part three</p>
+  <h2>What "one user" is assumed to do</h2>
+  <p class="lede">
+    Every figure above rests on these. They describe a genuinely engaged user of a romantic
+    assistant — someone planning dates and remembering a partner's preferences — not a synthetic
+    load test.
+  </p>
+  <div class="panel assume">
+    <h3>Usage model</h3>
+    <div class="ugrid">
+      <div class="ucard"><div class="k">3 / week</div>
+        <div class="v">sessions per user. Opens the app most other evenings — after work, planning
+          something.</div></div>
+      <div class="ucard"><div class="k">8 turns</div>
+        <div class="v">per session. A real back-and-forth about a partner, not a one-shot query.</div></div>
+      <div class="ucard"><div class="k">104 / month</div>
+        <div class="v">turns per user, the product of the two above. Every per-user figure scales
+          linearly with this.</div></div>
+      <div class="ucard"><div class="k">70%</div>
+        <div class="v">of turns fall between <b>19:00 and 23:00</b> local. It is a date-planning
+          assistant; the load is an evening peak, not a flat line.</div></div>
+      <div class="ucard"><div class="k">40%</div>
+        <div class="v">of turns reach for a tool — a restaurant search, a calendar check. The other
+          60% are conversation. AgentCore Gateway also does one <code>ListTools</code> per invoke,
+          so 1.4 Gateway calls per turn.</div></div>
+      <div class="ucard"><div class="k">3 s</div>
+        <div class="v">of AgentCore Runtime time per turn. Conservative: it charges CPU for the whole
+          turn, though AWS states I/O-wait CPU isn't billed and a turn is mostly waiting on the
+          model.</div></div>
+      <div class="ucard"><div class="k">26 records</div>
+        <div class="v">one partner profile in AgentCore Memory — the 26 fields in
+          <code>PROFILE_FIELD_IDS</code>. This is the one line that scales with <em>users</em> rather
+          than turns.</div></div>
+      <div class="ucard"><div class="k">$3 / $15</div>
+        <div class="v">per MTok for Bedrock Sonnet 4.5. <b>Assumed, not sourced</b> — the Anthropic
+          table on the Bedrock pricing page is JS-rendered and did not load. The $1.385 line scales
+          linearly with it.</div></div>
+      <div class="ucard"><div class="k">us-east-1</div>
+        <div class="v">all rates. On-demand throughout; no Savings Plans, no reserved capacity, no
+          Spot on either side.</div></div>
+    </div>
+    <p class="note" style="color:#7A6231;margin-top:16px">
+      <b>The evening peak matters more than it looks.</b> Fargate has to be sized for the busiest
+      hour and is then billed for all 730, so a load concentrated into four hours a day wastes
+      roughly five sixths of what you pay for it. At the user counts above one 0.5 vCPU task still
+      covers the peak, which is why Fargate stays at $18.02 in the table rather than stepping up —
+      but every step it eventually takes is another whole $18.02, whereas AgentCore Runtime has no
+      steps at all.
+    </p>
+  </div>
+</section>
+
+<!-- ═══════════════ 3b · BLAST RADIUS ═══════════════ -->
+<section>
+  <p class="eyebrow">Part three and a half</p>
+  <h2>Blast radius &mdash; what one fault costs</h2>
+  <p class="lede">
+    Cost is not the strongest argument on this page; this is. Both sides below are the same 40
+    live sessions. A single process-level fault is injected into the same session on each.
+    Watch what it reaches.
+  </p>
+
+  <div class="blast">
+    <div class="bpanel" id="bpA">
+      <h4><span class="tile" style="background:var(--t-compute);width:20px;height:20px;border-radius:5px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9"><use href="#gFargate"/></svg></span>
+        Glue code &mdash; one Node process</h4>
+      <p class="bsub">40 WebSockets in one <code>Set</code>, one heap, one event loop.
+        <code>attach-websocket.ts:31</code></p>
+      <div class="vessel" id="vesselA">
+        <span class="vlabel">valentin-service &middot; 1 task</span>
+        <div class="grid40" id="gridA"></div>
+      </div>
+      <p class="tally"><b id="tallyA" style="color:var(--bad)">0</b>
+        <span>of 40 sessions lost<br>one process &mdash; one shared failure domain</span></p>
+    </div>
+
+    <div class="bpanel" id="bpB">
+      <h4><span class="tile" style="background:var(--t-core);width:20px;height:20px;border-radius:5px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9"><use href="#gRuntime"/></svg></span>
+        AgentCore Runtime &mdash; one microVM per session</h4>
+      <p class="bsub">40 sessions, 40 isolated execution environments. A fault has nowhere to
+        travel.</p>
+      <div class="vessel" style="border-color:transparent;padding:13px">
+        <div class="cells40" id="gridB"></div>
+      </div>
+      <p class="tally"><b id="tallyB" style="color:var(--good)">0</b>
+        <span>of 40 sessions lost<br>one microVM per session &mdash; nothing to spread through</span></p>
+    </div>
+  </div>
+
+  <div class="replay">
+    <button type="button" id="blastPlay">&#9654;&nbsp; Play failure</button>
+    <button type="button" id="blastReset" class="ghost">Reset</button>
+    <span class="rnote">Both sides start healthy. Honours <code>prefers-reduced-motion</code>.</span>
+  </div>
+
+  <p class="lede" style="margin-top:26px"><b>Which faults actually behave this way</b></p>
+  <div class="faults">
+    <div class="fault"><div class="ft">Unhandled rejection</div>
+      <div class="fd">One user's turn throws somewhere without a handler; Node exits and takes all
+        40 sockets with it.</div></div>
+    <div class="fault"><div class="ft">Out of memory</div>
+      <div class="fd">One runaway conversation exhausts the 1 GiB task; the OOM killer does not
+        ask whose request it was.</div></div>
+    <div class="fault"><div class="ft">Event-loop block</div>
+      <div class="fd">One synchronous hot spot stalls the single loop &mdash; the other 39 users
+        just see the app stop responding.</div></div>
+    <div class="fault"><div class="ft">Prompt injection that pivots</div>
+      <div class="fd">Reaches a process-wide singleton &mdash; the Bedrock client, the tool
+        registry &mdash; and it is holding everyone's credentials, not one user's.</div></div>
+  </div>
+
+  <div class="panel fair" style="margin-top:22px">
+    <h3>What this does <em>not</em> claim &mdash; two limits, both real</h3>
+    <ul>
+      <li><b>Engine A does isolate per-user <em>state</em>.</b> The store, conversation memory and
+        orchestrator are built per connection (<code>src/server/index.ts</code>
+        <code>forUser</code>), so one user's logic bug cannot read another's data. What they share
+        is the process: one heap, one event loop, and process-wide singletons &mdash; the Bedrock
+        client, the runtime, the tool registry. The four faults above are exactly the ones that
+        cross that boundary, and they are the ones that take everybody down at once.</li>
+      <li><b>AgentCore is not fully isolated in <em>this</em> deployment either.</b> Engine B still
+        answers through <code>valentin-ac-proxy</code> &mdash; one shared Fargate task holding the
+        WebSockets. The microVM isolates agent <em>execution</em>; the socket layer in front of it
+        is still a shared failure domain. Getting the right-hand picture in full needs the
+        committed architecture, with no stateful proxy. Drawn as it is here, the right panel is
+        what AgentCore Runtime gives you, not what this repo currently deploys.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ═══════════════ 4 · FAIRNESS ═══════════════ -->
+<section>
+  <p class="eyebrow">Part four</p>
+  <h2>Where AgentCore loses</h2>
+  <div class="panel fair">
+    <h3>Stated because it's true — and because it's what makes the rest believable</h3>
+    <ul>
+      <li><b>AgentCore Runtime is 2.20× dearer per hour than Fargate</b> for identical resources
+        ($0.0542 vs $0.0247 for 0.5 vCPU / 1 GiB). It wins on billing granularity, not unit price.</li>
+      <li><b>AgentCore Memory is ~124× dearer per turn than DynamoDB</b>, and its storage line is
+        6.4× dearer. It loses the storage layer outright; DynamoDB on-demand is so cheap that beating
+        it is worth almost nothing.</li>
+      <li><b>AgentCore Gateway is a line item engine A doesn't have at all.</b> Engine A's tools run
+        in-process for free inside a task it already pays for.</li>
+      <li><b>The Lambda behind AgentCore Gateway is not counted here.</b> It bills its own requests
+        and GB-seconds. Lambda's rates weren't sourced for this model, so engine B's figure is an
+        understatement rather than its advantage an overstatement.</li>
+      <li><b>The advantage ratio shrinks as you grow</b> — 187× at one user, 13.5× at ten thousand.
+        Anyone quoting the small-scale number to a large-scale audience will be corrected.</li>
+      <li><b>This compares two architectures, not the current deployment.</b> The repo today runs
+        <em>both</em> engines side by side as a measurement harness, which costs more than either
+        alone. It also does not remove Fargate — a same-sized proxy still fronts AgentCore — nor
+        DynamoDB, which the Gateway's Lambda still reads and writes.</li>
+      <li><b>Latency is not on this page.</b> No measurement of either engine exists; every duration
+        in the repo is authored. Engine A makes up to 5 sequential Converse round-trips on a tool
+        turn against engine B's one call, so the direction is genuinely unknown.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <p>
+    <b>Rates.</b> AWS Fargate pricing ($0.04048/vCPU-h, $0.004446/GB-h) · Bedrock AgentCore pricing
+    (Runtime microVM $0.0895/vCPU-h and $0.00945/GB-h, per-second with a 1 s minimum; Memory
+    $0.25/1k events, $0.50/1k retrievals, $0.75/1k records-month; Gateway $0.005/1k invocations,
+    $0.02/100 tools indexed-month) · DynamoDB on-demand pricing ($0.625/M WRU, $0.125/M RRU,
+    $0.25/GB-month storage, $0.20/GB-month PITR). All us-east-1.
+  </p>
+  <p>
+    <b>Quantities.</b> Fargate shape from <code>infra/config/environments.ts</code>; per-turn
+    DynamoDB operations from <code>dynamodb-store.ts</code> and <code>partner-profile.ts</code>; the
+    extra Converse from <code>agent-orchestrator.ts</code> and <code>bedrock-client.ts</code>;
+    <code>MAX_MEMORY_RECORDS</code> and the Gateway call pattern from
+    <code>agentcore-adapter.ts</code> and <code>agentcore/agent.py</code>. Icons and category colours
+    from <code>src/client/utils/aws-diagram-layout.ts</code>.
+    Arithmetic: <code>node scripts/cost-model.mjs</code> reproduces every figure on this page.
+  </p>
+  <p>
+    <b>One unresolved input, and it is decisive.</b> The Memory rate reads "$0.50 per 1,000
+    <em>retrievals</em>". If that meters per record returned rather than per API call, then
+    <code>ListMemoryRecords</code> at <code>MAX_MEMORY_RECORDS = 100</code> costs $0.05/turn and
+    AgentCore's per-user cost rises from $0.103 to $5.25 — roughly 3.8× <em>worse</em> than
+    engine A. That constant is ours to lower, and the repo never calls
+    <code>RetrieveMemoryRecords</code> at all. Confirm with AWS before presenting.
+  </p>
+</footer>
+
+</div>
+<script>
+/*
+ * Blast-radius animation.
+ *
+ * Per-dot delay is the Euclidean distance from the injected session, so engine A's failure
+ * reads as a wave crossing a shared process rather than 40 dots flipping at once. Engine B gets
+ * no wave at all, which is the entire point: there is nothing for it to travel through.
+ */
+(function () {
+  var COLS = 8, ROWS = 5, TOTAL = COLS * ROWS;
+  var ORIGIN = 18;                 // row 2, col 2 — off-centre so the wave has somewhere to go
+  var STEP_MS = 58;                // per unit of distance
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  var gridA = document.getElementById('gridA');
+  var gridB = document.getElementById('gridB');
+  var vessel = document.getElementById('vesselA');
+  var tallyA = document.getElementById('tallyA');
+  var tallyB = document.getElementById('tallyB');
+  if (!gridA || !gridB) return;
+
+  var dotsA = [], dotsB = [], cellsB = [];
+  for (var i = 0; i < TOTAL; i++) {
+    var a = document.createElement('span');
+    a.className = 'dot' + (i === ORIGIN ? ' origin' : '');
+    gridA.appendChild(a); dotsA.push(a);
+
+    var cell = document.createElement('span');
+    cell.className = 'cell';
+    var b = document.createElement('span');
+    b.className = 'dot' + (i === ORIGIN ? ' origin' : '');
+    cell.appendChild(b); gridB.appendChild(cell);
+    dotsB.push(b); cellsB.push(cell);
+  }
+
+  function dist(i) {
+    var dx = (i % COLS) - (ORIGIN % COLS);
+    var dy = Math.floor(i / COLS) - Math.floor(ORIGIN / COLS);
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  var timers = [];
+  function reset() {
+    timers.forEach(clearTimeout); timers = [];
+    dotsA.forEach(function (d) { d.classList.remove('hit'); });
+    dotsB.forEach(function (d) { d.classList.remove('hit'); });
+    cellsB.forEach(function (c) { c.classList.remove('hit'); });
+    vessel.classList.remove('hit');
+    tallyA.textContent = '0'; tallyB.textContent = '0';
+  }
+
+  function shockwave() {
+    var origin = dotsA[ORIGIN].getBoundingClientRect();
+    var host = vessel.getBoundingClientRect();
+    var ring = document.createElement('span');
+    ring.className = 'shock';
+    var size = Math.max(host.width, host.height) * 2.1;
+    ring.style.width = ring.style.height = size + 'px';
+    ring.style.left = (origin.left - host.left + origin.width / 2) + 'px';
+    ring.style.top = (origin.top - host.top + origin.height / 2) + 'px';
+    vessel.appendChild(ring);
+    requestAnimationFrame(function () { ring.classList.add('go'); });
+    setTimeout(function () { ring.remove(); }, 1700);
+  }
+
+  function run() {
+    reset();
+
+    // Engine B: the injected session, and only it. No delay, no spread.
+    dotsB[ORIGIN].classList.add('hit');
+    cellsB[ORIGIN].classList.add('hit');
+    tallyB.textContent = '1';
+
+    if (reduced) {
+      dotsA.forEach(function (d) { d.classList.add('hit'); });
+      vessel.classList.add('hit');
+      tallyA.textContent = String(TOTAL);
+      return;
+    }
+
+    shockwave();
+    var hit = 0;
+    dotsA.forEach(function (d, i) {
+      timers.push(setTimeout(function () {
+        d.classList.add('hit');
+        tallyA.textContent = String(++hit);
+        if (hit === TOTAL) vessel.classList.add('hit');
+      }, dist(i) * STEP_MS));
+    });
+  }
+
+  document.getElementById('blastPlay').addEventListener('click', run);
+  document.getElementById('blastReset').addEventListener('click', reset);
+
+  // Deliberately no auto-play on scroll. The point of the visualisation is the moment the
+  // fault spreads, and a panel that is already red when you reach it has nothing left to show.
+  reset();
+})();
+</script>
+</body>
+</html>

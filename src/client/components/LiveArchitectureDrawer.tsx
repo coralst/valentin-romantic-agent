@@ -7,7 +7,14 @@ import { useLiveArchitecture } from '../hooks/use-live-architecture';
 import { ENGINE_COPY, useArchitectureEngineContext } from '../context/architecture-engine-context';
 import { useFlowPlayback } from '../hooks/use-flow-playback';
 import { useFlowTraversal } from '../hooks/use-flow-traversal';
-import { PANEL_SLIDE_MS } from '../hooks/use-inspector-focus';
+import { PANEL_SLIDE_MS, useSlidePanel } from '../hooks/use-inspector-focus';
+import { useEngineMetrics } from '../hooks/use-engine-metrics';
+import { prefersReducedMotion } from '../utils/motion-preference';
+import {
+  EngineScoreboard,
+  SCOREBOARD_COPY,
+  SCOREBOARD_HEIGHT,
+} from './EngineScoreboard';
 import {
   defaultDemoFlowIdFor,
   demoFlow,
@@ -603,6 +610,19 @@ export function LiveArchitectureDrawer() {
   const { engine, servingEngine, isDowngraded } = useArchitectureEngineContext();
   const live = useLiveArchitecture(true, engine);
 
+  /*
+   * The comparison sheet, and the tally behind it.
+   *
+   * Both live here rather than inside `EngineScoreboard` on purpose. The tally must
+   * keep accumulating while the sheet is closed — a presenter sends the messages
+   * first and opens the panel afterwards — and it must survive an engine switch,
+   * unlike `live`, whose beats are deliberately cleared so one engine's traffic never
+   * appears on the other's diagram. Measuring engine B *requires* switching to it, so
+   * a tally that reset on switch could never hold both engines at once.
+   */
+  const scoreboard = useSlidePanel(false);
+  const metrics = useEngineMetrics(servingEngine);
+
   const flow = demoFlow(defaultDemoFlowIdFor(engine));
   const isDemo = mode === 'demo';
 
@@ -872,6 +892,22 @@ export function LiveArchitectureDrawer() {
               <ServingChip serving={servingEngine} isDowngraded={isDowngraded} />
             )}
 
+            {/* Present in demo mode too, where it opens onto a refusal rather than
+                onto numbers. Hiding it there would leave a presenter wondering
+                whether the comparison exists; showing it says why it is empty. */}
+            <button
+              type="button"
+              style={ghostButtonStyle}
+              onClick={scoreboard.toggle}
+              aria-expanded={scoreboard.isOpen}
+              data-testid="scoreboard-toggle"
+              aria-label={
+                scoreboard.isOpen ? SCOREBOARD_COPY.toggleClose : SCOREBOARD_COPY.toggleOpen
+              }
+            >
+              {SCOREBOARD_COPY.toggleOpen} {scoreboard.isOpen ? '▴' : '▾'}
+            </button>
+
             {/* What is on screen, when it is neither the live feed nor the script.
                 Without it a replayed conversation in live mode is indistinguishable
                 from traffic happening now. */}
@@ -942,6 +978,27 @@ export function LiveArchitectureDrawer() {
               </button>
             </div>
           </div>
+
+          {/* Overlays the diagram rather than resizing the drawer: `DRAWER_HEIGHT`,
+              `reservedDrawerSpace()` and the resize handle all assume a fixed panel
+              height, and making the sheet push them around would move the chat
+              underneath every time a presenter opened it. */}
+          {scoreboard.isMounted && (
+            <div
+              style={{
+                overflow: 'hidden',
+                flexShrink: 0,
+                transition: prefersReducedMotion() ? 'none' : `max-height ${PANEL_SLIDE_MS}ms ease`,
+                maxHeight: scoreboard.isOpen ? SCOREBOARD_HEIGHT : 0,
+              }}
+            >
+              <EngineScoreboard
+                metrics={metrics}
+                isLive={!isDemo && !isReplaying}
+                serving={servingEngine}
+              />
+            </div>
+          )}
 
           <div
             style={{

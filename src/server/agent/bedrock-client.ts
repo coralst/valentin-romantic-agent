@@ -9,9 +9,11 @@ import {
   type GuardrailConfiguration,
 } from '@aws-sdk/client-bedrock-runtime';
 import type { ChatMessage } from '../../shared/interfaces/message';
+import type { SpanTokenUsage } from '../../shared/interfaces/ws-events';
 import { LlmError } from '../../shared/errors/llm-error';
 import { config } from '../config';
 import { logger } from '../logging';
+import { recordModelCall } from '../telemetry/turn-metrics';
 
 /** Schema definition for a Bedrock tool-use call */
 export interface ToolSchema {
@@ -392,15 +394,32 @@ export class AwsBedrockClient implements BedrockClient {
           policies: firedPolicies(response),
         });
       }
+      // Bedrock reports what it charged for; until now nothing here read it. Spread
+      // conditionally so a response that omitted `usage` produces no token keys at
+      // all rather than a `0`, which would read as a free call.
+      const usage: SpanTokenUsage = {
+        inputTokens: response.usage?.inputTokens,
+        outputTokens: response.usage?.outputTokens,
+      };
+      const usageFields =
+        usage.inputTokens === undefined && usage.outputTokens === undefined ? {} : usage;
+
+      recordModelCall(usage);
       logger.info('bedrock.converse', {
         sessionId,
         operation,
         modelId: this.modelId,
         durationMs: Date.now() - startedAt,
         ok: true,
+        ...usageFields,
       });
       return response;
     } catch (err) {
+      // Counted, with no tokens. The call happened and cost the turn a round trip
+      // even though it returned nothing billable — and because `callBedrockWithRetry`
+      // retries the whole tool loop once, a turn that failed and recovered honestly
+      // shows the extra calls it took.
+      recordModelCall();
       logger.info('bedrock.converse', {
         sessionId,
         operation,

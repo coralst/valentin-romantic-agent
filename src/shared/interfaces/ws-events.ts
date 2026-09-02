@@ -1,3 +1,4 @@
+import type { EngineId } from './engine';
 import type { ChatMessage } from './message';
 import type { Person } from './person';
 import type { PreferenceWithHistory } from './preference';
@@ -115,12 +116,89 @@ export interface AwsSpan {
   ok: boolean;
   /** Sort key or category, never raw partner data. */
   detail?: string;
+  /**
+   * What the model charged for this call, when the provider said.
+   *
+   * Optional for the same reason `durationMs` is: absent means nobody counted.
+   * Engine B's Runtime does not report usage at all today (`agentcore/agent.py`
+   * returns `content` and `tools_used` only), so its spans carry none and the view
+   * shows `—`. A `0` here would read as a free call.
+   */
+  usage?: SpanTokenUsage;
+  /**
+   * Which engine made the call, stamped by the process that made it.
+   *
+   * The client cannot reliably infer this. It knows which engine it *selected*, but
+   * a deployment missing its AgentCore wiring downgrades server-side and answers on
+   * engine A anyway (see `server/agent/engine.ts`), and `servingEngine` from
+   * `/api/config` is `null` for a window after every switch. Attributing a span by
+   * selection would file engine A's numbers under AgentCore's name — the one error
+   * this whole comparison exists to avoid.
+   *
+   * Optional because a span from an older task carries none; the client drops an
+   * unattributable span rather than guessing.
+   */
+  engine?: EngineId;
+}
+
+/** What one model call cost, as the provider reported it. */
+export interface SpanTokenUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
+/**
+ * What one completed user turn cost, counted by the process that served it.
+ *
+ * Separate from `AwsSpan` because a span is one call and these are per-turn totals.
+ * Two things make them uninferrable from spans: `use-live-architecture.ts` counts
+ * model calls by span *operation*, which cannot tell you how many belonged to the
+ * same turn; and a store read emits no span at all, so a reads-per-turn figure has
+ * no span to be derived from.
+ *
+ * Every field is a count of something that happened, not a rate — the client
+ * derives averages and percentiles, so this frame stays honest if it is read raw.
+ */
+export interface TurnMetrics {
+  /**
+   * REQUIRED and top-level. `resolveBroadcastSessionId` reads `payload.sessionId`
+   * and silently drops an event without one — `pong` and `error` are already dead
+   * in practice for exactly this reason.
+   */
+  sessionId: string;
+  /** The engine that actually served, never the one the client selected. */
+  engine: EngineId;
+  /**
+   * Model calls this turn — Converse or InvokeAgentRuntime, including the
+   * extractor's.
+   *
+   * This is the panel's headline number: engine A pays for a second forced-tool
+   * `extract-preferences` Converse on every turn, and a tool round adds another.
+   */
+  modelCalls: number;
+  /** Reads against the conversation store this turn. Writes are not counted. */
+  storeReads: number;
+  /**
+   * Which store those reads hit.
+   *
+   * Load-bearing, not decorative: `STORAGE_BACKEND` defaults to `memory`, so on a
+   * laptop these are not DynamoDB calls and a panel that called them "DynamoDB
+   * reads" would be lying about the architecture it is describing.
+   */
+  storeBackend: 'memory' | 'dynamodb';
+  /** Wall clock from the user's frame to the reply being sent. */
+  replyLatencyMs: number;
+  /** Omitted, never zeroed, when no call this turn reported usage. */
+  inputTokens?: number;
+  outputTokens?: number;
+  ok: boolean;
 }
 
 /** Server → Client events */
 export type ServerEvent =
   | WsEnvelope<'auth_ok', { userId: string; isDemo: boolean }>
   | WsEnvelope<'aws_span', AwsSpan>
+  | WsEnvelope<'turn_metrics', TurnMetrics>
   | WsEnvelope<'agent_message', { message: ChatMessage }>
   | WsEnvelope<'action_proposal', ActionProposalPayload>
   | WsEnvelope<'typing_start', { sessionId: string }>

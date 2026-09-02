@@ -18,6 +18,8 @@
     "lint": "tsc --noEmit",
     "prove:integrations": "npx tsx scripts/prove-integrations.mts",
     "verify:local": "bash scripts/verify-local.sh",
+    "deck:shots": "npx tsx scripts/deck-slide-shots.ts",
+    "deck:pptx": "npm run deck:shots && python3 scripts/build-pptx.py",
     "deploy:dev": "bash scripts/deploy.sh dev",
     "deploy:frontend": "bash scripts/deploy.sh dev --scope=frontend",
     "deploy:backend": "bash scripts/deploy.sh dev --scope=backend",

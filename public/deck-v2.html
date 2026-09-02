@@ -20,7 +20,7 @@
          scroll-snap-type: y mandatory; overflow-y: scroll; height: 100vh; }
 
   section { min-height: 100vh; scroll-snap-align: start; display: grid; place-items: center;
-            padding: 60px 40px; position: relative; }
+            padding: 40px 40px; position: relative; }
   .wrap { width: 100%; max-width: 1180px; }
   .wide { max-width: 1440px; }
   h1 { font-family: Gloock, serif; font-weight: 400; font-size: clamp(56px, 9vw, 132px); line-height: 1.0; }
@@ -32,7 +32,7 @@
   .act b { color: var(--claret); font-weight: 500; }
   .lede { font-size: clamp(18px, 1.7vw, 23px); line-height: 1.6; color: var(--ink-2);
           max-width: 700px; margin-top: 16px; }
-  p.note { font-size: 16px; color: var(--ink-3); margin-top: 14px; max-width: 940px; }
+  p.note { font-size: 16px; color: var(--ink-3); margin-top: 14px; max-width: 1080px; }
   /* the bare-paragraph variant; resets the .cta pill below, which it also matches */
   p.cta { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 14px;
           background: none; box-shadow: none; padding: 0; }
@@ -126,18 +126,56 @@
   .who .owns { font-family: ui-monospace, monospace; font-size: 14px; color: var(--claret);
                background: var(--blush); border-radius: 999px; padding: 5px 12px; justify-self: start; }
 
-  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 22px; }
-  .stat { background: var(--cream); border-radius: var(--r-sm); padding: 18px 20px;
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 14px; }
+  .stat { background: var(--cream); border-radius: var(--r-sm); padding: 14px 20px;
           box-shadow: 0 1px 3px rgba(42,34,38,.05), 0 10px 26px rgba(42,34,38,.06); }
   .stat .v { font-family: Gloock, serif; font-size: clamp(28px, 3vw, 40px); color: var(--claret); line-height: 1; }
   .stat b { display: block; font: 500 15.5px Outfit; margin: 9px 0 5px; }
   .stat p { font-size: 14.5px; line-height: 1.45; color: var(--ink-2); }
 
   /* ---- diagram stage ---- */
-  .stage { margin-top: 20px; background: var(--cream); border-radius: var(--r);
+  .stage { margin-top: 12px; background: var(--cream); border-radius: var(--r);
            padding: 18px; display: grid; place-items: center; overflow: hidden;
            box-shadow: 0 2px 6px rgba(42,34,38,.06), 0 18px 44px rgba(42,34,38,.08); }
-  .stage svg, .stage img { max-width: 100%; max-height: 60vh; height: auto; display: block; }
+  .stage svg, .stage img { max-width: 100%; max-height: 55vh; height: auto; display: block; }
+  /* The architecture board is near-square, so on a 16:9 slide it has to be given
+     the full column height and be paired with text beside it rather than under. */
+  .stage.tall { padding: 8px; }
+  .stage.tall img { max-height: 75vh; }
+  /* give the board the wider column; the prose beside it is deliberately terse */
+  .split.board { grid-template-columns: 1.45fr 1fr; gap: 26px; }
+
+  /* ---- tool surface: one card per integration, its tools listed ---- */
+  .kits { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
+  .kit { background: var(--cream); border-radius: var(--r-sm); padding: 16px 18px;
+         border-top: 3px solid var(--c, var(--claret));
+         box-shadow: 0 1px 3px rgba(42,34,38,.05), 0 10px 26px rgba(42,34,38,.06); }
+  .kit b { display: block; font: 500 16.5px Outfit; }
+  .kit .what { font-size: 13.5px; color: var(--ink-3); margin-top: 2px; }
+  .kit ul { list-style: none; margin-top: 10px; border-top: 1px solid #F2E9E4; padding-top: 8px; }
+  .kit li { font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.5;
+            color: var(--ink-2); display: flex; gap: 7px; align-items: baseline; }
+  /* a filled dot is a tool that can change the world; hollow is read-only */
+  .kit li::before { content: ''; width: 6px; height: 6px; border-radius: 999px; flex: 0 0 6px;
+                    border: 1.5px solid var(--olive); }
+  .kit li.acts::before { background: var(--claret); border-color: var(--claret); }
+  .dark .kit { background: rgba(255,253,251,.06); box-shadow: none; }
+  .dark .kit ul { border-color: rgba(255,253,251,.14); }
+  .dark .kit li { color: rgba(255,253,251,.72); }
+
+  /* ---- anatomy of a turn: numbered vertical steps ---- */
+  .anatomy { display: grid; gap: 9px; margin-top: 18px; }
+  .an { display: grid; grid-template-columns: 30px 210px 1fr; gap: 16px; align-items: baseline;
+        background: var(--cream); border-radius: var(--r-sm); padding: 13px 18px;
+        box-shadow: 0 1px 3px rgba(42,34,38,.05), 0 8px 22px rgba(42,34,38,.05); }
+  .an .i { width: 26px; height: 26px; border-radius: 999px; background: var(--blush);
+           color: var(--claret); display: grid; place-items: center; font: 500 13px Outfit; }
+  .an b { font: 500 16.5px Outfit; }
+  .an p { font-size: 15.5px; line-height: 1.45; color: var(--ink-2); }
+  .an.owned { border-left: 3px solid var(--olive); }
+  .dark .an { background: rgba(255,253,251,.06); box-shadow: none; }
+  .dark .an p { color: rgba(255,253,251,.68); }
+  .dark .an .i { background: rgba(246,222,226,.16); color: var(--blush); }
 
   /* ---- three turns of the review loop (.beat is taken by the PR-thread slide) ---- */
   .loopcards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 28px; }
@@ -228,6 +266,104 @@
   a.src { color: var(--claret); text-decoration: none; border-bottom: 1px solid rgba(140,47,69,.35); }
   .dark a.src, .demo a.src { color: var(--blush); border-color: rgba(246,222,226,.4); }
 
+  /* ---- engine A vs engine B: two panels either side of a hairline ---- */
+  .versus { display: grid; grid-template-columns: 1fr 54px 1fr; gap: 0; margin-top: 22px;
+            align-items: stretch; }
+  .panel { background: var(--cream); border-radius: var(--r-sm); padding: 20px 22px;
+           border-top: 3px solid var(--c, var(--claret));
+           box-shadow: 0 1px 3px rgba(42,34,38,.05), 0 12px 30px rgba(42,34,38,.06); }
+  .panel .t { display: block; font: 500 12px Outfit; letter-spacing: .2em; text-transform: uppercase;
+              color: var(--c, var(--claret)); }
+  .panel h3 { font-family: Gloock, serif; font-weight: 400; font-size: clamp(19px, 1.9vw, 25px);
+              line-height: 1.15; margin-top: 6px; }
+  .panel .sub { font-size: 14.5px; line-height: 1.45; color: var(--ink-3); margin-top: 7px; }
+  .vs { display: grid; place-items: center; position: relative; }
+  .vs::before { content: ''; position: absolute; top: 12px; bottom: 12px; width: 1px;
+                background: rgba(42,34,38,.16); }
+  .vs span { position: relative; z-index: 1; background: var(--bg); border-radius: 999px;
+             padding: 6px 0; width: 34px; text-align: center; font: 500 11px Outfit;
+             letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+  .dark .vs span { background: var(--ink); }
+  .dark .panel { background: rgba(255,253,251,.06); box-shadow: none; }
+  .dark .panel h3 { color: #fff; }
+  .dark .panel .sub { color: rgba(255,253,251,.5); }
+
+  /* service-for-service pairing rows */
+  .pairs { list-style: none; margin-top: 14px; }
+  .pairs li { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: baseline;
+              font-size: 15.5px; line-height: 1.4; padding: 9px 0;
+              border-top: 1px solid rgba(42,34,38,.1); }
+  .pairs li:first-child { border-top: none; }
+  .pairs li s { text-decoration: none; font-family: ui-monospace, monospace; font-size: 13.5px;
+                color: var(--ink-3); }
+  .dark .pairs li { border-color: rgba(255,253,251,.14); }
+  .pairs li b { font-weight: 500; }
+
+  /* ---- cost ledger ---- */
+  .ledger { list-style: none; margin-top: 13px; }
+  .ledger li { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: baseline;
+               padding: 8px 0; border-top: 1px solid rgba(42,34,38,.1); font-size: 15.5px; }
+  .ledger li:first-child { border-top: none; }
+  .ledger li.sum { border-top: 1px solid rgba(42,34,38,.28); margin-top: 4px; font-weight: 500; }
+  .ledger li s { text-decoration: none; display: block; font-size: 13.5px; color: var(--ink-3);
+                 margin-top: 2px; }
+  .ledger .amt { font-family: Gloock, serif; font-size: 19px; color: var(--c, var(--claret));
+                 white-space: nowrap; }
+  .dark .ledger li { border-color: rgba(255,253,251,.14); }
+  .dark .ledger li.sum { border-color: rgba(255,253,251,.34); }
+  .dark .ledger li s { color: rgba(255,253,251,.45); }
+
+  /* the headline multiple, sitting between the two ledgers */
+  .mult { text-align: center; margin-top: 20px; }
+  .mult .x { font-family: Gloock, serif; font-size: clamp(40px, 5.4vw, 74px); line-height: 1;
+             color: var(--claret); }
+  .dark .mult .x { color: var(--blush); }
+  .mult p { font-size: 16px; line-height: 1.5; color: var(--ink-2); margin-top: 8px;
+            max-width: 620px; margin-inline: auto; }
+  .dark .mult p { color: rgba(255,253,251,.68); }
+
+  /* scale table */
+  .scale { width: 100%; margin-top: 20px; border-collapse: collapse; font-size: 15.5px; }
+  .scale th { font: 500 11.5px Outfit; letter-spacing: .16em; text-transform: uppercase;
+              color: var(--ink-3); text-align: right; padding: 0 0 9px; }
+  .scale th:first-child { text-align: left; }
+  .scale td { padding: 8px 0; border-top: 1px solid rgba(42,34,38,.1); text-align: right;
+              font-variant-numeric: tabular-nums; }
+  .scale td:first-child { text-align: left; }
+  .scale tr.peak td { font-weight: 500; }
+  .scale .save { color: var(--olive); font-weight: 500; }
+  .dark .scale td { border-color: rgba(255,253,251,.14); }
+  .dark .scale th { color: rgba(255,253,251,.45); }
+
+  /* ---- blast radius: 40 sessions as 40 dots ---- */
+  .radius { display: grid; grid-template-columns: 1fr 54px 1fr; margin-top: 22px; align-items: stretch; }
+  .vessel { margin-top: 13px; border-radius: var(--r-sm); padding: 12px;
+            display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px;
+            max-width: 370px; }
+  /* engine A's dots share one bordered vessel, because they share one Node process */
+  .vessel.shared { border: 1px solid rgba(140,47,69,.4); background: rgba(140,47,69,.05); }
+  /* engine B's are 40 separate cells — there is no single container to draw */
+  .vessel.isolated { border: 1px dashed rgba(124,132,100,.35); background: none; }
+  .vessel i { aspect-ratio: 1; border-radius: 999px; background: var(--olive); opacity: .75; }
+  .vessel i.hit { background: var(--claret); opacity: 1; }
+  .tally { margin-top: 13px; display: flex; align-items: baseline; gap: 10px; }
+  .tally .n { font-family: Gloock, serif; font-size: clamp(30px, 3.4vw, 46px); line-height: 1; }
+  .tally.bad .n { color: var(--claret); }
+  .tally.good .n { color: var(--olive); }
+  .tally p { font-size: 15.5px; line-height: 1.4; color: var(--ink-2); }
+  .dark .tally p { color: rgba(255,253,251,.68); }
+  .dark .tally.good .n { color: #B6C08F; }
+  .dark .tally.bad .n { color: var(--claret-2); }
+
+  /* the four faults that actually cross a process boundary */
+  .faults { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 22px; }
+  .fault { border-radius: var(--r-sm); padding: 15px 17px; background: rgba(140,47,69,.06);
+           border-left: 3px solid var(--claret); }
+  .dark .fault { background: rgba(255,253,251,.06); }
+  .fault b { display: block; font: 500 15.5px Outfit; margin-bottom: 5px; }
+  .fault p { font-size: 14px; line-height: 1.45; color: var(--ink-2); }
+  .dark .fault p { color: rgba(255,253,251,.6); }
+
   /* ---- chrome ---- */
   .dots { position: fixed; right: 20px; top: 50%; transform: translateY(-50%); z-index: 50;
           display: flex; flex-direction: column; gap: 10px; }
@@ -266,6 +402,12 @@
   @media (max-width: 1000px) {
     section { padding: 48px 20px; }
     .flow, .split, .split.lean, .stats, .lessons, .crew, .loopcards { grid-template-columns: 1fr; }
+    .versus, .radius, .faults, .kits, .split.board { grid-template-columns: 1fr; gap: 12px; }
+    .an { grid-template-columns: 30px 1fr; }
+    .an p { grid-column: 2; }
+    .stage.tall img { max-height: none; }
+    .vs { display: none; }
+    .scale { font-size: 13.5px; }
     .drops { display: none; }
     .who { grid-template-columns: 12px 1fr; }
     .who .owns, .who p { grid-column: 2; }
@@ -278,11 +420,11 @@
 <body>
 
 <nav class="dots" id="dots"></nav>
-<div class="counter" id="counter">01 / 12</div>
+<div class="counter" id="counter">01 / 21</div>
 <div class="mark"><img src="logo.png" alt="Valentin"></div>
 <div class="editbadge">Editing · Esc to stop · ⌘S downloads the edited deck</div>
 
-<!-- ═══ 1 · COVER ═══════════════════════════════════════════════ -->
+<!-- ═══ 1 · COVER ═════════════════════════════════ -->
 <section class="cover" id="cover" data-title="Cover">
   <div class="wrap">
     <div class="crest"><img src="logo.png" alt="Valentin"></div>
@@ -297,15 +439,17 @@
   <div class="hint">scroll</div>
 </section>
 
-<!-- ═══ 2 · AGENDA ══════════════════════════════════════════════ -->
+<!-- ═══ 2 · AGENDA ════════════════════════════════ -->
 <section id="agenda" data-title="Agenda">
   <div class="wrap">
     <div class="kicker">Agenda</div>
     <h2>What we’ll cover.</h2>
     <div class="agenda">
       <div class="ag"><div class="n">01</div>
-        <div><b>What I built</b>
-          <p>A romantic concierge that listens and remembers — live, and on real AWS.</p></div></div>
+        <div><b>What I built — twice</b>
+          <p>A romantic concierge that listens and remembers, live on real AWS — then the same
+            product again on Bedrock AgentCore, so the two architectures can be compared on cost,
+            blast radius and how much of the agent loop I still had to own.</p></div></div>
       <div class="ag"><div class="n">02</div>
         <div><b>Who really built it</b>
           <p>Six AI agents, the tools that drove them, and a human who mostly said yes or no.</p></div></div>
@@ -316,7 +460,45 @@
   </div>
 </section>
 
-<!-- ═══ 3 · DEMO ════════════════════════════════════════════════ -->
+<!-- ═══ 3 · THE ARCHITECTURE CHANGED ══════════════ -->
+<section id="shift" data-title="The shift">
+  <div class="wrap wide">
+    <div class="act"><b>Part 1</b> · What I built</div>
+    <h2>The interesting part isn't the app. It's what happened to its architecture.</h2>
+    <p class="lede" style="max-width: 1060px">It started as a chat loop with a database — one Node
+      process doing the conversation, the extraction, the tools and the storage. It ended as two
+      architectures of the same product, running side by side so they can be measured against
+      each other.</p>
+    <div class="loopcards">
+      <div class="lp" style="--c: var(--claret)">
+        <span class="t">Where it started</span>
+        <h3>One process, four jobs</h3>
+        <p>Conversation, a second Bedrock call for extraction, an in-process tool registry and a
+          DynamoDB store — all inside a single always-on Fargate task. Everything in the agent
+          loop was <em>mine to write, host and keep alive</em>.</p>
+      </div>
+      <div class="lp" style="--c: var(--olive)">
+        <span class="t">What it became</span>
+        <h3>Four managed primitives</h3>
+        <p>Amazon Bedrock AgentCore: <em>Runtime</em> for a microVM per session, <em>Memory</em> for
+          extraction and recall, <em>Gateway</em> for tools over MCP, <em>Observability</em> for
+          traces. One CDK stack, and no server of mine left in the agent path.</p>
+      </div>
+      <div class="lp" style="--c: var(--master)">
+        <span class="t">Why it's built twice</span>
+        <h3>A measurement harness</h3>
+        <p>Both engines still run, on the same persona and the same model. That costs more than
+          either alone — and it's the only reason the next three slides are <em>evidence</em>
+          rather than opinion.</p>
+      </div>
+    </div>
+    <p class="note">The rest of Part 1 is that comparison: the two stacks service for service, what
+      makes the agent loop more than a chat box, the four faults that kept engine B from serving a
+      single turn, and then the two arguments that decide it — cost and blast radius.</p>
+  </div>
+</section>
+
+<!-- ═══ 4 · DEMO ══════════════════════════════════ -->
 <section class="demo" id="demo" data-title="Demo">
   <div class="wrap wide">
     <div class="act"><b>Part 1</b> · What I built</div>
@@ -341,7 +523,7 @@
   </div>
 </section>
 
-<!-- ═══ 4 · WHAT IT IS ══════════════════════════════════════════ -->
+<!-- ═══ 5 · WHAT IT IS ════════════════════════════ -->
 <section id="what" data-title="What it is">
   <div class="wrap wide">
     <div class="act"><b>Part 1</b> · What I built</div>
@@ -370,7 +552,7 @@
   </div>
 </section>
 
-<!-- ═══ 5 · REAL INFRASTRUCTURE ═════════════════════════════════ -->
+<!-- ═══ 6 · REAL INFRASTRUCTURE ═══════════════════ -->
 <section id="infra" data-title="Real infrastructure">
   <div class="wrap wide">
     <div class="act"><b>Part 1</b> · What I built</div>
@@ -405,7 +587,372 @@
   </div>
 </section>
 
-<!-- ═══ 6 · THE TEAM ════════════════════════════════════════════ -->
+<!-- ═══ 7 · TWO ENGINES ═══════════════════════════ -->
+<section id="engines" data-title="Two engines">
+  <div class="wrap wide">
+    <div class="act"><b>Part 1</b> · What I built</div>
+    <h2>Then I built it a second time.</h2>
+    <p class="lede">The same conversation runs on two engines. One is the pipeline I hand-wrote against
+      Bedrock; the other routes it through Amazon Bedrock AgentCore. Same persona, same model, same
+      reply call — so any difference between them belongs to the platform, not to two different agents.</p>
+    <div class="versus">
+      <div class="panel" style="--c: var(--claret)">
+        <span class="t">Engine A</span>
+        <h3>Glue code I wrote</h3>
+        <p class="sub">A Node process on Fargate. Every line below is something I had to build,
+          host and keep alive.</p>
+        <ul class="pairs">
+          <li><div><b>AWS Fargate</b><br><s>one always-on task</s></div></li>
+          <li><div><b>Amazon DynamoDB</b><br><s>profile + conversation store</s></div></li>
+          <li><div><b>A second Bedrock call</b><br><s>my own extraction pass, every turn</s></div></li>
+          <li><div><b>In-process tool calls</b><br><s>a registry inside the task</s></div></li>
+        </ul>
+      </div>
+      <div class="vs"><span>vs</span></div>
+      <div class="panel" style="--c: var(--olive)">
+        <span class="t">Engine B</span>
+        <h3>Bedrock AgentCore</h3>
+        <p class="sub">The same four jobs, as managed primitives. One CDK stack, no servers of
+          my own in the path.</p>
+        <ul class="pairs">
+          <li><div><b>AgentCore Runtime</b><br><s>microVM per session, billed per second</s></div></li>
+          <li><div><b>AgentCore Memory</b><br><s>replaces the store <em>and</em> the extractor</s></div></li>
+          <li><div><b>AgentCore Gateway</b><br><s>tools over MCP</s></div></li>
+          <li><div><b>AgentCore Observability</b><br><s>traces without instrumenting</s></div></li>
+        </ul>
+      </div>
+    </div>
+    <p class="note">Engine B is <code>agentcore/agent.py</code> behind <code>infra/lib/agentcore-stack.ts</code> —
+      an eighth CDK stack. The persona is not duplicated there: <code>system_prompt</code> arrives in
+      the payload from the same <code>prompts.ts</code> engine A uses, because a second copy of
+      Valentin's character would drift and the comparison would stop being a comparison.
+      It served its first working turn on <b>1 September</b>, after four faults that each hid the next.</p>
+  </div>
+</section>
+
+<!-- ═══ 8 · ARCHITECTURE GRAPH ════════════════════ -->
+<section id="topology" data-title="The topology">
+  <div class="wrap wide">
+    <div class="act"><b>Part 1</b> · What I built</div>
+    <h2>Both engines, one diagram.</h2>
+    <div class="split board">
+      <div class="stage tall">
+        <img src="deck-assets/diagram-two-engines.png"
+             alt="Two-lane architecture: browser through CloudFront and one ALB, splitting to engine A's Fargate service and engine B's AgentCore proxy, then to Bedrock, AgentCore Runtime, Memory, Gateway, Lambda, DynamoDB and CloudWatch">
+      </div>
+      <div>
+        <p class="lede">Every box carries the name of a resource that actually exists in
+          <code>us-east-1</code>. Read it across a row and you are comparing the two engines at the
+          same tier.</p>
+        <ul class="bullets">
+          <li><b>One front door.</b> One CloudFront distribution, one ALB, one listener. Three rules
+            on <code>/api/agentcore/*</code>, <code>/ws/agentcore</code> and an
+            <code>X-Valentin-Engine</code> header pick the lane — so the <em>same request</em> can be
+            served either way and measured.</li>
+          <li><b>Deliberately shared.</b> Bedrock, the guardrail, the Cognito pool and one DynamoDB
+            table are held fixed across both lanes. That is what makes a cost or latency delta
+            attributable to the orchestration layer instead of to a different model.</li>
+          <li><b>The proxy is not an accident.</b> AgentCore Runtime cannot be an ALB target — it is
+            a Bedrock API reached by <code>InvokeAgentRuntime</code>. So engine B keeps a thin
+            Fargate proxy in front, which is also why its blast radius isn't yet the full story.</li>
+          <li><b>Where the seam is.</b> <code>AgentOrchestratorInterface</code> is two methods wide.
+            Engine B is a second implementation behind it — not a fork of the app.</li>
+        </ul>
+        <p class="note">Rendered straight from <code>public/agentcore-compare.html</code> by
+          <code>scripts/render-arch-diagram.mts</code>, so the slide cannot drift from the page it
+          came from.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══ 9 · WHAT MAKES IT AGENTIC ═════════════════ -->
+<section id="agentic" data-title="Actually agentic">
+  <div class="wrap wide">
+    <div class="act"><b>Part 1</b> · What I built</div>
+    <h2>Not a chat box with a system prompt.</h2>
+    <p class="lede" style="max-width: 1060px">The fair criticism of most "AI agents" is that the
+      agentic part is a thin wrapper — one model call, one string back. Here is what the loop
+      actually does, and where AgentCore takes it over.</p>
+    <div class="stats">
+      <div class="stat"><div class="v">14</div><b>real tools, six integrations</b>
+        <p>Ontopo restaurants · Amadeus hotels and activities · Wolt gift delivery · Google
+          Calendar and Gmail · WhatsApp · Hebcal. Live APIs, not stubs.</p></div>
+      <div class="stat"><div class="v">5</div><b>model round-trips per turn</b>
+        <p><code>MAX_TOOL_ITERATIONS</code> — the model calls a tool, reads the result, and decides
+          what to do next, up to five times before it has to answer.</p></div>
+      <div class="stat"><div class="v">6</div><b>tools that propose, never act</b>
+        <p>Every <code>propose_*</code> tool returns a card she confirms. The agent drafts the
+          email and books nothing — a human is in the loop by construction.</p></div>
+      <div class="stat"><div class="v">8</div><b>tools that just look things up</b>
+        <p>Availability, Shabbat times, Hebrew dates, occasions. The agent has to plan around real
+          constraints, not invent them.</p></div>
+    </div>
+    <div class="flow">
+      <div class="step"><div class="num">1</div><b>Plan</b>
+        <p>Reads the partner profile, decides whether this turn needs a tool at all — about
+          <b>40%</b> do.</p></div>
+      <div class="step"><div class="num">2</div><b>Call</b>
+        <p>Engine B reaches tools through <b>AgentCore Gateway over MCP</b>, so the tool
+          contract is the platform's, not a function in my process.</p></div>
+      <div class="step"><div class="num">3</div><b>Remember</b>
+        <p><b>AgentCore Memory</b> holds the turn and the long-term records — the extraction
+          engine A pays a second Bedrock call for is inside the platform's rate.</p></div>
+      <div class="step"><div class="num">4</div><b>Explain</b>
+        <p><b>Observability</b> traces the whole turn. Engine A's equivalent is whatever
+          <code>console.log</code> I remembered to write.</p></div>
+    </div>
+    <p class="note">This is the part the platform genuinely changes. Tool use, memory and tracing
+      stop being code I maintain and become primitives with contracts — which is also why the
+      failure modes moved from my bugs to <em>its</em> configuration, as the next slide shows.</p>
+  </div>
+</section>
+
+<!-- ═══ 10 · THE TOOL SURFACE ═════════════════════ -->
+<section id="toolsurface" data-title="Tool surface">
+  <div class="wrap wide">
+    <div class="act"><b>Part 1</b> · What I built</div>
+    <h2>Fourteen tools against six live APIs.</h2>
+    <p class="lede" style="max-width: 1060px">This is the part that makes it an agent rather than a
+      chatbot: it can look the world up and it can offer to act on it. Six integrations, none of
+      them stubbed.</p>
+    <div class="kits">
+      <div class="kit" style="--c: #E4572E"><b>Ontopo</b>
+        <div class="what">Restaurant booking, Israel</div>
+        <ul>
+          <li>find_restaurants</li>
+          <li>check_availability</li>
+          <li class="acts">propose_reservation</li>
+        </ul>
+      </div>
+      <div class="kit" style="--c: var(--front)"><b>Amadeus</b>
+        <div class="what">Hotels and activities</div>
+        <ul>
+          <li>search_hotels</li>
+          <li>search_activities</li>
+          <li class="acts">propose_hotel_booking</li>
+        </ul>
+      </div>
+      <div class="kit" style="--c: var(--olive)"><b>Google</b>
+        <div class="what">Calendar and Gmail, via OAuth</div>
+        <ul>
+          <li>find_occasions</li>
+          <li class="acts">propose_calendar_event</li>
+          <li class="acts">propose_email</li>
+        </ul>
+      </div>
+      <div class="kit" style="--c: var(--design)"><b>Wolt</b>
+        <div class="what">Gift and flower delivery</div>
+        <ul>
+          <li>find_gift_delivery</li>
+          <li class="acts">propose_gift</li>
+        </ul>
+      </div>
+      <div class="kit" style="--c: var(--master)"><b>Hebcal</b>
+        <div class="what">Hebrew calendar and Shabbat</div>
+        <ul>
+          <li>check_shabbat</li>
+          <li>get_hebrew_occasions</li>
+        </ul>
+      </div>
+      <div class="kit" style="--c: #25D366"><b>WhatsApp</b>
+        <div class="what">Business API, template messages</div>
+        <ul>
+          <li class="acts">propose_whatsapp_nudge</li>
+        </ul>
+      </div>
+    </div>
+    <p class="note">Hollow dot = read-only lookup (eight of them). Filled dot = a
+      <code>propose_*</code> tool (six) — and those <em>propose</em>. Each one returns a card she has
+      to confirm; the agent drafts the email, picks the restaurant and reserves nothing. That is a
+      product decision, not a limitation: an agent with her calendar, her partner's address and her
+      WhatsApp should not be one hallucination away from sending something. Engine B reaches this
+      same surface through <b>AgentCore Gateway over MCP</b>; engine A calls it in-process.
+      Hebcal is why he knows not to suggest Friday night.</p>
+  </div>
+</section>
+
+<!-- ═══ 11 · ANATOMY OF A TURN ════════════════════ -->
+<section class="dark" id="turn" data-title="One turn">
+  <div class="wrap wide">
+    <div class="act"><b>Part 1</b> · What I built</div>
+    <h2>What actually happens when she sends one message.</h2>
+    <p class="lede" style="max-width: 1060px">Not one model call. A loop that can reason, act, read
+      the result and decide again — up to five times — before it says anything back.</p>
+    <div class="anatomy">
+      <div class="an"><div class="i">1</div><b>Guardrail, then plan</b>
+        <p>The message passes a Bedrock Guardrail (content filters, PII blocking), then goes to
+          Claude Sonnet 4.5 with the persona and all fourteen tool schemas attached.</p></div>
+      <div class="an"><div class="i">2</div><b>The model asks for tools</b>
+        <p>It can request <em>several at once</em> — "check Shabbat times <em>and</em> find
+          restaurants" — and they resolve concurrently, not one after another.</p></div>
+      <div class="an"><div class="i">3</div><b>Results go back in, and it decides again</b>
+        <p>Tool output is appended to the transcript and the model runs again. That is the agentic
+          part: it reads what came back and changes its plan. <code>MAX_TOOL_ITERATIONS = 5</code>.</p></div>
+      <div class="an"><div class="i">4</div><b>Actions become proposals</b>
+        <p>A <code>propose_*</code> tool returns a card, not a side effect. Nothing is booked, sent
+          or charged until she taps confirm.</p></div>
+      <div class="an"><div class="i">5</div><b>The cap degrades, it doesn't throw</b>
+        <p>If the chain hits five iterations mid-thought, the last thing the model actually said is
+          returned rather than an exception — a partly useful answer beats an apology.</p></div>
+      <div class="an owned"><div class="i">6</div><b>Then memory, off the critical path</b>
+        <p>Engine A spends a <em>second</em> Bedrock call extracting preferences after replying.
+          Engine B doesn't: <b>AgentCore Memory</b> does it inside its own rate — which is the single
+          biggest line in the cost comparison.</p></div>
+    </div>
+    <p class="note">The loop is <code>tool-loop.ts</code>; the registry is
+      <code>src/server/integrations/tool-registry.ts</code>. Step 6 is the whole reason the two
+      engines cost what they do — everything above it is identical on both, which is exactly why the
+      comparison is worth anything.</p>
+  </div>
+</section>
+
+
+<!-- ═══ 12 · THE FOUR FAULTS ══════════════════════ -->
+<section class="dark" id="faults" data-title="Four faults">
+  <div class="wrap wide">
+    <div class="act"><b>Part 1</b> · What I built</div>
+    <h2>Engine B was "healthy" for weeks. It had never served a turn.</h2>
+    <p class="lede" style="max-width: 1060px">The stack deployed green. CloudFormation said
+      <code>CREATE_COMPLETE</code>, the Runtime reported healthy, and the proxy logged
+      <code>invoke ok: true</code>. Not one request had ever reached the model. Four faults, each
+      hiding the next.</p>
+    <div class="faults">
+      <div class="fault"><b>1 · No CloudFront route</b>
+        <p>The <code>/ws/agentcore</code> behaviour existed in <code>cdn-stack.ts</code> for weeks
+          — the CDN stack had simply never been deployed. The wss handshake 403'd and the UI sat on
+          "Reconnecting…". No deploy scope shipped it, so I added one.</p></div>
+      <div class="fault"><b>2 · Half an IAM permission</b>
+        <p>The proxy sends a <code>Runtime-User-Id</code>, which makes AgentCore require
+          <em>both</em> invoke actions — and refuse to name either when one is missing.</p></div>
+      <div class="fault"><b>3 · A region that wasn't there</b>
+        <p>The model ARN was pinned to the stack's region, but <code>us.anthropic.*</code> is a
+          <em>cross-region inference profile</em>: Bedrock fulfils from any US region and authorises
+          against the fulfilling one. A us-east-1 stack failed citing us-east-2.</p></div>
+      <div class="fault"><b>4 · One illegal character</b>
+        <p>A demo visitor's id is <code>&lt;sub&gt;#&lt;visitorId&gt;</code>, and <code>#</code> is
+          outside AgentCore's allowed <code>actorId</code> pattern — so every single
+          <code>CreateEvent</code> was rejected.</p></div>
+    </div>
+    <p class="note">The lesson I'd actually hand over: <b>don't trust "healthy"</b>. Twice in one day
+      the control plane and the logs agreed everything was fine while the app was unusable — a
+      stack reported <code>UPDATE_COMPLETE</code> listing a DynamoDB table that no longer existed,
+      and the proxy logged success on turns that produced no reply, because the container returns
+      its failure as a <b>200</b> with an empty body and an <code>error</code> field. There is also
+      no log group until the container writes to it, so the earliest failures existed <em>only</em>
+      in that reply body. First working turn: <b>1 September</b>.</p>
+  </div>
+</section>
+
+<!-- ═══ 13 · COST ═════════════════════════════════ -->
+<section id="cost" data-title="Two bills">
+  <div class="wrap wide">
+    <div class="act"><b>Part 1</b> · What I built</div>
+    <h2>Two bills, split into what's fixed and what grows.</h2>
+    <p class="lede" style="max-width: 1060px">Every rate from a vendor pricing page, every quantity
+      counted out of this repo. The reply call to Bedrock is identical on both sides, so it's excluded
+      from both.</p>
+    <div class="versus">
+      <div class="panel" style="--c: var(--claret)">
+        <span class="t">Engine A · glue code</span>
+        <h3>$18.02 fixed, $1.386 per user</h3>
+        <ul class="ledger">
+          <li><div>AWS Fargate<s>0.5 vCPU · 730 h · never scales below 1</s></div><span class="amt">$18.02</span></li>
+          <li><div>2nd Bedrock extraction<s>104 turns × $0.01332</s></div><span class="amt">$1.385</span></li>
+          <li><div>Amazon DynamoDB<s>on-demand reads, writes, storage</s></div><span class="amt">$0.0006</span></li>
+          <li class="sum"><div>At one user, per month</div><span class="amt">$19.41</span></li>
+        </ul>
+      </div>
+      <div class="vs"><span>vs</span></div>
+      <div class="panel" style="--c: var(--olive)">
+        <span class="t">Engine B · AgentCore</span>
+        <h3>$0.0006 fixed, $0.103 per user</h3>
+        <ul class="ledger" style="--c: var(--olive)">
+          <li><div>AgentCore Gateway<s>3 tools indexed — the only fixed line</s></div><span class="amt">$0.0006</span></li>
+          <li><div>AgentCore Memory<s>1 event + 1 retrieval per turn, extraction included</s></div><span class="amt">$0.098</span></li>
+          <li><div>AgentCore Runtime<s>3 s × 104 turns, per-second billing</s></div><span class="amt">$0.0047</span></li>
+          <li class="sum"><div>At one user, per month</div><span class="amt">$0.10</span></li>
+        </ul>
+      </div>
+    </div>
+    <table class="scale">
+      <tr><th>Users</th><th>Engine A</th><th>Engine B</th><th>Ratio</th><th>Saved / month</th></tr>
+      <tr><td>1</td><td>$19.41</td><td>$0.10</td><td>187×</td><td class="save">$19</td></tr>
+      <tr><td>10,000</td><td>$13,877</td><td>$1,029</td><td>13.5×</td><td class="save">$12,848</td></tr>
+      <tr class="peak"><td>1,000,000</td><td>$1.39 M</td><td>$103 k</td><td>13.5×</td><td class="save">$1.28 M</td></tr>
+    </table>
+    <p class="note">The last two columns move in opposite directions: the <b>ratio</b> falls from 187× to
+      13.5× as Fargate's fixed $18 amortises, while the <b>money</b> grows without limit — about
+      <b>$15.4 M a year</b> at a million users. AgentCore loses on unit price (Runtime 2.20× dearer per
+      hour, Memory ~124× per turn) and wins on billing granularity. And if Memory meters retrievals per
+      <em>record</em> rather than per call, engine B becomes <b>3.8× worse</b> — confirm with AWS before
+      quoting any of this. <code>scripts/cost-model.mjs</code> reproduces every figure.</p>
+  </div>
+</section>
+
+<!-- ═══ 14 · BLAST RADIUS ═════════════════════════ -->
+<section class="dark" id="blast" data-title="Blast radius">
+  <div class="wrap wide">
+    <div class="act"><b>Part 1</b> · What I built</div>
+    <h2>One fault. Forty sessions.</h2>
+    <p class="lede" style="max-width: 1060px">Cost is not the strongest argument for AgentCore — this is.
+      Both sides are the same forty live sessions, one process-level fault injected into the same
+      session on each.</p>
+    <div class="radius">
+      <div class="panel" style="--c: var(--claret)">
+        <span class="t">Engine A</span>
+        <h3>One Node process</h3>
+        <p class="sub">Forty WebSockets in one <code>Set</code>, one heap, one event loop —
+          <code>attach-websocket.ts:31</code>.</p>
+        <div class="vessel shared">
+        <i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i>
+        <i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i>
+        <i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i>
+        <i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i>
+        <i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i>
+        </div>
+        <div class="tally bad"><span class="n">40</span>
+          <p>of 40 sessions lost<br>every user, and every partner profile in flight</p></div>
+      </div>
+      <div class="vs"><span>vs</span></div>
+      <div class="panel" style="--c: var(--olive)">
+        <span class="t">Engine B</span>
+        <h3>One microVM per session</h3>
+        <p class="sub">Forty sessions, forty isolated execution environments. The fault has
+          nowhere to travel.</p>
+        <div class="vessel isolated">
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        <i></i><i></i><i></i><i class="hit"></i><i></i><i></i><i></i><i></i>
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        </div>
+        <div class="tally good"><span class="n">1</span>
+          <p>of 40 sessions lost<br>the other 39 never notice</p></div>
+      </div>
+    </div>
+    <div class="faults">
+      <div class="fault"><b>Unhandled rejection</b>
+        <p>One turn throws without a handler; Node exits, taking all 40 sockets with it.</p></div>
+      <div class="fault"><b>Out of memory</b>
+        <p>One runaway conversation exhausts the 1 GiB task. The OOM killer doesn't ask whose
+          request it was.</p></div>
+      <div class="fault"><b>Event-loop block</b>
+        <p>One synchronous hot spot stalls the single loop — the other 39 see the app stop.</p></div>
+      <div class="fault"><b>Injection that pivots</b>
+        <p>Reaches a process-wide singleton — the Bedrock client, the tool registry — holding
+          everyone's credentials.</p></div>
+    </div>
+    <p class="note">Two limits, both real. Engine A <em>does</em> isolate per-user <b>state</b>
+      (<code>forUser</code>) — one user's logic bug can't read another's data; what they share is the
+      process. And engine B isn't fully isolated in <em>this</em> deployment either — it still answers
+      through <code>valentin-ac-proxy</code>, one shared Fargate task holding the sockets. The right panel
+      is what AgentCore Runtime gives you, not yet what this repo deploys.</p>
+  </div>
+</section>
+
+<!-- ═══ 15 · THE TEAM ═════════════════════════════ -->
 <section id="team" data-title="The team">
   <div class="wrap wide">
     <div class="act"><b>Part 2</b> · Who really built it</div>
@@ -480,7 +1027,7 @@
   </div>
 </section>
 
-<!-- ═══ 7 · THE WORKFLOW ════════════════════════════════════════ -->
+<!-- ═══ 16 · THE WORKFLOW ═════════════════════════ -->
 <section id="workflow" data-title="The workflow">
   <div class="wrap wide">
     <div class="act"><b>Part 2</b> · Who really built it</div>
@@ -519,7 +1066,7 @@
   </div>
 </section>
 
-<!-- ═══ 8 · THE TOOLS ═══════════════════════════════════════════ -->
+<!-- ═══ 17 · THE TOOLS ════════════════════════════ -->
 <section id="tools" data-title="The tools">
   <div class="wrap wide">
     <div class="act"><b>Part 2</b> · Who really built it</div>
@@ -553,7 +1100,7 @@
   </div>
 </section>
 
-<!-- ═══ 9 · THE WORK, VISUALIZED ════════════════════════════════ -->
+<!-- ═══ 18 · THE WORK, VISUALIZED ═════════════════ -->
 <section id="graph" data-title="The work">
   <div class="wrap wide">
     <div class="act"><b>Part 2</b> · Who really built it</div>
@@ -585,7 +1132,7 @@
   </div>
 </section>
 
-<!-- ═══ 10 · AGENTS ARGUING ══════════════════════════════════════ -->
+<!-- ═══ 19 · AGENTS ARGUING ═══════════════════════ -->
 <section id="thread" data-title="Agents arguing">
   <div class="wrap wide">
     <div class="act"><b>Part 2</b> · Who really built it</div>
@@ -617,7 +1164,7 @@
   </div>
 </section>
 
-<!-- ═══ 11 · WHAT I LEARNED ══════════════════════════════════════ -->
+<!-- ═══ 20 · WHAT I LEARNED ═══════════════════════ -->
 <section class="dark" id="learned" data-title="What I learned">
   <div class="wrap wide">
     <div class="act"><b>Part 3</b> · What I learned</div>
@@ -651,7 +1198,7 @@
   </div>
 </section>
 
-<!-- ═══ 12 · HONEST SCOPE + THANKS ═══════════════════════════════ -->
+<!-- ═══ 21 · HONEST SCOPE + THANKS ════════════════ -->
 <section class="dark" id="thanks" data-title="Honest scope · thanks">
   <div class="wrap wide">
     <div class="act"><b>Part 3</b> · What I learned</div>

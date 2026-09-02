@@ -8,6 +8,8 @@
  * birthday is still shown beside it, so nothing is hidden.
  */
 
+import { atLocalMidnight, parseStoredDate } from './stored-date';
+
 /** Where in the decade a given age sits. */
 export type AgeBand = 'early' | 'mid' | 'late';
 
@@ -65,13 +67,27 @@ export function getAgeBucket(birthday: Date, referenceDate: Date = new Date()): 
   return `${getAgeBand(age)}-${word}`;
 }
 
-/** `getAgeBucket` straight from a stored field value (an ISO or parseable date). */
+/**
+ * `getAgeBucket` straight from a stored field value.
+ *
+ * Requires a **year**, and this is the whole point of the function.
+ *
+ * It used to be `new Date(value)` behind an `isNaN` guard, which is no guard: V8
+ * defaults a missing year to 2001, so a stored `"March 14"` became 14 March 2001,
+ * became 25 years old, became "mid-twenties" — an age the user never mentioned,
+ * stated in the header as though Valentin had been told it. Inventing a fact about
+ * someone's partner is the worst thing this app can do, and the sister module
+ * `birthday-display.ts` already refused to do it for the date string; this is the
+ * same refusal for the age.
+ *
+ * No year, no age. The birthday itself is still shown beside it, so nothing the
+ * user actually said is hidden.
+ */
 export function getAgeBucketFromValue(
   value: string | null | undefined,
   referenceDate: Date = new Date(),
 ): string | null {
-  if (!value) return null;
-  const parsed = new Date(value);
-  if (isNaN(parsed.getTime())) return null;
-  return getAgeBucket(parsed, referenceDate);
+  const parts = parseStoredDate(value);
+  if (!parts || parts.year === null) return null;
+  return getAgeBucket(atLocalMidnight(parts, parts.year), referenceDate);
 }

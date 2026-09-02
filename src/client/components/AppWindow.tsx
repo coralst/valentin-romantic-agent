@@ -67,8 +67,9 @@ function getPageStyle(variant: AppWindowVariant): React.CSSProperties {
     // A floating window would eat 28px of a 375px viewport, so on mobile the
     // frame goes full-bleed and the inset collapses to nothing.
     padding: variant === 'mobile' ? 0 : insets.tight,
-    // Centres the window once it stops growing at `layout.windowMaxWidth`; below
-    // that the frame's `width: 100%` fills this box and the centring is a no-op.
+    // The frame has no maximum any more, so its `width: 100%` always fills this
+    // box and the centring is a no-op. Kept because it costs nothing and is what
+    // would re-centre the frame if a ceiling were ever reintroduced.
     display: 'flex',
     justifyContent: 'center',
   };
@@ -83,9 +84,22 @@ function getFrameStyle(
   return {
     height: '100%',
     width: '100%',
-    // See `layout.windowMaxWidth`: past this width extra screen buys nothing but
-    // empty cream, so the surplus goes to the linen margin instead.
-    maxWidth: isMobile ? undefined : layout.windowMaxWidth,
+    /*
+     * No ceiling: the frame fills whatever window it is given.
+     *
+     * It used to stop at `layout.windowMaxWidth` (1440) and centre, on the argument
+     * that past that point extra screen buys nothing but empty cream — the rail,
+     * the conversation list and the brief are all fixed pixel tracks, and the
+     * transcript's *text* is separately capped at `chatColumnMaxWidth`, so a wider
+     * frame widens the one column whose content will not widen with it.
+     *
+     * That argument still holds, and the surplus cream is now inside the transcript
+     * rather than beside the window. It is the asked-for behaviour: a 2000px window
+     * showing 280px of background either side reads as the app failing to load
+     * rather than as a deliberate margin, and looking loaded matters more here than
+     * the ideal measure.
+     */
+    maxWidth: undefined,
     boxSizing: 'border-box',
     backgroundColor: colors.porcelain,
     borderRadius: isMobile ? 0 : radii.window,

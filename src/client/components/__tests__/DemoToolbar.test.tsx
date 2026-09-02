@@ -76,6 +76,34 @@ function mockSuccessfulSeed(preferenceCount = 18) {
         json: () => Promise.resolve({ sessions: [] }),
       } as Response);
     }
+    /*
+     * The seeded conversation, as the server would return it.
+     *
+     * Needed since loading the demo profile re-reads the list instead of adopting a
+     * fabricated row: the seed creates one conversation per fixture conversation, so
+     * a locally-invented "Demo profile" entry hid the other four.
+     */
+    if (url === '/api/session/seeded-session') {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            session: {
+              id: 'seeded-session',
+              createdAt: new Date().toISOString(),
+              endedAt: null,
+              messageCount: 0,
+              preferenceCount: 0,
+              lastActivity: new Date().toISOString(),
+              partnerName: 'Samantha',
+              title: 'Planning the anniversary',
+            },
+            messages: [],
+            preferences: [],
+          }),
+      } as Response);
+    }
     if (url.endsWith('/preferences')) {
       return Promise.resolve({
         ok: true,
@@ -326,5 +354,51 @@ describe('DemoToolbar', () => {
         'Nothing to reset yet — no active session.',
       );
     });
+  });
+});
+
+/*
+ * `POST /session/seed` creates one conversation per fixture conversation — five for
+ * Samantha, each with its own server-set title and back-dated activity. The toolbar
+ * used to `adoptSession` a single fabricated "Demo profile" row and stop, so the
+ * sidebar showed one entry where the account had five, and the other four appeared
+ * only after a page reload.
+ */
+describe('DemoToolbar — the seeded conversations reach the sidebar', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('re-reads the conversation list after seeding', async () => {
+    const user = userEvent.setup();
+    const fetchMock = withActiveSession(mockSuccessfulSeed());
+    vi.stubGlobal('fetch', fetchMock);
+    renderToolbar();
+    await booted(fetchMock);
+
+    const listCallsBefore = fetchMock.mock.calls.filter((c) => String(c[0]) === '/api/sessions').length;
+
+    await user.click(screen.getByRole('button', { name: 'Load demo profile' }));
+
+    const listCallsAfter = fetchMock.mock.calls.filter((c) => String(c[0]) === '/api/sessions').length;
+    expect(listCallsAfter).toBeGreaterThan(listCallsBefore);
+  });
+
+  it('does not invent a "Demo profile" row of its own', async () => {
+    // The fabricated title was the tell: the server names these conversations, and
+    // a client-side label meant the sidebar disagreed with `GET /api/sessions`.
+    const user = userEvent.setup();
+    const fetchMock = withActiveSession(mockSuccessfulSeed());
+    vi.stubGlobal('fetch', fetchMock);
+    renderToolbar();
+    await booted(fetchMock);
+
+    await user.click(screen.getByRole('button', { name: 'Load demo profile' }));
+
+    expect(screen.queryByText('Demo profile')).not.toBeInTheDocument();
   });
 });

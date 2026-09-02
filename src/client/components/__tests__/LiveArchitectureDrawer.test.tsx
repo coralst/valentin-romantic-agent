@@ -880,3 +880,192 @@ describe('replaying a chosen action', () => {
     expect(screen.queryByTestId('architecture-serving-chip')).not.toBeInTheDocument();
   });
 });
+
+/*
+ * The drawer's height is the presenter's to set.
+ *
+ * A drag handle that only works by dragging is the same defect as a button wired to
+ * `() => undefined`: interactive to exactly one kind of user. So the keyboard route
+ * is asserted alongside the pointer one, and both against the same bounds.
+ */
+describe('LiveArchitectureDrawer — resizing', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    Object.defineProperty(window, 'innerHeight', {
+      value: 1400,
+      writable: true,
+      configurable: true,
+    });
+  });
+
+  afterEach(() => {
+    resetWsObservers();
+    localStorage.clear();
+  });
+
+  const handle = () => screen.getByTestId('architecture-drawer-resize');
+  const panelHeight = () =>
+    Number.parseFloat(screen.getByTestId('architecture-drawer').style.height);
+
+  it('offers the edge as a labelled separator, not a bare div', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    await openDrawer(user);
+    const separator = handle();
+
+    expect(separator).toHaveAttribute('role', 'separator');
+    expect(separator).toHaveAttribute('aria-orientation', 'horizontal');
+    expect(separator).toHaveAccessibleName('Resize the architecture drawer');
+  });
+
+  it('is reachable by keyboard', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    await openDrawer(user);
+    // `tabIndex` is what makes a separator focusable; without it the control exists
+    // for the mouse alone.
+    expect(handle()).toHaveAttribute('tabindex', '0');
+    handle().focus();
+    expect(handle()).toHaveFocus();
+  });
+
+  it('publishes its range, so the position is announceable', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    await openDrawer(user);
+    const separator = handle();
+
+    expect(separator).toHaveAttribute('aria-valuenow');
+    const now = Number(separator.getAttribute('aria-valuenow'));
+    const min = Number(separator.getAttribute('aria-valuemin'));
+    const max = Number(separator.getAttribute('aria-valuemax'));
+
+    expect(min).toBeLessThan(max);
+    expect(now).toBeGreaterThanOrEqual(min);
+    expect(now).toBeLessThanOrEqual(max);
+  });
+
+  it('grows the drawer on ArrowUp and shrinks it on ArrowDown', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    await openDrawer(user);
+
+    const before = panelHeight();
+
+    handle().focus();
+    await user.keyboard('{ArrowUp}');
+    const taller = panelHeight();
+    expect(taller).toBeGreaterThan(before);
+
+    await user.keyboard('{ArrowDown}');
+    expect(panelHeight()).toBeLessThan(taller);
+  });
+
+  it('moves further with Shift held', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    await openDrawer(user);
+
+    const start = panelHeight();
+    handle().focus();
+    await user.keyboard('{ArrowUp}');
+    const fine = panelHeight() - start;
+
+    await user.keyboard('{Shift>}{ArrowUp}{/Shift}');
+    const coarse = panelHeight() - fine - start;
+
+    expect(coarse).toBeGreaterThan(fine);
+  });
+
+  it('jumps to the extremes with Home and End', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    await openDrawer(user);
+
+    handle().focus();
+    await user.keyboard('{Home}');
+    const tallest = panelHeight();
+
+    await user.keyboard('{End}');
+    const shortest = panelHeight();
+
+    expect(tallest).toBeGreaterThan(shortest);
+    expect(Number(handle().getAttribute('aria-valuenow'))).toBe(
+      Number(handle().getAttribute('aria-valuemin')),
+    );
+  });
+
+  it('never shrinks past its floor, however many times ArrowDown is pressed', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    await openDrawer(user);
+
+    handle().focus();
+    for (let i = 0; i < 40; i += 1) await user.keyboard('{ArrowDown}');
+
+    const min = Number(handle().getAttribute('aria-valuemin'));
+    expect(Number(handle().getAttribute('aria-valuenow'))).toBe(min);
+    expect(panelHeight()).toBeGreaterThan(0);
+  });
+
+  it('never grows past its ceiling, however many times ArrowUp is pressed', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    await openDrawer(user);
+
+    handle().focus();
+    for (let i = 0; i < 60; i += 1) await user.keyboard('{Shift>}{ArrowUp}{/Shift}');
+
+    const max = Number(handle().getAttribute('aria-valuemax'));
+    expect(Number(handle().getAttribute('aria-valuenow'))).toBe(max);
+  });
+
+  it('goes back to the automatic height on Escape', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    await openDrawer(user);
+
+    const original = panelHeight();
+    handle().focus();
+    await user.keyboard('{ArrowUp}{ArrowUp}');
+    expect(panelHeight()).not.toBe(original);
+
+    await user.keyboard('{Escape}');
+    expect(panelHeight()).toBe(original);
+  });
+
+  it('goes back to the automatic height on double-click', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    await openDrawer(user);
+
+    const original = panelHeight();
+    handle().focus();
+    await user.keyboard('{ArrowUp}');
+    expect(panelHeight()).not.toBe(original);
+
+    await user.dblClick(handle());
+    expect(panelHeight()).toBe(original);
+  });
+
+  it('remembers the height across a remount', async () => {
+    const user = userEvent.setup();
+    const first = renderDrawer();
+    await openDrawer(user);
+    handle().focus();
+    await user.keyboard('{Shift>}{ArrowUp}{/Shift}');
+    const chosen = panelHeight();
+    first.unmount();
+
+    renderDrawer();
+    await openDrawer(user);
+    expect(panelHeight()).toBe(chosen);
+  });
+
+  it('offers no resize handle while the drawer is shut', () => {
+    // The panel is unmounted when closed, so there is nothing to resize — and no
+    // stray focusable control sitting in the tab order behind a hidden drawer.
+    renderDrawer();
+    expect(screen.queryByTestId('architecture-drawer-resize')).not.toBeInTheDocument();
+  });
+});

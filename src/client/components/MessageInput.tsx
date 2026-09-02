@@ -33,7 +33,9 @@ const inputStyle: React.CSSProperties = {
   flex: 1,
   minWidth: 0,
   border: 'none',
-  outline: 'none',
+  // No `outline: 'none'`: an inline declaration beats the stylesheet, so it was
+  // deleting the composer's only focus indicator with nothing put back. The global
+  // `:focus-visible` ring now applies, and only for keyboard focus.
   background: 'transparent',
   resize: 'none',
   fontFamily: typography.bodyFontFamily,

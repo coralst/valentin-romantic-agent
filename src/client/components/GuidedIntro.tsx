@@ -92,6 +92,19 @@ const busyButtonStyle: React.CSSProperties = {
   cursor: 'default',
 };
 
+/** Visually hidden, still announced. The app's existing off-screen idiom. */
+const srOnlyStyle: React.CSSProperties = {
+  position: 'absolute',
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: 'hidden',
+  clip: 'rect(0, 0, 0, 0)',
+  whiteSpace: 'nowrap',
+  border: 0,
+};
+
 const quietButtonStyle: React.CSSProperties = {
   flexShrink: 0,
   padding: 0,
@@ -128,6 +141,9 @@ export function GuidedIntro() {
 
   const [payoff, setPayoff] = useState<PayoffState>('idle');
 
+  /** No session yet means the socket has not answered, so `start` has nowhere to send. */
+  const isWaitingForSession = !chatState.sessionId;
+
   const intro = useGuidedIntro({
     sessionId: chatState.sessionId,
     sendMessage,
@@ -163,9 +179,19 @@ export function GuidedIntro() {
           lastActivity: new Date().toISOString(),
           messageCount: chatState.messages.length,
         };
-        // Adopt before switching: `SessionSyncer` reads `activeSession.messages`
-        // at the instant the id changes, so a session focused before it has been
-        // hydrated renders blank until the next switch.
+        /*
+         * Adopt before switching: `SessionSyncer` reads `activeSession.messages`
+         * at the instant the id changes, so a session focused before it has been
+         * hydrated renders blank until the next switch.
+         *
+         * Deliberately still a locally-built row, unlike `DemoToolbar`, which now
+         * calls `refreshSessions` so the seed's other conversations reach the
+         * sidebar. Here the fabricated row is what carries `chatState.messages`
+         * across — the three answers the room just watched land — and re-reading the
+         * list would replace them with the fixture's own history. The cost is that
+         * the payoff seed's sibling conversations appear only after a reload, which
+         * is the lesser of the two.
+         */
         sessions.adoptSession(carried);
         sessions.switchSession(sessionId);
       } else {
@@ -263,15 +289,35 @@ export function GuidedIntro() {
           Watch each answer become something he knows about her, as it happens.
         </em>
       </div>
+      {/*
+        Dressed as disabled while it *is* disabled.
+        
+        It used to carry the full claret pill — shadow, pointer cursor and all — for
+        the whole window between first paint and the socket handing back a session id,
+        which is exactly when this card is on screen. So the first thing a visitor
+        clicked did nothing, with no dimming and no explanation. The file already had
+        `busyButtonStyle` for precisely this and used it two branches up for the payoff
+        button; this one never got it.
+        
+        `title` rather than a visible line of copy: the wait is normally a few hundred
+        milliseconds, and a caption that flashes past is worse than none.
+      */}
       <button
         type="button"
-        style={buttonStyle}
+        style={isWaitingForSession ? busyButtonStyle : buttonStyle}
         onClick={intro.start}
-        disabled={!chatState.sessionId}
+        disabled={isWaitingForSession}
+        aria-describedby={isWaitingForSession ? 'guided-intro-wait' : undefined}
+        title={isWaitingForSession ? 'Connecting…' : undefined}
         data-testid="guided-intro-start"
       >
         Show me  →
       </button>
+      {isWaitingForSession && (
+        <span id="guided-intro-wait" style={srOnlyStyle}>
+          Connecting — this will be ready in a moment.
+        </span>
+      )}
     </div>
   );
 }

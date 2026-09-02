@@ -9,7 +9,8 @@
  */
 import { describe, expect, it, beforeAll } from 'vitest';
 import * as cdk from 'aws-cdk-lib';
-import { Template } from 'aws-cdk-lib/assertions';
+import { Match, Template } from 'aws-cdk-lib/assertions';
+import { applySpringCleanExemption } from '../lib/springclean-exemption';
 import { getConfig } from '../config/environments';
 import { NetworkStack } from '../lib/network-stack';
 import { DataStack } from '../lib/data-stack';
@@ -165,6 +166,127 @@ describe('durable storage is switched on', () => {
   // spellings, so a typo here degrades to memory without erroring.
   it('uses a backend the server actually recognises', () => {
     expect(['dynamodb', 'memory']).toContain(containerEnv().STORAGE_BACKEND);
+  });
+});
+
+describe('engine B can reach the model it is configured to use', () => {
+  // BEDROCK_MODEL_ID is `us.anthropic.claude-sonnet-4-5-...`. The `us.` prefix
+  // makes it a cross-region inference profile, so Bedrock fulfils the call from
+  // whichever US region has capacity and authorizes against THAT region's
+  // foundation-model ARN. Pinned to the stack's own region, every engine-B turn
+  // died with "not authorized ... on resource: arn:aws:bedrock:us-east-2::
+  // foundation-model/..." from a stack deployed to us-east-1 — and because
+  // agent.py returns its failure as a 200 body, it surfaced only as the UI's
+  // apology.
+  //
+  // Asserted on both roles: the Runtime invokes per turn, and Memory invokes on
+  // its own schedule to extract preferences. The Memory one fails silently —
+  // engine B just never learns anything.
+  // The policies attach by `Ref` to the role's logical id, not by role name, so
+  // match on that rather than on `valentin-agentcore-*`.
+  it.each([
+    ['the Runtime role', 'RuntimeRole'],
+    ['the Memory extraction role', 'MemoryRole'],
+  ])('does not pin the foundation model to one region for %s', (_label, roleLogicalId) => {
+    const policies = agentCoreTemplate.findResources('AWS::IAM::Policy');
+
+    const invokeStatements = Object.values(policies)
+      .filter((policy) => {
+        const props = policy.Properties as { Roles?: unknown; PolicyDocument?: unknown };
+        return (
+          JSON.stringify(props?.Roles ?? '').includes(roleLogicalId) &&
+          JSON.stringify(props?.PolicyDocument ?? '').includes(
+            'bedrock:InvokeModelWithResponseStream',
+          )
+        );
+      })
+      .flatMap((policy) => {
+        const doc = (policy.Properties as { PolicyDocument?: { Statement?: unknown[] } })
+          .PolicyDocument;
+        return (doc?.Statement ?? []).filter((statement) =>
+          JSON.stringify((statement as { Action?: unknown }).Action ?? '').includes(
+            'bedrock:InvokeModelWithResponseStream',
+          ),
+        );
+      });
+
+    expect(invokeStatements.length).toBeGreaterThan(0);
+    expect(JSON.stringify(invokeStatements)).toContain('arn:aws:bedrock:*::foundation-model/*');
+  });
+});
+
+describe('engine B can actually invoke its Runtime', () => {
+  // The proxy sends X-Amzn-Bedrock-AgentCore-Runtime-User-Id on every invoke, to
+  // keep one demo visitor's Memory partition off another's. That header makes
+  // AgentCore authorize against InvokeAgentRuntimeForUser *as well as*
+  // InvokeAgentRuntime, and it refuses the call naming both when either is
+  // missing. With only the first granted, every engine-B turn returned
+  // AccessDenied and the UI showed its "having a little trouble" fallback — so
+  // engine B read as broken rather than unauthorized.
+  it('grants both invoke actions, not just InvokeAgentRuntime', () => {
+    computeTemplate.hasResourceProperties('AWS::IAM::Policy', {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: Match.arrayWith([
+              'bedrock-agentcore:InvokeAgentRuntime',
+              'bedrock-agentcore:InvokeAgentRuntimeForUser',
+            ]),
+          }),
+        ]),
+      },
+    });
+  });
+});
+
+describe('the account janitor cannot take the table again', () => {
+  // On 2026-09-01 SpringClean — the Isengard account janitor, not anything AWS
+  // documents — deleted ValentinTable-dev. Valentin-Data-dev still reported
+  // UPDATE_COMPLETE and still listed the table among its resources; the table
+  // was simply gone. Every POST /api/demo/login then returned 500 ("Requested
+  // resource not found") and the deployed app could not be signed in to at all.
+  //
+  // Two independent guards, tested separately because either one alone leaves a
+  // real hole: the tags stop SpringClean from selecting the table, and deletion
+  // protection refuses DeleteTable at the API if the tags are ever lost.
+  it('carries deletion protection even in dev', () => {
+    // Deliberately not config.deletionProtection — that flag is false in dev
+    // and is shared with the ALB, so reading it here is what left the table
+    // unprotected. Dev is the only deployed environment and holds real data.
+    dataTemplate.hasResourceProperties('AWS::DynamoDB::Table', {
+      DeletionProtectionEnabled: true,
+    });
+  });
+
+  it('carries the exemption tags SpringClean honours', () => {
+    // Applied at app scope in bin/app.ts, so this asserts the helper's output
+    // on a stack rather than the entry point's wiring.
+    const app = new cdk.App();
+    const stack = new DataStack(app, 'TaggedData', {
+      config,
+      env: { account: '111111111111', region: config.region },
+    });
+    applySpringCleanExemption(app);
+
+    Template.fromStack(stack).hasResourceProperties('AWS::DynamoDB::Table', {
+      Tags: Match.arrayWith([
+        { Key: 'auto-delete', Value: 'no' },
+        { Key: 'springclean', Value: 'exempt' },
+      ]),
+    });
+  });
+
+  // A resource added to a later stack must inherit the exemption rather than
+  // becoming a seven-day fuse nobody remembers to tag.
+  it('exempts every stack, not just the data stack', () => {
+    const app = new cdk.App();
+    const stackEnv = { account: '111111111111', region: config.region };
+    const net = new NetworkStack(app, 'TaggedNet', { config, env: stackEnv });
+    applySpringCleanExemption(app);
+
+    Template.fromStack(net).hasResourceProperties('AWS::EC2::VPC', {
+      Tags: Match.arrayWith([{ Key: 'auto-delete', Value: 'no' }]),
+    });
   });
 });
 

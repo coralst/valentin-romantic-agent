@@ -80,13 +80,15 @@ const emptyTranscriptCopyStyle: React.CSSProperties = {
   color: 'rgba(42, 34, 38, 0.55)',
 };
 
+/** Within a bubble's height of the foot counts as "following along". */
+const FOLLOW_THRESHOLD_PX = 120;
+
 export function MessageHistory({
   messages,
   proposals = [],
   onConfirmProposal,
   onDismissProposal,
 }: MessageHistoryProps) {
-  const bottomRef = useRef<HTMLDivElement>(null);
   const { state: preferencesState } = usePreferencesContext();
 
   /**
@@ -142,10 +144,66 @@ export function MessageHistory({
     });
   }, [visiblePreferences, preferencesState.discovered]);
 
-  // A proposal arriving scrolls too. It is the thing the conversation was for,
-  // and a Confirm button below the fold is a Confirm button nobody presses.
+  /*
+   * Stay at the foot of the transcript while the newest reply is still growing.
+   *
+   * This used to be a single `bottomRef.current?.scrollIntoView()` keyed on
+   * `[messages.length, proposals.length]`, which fired once — before the message
+   * had its final height. Valentin's replies are typewriter-revealed a character at
+   * a time (`MessageBubble` → `useTypewriter`, 18ms/char), and `TypingIndicator` is
+   * a flex sibling that mounts and unmounts between the log and the composer. Both
+   * resize the transcript *after* that one scroll, so a long reply ended up cut off
+   * mid-sentence with the composer over it and empty space below.
+   *
+   * A `ResizeObserver` on the content box follows the growth instead. Two
+   * deliberate choices:
+   *
+   * - `scrollTop = scrollHeight` on the container, not `scrollIntoView`. The latter
+   *   walks *every* scrollable ancestor, which already sheared the window grid once
+   *   (see the note in `AppLayout`) and left `overflow: hidden` on `panelHostStyle`
+   *   as the band-aid. Scrolling the one element we own cannot do that.
+   * - Only when the view is already near the bottom. Someone reading back through
+   *   the conversation must not be yanked forward by a reply still typing itself.
+   */
+  const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const container = containerRef.current;
+    const content = contentRef.current;
+    if (!container || !content) return;
+
+    const stickToBottom = () => {
+      const distanceFromBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight;
+      if (distanceFromBottom <= FOLLOW_THRESHOLD_PX) {
+        container.scrollTop = container.scrollHeight;
+      }
+    };
+
+    // `ResizeObserver` is not implemented in every test environment, and a
+    // transcript that does not auto-scroll is far better than one that throws.
+    if (typeof ResizeObserver === 'undefined') {
+      stickToBottom();
+      return;
+    }
+
+    const observer = new ResizeObserver(stickToBottom);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
+
+  /*
+   * A new message or proposal jumps to the foot unconditionally.
+   *
+   * Distinct from the observer above, which only *follows* growth: sending a message
+   * should bring you back down even if you had scrolled up to re-read something. A
+   * proposal counts for the same reason it always did — a Confirm button below the
+   * fold is a Confirm button nobody presses.
+   */
+  useEffect(() => {
+    const container = containerRef.current;
+    if (container) container.scrollTop = container.scrollHeight;
   }, [messages.length, proposals.length]);
 
   // `proposals` counts: a session whose only content is a card awaiting a yes is
@@ -153,8 +211,8 @@ export function MessageHistory({
   const isEmpty = messages.length === 0 && proposals.length === 0;
 
   return (
-    <div role="log" style={containerStyle} aria-label="Message history">
-      <div style={isEmpty ? emptyMeasureStyle : innerStyle}>
+    <div role="log" ref={containerRef} style={containerStyle} aria-label="Message history">
+      <div ref={contentRef} style={isEmpty ? emptyMeasureStyle : innerStyle}>
         {isEmpty && (
           <div style={emptyTranscriptStyle} data-testid="transcript-empty">
             <p style={emptyTranscriptCopyStyle}>
@@ -194,7 +252,6 @@ export function MessageHistory({
             onDismiss={(id) => onDismissProposal?.(id)}
           />
         ))}
-        <div ref={bottomRef} />
       </div>
     </div>
   );

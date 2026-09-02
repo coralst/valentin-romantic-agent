@@ -1,5 +1,6 @@
 import type { Occasion } from './occasion-derivation';
-import { getDaysUntilOccasion } from './occasion-derivation';
+import { getDaysUntilOccasion, getNextOccurrenceDate } from './occasion-derivation';
+import { addDays } from './calendar-days';
 
 /**
  * How far ahead each kind of occasion has to be arranged.
@@ -40,19 +41,19 @@ export function getLeadTime(fieldId: string): LeadTime {
   return OCCASION_LEAD_TIMES[fieldId] ?? DEFAULT_LEAD_TIME;
 }
 
-/** Add whole days to a date without mutating it, at local midnight. */
-function addDays(date: Date, days: number): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
-}
-
 /**
  * The date the occasion next falls on.
  *
- * Derived from `getDaysUntilOccasion` rather than re-implemented, so the annual
- * rollover and the 29 February edge case have exactly one home.
+ * Delegates to `getNextOccurrenceDate`, so the annual rollover and the 29 February
+ * edge case still have exactly one home — but the *date* is now the thing that home
+ * returns. This used to be `addDays(referenceDate, getDaysUntilOccasion(...))`,
+ * which reconstructed the date from the count. That made the two inseparable in the
+ * wrong direction: a count that was one day out did not merely read as the wrong
+ * number, it re-rendered as the wrong date *and* the wrong weekday. A Sunday
+ * birthday was announced as "Monday 15 March".
  */
 export function getNextOccurrence(occasion: Occasion, referenceDate: Date = new Date()): Date {
-  return addDays(referenceDate, getDaysUntilOccasion(occasion, referenceDate));
+  return getNextOccurrenceDate(occasion, referenceDate);
 }
 
 /** The act-by deadline for one occasion, ready to render. */
@@ -79,7 +80,10 @@ export function getActByPlan(occasion: Occasion, referenceDate: Date = new Date(
   const leadTime = getLeadTime(occasion.fieldId);
   const daysUntilOccasion = getDaysUntilOccasion(occasion, referenceDate);
   const daysUntil = daysUntilOccasion - leadTime.days;
-  const date = addDays(referenceDate, daysUntil);
+  // Counted back from the occasion itself, not forward from today: the deadline is
+  // "a fortnight before her birthday", and deriving it from a day count would
+  // inherit any error in that count — which is how "Order by 1 Mar" drifted.
+  const date = addDays(getNextOccurrenceDate(occasion, referenceDate), -leadTime.days);
   const isOverdue = daysUntil <= 0;
 
   return {

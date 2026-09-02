@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { IntegrationsProvider } from '../../context/integrations-context';
-import { IntegrationsPanel } from '../IntegrationsPanel';
+import { IntegrationsPanel, nodeLayout, connectionLabel } from '../IntegrationsPanel';
 import { INTEGRATION_CATALOGUE } from '../../utils/integration-catalogue';
 import {
   INTEGRATION_IDS,
@@ -222,13 +222,19 @@ describe('IntegrationsPanel', () => {
       const user = userEvent.setup();
       await renderPanel();
 
-      await user.click(screen.getByTestId('integration-node-flowers'));
-      // The catalogue's default for flowers, echoed next to the slider.
-      expect(screen.getByTestId('integration-cap-slider')).toHaveValue('80');
-      expect(screen.getByTestId('integration-cap-value')).toHaveTextContent('$80');
+      /*
+       * `travel`, not `flowers`. Flowers used to stand here, back when the catalogue
+       * claimed Valentin could "place an order" for $80 — he never could, because
+       * the Wolt handoff ends at the shop's own page. Travel is the real example: an
+       * Amadeus hold is money moving.
+       */
+      await user.click(screen.getByTestId('integration-node-travel'));
+      // The catalogue's default for travel, echoed next to the slider.
+      expect(screen.getByTestId('integration-cap-slider')).toHaveValue('400');
+      expect(screen.getByTestId('integration-cap-value')).toHaveTextContent('$400');
 
       await user.click(screen.getByTestId('integration-confirm-button'));
-      expect(screen.getByTestId('integration-node-flowers')).toHaveTextContent('up to $80');
+      expect(screen.getByTestId('integration-node-travel')).toHaveTextContent('up to $400');
     });
 
     it('offers no cap on a service that cannot spend', async () => {
@@ -355,13 +361,19 @@ describe('IntegrationsPanel', () => {
     it('says an unbuilt capability is not built yet, not merely unconfigured', async () => {
       await renderPanel();
       /*
-       * The distinction the visitor cannot see by looking: flowers is a drawing,
+       * The distinction the visitor cannot see by looking: music is a drawing,
        * whereas travel is real code waiting on an Amadeus key. Both are dark, and
        * conflating them either overpromises or slanders working code.
+       *
+       * `music` rather than `flowers`, which this used to assert: flowers is Wolt
+       * and has been real since the browser tier landed, so using it here was the
+       * test agreeing with the bug — it badged working code "not built yet". Music
+       * has no provider anywhere in src/server/integrations, so it is the honest
+       * example of a row that contacts nobody.
        */
-      const flowers = await screen.findByTestId('integration-readiness-flowers');
-      expect(flowers).toHaveAttribute('data-readiness', 'aspirational');
-      expect(flowers).toHaveTextContent('not built yet');
+      const music = await screen.findByTestId('integration-readiness-music');
+      expect(music).toHaveAttribute('data-readiness', 'aspirational');
+      expect(music).toHaveTextContent('not built yet');
 
       const travel = screen.getByTestId('integration-readiness-travel');
       expect(travel).toHaveAttribute('data-readiness', 'unconfigured');
@@ -390,7 +402,7 @@ describe('IntegrationsPanel', () => {
 
       // Deliberately no badge rather than a guess in either direction. The
       // aspirational rows still show theirs — those need no server to be true.
-      await screen.findByTestId('integration-readiness-flowers');
+      await screen.findByTestId('integration-readiness-music');
       expect(screen.queryByTestId('integration-readiness-dining')).not.toBeInTheDocument();
       expect(screen.queryByTestId('integration-readiness-messages')).not.toBeInTheDocument();
     });
@@ -404,5 +416,98 @@ describe('IntegrationsPanel', () => {
 
   it('keeps the storage key stable, so grants are not silently orphaned', () => {
     expect(INTEGRATIONS_STORAGE_KEY).toBe('valentin_integrations_v1');
+  });
+});
+
+/*
+ * The fan used to stop scaling and leave the right 40% of a wide panel empty.
+ *
+ * `hubX` is proportional to the canvas width but the card column was a flat
+ * `hubX + 300`, so past roughly 1100px the `Math.min` clamp stopped binding and the
+ * cards simply stopped moving outward: on a 1440px window everything ended at
+ * x≈862 with ~578px of nothing beside it.
+ */
+describe('IntegrationsPanel — the fan uses the width it is given', () => {
+  const COUNT = 9;
+  /** Right edge of the widest card, which is the one that bulges furthest out. */
+  const rightmostEdge = (width: number, height = 560) => {
+    const centres = Array.from({ length: COUNT }, (_, i) => nodeLayout(i, COUNT, width, height).x);
+    return Math.max(...centres) + NODE_WIDTH_FOR_TEST / 2;
+  };
+  const NODE_WIDTH_FOR_TEST = 190;
+
+  it('reaches further across a wider canvas', () => {
+    expect(rightmostEdge(1336)).toBeGreaterThan(rightmostEdge(900));
+  });
+
+  it('leaves no more than a sensible margin on the widest canvas the shell allows', () => {
+    // `layout.windowMaxWidth` is 1440, less the 28px linen margin and the 76px rail.
+    // The old geometry left ~43% of this empty; a quarter is a composition, not a gap.
+    const width = 1336;
+    const slack = width - rightmostEdge(width);
+    expect(slack).toBeLessThan(width * 0.25);
+  });
+
+  it('keeps the cards inside the canvas at every width', () => {
+    for (const width of [600, 860, 1024, 1336, 1900]) {
+      expect(rightmostEdge(width)).toBeLessThanOrEqual(width);
+    }
+  });
+
+  it('keeps the hub clear of the cards on a narrow canvas', () => {
+    // The clamp protecting a narrow window must not fold the column onto the hub.
+    const { hubX, x } = nodeLayout(0, COUNT, 600, 560);
+    expect(x - NODE_WIDTH_FOR_TEST / 2).toBeGreaterThan(hubX);
+  });
+});
+
+/*
+ * A grant is not a connection.
+ *
+ * Reported from the running app: "Restaurant booking — Connected" and "Calendar —
+ * Connected" with a rail badge of 2, for a browser whose grants were left in
+ * `localStorage` by an earlier session. The Calendar row read "Connected" on one line
+ * and "needs credentials" on the next, which cannot both be true.
+ */
+describe('connectionLabel — the two facts kept apart', () => {
+  it('says Connected only when the deployment can reach it', () => {
+    expect(connectionLabel(true, 'ready')).toBe('Connected');
+  });
+
+  it('says Allowed for a grant the deployment cannot honour', () => {
+    expect(connectionLabel(true, 'unconfigured')).toBe('Allowed');
+    expect(connectionLabel(true, 'aspirational')).toBe('Allowed');
+    expect(connectionLabel(true, 'partial')).toBe('Allowed');
+  });
+
+  it('never claims a connection while readiness is still unknown', () => {
+    // Guessing "Connected" here is the overclaim; guessing the opposite would call a
+    // working service broken.
+    expect(connectionLabel(true, 'unknown')).toBe('Allowed');
+  });
+
+  it('reads the spend cap back whatever the reach', () => {
+    expect(connectionLabel(true, 'ready', 80)).toBe('Connected · up to $80');
+    expect(connectionLabel(true, 'aspirational', 80)).toBe('Allowed · up to $80');
+  });
+
+  it('ignores an absent or zero cap rather than printing "$0"', () => {
+    expect(connectionLabel(true, 'ready', null)).toBe('Connected');
+    expect(connectionLabel(true, 'ready', undefined)).toBe('Connected');
+    expect(connectionLabel(true, 'ready', 0)).toBe('Connected');
+  });
+
+  it('says nothing about a grant that was never given', () => {
+    for (const reach of ['ready', 'partial', 'unconfigured', 'aspirational', 'unknown'] as const) {
+      expect(connectionLabel(false, reach)).toBe('Not connected');
+    }
+  });
+
+  it('never repeats what the readiness badge already says', () => {
+    // An earlier version produced "Allowed · not built yet" directly above a badge
+    // reading "not built yet".
+    for (const reach of ['unconfigured', 'aspirational', 'unknown'] as const) {
+      expect(connectionLabel(true, reach)).not.toMatch(/credential|built|checking/i);
+    }
   });
 });

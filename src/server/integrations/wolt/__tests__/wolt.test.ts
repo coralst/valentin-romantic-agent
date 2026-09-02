@@ -137,9 +137,23 @@ describe('parseWoltPage', () => {
     expect(florist?.rating).toBe(6.6);
   });
 
+  /*
+   * This test used to assert `https://wolt.com/en/isr/pirchey-hakerem`, which 404s
+   * for every venue on the site — so the suite was agreeing with the bug, and a
+   * confirmed gift proposal sent the human to Wolt's 404 page while Valentin
+   * announced he had opened the shop for them. `/venue/<slug>` is the real path,
+   * checked against three live florists; see `woltVenueUrl`.
+   */
   it('builds the public page URL a human finishes an order on', () => {
     const florist = parseWoltPage(PAGE).find((v) => v.slug === 'pirchey-hakerem');
-    expect(florist?.url).toBe('https://wolt.com/en/isr/pirchey-hakerem');
+    expect(florist?.url).toBe('https://wolt.com/en/isr/venue/pirchey-hakerem');
+  });
+
+  it('puts the venue under /venue/, because the bare-slug path is a 404', () => {
+    for (const venue of parseWoltPage(PAGE)) {
+      expect(venue.url).toContain('/isr/venue/');
+      expect(venue.url.endsWith(`/venue/${venue.slug}`)).toBe(true);
+    }
   });
 
   it('treats a missing `online` as closed rather than open', () => {
@@ -286,7 +300,7 @@ describe('propose_gift', () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(result.proposal?.url).toBe('https://wolt.com/en/isr/pirchey-hakerem');
+    expect(result.proposal?.url).toBe('https://wolt.com/en/isr/venue/pirchey-hakerem');
     expect(result.proposal?.title).toContain('your anniversary');
     // The card has to say who takes the money. Valentin never touches a card
     // number, and the sentence the user reads is what makes that legible.
@@ -318,7 +332,7 @@ describe('propose_gift', () => {
 
     expect(confirmed.ok).toBe(true);
     expect((confirmed.data as { url: string }).url).toBe(
-      'https://wolt.com/en/isr/pirchey-hakerem',
+      'https://wolt.com/en/isr/venue/pirchey-hakerem',
     );
     // The load-bearing assertion: confirming makes no request to anyone. Wolt's
     // basket is behind a login and a card, so the last step belongs to the human

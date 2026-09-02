@@ -111,3 +111,53 @@ describe('dueLabel', () => {
     expect(dueLabel('not a date', NOW)).toBe('No date');
   });
 });
+
+/*
+ * A finished task has no deadline left to miss.
+ *
+ * `done` used to short-circuit the pill's *style* but not its text, so two of the
+ * demo profile's ticked tasks shipped struck through and labelled "Overdue" — and
+ * because the row is a `<button aria-pressed>`, that word was part of its
+ * accessible name too.
+ */
+describe('a ticked task is not overdue', () => {
+  const NOW = new Date(2026, 8, 15); // well past the due dates below
+
+  it('says Done instead of Overdue', () => {
+    render(
+      <WhatToDoNext
+        tasks={[task({ id: 'settled', title: 'Settle which anniversary she counts', due: '2026-08-01', done: true })]}
+        onToggle={vi.fn()}
+        now={NOW}
+      />,
+    );
+
+    const row = screen.getByTestId('task-row-settled');
+    expect(row.textContent).toContain('Done');
+    expect(row.textContent).not.toContain('Overdue');
+  });
+
+  it('keeps saying Overdue for one that is genuinely open and late', () => {
+    render(
+      <WhatToDoNext
+        tasks={[task({ id: 'late', due: '2026-08-01', done: false })]}
+        onToggle={vi.fn()}
+        now={NOW}
+      />,
+    );
+
+    expect(screen.getByTestId('task-row-late').textContent).toContain('Overdue');
+  });
+
+  it('does not put the word Overdue in a done row’s accessible name', () => {
+    render(
+      <WhatToDoNext
+        tasks={[task({ id: 'settled', due: '2026-08-01', done: true })]}
+        onToggle={vi.fn()}
+        now={NOW}
+      />,
+    );
+
+    expect(screen.getByRole('button', { pressed: true }).textContent).not.toMatch(/Overdue/);
+  });
+});

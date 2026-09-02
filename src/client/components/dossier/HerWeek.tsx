@@ -138,6 +138,7 @@ export function HerWeek({ entries, onAsk }: HerWeekProps) {
             type="button"
             style={{ ...askPillStyle, alignSelf: 'flex-start', marginTop: 10 }}
             onClick={onAsk}
+            aria-label="Ask about how her week runs"
             data-testid="her-week-ask"
           >
             Ask

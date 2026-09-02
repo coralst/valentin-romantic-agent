@@ -362,24 +362,54 @@ export class PreferenceExtractor implements PreferenceExtractorInterface {
     };
 
     // Check for existing preference (same session + category + key)
-    const existing = await this.storage.findPreference(
+    let existing = await this.storage.findPreference(
       message.sessionId,
       validated.category,
       validated.key,
     );
+
+    /*
+     * Then look for the same *field* filed under a different category.
+     *
+     * A row's identity is `(session, category, key)`, and while `key` is pinned to
+     * the field id just above, the **category is chosen by the model** — so the same
+     * fact can arrive under a different one on a later turn and miss the lookup
+     * above entirely. That is not hypothetical: a real session ended up holding
+     *
+     *     personality_traits / partner_name -> Maya
+     *     important_dates    / partner_name -> Maya
+     *
+     * two rows for one field, because the second turn filed her name as a date. The
+     * client merges them into one field so nothing looks wrong on screen, while the
+     * store accumulates a near-duplicate per restatement — and
+     * `isPartnerNamePreference`, which requires `personality_traits`, skipped the
+     * stray one, so the sidebar never learned her name from it either.
+     *
+     * Matched on `fieldId` because that is the identity that actually matters once
+     * the model has named a field. Only when we have one: without a field id there
+     * is nothing to match on but the natural key, which is what the lookup above
+     * already did.
+     */
+    if (!existing && validated.fieldId) {
+      const all = await this.storage.getPreferencesBySession(message.sessionId);
+      existing = all.find((row) => row.fieldId === validated.fieldId) ?? null;
+    }
 
     let result: PreferenceWithHistory;
     let isNew: boolean;
 
     if (existing) {
       // Update existing preference — triggers history tracking.
-      // Addressed by natural key, which findPreference above was already given,
-      // so this needs no extra lookup.
+      // Addressed by natural key, which the lookups above already resolved, so this
+      // needs no extra read.
       result = await this.storage.updatePreference(
         {
           sessionId: message.sessionId,
-          category: validated.category,
-          key: validated.key,
+          // The row's *own* identity, not the incoming one. They differ whenever the
+          // fieldId match above found the field filed under another category, and
+          // addressing it by the new category would look for a row that is not there.
+          category: existing.category,
+          key: existing.key,
         },
         {
           value: validated.value,

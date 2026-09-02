@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { BriefRail } from '../BriefRail';
-import { ChatProvider } from '../../context/chat-context';
+import { ChatProvider, useChatContext } from '../../context/chat-context';
 import { PreferencesProvider, usePreferencesContext } from '../../context/preferences-context';
 import {
   ProfileStoreProvider,
@@ -63,6 +63,12 @@ function renderRail(fields: SeedField[] = [], preferences: PreferenceWithHistory
       </PreferencesProvider>
     </ChatProvider>,
   );
+}
+
+/** Renders whatever the rail has put in the composer, which the rail harness omits. */
+function ComposerProbe() {
+  const { state } = useChatContext();
+  return <span data-testid="composer-probe">{state.inputValue}</span>;
 }
 
 function preference(overrides: Partial<PreferenceWithHistory>): PreferenceWithHistory {
@@ -357,6 +363,70 @@ describe('BriefRail — good to know', () => {
     expect((chip?.textContent ?? '').length).toBeLessThan(35);
   });
 
+  /*
+   * The truncation happens in the data, not in CSS, so the accessible name used to
+   * be built from the already-cut string: "Food: Northern Italian —…" was all a
+   * screen reader could ever say, and there was no `title` either. The full answer
+   * was unreachable for everyone.
+   */
+  it('speaks the whole answer even though the pill shows a cut one', () => {
+    const full = 'Northern Italian — anything with brown butter and sage';
+    renderRail([
+      { fieldId: 'partner_name', value: 'Coral' },
+      { fieldId: 'favorite_cuisine', value: full },
+    ]);
+    const chip = screen
+      .getAllByTestId('brief-chip')
+      .find((el) => el.getAttribute('data-empty') === 'false');
+
+    expect(chip?.getAttribute('aria-label')).toBe(`Food: ${full}`);
+    expect(chip?.getAttribute('title')).toBe(`Food: ${full}`);
+    expect(chip?.getAttribute('aria-label')).not.toContain('…');
+  });
+
+  it('leaves a short answer alone in both the pill and the name', () => {
+    renderRail([
+      { fieldId: 'partner_name', value: 'Coral' },
+      { fieldId: 'favorite_cuisine', value: 'Thai food' },
+    ]);
+    const chip = screen
+      .getAllByTestId('brief-chip')
+      .find((el) => el.getAttribute('data-empty') === 'false');
+
+    expect(chip?.textContent).toContain('Thai food');
+    expect(chip?.getAttribute('aria-label')).toBe('Food: Thai food');
+  });
+
+  /*
+   * These chips were `<button>`s wired to `() => undefined` — a cursor, a hover
+   * state and no effect, including on the `+ Colour` prompts whose entire job is to
+   * be a call to action. They now do what every other ask on this rail does.
+   */
+  it('puts the question in the composer when a chip is clicked', () => {
+    // The composer itself lives in `ChatPanel`, which the rail harness does not
+    // mount, so the assertion is on the chat state the composer reads.
+    refs.done = false;
+    render(
+      <ChatProvider>
+        <PreferencesProvider>
+          <ProfileStoreProvider sessionId={null}>
+            <Seeder fields={[{ fieldId: 'partner_name', value: 'Coral' }]} preferences={[]} />
+            <ComposerProbe />
+          </ProfileStoreProvider>
+        </PreferencesProvider>
+      </ChatProvider>,
+    );
+
+    const empty = screen
+      .getAllByTestId('brief-chip')
+      .find((el) => el.getAttribute('data-empty') === 'true');
+    expect(empty).toBeDefined();
+
+    fireEvent.click(empty!);
+
+    expect(screen.getByTestId('composer-probe').textContent).toMatch(/^Ask me about her .+\.$/);
+  });
+
   it('shows empty chips as prompts, so the gaps are visible', () => {
     renderRail([
       { fieldId: 'partner_name', value: 'Coral' },
@@ -367,5 +437,88 @@ describe('BriefRail — good to know', () => {
       .filter((chip) => chip.getAttribute('data-empty') === 'true');
     expect(empties.length).toBeGreaterThan(0);
     expect(empties[0].textContent).toMatch(/^\+ /);
+  });
+});
+
+/*
+ * Switching conversations must not leave the previous partner on screen.
+ *
+ * The reported bug: load the demo profile (Samantha — sage green, Northern
+ * Italian, Gemini), then click the "Maya" conversation, which knows only Thai
+ * food. All of Samantha's chips stayed, under Maya's name. The server was
+ * innocent — `GET /api/session/<maya>/preferences` returned Maya's rows and
+ * nothing else — so this asserts the client store, which is where it leaked.
+ *
+ * `SET_DISCOVERED_VALUE` rather than `SET_MANUAL_VALUE`: discovered values are the
+ * ones ingestion writes and the ones that used to survive, and the two live in
+ * different slices of the store.
+ */
+describe('BriefRail — a session switch clears the previous partner', () => {
+  /*
+   * These are the only tests here that pass a real session id, which makes the
+   * store's effect fetch her corrections. Stubbed so the assertions are about the
+   * reset and not about a pending request resolving mid-assertion.
+   */
+  beforeEach(() => {
+    vi.stubGlobal('fetch', async () => ({ ok: true, status: 200, json: async () => ({}) }) as Response);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function Discoverer({ fieldId, value }: { fieldId: string; value: string }) {
+    const { dispatch } = useProfileStoreContext();
+    const seeded = useSeedOnce(() => {
+      dispatch({ type: 'SET_DISCOVERED_VALUE', fieldId, value, confidence: 0.9 });
+    });
+    return seeded ? <BriefRail /> : null;
+  }
+
+  function renderAtSession(sessionId: string | null, seed: { fieldId: string; value: string }) {
+    refs.done = false;
+    return render(
+      <ChatProvider>
+        <PreferencesProvider>
+          <ProfileStoreProvider sessionId={sessionId}>
+            <Discoverer {...seed} />
+          </ProfileStoreProvider>
+        </PreferencesProvider>
+      </ChatProvider>,
+    );
+  }
+
+  it('shows a discovered value while its own session is active', async () => {
+    await act(async () => {
+      renderAtSession('session-samantha', { fieldId: 'favorite_color', value: 'Deep sage green' });
+    });
+    expect(screen.getByTestId('brief-good-to-know').textContent).toContain('Deep sage green');
+  });
+
+  it('drops it once a different session is active', async () => {
+    let rerender!: ReturnType<typeof render>['rerender'];
+    await act(async () => {
+      ({ rerender } = renderAtSession('session-samantha', {
+        fieldId: 'favorite_color',
+        value: 'Deep sage green',
+      }));
+    });
+    expect(screen.getByTestId('brief-good-to-know').textContent).toContain('Deep sage green');
+
+    // The seed runs once, so the second render carries no values of its own —
+    // anything still on screen was carried over, which is the bug.
+    await act(async () => {
+      rerender(
+        <ChatProvider>
+          <PreferencesProvider>
+            <ProfileStoreProvider sessionId="session-maya">
+              <Discoverer fieldId="favorite_color" value="Deep sage green" />
+            </ProfileStoreProvider>
+          </PreferencesProvider>
+        </ChatProvider>,
+      );
+    });
+
+    expect(screen.queryByText(/Deep sage green/)).not.toBeInTheDocument();
   });
 });

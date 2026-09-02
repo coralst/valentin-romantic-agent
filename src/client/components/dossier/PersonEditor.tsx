@@ -65,6 +65,20 @@ const saveStyle: React.CSSProperties = {
   fontWeight: typography.weights.medium,
 };
 
+/**
+ * Save, while it cannot be pressed.
+ *
+ * It used to keep the full `#A05A7A` fill and `cursor: pointer` whenever
+ * `relationship` was empty — and the hint below the form actively invites you to
+ * leave the *name* blank, so a visitor who did exactly that met a solid, live-looking
+ * button that silently refused. Nothing on screen said which field it was waiting on.
+ */
+const saveDisabledStyle: React.CSSProperties = {
+  ...saveStyle,
+  cursor: 'not-allowed',
+  opacity: 0.5,
+};
+
 const quietStyle: React.CSSProperties = {
   border: `1px solid ${colors.linenShade}`,
   cursor: 'pointer',
@@ -250,7 +264,15 @@ export function PersonEditor({
       </label>
 
       <div style={actionsStyle}>
-        <button type="submit" style={saveStyle} disabled={!canSave} data-testid="person-save">
+        <button
+          type="submit"
+          style={canSave ? saveStyle : saveDisabledStyle}
+          disabled={!canSave}
+          // Names the field it is waiting on, which nothing on screen did.
+          aria-describedby={canSave ? undefined : 'person-save-requirement'}
+          title={canSave ? undefined : 'Say how they are related first'}
+          data-testid="person-save"
+        >
           {person ? 'Save' : 'Add them'}
         </button>
         <button type="button" style={quietStyle} onClick={onCancel} data-testid="person-cancel">
@@ -268,10 +290,12 @@ export function PersonEditor({
         )}
       </div>
 
-      <p style={hintStyle}>
-        Leave the name empty to record someone you haven&rsquo;t caught the name of
-        yet — they&rsquo;ll show as a gap on the tree and I&rsquo;ll ask you about
-        them.
+      <p style={hintStyle} id="person-save-requirement">
+        {canSave
+          ? // The invitation the form was always making, now only shown when taking
+            // it up will actually work.
+              'Leave the name empty to record someone you haven’t caught the name of yet — they’ll show as a gap on the tree and I’ll ask you about them.'
+          : 'Tell me how they are related — “her mother”, “her oldest friend” — and you can leave the name for later.'}
       </p>
     </form>
   );

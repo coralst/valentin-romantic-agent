@@ -265,12 +265,36 @@ export function SessionSidebar({ isMobile }: SessionSidebarProps) {
   // Every handler below talks to the server now. The failure is surfaced by the
   // context as `state.error`, so these only need to stop an unhandled rejection
   // from reaching the console.
+  /*
+   * Picking a conversation has to move you to it, not just change which one is
+   * active underneath the surface you are already on.
+   *
+   * The conversation list is pinned beside the dossier as well as the chat shell,
+   * so both of these are reachable while `surface === 'dossier'`. Without the
+   * `returnToChat`, "+ New conversation" created the session, made it active, and
+   * left the dossier on screen — the new conversation existed and there was no way
+   * into it. Selecting an existing one was worse: the middle column had nothing
+   * left to render, so it went blank while the surface still said `dossier`.
+   *
+   * `returnToChat` rather than `closeDossier`: this is "take me to the
+   * conversation", which also puts the caret in the composer, and is a no-op for
+   * the surface when you are already in the chat shell — exactly what the icon
+   * rail's ◆ does.
+   */
   const handleNewChat = () => {
+    view?.returnToChat();
     void createSession().catch(() => {});
   };
 
   const handleSelect = (id: string) => {
-    void switchSession(id).catch(() => {});
+    // Awaited, unlike the new chat above: `switchSession` leaves the current
+    // conversation active when its fetch fails (see session-context), so moving
+    // the surface first would eject the reader out of her file and land them back
+    // in the conversation they already had, with only an error strip to explain
+    // it. Staying put on failure is the smaller loss.
+    void switchSession(id)
+      .then(() => view?.returnToChat())
+      .catch(() => {});
   };
 
   const handleDelete = (id: string) => {

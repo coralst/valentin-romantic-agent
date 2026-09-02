@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   AgentCoreNotConfiguredError,
   BedrockAgentCoreRuntime,
+  actorIdFor,
   memoryNamespace,
   parseMemoryRecord,
   parseRuntimeReply,
@@ -111,6 +112,40 @@ describe('memoryNamespace', () => {
     // A mismatch here returns zero records rather than erroring, which would
     // make engine B look as though it had extracted nothing.
     expect(memoryNamespace('user-abc', 'sess-1')).toBe('/valentin/user-abc/sess-1');
+  });
+});
+
+describe('actorIdFor', () => {
+  // AgentCore's own constraint, copied from the API error that motivated this.
+  const AGENTCORE_ACTOR_ID = /^[a-zA-Z0-9][a-zA-Z0-9\-_/]*(?::[a-zA-Z0-9\-_/]+)*[a-zA-Z0-9\-_/]*$/;
+
+  it('makes a demo visitor id acceptable to AgentCore', () => {
+    // `scopeToVisitor` builds this shape, and the `#` is what CreateEvent
+    // rejected on every engine-B turn.
+    const scoped = 'c47804a8-8011-70e8-c93d-4b2aab524be3#dc727a97-282e-436a-ad00-b1c110a75173';
+    const actorId = actorIdFor(scoped);
+    expect(actorId).toMatch(AGENTCORE_ACTOR_ID);
+    expect(actorId).not.toContain('#');
+  });
+
+  it('leaves an already-valid id alone', () => {
+    expect(actorIdFor('user-abc')).toBe('user-abc');
+  });
+
+  it('keeps distinct ids distinct', () => {
+    expect(actorIdFor('sub#visitor-a')).not.toBe(actorIdFor('sub#visitor-b'));
+  });
+
+  it('never introduces a slash, which would deepen the memory namespace', () => {
+    // `/` is legal in an actorId but not here: memoryNamespace interpolates it
+    // into `/valentin/{actorId}/{sessionId}`, so an extra segment would make
+    // reads match nothing instead of failing loudly.
+    expect(actorIdFor('sub#visitor')).not.toContain('/');
+  });
+
+  it('is idempotent, so double-sanitising is safe', () => {
+    const once = actorIdFor('sub#visitor');
+    expect(actorIdFor(once)).toBe(once);
   });
 });
 

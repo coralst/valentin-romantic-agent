@@ -270,3 +270,115 @@ describe('categoryMapper', () => {
     expect(mapCategory('Music')).toBe('music');
   });
 });
+
+/*
+ * One field, one row — even when the model files it under a different category.
+ *
+ * A row's identity is `(session, category, key)`. The extractor pins `key` to the
+ * resolved field id so a fact restated in different words updates one row, but the
+ * **category comes from the model**, so the same fact filed differently on a later
+ * turn missed the lookup and inserted a second row. A real session held:
+ *
+ *     personality_traits / partner_name -> Maya
+ *     important_dates    / partner_name -> Maya
+ *
+ * The client merges both into one field, so nothing looked wrong on screen while the
+ * store accumulated a near-duplicate per restatement.
+ */
+describe('PreferenceExtractor — one row per field, whatever the category', () => {
+  let bedrock: BedrockClient;
+  let storage: StorageInterface;
+  let extractor: PreferenceExtractor;
+
+  const strayRow: PreferenceWithHistory = {
+    id: 'pref-stray',
+    sessionId: 'sess-1',
+    // Filed under a date on the earlier turn — which is the whole problem.
+    category: 'important_dates',
+    key: 'partner_name',
+    fieldId: 'partner_name',
+    value: 'Maya',
+    confidence: 0.9,
+    sourceMessageId: 'msg-0',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    history: [],
+  };
+
+  beforeEach(() => {
+    bedrock = createMockBedrock();
+    storage = createMockStorage();
+    extractor = new PreferenceExtractor(bedrock, storage, {});
+
+    // Nothing under the *incoming* category+key…
+    vi.mocked(storage.findPreference).mockResolvedValue(null);
+    // …but the field is already on file elsewhere in the session.
+    vi.mocked(storage.getPreferencesBySession).mockResolvedValue([strayRow]);
+
+    vi.mocked(bedrock.extractWithTool).mockResolvedValue({
+      toolName: 'extract_preferences',
+      input: {
+        preferences: [
+          {
+            category: 'personality_traits',
+            key: 'partner_name',
+            field: 'partner_name',
+            value: 'Maya',
+            confidence: 0.98,
+          },
+        ],
+      },
+    });
+  });
+
+  it('does not insert a second row for a field already on file', async () => {
+    await extractor.extract(makeMessage(), []);
+    expect(storage.savePreference).not.toHaveBeenCalled();
+  });
+
+  it('updates the row that exists, addressed by its own category', async () => {
+    await extractor.extract(makeMessage(), []);
+
+    expect(storage.updatePreference).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'sess-1',
+        // `important_dates`, where the row actually is — not `personality_traits`,
+        // which is where this turn tried to put it. Addressing it by the incoming
+        // category would look for a row that is not there.
+        category: 'important_dates',
+        key: 'partner_name',
+      }),
+      expect.objectContaining({ value: 'Maya' }),
+    );
+  });
+
+  it('still inserts when the field is genuinely new', async () => {
+    vi.mocked(storage.getPreferencesBySession).mockResolvedValue([]);
+
+    await extractor.extract(makeMessage(), []);
+
+    expect(storage.savePreference).toHaveBeenCalledWith(
+      expect.objectContaining({ fieldId: 'partner_name', value: 'Maya' }),
+    );
+  });
+
+  it('does not cross-match rows that resolved to no field', async () => {
+    // Without a field id there is nothing to match on but the natural key, and
+    // matching on anything less would merge two unrelated facts.
+    vi.mocked(storage.getPreferencesBySession).mockResolvedValue([
+      { ...strayRow, fieldId: null, key: 'something else' },
+    ]);
+    vi.mocked(bedrock.extractWithTool).mockResolvedValue({
+      toolName: 'extract_preferences',
+      input: {
+        preferences: [
+          { category: 'food', key: 'street food', value: 'satay', confidence: 0.8 },
+        ],
+      },
+    });
+
+    await extractor.extract(makeMessage(), []);
+
+    expect(storage.savePreference).toHaveBeenCalled();
+  });
+});

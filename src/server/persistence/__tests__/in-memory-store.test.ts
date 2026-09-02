@@ -670,3 +670,53 @@ describe('a reset sweeps every item type', () => {
     expect(await bob.getPeopleBySession(sessionId)).toEqual([]);
   });
 });
+
+/*
+ * `fieldId` has to survive `savePreference`, not just `savePreferencesBatch`.
+ *
+ * It did here and did not in `DynamoDBStore`, which built its batch row without it —
+ * so every live-extracted preference in the real deployment persisted
+ * `fieldId: null` and the client was pushed back onto fuzzy category+key
+ * resolution to work out which profile field the row belonged to. The divergence
+ * was invisible because the unit tests only ever exercised this store.
+ *
+ * Asserted in both stores' suites deliberately: the point is that they agree.
+ */
+describe('savePreference carries fieldId', () => {
+  let store: StorageInterface;
+  let sessionId: string;
+
+  beforeEach(async () => {
+    store = newStore();
+    sessionId = await store.createSession();
+  });
+
+  it('round-trips a fieldId through the single-row path', async () => {
+    await store.savePreference({
+      sessionId,
+      category: 'personality_traits',
+      key: 'partner_name',
+      fieldId: 'partner_name',
+      value: 'Maya',
+      confidence: 1,
+      sourceMessageId: 'm1',
+    });
+
+    const found = await store.findPreference(sessionId, 'personality_traits', 'partner_name');
+    expect(found?.fieldId).toBe('partner_name');
+  });
+
+  it('stores null rather than undefined when no field was resolved', async () => {
+    await store.savePreference({
+      sessionId,
+      category: 'food',
+      key: 'cuisine',
+      value: 'Thai',
+      confidence: 0.9,
+      sourceMessageId: 'm1',
+    });
+
+    const found = await store.findPreference(sessionId, 'food', 'cuisine');
+    expect(found?.fieldId ?? null).toBeNull();
+  });
+});

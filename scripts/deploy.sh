@@ -13,6 +13,16 @@ set -euo pipefail
 #                              -> no Docker, no CDK. ~45s instead of ~7min.
 #                    backend   Docker + ECR + the Compute stack only
 #                    infra     CDK only (no Docker build, no frontend)
+#                    cdn       the CDN stack alone: CloudFront behaviours, origins
+#                              and cache policy. No Docker, no other stack, no
+#                              frontend build. ~2min (a distribution update).
+#                              This exists because a routing change at the edge
+#                              had no scope that could ship it: `frontend` only
+#                              syncs S3, `backend` only touches Compute, and
+#                              `infra`/`all` rebuild images and walk every stack
+#                              — which is unsafe when the backend and agent image
+#                              tags have diverged. Adding /ws/agentcore to
+#                              CloudFront needed exactly this and nothing else.
 #   --bootstrap      run `cdk bootstrap` first (it used to run on every deploy,
 #                    where it reported "no changes" and cost a round trip)
 #   --no-archive     skip copying this build to the release archive
@@ -45,8 +55,8 @@ if [[ ! "$ENV" =~ ^(dev|staging|prod)$ ]]; then
   echo "ERROR: Invalid environment '$ENV'. Must be dev, staging, or prod." >&2
   exit 1
 fi
-if [[ ! "$SCOPE" =~ ^(all|frontend|backend|infra)$ ]]; then
-  echo "ERROR: Invalid scope '$SCOPE'. Must be all, frontend, backend, or infra." >&2
+if [[ ! "$SCOPE" =~ ^(all|frontend|backend|infra|cdn)$ ]]; then
+  echo "ERROR: Invalid scope '$SCOPE'. Must be all, frontend, backend, infra, or cdn." >&2
   exit 1
 fi
 
@@ -121,6 +131,57 @@ for stack, outs in data.items():
   echo "$value"
 }
 
+# The agent image tag baked into the deployed AgentCore Runtime, or empty.
+#
+# `containerUri` in the live template is a CloudFormation `Fn::Join` of the ECR
+# host, the URL suffix, and `:<tag>`, so the tag is the text after the final `:`.
+# Read straight from the deployed template rather than a local outputs file: this
+# is asked before deciding whether AgentCore even needs a deploy, when no local
+# state is trustworthy. Empty on any failure — a missing stack, a shape change,
+# no python — which the caller treats as "deploy it", the safe direction.
+agentcore_deployed_tag() {
+  aws cloudformation get-template \
+    --stack-name "Valentin-AgentCore-${ENV}" \
+    --profile "$PROFILE" --region "$REGION" \
+    --query 'TemplateBody' --output json 2>/dev/null \
+  | python3 -c "
+import json,sys
+try:
+    t = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+for name, res in t.get('Resources', {}).items():
+    if res.get('Type') == 'AWS::BedrockAgentCore::Runtime':
+        uri = res.get('Properties', {}).get('AgentRuntimeArtifact', {}) \
+                 .get('ContainerConfiguration', {}).get('ContainerUri', '')
+        # ContainerUri is usually an Fn::Join: ['', [host, {Ref: URLSuffix}, ':tag']].
+        parts = []
+        if isinstance(uri, dict):
+            for join in uri.values():
+                if isinstance(join, list) and len(join) == 2 and isinstance(join[1], list):
+                    parts = [p for p in join[1] if isinstance(p, str)]
+        elif isinstance(uri, str):
+            parts = [uri]
+        joined = ''.join(parts)
+        if ':' in joined:
+            print(joined.rsplit(':', 1)[1])
+        break
+" 2>/dev/null || true
+}
+
+# True when the AgentCore stack exists in a healthy, non-rolled-back state.
+agentcore_is_healthy() {
+  local status
+  status=$(aws cloudformation describe-stacks \
+    --stack-name "Valentin-AgentCore-${ENV}" \
+    --profile "$PROFILE" --region "$REGION" \
+    --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)
+  case "$status" in
+    CREATE_COMPLETE|UPDATE_COMPLETE|IMPORT_COMPLETE) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # --- 1. Build & push Docker image ---
 if [[ "$SCOPE" == "all" || "$SCOPE" == "backend" ]]; then
   echo ""
@@ -164,7 +225,7 @@ else
 fi
 
 # --- 2. Deploy CDK stacks ---
-if [[ "$SCOPE" == "all" || "$SCOPE" == "backend" || "$SCOPE" == "infra" ]]; then
+if [[ "$SCOPE" == "all" || "$SCOPE" == "backend" || "$SCOPE" == "infra" || "$SCOPE" == "cdn" ]]; then
   echo ""
   echo "--- Deploying infrastructure..."
   cd "${ROOT}/infra"
@@ -197,7 +258,52 @@ if [[ "$SCOPE" == "all" || "$SCOPE" == "backend" || "$SCOPE" == "infra" ]]; then
   # `backend` touches only the service, so deploy just Compute. --exclusively is
   # load-bearing: without it CDK walks the addStackDependency chains in
   # bin/app.ts and re-checks Network/Data/Safety at ~16s each.
-  if [[ "$SCOPE" == "backend" ]]; then
+  #
+  # But Compute cannot deploy alone. `bin/app.ts` feeds the AgentCore Runtime
+  # ARN, Memory id and Gateway URL into ComputeStack, which makes them
+  # CloudFormation cross-stack imports; with --exclusively and no AgentCore, the
+  # import cannot resolve and Compute rolls back with "No export named
+  # Valentin-AgentCore-dev:...RuntimeAgentRuntimeArn... found". That is precisely
+  # how a scope=backend deploy failed the first time engine B shipped. So deploy
+  # AgentCore first — unless it is already healthy AND already running this exact
+  # agent tag, in which case a redeploy is ~16s of nothing. Any uncertainty
+  # (missing stack, unreadable tag, mid-rollback) deploys: a redundant AgentCore
+  # deploy is cheap, a missing one costs a Compute rollback.
+  if [[ "$SCOPE" == "cdn" ]]; then
+    # CloudFront only. --exclusively matters more here than anywhere else: the
+    # CDN stack depends on Compute for the ALB origin, and without it CDK would
+    # walk back into Compute and AgentCore and redeploy them with whatever tag
+    # this invocation happens to hold — which is how an edge-routing change
+    # could take down a working backend.
+    #
+    # The image tag is passed only because bin/app.ts synthesises every stack and
+    # reads the context; the CDN stack itself references no image, so the value
+    # is inert. It is read from the running service rather than HEAD so a synth
+    # of the Compute stack never invents a tag that was never built.
+    CDN_IMAGE_TAG="$(aws ecs describe-task-definition \
+      --task-definition "valentin-task-${ENV}" \
+      --profile "$PROFILE" --region "$REGION" \
+      --query 'taskDefinition.containerDefinitions[0].image' --output text 2>/dev/null | sed 's/.*://')"
+    [[ -z "$CDN_IMAGE_TAG" || "$CDN_IMAGE_TAG" == "None" ]] && CDN_IMAGE_TAG="$IMAGE_TAG"
+    echo "--- scope=cdn: deploying the CDN stack alone (inert tag ${CDN_IMAGE_TAG})"
+    run env AWS_PROFILE="$PROFILE" npx cdk deploy "Valentin-CDN-${ENV}" --exclusively \
+      --context env="$ENV" \
+      --context imageTag="$CDN_IMAGE_TAG" \
+      --context agentImageTag="$(agentcore_deployed_tag)" \
+      --require-approval never \
+      --outputs-file "cdk-outputs-${ENV}.json"
+  elif [[ "$SCOPE" == "backend" ]]; then
+    if agentcore_is_healthy && [[ "$(agentcore_deployed_tag)" == "$IMAGE_TAG" ]]; then
+      echo "--- AgentCore already healthy at ${IMAGE_TAG}; deploying Compute only"
+    else
+      echo "--- Deploying AgentCore first (Compute imports its exports)"
+      run env AWS_PROFILE="$PROFILE" npx cdk deploy "Valentin-AgentCore-${ENV}" --exclusively \
+        --context env="$ENV" \
+        --context imageTag="$IMAGE_TAG" \
+        --context agentImageTag="$IMAGE_TAG" \
+        --require-approval never \
+        --outputs-file "cdk-outputs-${ENV}.json"
+    fi
     run env AWS_PROFILE="$PROFILE" npx cdk deploy "Valentin-Compute-${ENV}" --exclusively \
       --context env="$ENV" \
       --context imageTag="$IMAGE_TAG" \
@@ -218,7 +324,7 @@ if [[ "$SCOPE" == "all" || "$SCOPE" == "backend" || "$SCOPE" == "infra" ]]; then
         --exclusively \
         --context env="$ENV" \
         --context imageTag="$IMAGE_TAG" \
-      --context agentImageTag="$IMAGE_TAG" \
+        --context agentImageTag="$IMAGE_TAG" \
         --require-approval never \
         --outputs-file "cdk-outputs-${ENV}.json"
     done
@@ -281,8 +387,26 @@ if [[ "$SCOPE" == "all" || "$SCOPE" == "frontend" ]]; then
       echo "  NOTE: archive sync failed (is the ReleaseBucket deployed yet?) — continuing."
   fi
 
+  # Two passes, because the entry point and the assets want opposite caching.
+  #
+  # The first sync ships everything; the hashed files under assets/ are safe to
+  # cache forever because a content change changes their name. index.html is the
+  # one file whose name never changes, and it is the map to those hashes — so if
+  # a browser or CloudFront caches it, a returning visitor keeps loading the
+  # PREVIOUS build's JS long after a deploy, with no error to show for it. That
+  # is exactly what happened after the engine-B deploy: the app was live but
+  # every returning tab ran the Aug-28 bundle until its heuristic cache expired,
+  # because S3 sent index.html with no Cache-Control at all. The second cp
+  # rewrites just the HTML with no-cache so the edge and the browser always
+  # revalidate it; the hashed assets it points at are still served from cache.
   run aws s3 sync dist/ "s3://valentin-static-${ENV}/" --delete \
     --profile "$PROFILE" --region "$REGION"
+
+  run aws s3 cp "s3://valentin-static-${ENV}/index.html" "s3://valentin-static-${ENV}/index.html" \
+    --content-type text/html \
+    --cache-control "no-cache, must-revalidate" \
+    --metadata-directive REPLACE \
+    --profile "$PROFILE" --region "$REGION" --only-show-errors
 
   DIST_ID=$(cdn_output DistributionId)
   if [[ -n "$DIST_ID" ]]; then
@@ -333,6 +457,11 @@ echo "  /api/health OK"
 
 STACKS="Valentin-Compute-${ENV},Valentin-CDN-${ENV}"
 [[ "$SCOPE" == "frontend" ]] && STACKS=""
+# A cdn-scoped deploy ships no image and no bundle, so it is not a release: the
+# tag it would record is the one the running service already came from, and
+# writing it again would put a duplicate entry in the manifest that rollback
+# cannot distinguish from the real one.
+[[ "$SCOPE" == "cdn" ]] && STACKS=""
 TASK_DEF=$(aws ecs describe-services \
   --cluster "valentin-cluster-${ENV}" --services "valentin-service-${ENV}" \
   --profile "$PROFILE" --region "$REGION" \

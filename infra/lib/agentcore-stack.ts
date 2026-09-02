@@ -213,7 +213,13 @@ export class AgentCoreStack extends cdk.Stack {
       new iam.PolicyStatement({
         actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
         resources: [
-          `arn:aws:bedrock:${this.region}::foundation-model/*`,
+          // Region-wildcarded for the same reason as the Runtime role below: a
+          // cross-region inference profile is authorized against the fulfilling
+          // region's foundation-model ARN, which is often not this stack's. The
+          // failure mode here is quieter than the Runtime's — extraction runs on
+          // Memory's own schedule, so an AccessDenied surfaces as engine B simply
+          // never learning anything, with no failed turn to trace it back from.
+          'arn:aws:bedrock:*::foundation-model/*',
           `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/*`,
         ],
       }),
@@ -413,7 +419,26 @@ export class AgentCoreStack extends cdk.Stack {
       new iam.PolicyStatement({
         actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
         resources: [
-          `arn:aws:bedrock:${this.region}::foundation-model/*`,
+          /*
+           * The foundation model is region-wildcarded on purpose.
+           *
+           * BEDROCK_MODEL_ID is `us.anthropic.claude-sonnet-4-5-...`, and the
+           * `us.` prefix makes it a cross-region inference profile: Bedrock
+           * fulfils the call from whichever US region has capacity, and
+           * authorizes it against the *fulfilling* region's foundation-model
+           * ARN. Pinned to `${this.region}` this denied every engine-B turn with
+           * "not authorized to perform: bedrock:InvokeModelWithResponseStream on
+           * resource: arn:aws:bedrock:us-east-2::foundation-model/..." — us-east-2,
+           * from a stack deployed to us-east-1. The action was granted all along;
+           * only the region was wrong, which is why it read as a missing
+           * permission rather than a misscoped one.
+           *
+           * Safe to widen: foundation-model ARNs are AWS-owned and carry no
+           * account id, so this grants nothing customer-specific. The
+           * inference-profile ARN below stays scoped to this account and region,
+           * which is the resource that actually gates *which* profiles we may use.
+           */
+          'arn:aws:bedrock:*::foundation-model/*',
           `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/*`,
         ],
       }),

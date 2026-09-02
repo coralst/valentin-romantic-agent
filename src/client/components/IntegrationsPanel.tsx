@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { colors, insets, layout, radii, typography, animation } from '../design-system/tokens';
 import { MOBILE_STRIP_HEIGHT } from './AppWindow';
-import { REOPEN_BAR_HEIGHT } from './LiveArchitectureDrawer';
+import { reservedDrawerSpace } from './LiveArchitectureDrawer';
+import { useArchitectureDrawer } from '../context/architecture-drawer-context';
 import { INTEGRATION_CATALOGUE, type IntegrationService } from '../utils/integration-catalogue';
 import { useIntegrations } from '../context/integrations-context';
 import {
@@ -62,8 +63,29 @@ const NODE_WIDTH = 190;
 const CANVAS_PADDING = 40;
 /** How far the middle of the column bows away from the hub. */
 const COLUMN_BULGE = 56;
+/**
+ * The least vertical distance between two card centres.
+ *
+ * A card is about 52px tall, so anything under this overlaps its neighbour. The
+ * spacing used to be purely proportional — `(height - padding*2) / (count - 1)` —
+ * which is correct only while the canvas is tall enough for the catalogue. Once the
+ * panel started ending above the architecture drawer instead of behind it, the canvas
+ * lost ~200px and nine cards stacked on top of each other. Below this the column
+ * keeps its spacing and the canvas scrolls instead.
+ */
+const MIN_NODE_GAP = 62;
+/**
+ * How far across the canvas the card column sits, as a fraction of its width.
+ *
+ * `hubX` is `width * 0.24`, so putting the column at `width * 0.42` keeps roughly
+ * the same proportion between the hub, the spoke and the trailing margin at every
+ * size — which a fixed 300px spoke did not: it left 40% of a 1440px panel empty.
+ */
+const SPOKE_LENGTH_RATIO = 0.42;
+/** Below this the ratio would fold the cards back onto the hub. */
+const SPOKE_MIN_LENGTH = 260;
 
-function panelStyle(isMobile: boolean): React.CSSProperties {
+function panelStyle(isMobile: boolean, bottomInset: number): React.CSSProperties {
   return {
     /*
      * Everything but the rail: the rail stays live behind — or above, on mobile —
@@ -81,7 +103,19 @@ function panelStyle(isMobile: boolean): React.CSSProperties {
     top: isMobile ? MOBILE_STRIP_HEIGHT : 0,
     left: isMobile ? 0 : layout.iconRailWidth,
     right: 0,
-    bottom: 0,
+    /*
+     * Stops where the architecture drawer starts.
+     *
+     * This was `bottom: 0`, and an absolutely positioned element resolves against
+     * its ancestor's *padding box* — so `0` was the outer bottom edge of the window
+     * frame, underneath the drawer rather than above it. With the drawer open the
+     * fan's lower cards were simply behind it: "Travel" and "Occasions" were cut
+     * off mid-row with no scrollbar and no way to reach them.
+     *
+     * The frame's own `paddingBottom` cannot help here, for the same reason: the
+     * padding is inside the containing block this offset is measured from.
+     */
+    bottom: bottomInset,
     zIndex: 5,
     display: 'flex',
     flexDirection: 'column',
@@ -133,8 +167,18 @@ const canvasStyle: React.CSSProperties = {
   position: 'relative',
   flex: 1,
   minHeight: 0,
-  overflow: 'hidden',
+  // Scrolls vertically rather than clipping. The fan keeps `MIN_NODE_GAP` between
+  // cards, so on a panel too short for the whole catalogue the column is taller than
+  // the viewport — the alternative, which shipped briefly, was nine cards overlapping.
+  overflowY: 'auto',
+  overflowX: 'hidden',
 };
+
+/** Holds the fan at its full height, so the canvas above has something to scroll. */
+const fanStyle = (contentHeight: number): React.CSSProperties => ({
+  position: 'relative',
+  height: contentHeight,
+});
 
 const hubStyle: React.CSSProperties = {
   position: 'absolute',
@@ -212,18 +256,16 @@ function nodeStateStyle(isConnected: boolean): React.CSSProperties {
   };
 }
 
-/**
- * `paddingBottom` clears the architecture drawer's reopen bar, which is pinned to
- * the foot of the window and would otherwise sit on top of the footer's last line.
- * The amount comes from the drawer's own constant so the two cannot drift.
- */
+/** The footer sits at the foot of the panel, which is itself above the drawer. */
 function footerStyle(isMobile: boolean): React.CSSProperties {
   return {
     flexShrink: 0,
     borderTop: `1px solid ${colors.linenShade}`,
     boxSizing: 'border-box',
     padding: `${insets.tight}px ${isMobile ? insets.snug : insets.roomy}px`,
-    paddingBottom: insets.tight + REOPEN_BAR_HEIGHT,
+    // No drawer allowance any more: the panel itself now ends above the drawer, so
+    // adding the bar's height here would leave a second, empty gap below the footer.
+    paddingBottom: insets.tight,
     display: 'flex',
     alignItems: 'center',
     gap: insets.tight,
@@ -343,19 +385,78 @@ function badgeStyle(reach: CapabilityReadiness): React.CSSProperties {
 }
 
 /**
+ * What a row's state line says.
+ *
+ * A grant and a credential are different things — the header comment on this file
+ * says so — and this line used to report only the first: any service the visitor had
+ * ever pressed Connect on read "Connected", including one whose credentials the
+ * deployment has never had. So a card read "Connected" on one line and "needs
+ * credentials" on the next, and a grant left in `localStorage` by a previous session
+ * claimed a live connection to a service this deployment cannot reach at all.
+ *
+ * "Connected" is now reserved for the case where both are true. Otherwise the line
+ * says "Allowed", which is exactly what a grant is.
+ *
+ * It deliberately does *not* say why reach is missing: the readiness badge sits
+ * directly beneath it already saying "needs credentials" or "not built yet", and an
+ * earlier version of this that spelled the reason out here produced rows reading
+ * "Allowed · not built yet" above a badge reading "not built yet".
+ *
+ * The cap comes along in both cases, because it is the visitor's own setting and they
+ * should see it read back whatever the deployment can currently do with it.
+ */
+export function connectionLabel(
+  connected: boolean,
+  reach: CapabilityReadiness,
+  capUsd?: number | null,
+): string {
+  if (!connected) return 'Not connected';
+  const cap = capUsd ? ` · up to $${capUsd}` : '';
+  // "Connected" only when the deployment can actually reach it. Otherwise the row
+  // reports the grant, and the readiness badge beside it reports the reason — which
+  // is also why the reason is not repeated here.
+  return reach === 'ready' ? `Connected${cap}` : `Allowed${cap}`;
+}
+
+/**
  * Where a node sits, and the curve that reaches it.
  *
  * One evenly spaced column, bowed out in the middle. Even spacing is what keeps
  * the cards from colliding at any catalogue size — the first draft placed them on
  * an ellipse, which reads beautifully at five services and overlaps at eight.
  */
-function nodeLayout(index: number, count: number, width: number, height: number) {
+/**
+ * How tall the fan needs to be for `count` cards, at minimum spacing.
+ *
+ * The canvas scrolls to this when the panel is shorter — see `MIN_NODE_GAP`.
+ */
+export function fanContentHeight(count: number, height: number): number {
+  if (count <= 1) return height;
+  const gap = Math.max(MIN_NODE_GAP, (height - CANVAS_PADDING * 2) / (count - 1));
+  return Math.max(height, CANVAS_PADDING * 2 + gap * (count - 1));
+}
+
+export function nodeLayout(index: number, count: number, width: number, height: number) {
   const hubX = Math.max(width * 0.24, HUB_SIZE / 2 + insets.roomy);
   const hubY = height / 2;
 
-  const gap = count > 1 ? (height - CANVAS_PADDING * 2) / (count - 1) : 0;
+  const gap =
+    count > 1 ? Math.max(MIN_NODE_GAP, (height - CANVAS_PADDING * 2) / (count - 1)) : 0;
   const t = count > 1 ? (index / (count - 1)) * 2 - 1 : 0;
-  const columnX = Math.min(hubX + 300, width - NODE_WIDTH / 2 - insets.tight);
+  /*
+   * The spoke scales with the canvas instead of being a flat 300px.
+   *
+   * `hubX` is proportional to the width but the column was not, so past roughly
+   * 1100px of canvas the `Math.min` clamp stopped binding and the cards simply
+   * stopped moving: on a 1440px window the whole fan ended at x≈862 and the right
+   * ~40% of the panel was empty. Placing the column a fixed fraction of the way
+   * across keeps the composition centred at any width, and the clamp still protects
+   * a narrow window by pulling the column back off the right edge.
+   */
+  const columnX = Math.min(
+    hubX + Math.max(SPOKE_MIN_LENGTH, width * SPOKE_LENGTH_RATIO),
+    width - NODE_WIDTH / 2 - insets.tight,
+  );
   const x = columnX + (1 - Math.abs(t)) * COLUMN_BULGE;
   const y = CANVAS_PADDING + index * gap;
 
@@ -367,6 +468,11 @@ function nodeLayout(index: number, count: number, width: number, height: number)
 }
 
 export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps) {
+  // The same reservation the window frame makes, so the panel and the drawer agree
+  // on where one ends and the other begins.
+  const { isOpen: isDrawerOpen, height: drawerHeight } = useArchitectureDrawer();
+  const drawerInset = reservedDrawerSpace(isDrawerOpen, drawerHeight);
+
   const { state, connectedCount, isConnected, connect, disconnect, setCap, dismissStorageError } =
     useIntegrations();
   const readiness = useIntegrationReadiness();
@@ -426,11 +532,17 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
   };
 
   const total = INTEGRATION_CATALOGUE.length;
-  const { hubX, hubY } = nodeLayout(0, total, size.width, size.height);
+  /*
+   * Geometry is measured against the *content* height, not the visible one, so the
+   * hub stays centred in the fan it belongs to and the spacing stays legible when the
+   * canvas is scrolling.
+   */
+  const fanHeight = fanContentHeight(total, size.height);
+  const { hubX, hubY } = nodeLayout(0, total, size.width, fanHeight);
 
   return (
     <section
-      style={panelStyle(isMobile)}
+      style={panelStyle(isMobile, drawerInset)}
       role="dialog"
       aria-label="Integrations"
       data-testid="integrations-panel"
@@ -481,7 +593,12 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
                   style={cardStyle(connected)}
                   onClick={() => open(service)}
                   data-testid={`integration-card-${service.id}`}
-                  aria-label={`${service.name}, ${connected ? 'connected' : 'not connected'}`}
+                  data-reach={reach}
+                  aria-label={`${service.name}, ${connectionLabel(
+                    connected,
+                    reach,
+                    state.grants[service.id]?.capUsd,
+                  ).toLowerCase()}`}
                 >
                   <span style={glyphStyle(connected)} aria-hidden="true">
                     {service.glyph}
@@ -491,7 +608,9 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
                     <span style={cardBlurbStyle}>{service.blurb}</span>
                     <br />
                     <span style={nodeStateStyle(connected)}>
-                      {connected ? 'Connected' : `Not connected · ${service.category}`}
+                      {connected
+                        ? connectionLabel(connected, reach, state.grants[service.id]?.capUsd)
+                        : `Not connected · ${service.category}`}
                     </span>
                     {badge && (
                       <>
@@ -513,13 +632,14 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
         </ul>
       ) : (
         <div style={canvasStyle} ref={canvasRef} data-testid="integrations-canvas">
+          <div style={fanStyle(fanHeight)} data-testid="integrations-fan">
           <svg
             style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
             aria-hidden="true"
           >
             {INTEGRATION_CATALOGUE.map((service, index) => {
               const connected = isConnected(service.id);
-              const { edge } = nodeLayout(index, total, size.width, size.height);
+              const { edge } = nodeLayout(index, total, size.width, fanHeight);
               return (
                 <path
                   key={service.id}
@@ -556,7 +676,7 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
             const connected = isConnected(service.id);
             const reach = capabilityReadiness(service.backing, readiness);
             const badge = readinessLabel(reach, service, readiness);
-            const { x, y } = nodeLayout(index, total, size.width, size.height);
+            const { x, y } = nodeLayout(index, total, size.width, fanHeight);
             return (
               <button
                 key={service.id}
@@ -565,7 +685,12 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
                 onClick={() => open(service)}
                 data-testid={`integration-node-${service.id}`}
                 data-connected={connected}
-                aria-label={`${service.name}, ${connected ? 'connected' : 'not connected'}`}
+                data-reach={reach}
+                aria-label={`${service.name}, ${connectionLabel(
+                  connected,
+                  reach,
+                  state.grants[service.id]?.capUsd,
+                ).toLowerCase()}`}
               >
                 <span style={glyphStyle(connected)} aria-hidden="true">
                   {service.glyph}
@@ -574,9 +699,7 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
                   <span style={nodeNameStyle}>{service.name}</span>
                   <span style={nodeStateStyle(connected)}>
                     {connected
-                      ? state.grants[service.id]?.capUsd
-                        ? `Connected · up to $${state.grants[service.id]?.capUsd}`
-                        : 'Connected'
+                      ? connectionLabel(connected, reach, state.grants[service.id]?.capUsd)
                       : service.category}
                   </span>
                   {badge && (
@@ -602,6 +725,7 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
               </button>
             );
           })}
+          </div>
         </div>
       )}
 

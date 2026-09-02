@@ -2,6 +2,8 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import {
   clearManualValueOnServer,
   fetchManualValues,
+  initialState,
+  profileStoreReducer,
   pushManualValue,
   type ProfileFieldValue,
 } from '../use-profile-store';
@@ -102,5 +104,69 @@ describe('manual values over the API', () => {
     await expect(pushManualValue('s1', 'bra_size', '34B')).rejects.toThrow(
       /could not complete/,
     );
+  });
+});
+
+/*
+ * Nothing about one conversation may survive into the next.
+ *
+ * The leak: `RESTORE` spreads `...state` and replaces only the photo and the
+ * corrections, so switching from a session that knew "Deep sage green / Northern
+ * Italian / Gemini" to one that knew only "Thai food" showed all four at once,
+ * under the second partner's name. `discoveredValues` was carried across because
+ * ingestion can only ever *add* — `SET_DISCOVERED_VALUE` merges, and nothing
+ * downstream could unset it.
+ */
+describe('resetting the store for a new conversation', () => {
+  const populated = profileStoreReducer(
+    profileStoreReducer(
+      profileStoreReducer(
+        profileStoreReducer(initialState, { type: 'RESET_FOR_SESSION' }),
+        { type: 'SET_DISCOVERED_VALUE', fieldId: 'favorite_color', value: 'Deep sage green', confidence: 0.9 },
+      ),
+      { type: 'SET_MANUAL_VALUE', fieldId: 'ring_size', value: 'M' },
+    ),
+    { type: 'CLEAR_DISCOVERED_VALUE', fieldId: 'music_genre' },
+  );
+
+  it('starts from something actually populated', () => {
+    // Guards the test itself: if this ever goes empty, the assertions below pass
+    // for the wrong reason.
+    expect(populated.discoveredValues.favorite_color?.value).toBe('Deep sage green');
+    expect(populated.manualValues.ring_size?.value).toBe('M');
+    expect(populated.rejectedFieldIds).toContain('music_genre');
+  });
+
+  it('drops discovered values, which RESTORE used to carry across', () => {
+    const reset = profileStoreReducer(populated, { type: 'RESET_FOR_SESSION' });
+    expect(reset.discoveredValues).toEqual({});
+  });
+
+  it('drops rejections, so a ✗ in one conversation cannot suppress a field in another', () => {
+    const reset = profileStoreReducer(populated, { type: 'RESET_FOR_SESSION' });
+    expect(reset.rejectedFieldIds).toEqual([]);
+  });
+
+  it('drops the corrections and the photo too — all of it is session-scoped', () => {
+    const withPhoto = profileStoreReducer(populated, {
+      type: 'SET_PHOTO',
+      dataUrl: 'data:image/png;base64,AAAA',
+    });
+    const reset = profileStoreReducer(withPhoto, { type: 'RESET_FOR_SESSION' });
+
+    expect(reset.manualValues).toEqual({});
+    expect(reset.partnerPhoto).toBeNull();
+  });
+
+  /*
+   * The distinction that matters: `CLEAR_ALL_VALUES` is the user asking to forget
+   * her, and its exported `dispatch` wrapper deletes every manual value on the
+   * server. `RESET_FOR_SESSION` is local bookkeeping and must never reach the
+   * network — which is why it is a separate action rather than a reuse.
+   */
+  it('leaves the same state as RESTORE-from-empty would, with nothing carried', () => {
+    const reset = profileStoreReducer(populated, { type: 'RESET_FOR_SESSION' });
+    const fresh = profileStoreReducer(initialState, { type: 'RESET_FOR_SESSION' });
+    expect(reset).toEqual(fresh);
   });
 });

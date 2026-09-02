@@ -110,11 +110,13 @@ const renameInputStyle: React.CSSProperties = {
   border: `1px solid ${colors.claret}`,
   borderRadius: radii.icon,
   backgroundColor: colors.porcelain,
-  outline: 'none',
+  // See `MessageInput`: removed so the global `:focus-visible` ring can reach it.
 };
 
 export function SessionEntry({ session, isActive, onSelect, onDelete, onRename }: SessionEntryProps) {
   const [isHovered, setIsHovered] = useState(false);
+  /** True while focus is anywhere inside the row — see `isRevealed`. */
+  const [isFocusWithin, setFocusWithin] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -169,14 +171,25 @@ export function SessionEntry({ session, isActive, onSelect, onDelete, onRename }
     cursor: isEditing ? 'default' : 'pointer',
   };
 
+  /*
+   * Shown on focus as well as on hover.
+   *
+   * These two were `opacity: isHovered ? 1 : 0`, and `isHovered` was set only by
+   * `onMouseEnter`/`onMouseLeave` — so a keyboard user tabbed into two fully
+   * focusable controls rendered at zero opacity. Tab, Tab, Enter deleted a
+   * conversation they could not see. Revealing on `focus-within` costs nothing and
+   * makes the controls exist for everybody.
+   */
+  const isRevealed = isHovered || isFocusWithin;
+
   const renameVisibleStyle: React.CSSProperties = {
     ...renameButtonStyle,
-    opacity: isHovered ? 1 : 0,
+    opacity: isRevealed ? 1 : 0,
   };
 
   const deleteVisibleStyle: React.CSSProperties = {
     ...deleteButtonStyle,
-    opacity: isHovered ? 1 : 0,
+    opacity: isRevealed ? 1 : 0,
   };
 
   const meta = (
@@ -265,6 +278,8 @@ export function SessionEntry({ session, isActive, onSelect, onDelete, onRename }
         style={entryStyle}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
+        onFocus={() => setFocusWithin(true)}
+        onBlur={() => setFocusWithin(false)}
         data-testid="session-entry"
       >
         {meta}
@@ -278,6 +293,10 @@ export function SessionEntry({ session, isActive, onSelect, onDelete, onRename }
       onClick={() => onSelect(session.id)}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
+      // React's onFocus/onBlur bubble, so these fire for the nested rename and
+      // delete controls too — which is exactly what has to reveal them.
+      onFocus={() => setFocusWithin(true)}
+      onBlur={() => setFocusWithin(false)}
       aria-label={`Switch to session: ${title}`}
       aria-current={isActive ? 'true' : undefined}
       data-testid="session-entry"

@@ -1,3 +1,4 @@
+import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
 import type { StorageInterface } from '../persistence/storage-interface';
 import type { KnownFact } from './prompts';
 
@@ -52,6 +53,60 @@ export async function readKnownFacts(
   }
 
   return [...merged.values()];
+}
+
+/**
+ * The same account-wide profile, in full, for the surfaces that display it.
+ *
+ * `readKnownFacts` narrows to key/value/fieldId because that is all a prompt
+ * needs. Her brief and the dossier need the whole row — category, confidence,
+ * history — so this returns `PreferenceWithHistory` rather than `KnownFact`.
+ *
+ * It exists because fixing the prompt alone left the screen contradicting it.
+ * `getSessionDetail` read `getPreferencesBySession(sessionId)`, so opening a new
+ * conversation inside a fully-profiled account showed Name, Birthday, Anniversary
+ * and every other field as an empty placeholder — while Valentin, reading the
+ * union, answered the very next message using her cuisine and her colours. Two
+ * scopes for one partner, and the panel was the one telling the user he knew
+ * nothing.
+ *
+ * Deliberately built on the same `recentSessionIds` as `readKnownFacts`: the
+ * point of this module is that the prompt and the display cannot disagree about
+ * which conversations count, and duplicating the ordering here is exactly how
+ * they would drift.
+ */
+export async function readAccountPreferences(
+  storage: StorageInterface,
+  sessionId: string,
+): Promise<PreferenceWithHistory[]> {
+  const merged = new Map<string, PreferenceWithHistory>();
+
+  for (const id of await recentSessionIds(storage, sessionId)) {
+    for (const pref of await preferencesIn(storage, id)) {
+      // Same collision rule as the prompt's: the active session is merged last,
+      // so a value corrected in this conversation wins over an older copy.
+      merged.set(pref.fieldId ?? pref.key, pref);
+    }
+  }
+
+  return [...merged.values()];
+}
+
+/** Best-effort read of one session's full preference rows */
+async function preferencesIn(
+  storage: StorageInterface,
+  sessionId: string,
+): Promise<PreferenceWithHistory[]> {
+  try {
+    return await storage.getPreferencesBySession(sessionId);
+  } catch (err) {
+    // Same trade as `factsIn`: a partial profile on screen beats an error page.
+    console.warn(
+      '[partner-profile] could not read the profile for the brief:',
+      err instanceof Error ? err.message : err,
+    );
+    return [];
+  }
 }
 
 /** The sessions worth reading, oldest first, with the active one last */

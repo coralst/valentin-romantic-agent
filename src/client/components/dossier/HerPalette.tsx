@@ -128,6 +128,7 @@ export function HerPalette({ shades, caution, onAsk }: HerPaletteProps) {
             type="button"
             style={{ ...askPillStyle, alignSelf: 'flex-start', marginTop: 10 }}
             onClick={onAsk}
+            aria-label="Ask about the colours she wears"
             data-testid="palette-ask"
           >
             Ask

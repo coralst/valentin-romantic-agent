@@ -83,12 +83,12 @@ describe('offering the form', () => {
   it('offers nothing on a capability that is only a drawing', async () => {
     const user = userEvent.setup();
     await renderPanel();
-    // Music has no backing service. A credential form here would imply that
+    // Rides has no backing service. A credential form here would imply that
     // connecting achieves something in the world, and it does not.
     //
-    // Was `flowers`, which is Wolt and genuinely live — asserting it here made the
-    // test agree with the bug it should have caught.
-    await openSheet(user, 'music');
+    // Was `flowers` (Wolt), then `music` (Spotify) — each stopped being a drawing
+    // and asserting it here made the test agree with the bug it should have caught.
+    await openSheet(user, 'rides');
 
     expect(screen.queryByTestId('integration-credentials-amadeus')).not.toBeInTheDocument();
     expect(screen.queryByTestId('integration-credentials-google')).not.toBeInTheDocument();

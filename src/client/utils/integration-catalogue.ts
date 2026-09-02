@@ -158,8 +158,38 @@ export const INTEGRATION_CATALOGUE: readonly IntegrationService[] = [
     category: 'streaming',
     glyph: '🎵',
     blurb: 'Builds the playlist for the drive there.',
+    /*
+     * Spotify, and real as of this change.
+     *
+     * `find_music` searches the catalogue with an app credential and
+     * `propose_playlist` writes a private playlist with a user one, so the row
+     * has code behind it either way. The two credentials buy different things
+     * and the row is honest about the weaker case: with an id and secret but no
+     * account, confirming a playlist hands over track links rather than saving,
+     * and both the card and the reply say so.
+     */
+    backing: ['spotify'],
     scopes: [
-      { label: 'create playlists', detail: 'He cannot change playlists you made', reach: 'write' },
+      {
+        label: 'search Spotify for songs she likes',
+        detail: "Read-only — the public catalogue, and your listening history is never read",
+        reach: 'read',
+      },
+      {
+        /*
+         * "create playlists" was the old wording and claimed slightly too much:
+         * whether anything is created depends on a Spotify account being
+         * connected, and where it isn't, confirming produces a list of links.
+         * Naming the confirm step instead of the outcome is the version that
+         * cannot become false between one deployment and another.
+         */
+        label: 'offer you a playlist to confirm',
+        detail:
+          'Confirming saves it as a private playlist when a Spotify account is connected — ' +
+          'otherwise he hands you the songs as links. He never touches playlists you made, ' +
+          'and nothing he makes is public',
+        reach: 'write',
+      },
     ],
     defaultCapUsd: null,
   },

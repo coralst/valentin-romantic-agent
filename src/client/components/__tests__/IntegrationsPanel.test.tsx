@@ -361,19 +361,21 @@ describe('IntegrationsPanel', () => {
     it('says an unbuilt capability is not built yet, not merely unconfigured', async () => {
       await renderPanel();
       /*
-       * The distinction the visitor cannot see by looking: music is a drawing,
+       * The distinction the visitor cannot see by looking: rides is a drawing,
        * whereas travel is real code waiting on an Amadeus key. Both are dark, and
        * conflating them either overpromises or slanders working code.
        *
-       * `music` rather than `flowers`, which this used to assert: flowers is Wolt
-       * and has been real since the browser tier landed, so using it here was the
-       * test agreeing with the bug — it badged working code "not built yet". Music
-       * has no provider anywhere in src/server/integrations, so it is the honest
-       * example of a row that contacts nobody.
+       * `rides` rather than `music`, which this used to assert, and `music` rather
+       * than `flowers` before that. Both were the same correction: flowers became
+       * real when Wolt landed and music became real when Spotify did, and each time
+       * the test went on badging working code "not built yet" until it was moved.
+       * Rides has no provider anywhere in src/server/integrations, so it is now the
+       * honest example of a row that contacts nobody — and when a ride-hailing
+       * integration lands, this line is the one that has to move again.
        */
-      const music = await screen.findByTestId('integration-readiness-music');
-      expect(music).toHaveAttribute('data-readiness', 'aspirational');
-      expect(music).toHaveTextContent('not built yet');
+      const rides = await screen.findByTestId('integration-readiness-rides');
+      expect(rides).toHaveAttribute('data-readiness', 'aspirational');
+      expect(rides).toHaveTextContent('not built yet');
 
       const travel = screen.getByTestId('integration-readiness-travel');
       expect(travel).toHaveAttribute('data-readiness', 'unconfigured');
@@ -402,7 +404,7 @@ describe('IntegrationsPanel', () => {
 
       // Deliberately no badge rather than a guess in either direction. The
       // aspirational rows still show theirs — those need no server to be true.
-      await screen.findByTestId('integration-readiness-music');
+      await screen.findByTestId('integration-readiness-rides');
       expect(screen.queryByTestId('integration-readiness-dining')).not.toBeInTheDocument();
       expect(screen.queryByTestId('integration-readiness-messages')).not.toBeInTheDocument();
     });

@@ -111,14 +111,22 @@ test.describe('Integrations — propose and confirm', () => {
     /*
      * The fan-out is organised by *capability*, not by vendor — the visitor cares
      * that Valentin can book dinner, not that Ontopo exists. So these are the
-     * capabilities the integration layer backs, and `music` and `rides` are
-     * deliberately present-but-unbuilt alongside them.
+     * capabilities the integration layer backs, and `rides` is deliberately
+     * present-but-unbuilt alongside them.
      *
-     * `flowers` and `grocery` moved out of that unbuilt list: both are Wolt, whose
-     * catalogue endpoint needs no credential, and the server has been registering
-     * `woltTools` on every boot since the browser tier landed.
+     * `flowers` and `grocery` moved out of that unbuilt list when Wolt landed, and
+     * `music` when Spotify did. Each was the same correction: real code on the
+     * server while the panel still called the row a drawing.
      */
-    for (const id of ['dining', 'calendar', 'travel', 'messages', 'occasions', 'flowers']) {
+    for (const id of [
+      'dining',
+      'calendar',
+      'travel',
+      'messages',
+      'occasions',
+      'flowers',
+      'music',
+    ]) {
       await expect(panel.getByTestId(`integration-node-${id}`)).toBeVisible();
     }
 
@@ -135,10 +143,25 @@ test.describe('Integrations — propose and confirm', () => {
       'live',
     );
 
-    // And the honest half: a capability with nothing behind it says so, rather than
-    // showing a dot that implies it is merely unconfigured. `music` has no provider
-    // anywhere in src/server/integrations.
+    /*
+     * Music is Spotify, and the badge it shows depends on the deployment rather
+     * than on the catalogue: `spotifyTools` register on any process holding a
+     * client id and secret, so a machine with them set reads "live" and one
+     * without reads "needs credentials". Both are correct and the spec must not
+     * pin whichever this runner happens to have — what it pins is that the row is
+     * no longer called a drawing, because the code exists either way.
+     */
     await expect(panel.getByTestId('integration-readiness-music').first()).toContainText(
+      /live|needs credentials/,
+    );
+    await expect(panel.getByTestId('integration-readiness-music').first()).not.toContainText(
+      'not built yet',
+    );
+
+    // And the honest half: a capability with nothing behind it says so, rather than
+    // showing a dot that implies it is merely unconfigured. `rides` has no provider
+    // anywhere in src/server/integrations.
+    await expect(panel.getByTestId('integration-readiness-rides').first()).toContainText(
       'not built yet',
     );
   });

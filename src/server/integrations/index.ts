@@ -8,6 +8,8 @@ import { ontopoTools } from './ontopo/tools';
 import { whatsappTools } from './whatsapp/tools';
 import { browserReadyCached } from './browser/session';
 import { woltTools } from './wolt/tools';
+import { spotifyTools } from './spotify/tools';
+import { spotifyFixtureMode } from './spotify/client';
 
 export type { ToolRegistry, AgentTool, ActionProposal, IntegrationId } from './tool-registry';
 
@@ -56,6 +58,27 @@ export function integrationReadiness(): Record<IntegrationId, boolean> {
     // Wolt's catalogue is an unauthenticated JSON API, so it needs nothing — the
     // same shape as Ontopo.
     wolt: true,
+    /*
+     * An id and secret are enough, and that is a real distinction rather than a
+     * lax one.
+     *
+     * Spotify's client-credentials grant can search the catalogue, which is what
+     * `find_music` does and most of what `propose_playlist` needs — so a
+     * deployment holding only those two is genuinely able to build a playlist,
+     * and reporting it dark would be the same lie in the other direction that
+     * the florist row was fixed for. What it cannot do is *save* to a library;
+     * that needs a user refresh token, and `confirm` degrades to handing over
+     * track links when there isn't one, telling the user so in as many words.
+     *
+     * Fixture mode is deliberately NOT counted here, even though it makes the
+     * tools answer. This boolean is what the panel renders as "this server holds
+     * working Spotify credentials", and in fixture mode it holds none — so
+     * including it put a false claim about a credential in front of the visitor,
+     * which is the one thing that surface may not do. Registration is OR-ed with
+     * fixture mode separately in `buildToolRegistry`, so a fixture demo still
+     * works; it just reads "needs credentials", which is true.
+     */
+    spotify: Boolean(integrations.spotifyClientId && integrations.spotifyClientSecret),
     events: browser,
   };
 }
@@ -112,6 +135,19 @@ export function buildToolRegistry(): ToolRegistry {
   // Flowers, wine and gifts. Needs no credential — Wolt's catalogue endpoint is
   // unauthenticated — so this is on wherever the process can reach the internet.
   if (ready.wolt) tools.push(...woltTools);
+  /*
+   * The playlist for the drive there. Search needs only an app credential, so this
+   * is on for any deployment holding an id and secret — saving to a library is the
+   * part that additionally needs someone's account, and `confirm` says which of the
+   * two it did.
+   *
+   * Registration, not readiness, is where fixture mode is honoured: the tools can
+   * answer from the local catalogue with no credential at all, but the *panel* must
+   * not therefore claim this server holds one. So the tools register and
+   * `ready.spotify` stays false, which reads as "needs credentials" — the accurate
+   * description of a process with no key.
+   */
+  if (ready.spotify || spotifyFixtureMode()) tools.push(...spotifyTools);
 
   // Cleared first, so a *disconnect* actually removes tools. Refilling without
   // clearing would leave the old ones registered and let the model keep calling

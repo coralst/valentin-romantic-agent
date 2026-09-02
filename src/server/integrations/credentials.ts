@@ -3,6 +3,7 @@ import { config } from '../config';
 import { logger } from '../logging';
 import { resetTokenCache as resetAmadeusTokenCache } from './amadeus/client';
 import { resetGoogleTokenCache } from './google/client';
+import { resetSpotifyTokenCache } from './spotify/client';
 
 /**
  * Credential intake at runtime — the server side of "Connect" in the app.
@@ -33,10 +34,10 @@ import { resetGoogleTokenCache } from './google/client';
  * share a refresh token, so "connect Google" is a single act. Hebcal and
  * Ontopo need nothing and so are not connectable; they are simply on.
  */
-export type ConnectableId = 'amadeus' | 'whatsapp' | 'google';
+export type ConnectableId = 'amadeus' | 'whatsapp' | 'google' | 'spotify';
 
 export function isConnectable(id: string): id is ConnectableId {
-  return id === 'amadeus' || id === 'whatsapp' || id === 'google';
+  return id === 'amadeus' || id === 'whatsapp' || id === 'google' || id === 'spotify';
 }
 
 /** What an intake attempt came to. Never carries a credential. */
@@ -134,6 +135,35 @@ async function probeWhatsapp(phoneNumberId: string, token: string): Promise<Inta
 }
 
 /**
+ * Try a candidate Spotify id/secret against the client-credentials grant.
+ *
+ * This proves the pair, which is exactly the capability being connected: search.
+ * An optional refresh token is *not* probed here — the same request cannot
+ * validate both grants, and a working id/secret with a stale refresh token is
+ * still a useful connection (playlists hand over links instead of saving). So a
+ * bad refresh token degrades the capability rather than rejecting the connect,
+ * and `confirm` is where the user finds out, in words.
+ */
+async function probeSpotify(clientId: string, clientSecret: string): Promise<IntakeResult> {
+  let response: Response;
+  try {
+    response = await fetch('https://accounts.spotify.com/api/token', {
+      method: 'POST',
+      headers: {
+        authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`, 'utf8').toString('base64')}`,
+        'content-type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({ grant_type: 'client_credentials' }).toString(),
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+    });
+  } catch {
+    return unreachable('Spotify');
+  }
+  if (!response.ok) return rejected('Spotify');
+  return { ok: true, status: 200, message: 'Spotify connected.' };
+}
+
+/**
  * Accept credentials for one service, if the provider vouches for them.
  *
  * Google is the exception to probe-before-apply: a client id and secret cannot
@@ -180,6 +210,42 @@ export async function applyIntegrationCredentials(
     return probe;
   }
 
+  if (id === 'spotify') {
+    const clientId = fieldValue(body, 'clientId');
+    const clientSecret = fieldValue(body, 'clientSecret');
+    if (!clientId || !clientSecret) {
+      return badRequest('Spotify needs both a client ID and a client secret.');
+    }
+    const probe = await probeSpotify(clientId, clientSecret);
+    if (!probe.ok) return probe;
+
+    config.integrations.spotifyClientId = clientId;
+    config.integrations.spotifyClientSecret = clientSecret;
+
+    // Optional, and the only way to get a *saving* playlist rather than one that
+    // hands over links. Minted out of band — see CONNECT_RECIPES.spotify — so it
+    // arrives as a third field on the same form rather than through a redirect.
+    const refreshToken = fieldValue(body, 'refreshToken');
+    if (refreshToken) config.integrations.spotifyRefreshToken = refreshToken;
+
+    resetSpotifyTokenCache();
+    persistEnv({
+      SPOTIFY_CLIENT_ID: clientId,
+      SPOTIFY_CLIENT_SECRET: clientSecret,
+      ...(refreshToken ? { SPOTIFY_REFRESH_TOKEN: refreshToken } : {}),
+    });
+    logger.info('integration.connected', { integration: 'spotify' });
+    return refreshToken
+      ? probe
+      : {
+          ok: true,
+          status: 200,
+          message:
+            'Spotify connected for search. Add a refresh token to let playlists be saved ' +
+            'to a library — without one, confirming a playlist hands over track links.',
+        };
+  }
+
   const clientId = fieldValue(body, 'clientId');
   const clientSecret = fieldValue(body, 'clientSecret');
   if (!clientId || !clientSecret) {
@@ -211,6 +277,12 @@ export function clearIntegrationCredentials(id: ConnectableId): void {
     config.integrations.amadeusClientSecret = undefined;
     resetAmadeusTokenCache();
     removeEnv(['AMADEUS_CLIENT_ID', 'AMADEUS_CLIENT_SECRET']);
+  } else if (id === 'spotify') {
+    config.integrations.spotifyClientId = undefined;
+    config.integrations.spotifyClientSecret = undefined;
+    config.integrations.spotifyRefreshToken = undefined;
+    resetSpotifyTokenCache();
+    removeEnv(['SPOTIFY_CLIENT_ID', 'SPOTIFY_CLIENT_SECRET', 'SPOTIFY_REFRESH_TOKEN']);
   } else if (id === 'whatsapp') {
     config.integrations.whatsappPhoneNumberId = undefined;
     config.integrations.whatsappToken = undefined;

@@ -17,7 +17,7 @@ import type { IntegrationId } from '../../shared/interfaces/integrations';
  */
 
 /** The services whose credentials can be handed over from inside the app. */
-export type ConnectableId = 'amadeus' | 'whatsapp' | 'google';
+export type ConnectableId = 'amadeus' | 'whatsapp' | 'google' | 'spotify';
 
 /**
  * Which connect flow backs an integration id.
@@ -32,6 +32,8 @@ export function connectableFor(id: IntegrationId): ConnectableId | null {
       return 'amadeus';
     case 'whatsapp':
       return 'whatsapp';
+    case 'spotify':
+      return 'spotify';
     case 'google-calendar':
     case 'gmail':
       return 'google';
@@ -108,6 +110,25 @@ export const CONNECT_RECIPES: Record<ConnectableId, ConnectRecipe> = {
     href: 'https://developers.amadeus.com/my-apps',
     caution:
       'This build talks to the Amadeus test sandbox, so hotel and activity results are representative rather than bookable. Pointing it at production is a deliberate change, because those endpoints spend real money.',
+  },
+  spotify: {
+    id: 'spotify',
+    provider: 'Spotify',
+    fields: [
+      { name: 'clientId', label: 'Client ID', secret: false },
+      { name: 'clientSecret', label: 'Client secret', secret: true },
+      {
+        name: 'refreshToken',
+        label: 'Refresh token (optional)',
+        secret: true,
+        placeholder: 'only needed to save playlists',
+      },
+    ],
+    where:
+      'Spotify Developer Dashboard → Create app. The client ID and secret are on the app\'s settings page, and are enough for Valentin to search the catalogue.',
+    href: 'https://developer.spotify.com/dashboard',
+    caution:
+      'Without a refresh token he can choose the songs but not save them: confirming a playlist hands you the tracks as links instead. A refresh token is minted once by authorising your own account for the playlist-modify-private scope, and whatever account you use is the library every playlist lands in — so use a spare one, not your main.',
   },
   whatsapp: {
     id: 'whatsapp',

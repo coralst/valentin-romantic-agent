@@ -20,11 +20,11 @@ describe('integrationsReducer', () => {
   it('records a grant with its cap and the moment it was made', () => {
     const next = integrationsReducer(initialIntegrationsState, {
       type: 'CONNECT',
-      id: 'dining',
+      id: 'ontopo',
       capUsd: 120,
       grantedAt: GRANT.grantedAt,
     });
-    expect(next.grants.dining).toEqual(GRANT);
+    expect(next.grants.ontopo).toEqual(GRANT);
   });
 
   /*
@@ -32,27 +32,27 @@ describe('integrationsReducer', () => {
    * turned off — anything left in the record can be read back later as consent.
    */
   it('deletes the grant on disconnect rather than flagging it', () => {
-    const connected = { ...initialIntegrationsState, grants: { dining: GRANT } };
-    const next = integrationsReducer(connected, { type: 'DISCONNECT', id: 'dining' });
+    const connected = { ...initialIntegrationsState, grants: { ontopo: GRANT } };
+    const next = integrationsReducer(connected, { type: 'DISCONNECT', id: 'ontopo' });
     expect(next.grants).toEqual({});
-    expect('dining' in next.grants).toBe(false);
+    expect('ontopo' in next.grants).toBe(false);
   });
 
   it('changes the cap on an existing grant', () => {
-    const connected = { ...initialIntegrationsState, grants: { dining: GRANT } };
-    const next = integrationsReducer(connected, { type: 'SET_CAP', id: 'dining', capUsd: 60 });
-    expect(next.grants.dining).toEqual({ ...GRANT, capUsd: 60 });
+    const connected = { ...initialIntegrationsState, grants: { ontopo: GRANT } };
+    const next = integrationsReducer(connected, { type: 'SET_CAP', id: 'ontopo', capUsd: 60 });
+    expect(next.grants.ontopo).toEqual({ ...GRANT, capUsd: 60 });
   });
 
   /* A cap set on something never connected would be a grant made by a slider. */
   it('refuses to create a grant by setting a cap', () => {
     const next = integrationsReducer(initialIntegrationsState, {
       type: 'SET_CAP',
-      id: 'dining',
+      id: 'ontopo',
       capUsd: 60,
     });
     expect(next).toBe(initialIntegrationsState);
-    expect(next.grants.dining).toBeUndefined();
+    expect(next.grants.ontopo).toBeUndefined();
   });
 
   it('carries a storage failure and lets it be dismissed', () => {
@@ -73,8 +73,8 @@ describe('loadGrants', () => {
   });
 
   it('round-trips through saveGrants', () => {
-    expect(saveGrants({ dining: GRANT })).toBeNull();
-    expect(loadGrants()).toEqual({ dining: GRANT });
+    expect(saveGrants({ ontopo: GRANT })).toBeNull();
+    expect(loadGrants()).toEqual({ ontopo: GRANT });
   });
 
   /*
@@ -83,12 +83,12 @@ describe('loadGrants', () => {
    * nobody can revoke.
    */
   it('drops ids the catalogue no longer offers', () => {
-    stored({ dining: GRANT, telegraph: GRANT });
-    expect(loadGrants()).toEqual({ dining: GRANT });
+    stored({ ontopo: GRANT, telegraph: GRANT });
+    expect(loadGrants()).toEqual({ ontopo: GRANT });
   });
 
   it('discards a payload from an older schema version', () => {
-    stored({ dining: GRANT }, 0);
+    stored({ ontopo: GRANT }, 0);
     expect(loadGrants()).toBeNull();
     expect(localStorage.getItem(INTEGRATIONS_STORAGE_KEY)).toBeNull();
   });
@@ -100,8 +100,8 @@ describe('loadGrants', () => {
   });
 
   it('normalises a grant whose cap is not a number', () => {
-    stored({ dining: { capUsd: 'lots', grantedAt: 7 } as unknown as IntegrationGrant });
-    expect(loadGrants()).toEqual({ dining: { capUsd: null, grantedAt: '' } });
+    stored({ ontopo: { capUsd: 'lots', grantedAt: 7 } as unknown as IntegrationGrant });
+    expect(loadGrants()).toEqual({ ontopo: { capUsd: null, grantedAt: '' } });
   });
 });
 
@@ -112,28 +112,28 @@ describe('useIntegrationsStore', () => {
   it('starts with nothing connected', () => {
     const { result } = renderHook(() => useIntegrationsStore());
     expect(result.current.connectedCount).toBe(0);
-    expect(result.current.isConnected('dining')).toBe(false);
+    expect(result.current.isConnected('ontopo')).toBe(false);
   });
 
   it('connects, counts, and disconnects', () => {
     const { result } = renderHook(() => useIntegrationsStore());
 
-    act(() => result.current.connect('dining', 120));
-    expect(result.current.isConnected('dining')).toBe(true);
+    act(() => result.current.connect('ontopo', 120));
+    expect(result.current.isConnected('ontopo')).toBe(true);
     expect(result.current.connectedCount).toBe(1);
-    expect(result.current.state.grants.dining?.capUsd).toBe(120);
+    expect(result.current.state.grants.ontopo?.capUsd).toBe(120);
 
-    act(() => result.current.disconnect('dining'));
-    expect(result.current.isConnected('dining')).toBe(false);
+    act(() => result.current.disconnect('ontopo'));
+    expect(result.current.isConnected('ontopo')).toBe(false);
     expect(result.current.connectedCount).toBe(0);
   });
 
   it('persists a grant so a reload keeps it', () => {
     const first = renderHook(() => useIntegrationsStore());
-    act(() => first.result.current.connect('dining', 120));
+    act(() => first.result.current.connect('ontopo', 120));
 
     const second = renderHook(() => useIntegrationsStore());
-    expect(second.result.current.isConnected('dining')).toBe(true);
+    expect(second.result.current.isConnected('ontopo')).toBe(true);
   });
 
   it('surfaces a browser that refuses to store the choice', () => {
@@ -141,12 +141,12 @@ describe('useIntegrationsStore', () => {
       throw new Error('quota exceeded');
     });
     const { result } = renderHook(() => useIntegrationsStore());
-    act(() => result.current.connect('dining', 120));
+    act(() => result.current.connect('ontopo', 120));
 
     expect(result.current.state.storageError).toContain('quota exceeded');
     // The grant still holds for this session — the failure is about durability,
     // not about whether the visitor granted anything.
-    expect(result.current.isConnected('dining')).toBe(true);
+    expect(result.current.isConnected('ontopo')).toBe(true);
 
     act(() => result.current.dismissStorageError());
     expect(result.current.state.storageError).toBeNull();

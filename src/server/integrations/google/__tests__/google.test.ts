@@ -151,9 +151,17 @@ describe('googleAccessToken', () => {
   it('asks for send and events scopes only — never read access to mail', () => {
     expect(GOOGLE_SCOPES).toEqual([
       'https://www.googleapis.com/auth/calendar.events',
+      'https://www.googleapis.com/auth/calendar.readonly',
       'https://www.googleapis.com/auth/gmail.send',
     ]);
-    expect(GOOGLE_SCOPES.some((scope) => scope.includes('readonly'))).toBe(false);
+    // The invariant is about the *inbox*. It used to be asserted as "no scope
+    // contains 'readonly'", which forbade `calendar.readonly` as collateral —
+    // without it `calendarList.list` 403s and only the primary calendar is ever
+    // readable. Scoped to Gmail, the guarantee is unchanged and now says what it
+    // means: mail can be sent, never read.
+    expect(GOOGLE_SCOPES.filter((scope) => scope.includes('gmail'))).toEqual([
+      'https://www.googleapis.com/auth/gmail.send',
+    ]);
     expect(GOOGLE_SCOPES.some((scope) => scope.includes('gmail.compose'))).toBe(false);
   });
 });
@@ -283,15 +291,24 @@ describe('sendMessage', () => {
 });
 
 describe('find_occasions', () => {
-  it('filters a busy window down to occasions when given no query', async () => {
+  it('leads with occasions but still reports the rest of the window', async () => {
     stubEverything();
     const result = await findOccasionsTool.execute({}, ctx);
 
     expect(result.ok).toBe(true);
     expect(result.summary).toContain('Our anniversary');
     expect(result.summary).toContain('יום הולדת של דנה');
-    // The whole point of the filter: a standup is not an occasion.
-    expect(result.summary).not.toContain('Standup');
+    // Occasions come first, because that is what the tool is for.
+    expect(result.summary.indexOf('Our anniversary')).toBeLessThan(
+      result.summary.indexOf('Standup'),
+    );
+    // But the standup is still there. This assertion used to be
+    // `not.toContain('Standup')`, and that is precisely the bug that shipped: the
+    // ten-word occasion list was a *gate*, so a real diary holding a flight, six
+    // hotel stays, two restaurant bookings and two court dates came back as
+    // "empty" and the model said so out loud. A read tool may rank what it
+    // found; it may not hide it.
+    expect(result.summary).toContain('Standup');
   });
 
   it('matches Hebrew occasion words', async () => {
@@ -320,12 +337,27 @@ describe('find_occasions', () => {
     expect(result.summary).toContain('guessing a date');
   });
 
-  it('says nothing was found rather than returning an empty win', async () => {
+  it('reports a genuinely empty window as empty', async () => {
     stubFetch((url) => (url.includes(TOKEN_URL) ? TOKEN_OK : { items: [] }));
     const result = await findOccasionsTool.execute({}, ctx);
 
     expect(result.ok).toBe(true);
-    expect(result.summary).toContain('No birthdays or anniversaries');
+    expect(result.summary).toContain('nothing at all');
+  });
+
+  it('does not call an empty window empty when only the occasions are missing', async () => {
+    stubFetch((url) =>
+      url.includes(TOKEN_URL)
+        ? TOKEN_OK
+        : { items: [{ id: '1', summary: 'Flight to Manchester', start: { date: '2026-10-12' } }] },
+    );
+    const result = await findOccasionsTool.execute({}, ctx);
+
+    expect(result.ok).toBe(true);
+    // The distinction the model has to be able to draw, and could not before:
+    // "no birthdays" is not "no calendar".
+    expect(result.summary).toContain('Flight to Manchester');
+    expect(result.summary).not.toContain('nothing at all');
   });
 
   it('never writes', async () => {

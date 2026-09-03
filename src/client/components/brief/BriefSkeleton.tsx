@@ -59,15 +59,18 @@ const SKELETON_GROUPS: ReadonlyArray<{ label: string; fieldIds: readonly string[
   },
   {
     /*
-     * The only group that is about him, and two rows rather than the four
-     * logistics fields, because the skeleton is capped at twelve — a longer wall
+     * The only group that is about him, and two rows rather than one per
+     * logistics field, because the skeleton is capped at twelve — a longer wall
      * of dashes pushes the pinned nudge off the fold, which is the bug pinning it
-     * was meant to fix (`BriefSkeleton.test.tsx`).
+     * was meant to fix (`BriefSkeleton.test.tsx`). The twelve are already spoken
+     * for, so a new logistics field does not get a row here by default.
      *
      * These two earn the slots because they are the ones with no usable default:
      * with no city there is nowhere to search from and with no occasion there is
      * nothing to count down to. A radius and a lead time both fall back to a
      * sensible value in `profile-fields.ts`, so leaving them blank costs nothing.
+     * `notify_email` has no default either, but it is asked for in the flow that
+     * arms a reminder rather than up front — see its rank in `field-payoff.ts`.
      */
     label: 'Where and when',
     fieldIds: ['home_city', 'next_occasion'],

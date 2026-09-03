@@ -323,4 +323,14 @@ export const DEMO_PROFILE_PREFERENCES: readonly ExtractedPreference[] = [
     value: '10 km',
     confidence: 0.75,
   },
+  {
+    category: 'important_dates',
+    key: 'notify email',
+    fieldId: 'notify_email',
+    // The address the swept reminder is actually sent to. `example.com` is the
+    // reserved documentation domain (RFC 2606), so a demo run that really does
+    // dispatch cannot deliver mail to a live mailbox belonging to someone else.
+    value: 'daniel@example.com',
+    confidence: 0.99,
+  },
 ] as const;

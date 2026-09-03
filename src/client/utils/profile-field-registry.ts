@@ -468,6 +468,31 @@ export const PROFILE_FIELD_REGISTRY: readonly ProfileFieldDefinition[] = [
       { category: 'travel', key: 'radius' },
     ],
   },
+  /*
+   * `text`, not a new `'email'` value type.
+   *
+   * A fifth value type would have to be handled by every rendering primitive that
+   * switches on `valueType` — the dossier tile, the editor, the skeleton — for the
+   * sake of one field, and would buy only an input `type` attribute. Whether a
+   * stored string is a plausible address is a question for the route and the
+   * extraction layer, which are the two places that can reject it before it is
+   * written.
+   *
+   * Mapped under `important_dates` because that is the category the reminder rows
+   * already live in (`reminder_lead_time`), and `fieldId` is authoritative on the
+   * read path anyway — the pair is only the legacy fallback.
+   */
+  {
+    id: 'notify_email',
+    label: 'Reminder Email',
+    valueType: 'text',
+    section: 'logistics',
+    mappings: [
+      { category: 'important_dates', key: 'notify email' },
+      { category: 'important_dates', key: 'reminder email' },
+      { category: 'important_dates', key: 'notification email' },
+    ],
+  },
 ] as const;
 
 /** Get all fields belonging to a section, in registry order */

@@ -180,6 +180,17 @@ export const FIELD_PAYOFFS: Readonly<Record<string, FieldPayoff>> = {
     rank: 10,
     reason: 'Does she have a name only you use for her?',
   },
+  /*
+   * Low despite gating reminder delivery entirely — a planned reminder with no
+   * address is swept and skipped. It sits here because the rail asks these
+   * questions in Valentin's voice, and opening a conversation about her by asking
+   * for an email address reads like a signup form. It earns its place above the
+   * zodiac sign only because something depends on it.
+   */
+  notify_email: {
+    rank: 8,
+    reason: 'Where should I send your reminders? Without an address I can plan one but not deliver it.',
+  },
   zodiac_sign: {
     rank: 5,
     reason: 'Her sign is a small thing, but some people love a nod to it.',

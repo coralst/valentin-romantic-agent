@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { PreferenceExtractor } from '../preference-extractor';
 import { mapCategory } from '../category-mapper';
+import { InMemoryStoreFactory } from '../../persistence/in-memory-store';
 import type { BedrockClient } from '../../agent/bedrock-client';
 import type { StorageInterface } from '../../persistence/storage-interface';
 import type { ChatMessage } from '../../../shared/interfaces/message';
@@ -387,5 +388,83 @@ describe('PreferenceExtractor — one row per field, whatever the category', () 
     await extractor.extract(makeMessage(), []);
 
     expect(storage.savePreference).toHaveBeenCalled();
+  });
+});
+
+/**
+ * The half of step 2 that lives in extraction: a date arriving in conversation has
+ * to leave a row behind for the sweeper.
+ *
+ * A real store here rather than the mock above, because what is asserted is what
+ * the store holds afterwards, and a stubbed `saveReminder` would pass whether or
+ * not the plan was ever handed anything real.
+ */
+describe('reminders planned from what a turn taught us', () => {
+  let store: StorageInterface;
+  let sessionId: string;
+
+  beforeEach(async () => {
+    // A fixed clock, because the sync uses the real one and a birthday's reminder
+    // is legitimately dropped during the days its lead time has already elapsed —
+    // which would make this suite fail for one week a year.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-01T08:00:00Z'));
+    store = new InMemoryStoreFactory().forUser('user-under-test');
+    sessionId = await store.createSession();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Run one extraction turn whose tool output is the given preferences. */
+  async function turn(preferences: Record<string, unknown>[]): Promise<void> {
+    const bedrock: BedrockClient = {
+      generateResponse: vi.fn(),
+      converseWithTools: vi.fn(),
+      extractWithTool: vi.fn().mockResolvedValue({
+        toolName: 'extract_preferences',
+        input: { preferences },
+      }),
+    };
+    await new PreferenceExtractor(bedrock, store, {}).extract(
+      makeMessage({ sessionId }),
+      [],
+    );
+  }
+
+  it('plans a reminder when a birthday lands', async () => {
+    await turn([
+      {
+        category: 'important_dates',
+        key: 'birthday',
+        field: 'birthday',
+        value: 'her birthday is 1988-06-12',
+        confidence: 0.95,
+      },
+    ]);
+
+    const rows = await store.getRemindersBySession(sessionId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe('birthday');
+    expect(rows[0].occursOn).toBe('2026-06-12');
+    expect(rows[0].sentAt).toBeNull();
+  });
+
+  it('plans nothing when the turn taught us something a reminder cannot use', async () => {
+    await turn([
+      {
+        category: 'food',
+        key: 'favorite_cuisine',
+        field: 'favorite_cuisine',
+        value: 'Italian',
+        confidence: 0.9,
+      },
+    ]);
+
+    // Not merely "no rows": the gate means the profile was never re-read at all. A
+    // sync on every turn would be two reads and up to four writes per message for
+    // a plan that cannot have changed.
+    expect(await store.getRemindersBySession(sessionId)).toHaveLength(0);
   });
 });

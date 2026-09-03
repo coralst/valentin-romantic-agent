@@ -57,18 +57,29 @@ export const PROFILE_FIELD_IDS = [
    * registry *by position*, so inserting into the middle renumbers every field
    * after it and turns a five-line change into an unreviewable diff.
    *
-   * These five are also the first fields here that describe the **user** rather
-   * than his partner. That is not a new precedent — `gift_budget` is what *he*
-   * will spend and `gift_shortlist` is what *he* is weighing up — but it is the
-   * reason each guidance string below opens by naming whose fact it is. The
-   * invariant this file keeps is "the guidance says whose fact it is", not "every
-   * fact is about her".
+   * These are also the first fields here that describe the **user** rather than
+   * his partner. That is not a new precedent — `gift_budget` is what *he* will
+   * spend and `gift_shortlist` is what *he* is weighing up — but it is the reason
+   * each guidance string below opens by naming whose fact it is. The invariant
+   * this file keeps is "the guidance says whose fact it is", not "every fact is
+   * about her".
    */
   'next_occasion',
   'home_city',
   'restaurant_style',
   'reminder_lead_time',
   'search_radius',
+  /*
+   * The address a reminder is actually sent to.
+   *
+   * A profile field rather than an auth claim: the Cognito *access* token carries
+   * no email, so `AuthContext` (`src/server/auth/token-verifier.ts`) has only a
+   * `userId`. Widening auth to obtain one address would be a large change to the
+   * trust boundary for a fact the chatbot can simply ask for, like every other
+   * fact here. Without it every planned reminder is swept and skipped with
+   * `reminder.no_target`.
+   */
+  'notify_email',
 ] as const;
 
 /**
@@ -223,6 +234,8 @@ export const PROFILE_FIELD_GUIDANCE: Readonly<Record<ProfileFieldId, string>> = 
     'How much warning the user wants before an occasion — the morning of, a few days, a week, a month. Record it only when he says something about timing; do not infer it from urgency in his tone.',
   search_radius:
     'How far the user is willing to travel for an evening out, as a distance. If he says it in minutes rather than kilometres, pick the nearest distance rather than recording the minutes.',
+  notify_email:
+    "The user's own email address, the one reminders should be sent to — his address, not hers, and not an address belonging to anyone else he mentions. Record it ONLY when he states an address outright; never assemble one from a name, a company or a domain you have seen, because a reminder sent to an invented address reaches a stranger, which is worse than sending no reminder at all.",
 };
 
 /** Type guard: is this string one of the canonical field ids? */

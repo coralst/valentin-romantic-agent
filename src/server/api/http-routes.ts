@@ -37,6 +37,7 @@ import {
   reverseGeocode,
 } from '../integrations/google-places/client';
 import { isGeoPoint } from '../../shared/constants/geo';
+import { syncReminders, touchesReminders } from '../reminders/reminder-sync';
 
 /**
  * The `sourceMessageId` on a location row.
@@ -661,6 +662,17 @@ export function createHttpRoutes(storage: StorageInterface) {
       }
 
       await storage.setManualValue(sessionId, fieldId, value.trim().slice(0, TEXT_LIMIT));
+
+      /*
+       * A hand-corrected date has to move its reminder, and this route is the most
+       * likely place one is corrected: extraction guesses a birthday from prose, but
+       * a reminder email address is something a person types into the panel. Without
+       * this call the panel would show the new value while the mail still went out
+       * on the old one — and `syncReminders` swallows its own failures, so a storage
+       * fault cannot turn a saved correction into an error the user sees.
+       */
+      if (touchesReminders([fieldId])) await syncReminders(storage, sessionId);
+
       return { status: 200, body: { fieldId, value: value.trim() } };
     },
 
@@ -755,6 +767,12 @@ export function createHttpRoutes(storage: StorageInterface) {
       }
 
       await storage.clearManualValue(sessionId, fieldId);
+
+      // Clearing a correction is as much a change as making one: the inferred value
+      // becomes live again, so the reminder has to fall back to it — or be reaped if
+      // there is no longer any value at all behind it.
+      if (touchesReminders([fieldId])) await syncReminders(storage, sessionId);
+
       return { status: 200, body: { fieldId, cleared: true } };
     },
 

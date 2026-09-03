@@ -1111,6 +1111,29 @@ describe('createHttpRoutes', () => {
       });
     });
 
+    it('re-plans the reminder when a date is corrected by hand', async () => {
+      // The panel is where a reminder email or a corrected birthday is actually
+      // typed; extraction only ever guesses them from prose. Without a sync here the
+      // panel would show the new date while the mail still went out on the old one.
+      await routes.setManualValue(sessionId, 'birthday', { value: '2027-04-18' });
+      await routes.setManualValue(sessionId, 'notify_email', { value: 'him@example.com' });
+
+      const reminders = await store.getRemindersBySession(sessionId);
+      const birthday = reminders.find((r) => r.kind === 'birthday');
+
+      expect(birthday?.occursOn).toBe('2027-04-18');
+      expect(birthday?.target).toBe('him@example.com');
+      expect(birthday?.sentAt ?? null).toBeNull();
+    });
+
+    it('leaves reminders alone for a field no reminder is derived from', async () => {
+      // The gate matters: a re-plan is two reads and up to four writes, and almost
+      // every correction ("34B") has nothing to do with a date.
+      await routes.setManualValue(sessionId, 'bra_size', { value: '34B' });
+
+      expect(await store.getRemindersBySession(sessionId)).toEqual([]);
+    });
+
     it('checks the field id before it checks the session, so a typo is a 400', async () => {
       // A 404 here would send the client looking for a missing session when the
       // real fault is the field name it sent.

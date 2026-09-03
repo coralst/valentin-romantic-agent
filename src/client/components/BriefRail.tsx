@@ -60,9 +60,10 @@ const CHIP_FIELDS: ReadonlyArray<{ fieldId: string; label: string }> = [
   { fieldId: 'travel_destination', label: 'Dreams of' },
   { fieldId: 'gift_budget', label: 'Budget' },
   { fieldId: 'zodiac_sign', label: 'Sign' },
-  // The five logistics fields are deliberately absent: this strip is short facts
-  // about *her*, and "Radius · 10 km" reads as something she asked for. They
-  // surface in the dossier's own section and in the skeleton instead.
+  // Every logistics field is deliberately absent: this strip is short facts
+  // about *her*, and "Radius · 10 km" — or worse, his own email address — reads as
+  // something she asked for. They surface in the dossier's own section instead,
+  // and the two with no usable default also appear in the skeleton.
 ];
 
 /** Chip values are pills, not paragraphs — anything longer is cut on a word. */

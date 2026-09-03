@@ -203,6 +203,18 @@ const KEY_SYNONYMS: Readonly<Record<string, string | null>> = {
   'search radius': 'search_radius',
   radius: 'search_radius',
   'travel distance': 'search_radius',
+  // --- notify_email ---
+  //
+  // Bare `email` is safe here where a bare `name` would not be: nothing else in
+  // the registry holds an address, so there is no second field this could be
+  // filed under by mistake.
+  email: 'notify_email',
+  'email address': 'notify_email',
+  'notify email': 'notify_email',
+  'notification email': 'notify_email',
+  'reminder email': 'notify_email',
+  'my email': 'notify_email',
+  'contact email': 'notify_email',
 
   // --- deliberately NOT profile fields (see `KeepInMind.tsx`) ---
   allergy: null,

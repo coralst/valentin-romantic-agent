@@ -32,6 +32,16 @@ export interface ComputeStackProps extends cdk.StackProps {
   imageTag: string;
   /** Bucket for ALB access logs. */
   accessLogBucket: s3.IBucket;
+  /**
+   * Prefix of the per-service integration secrets DataStack declares, with no
+   * trailing slash.
+   *
+   * A string rather than four `ISecret`s on purpose: this stack needs only
+   * something to grant against and to hand the container, and four more
+   * cross-stack exports would thicken the Data→Compute edge that
+   * `scripts/deploy.sh` already has to order by hand.
+   */
+  integrationSecretsPrefix: string;
   /** Cognito User Pool the backend verifies access tokens against */
   userPoolId: string;
   userPoolArn: string;
@@ -197,6 +207,36 @@ export class ComputeStack extends cdk.Stack {
         new iam.PolicyStatement({
           actions: ['secretsmanager:GetSecretValue'],
           resources: [`arn:aws:secretsmanager:*:*:secret:valentin/${env}/*`],
+        }),
+      );
+
+      /*
+       * Write, for the integrations panel's connect flow only.
+       *
+       * Deliberately far narrower than the read grant above: `integrations/*`
+       * rather than `valentin/<env>/*`. A credential pasted into the panel must
+       * never be able to overwrite `valentin/<env>/demo-user` — that secret holds
+       * the password `POST /api/demo/login` exchanges for real Cognito tokens, so
+       * a write there would lock every visitor out of the deployed app. Scoping
+       * this by prefix means no code path in the server can reach it, rather than
+       * relying on nobody ever passing the wrong secret id.
+       *
+       * `CreateSecret` is absent, and that is the load-bearing omission: a secret
+       * created at runtime would carry none of the SpringClean exemption tags, and
+       * the Isengard janitor deletes untagged resources. So the four secrets are
+       * declared in DataStack and `putRemoteCredentials` uses PutSecretValue only,
+       * treating ResourceNotFoundException as "the Data stack isn't deployed yet".
+       *
+       * The trailing `*` also absorbs the six random characters Secrets Manager
+       * appends to every secret ARN — a resource ending at the plain name matches
+       * nothing.
+       */
+      role.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          actions: ['secretsmanager:PutSecretValue', 'secretsmanager:DescribeSecret'],
+          resources: [
+            `arn:aws:secretsmanager:*:*:secret:${props.integrationSecretsPrefix}/*`,
+          ],
         }),
       );
 
@@ -427,6 +467,15 @@ export class ComputeStack extends cdk.Stack {
       COGNITO_SPA_CLIENT_ID: props.spaClientId,
       COGNITO_DEMO_CLIENT_ID: props.demoClientId,
       DEMO_SECRET_ARN: props.demoSecret.secretArn,
+      /*
+       * Switches `credential-store.ts` on. Unset — as it is locally and in
+       * `npm test` — the whole remote-credential path is a no-op and `.env` is the
+       * only source, which is what keeps a clone with no AWS account working.
+       *
+       * Set on *both* engines, not just engine B: the panel that writes these
+       * secrets is served by whichever task the visitor is talking to.
+       */
+      INTEGRATION_SECRETS_PREFIX: props.integrationSecretsPrefix,
       COGNITO_DOMAIN: `https://${props.cognitoDomainPrefix}.auth.${cdk.Stack.of(this).region}.amazoncognito.com`,
     };
 

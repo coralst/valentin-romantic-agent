@@ -56,6 +56,7 @@ beforeAll(() => {
     table: data.table,
     photoBucket: data.photoBucket,
     accessLogBucket: data.accessLogBucket,
+    integrationSecretsPrefix: data.integrationSecretsPrefix,
     guardrailId: safety.guardrailId,
     guardrailVersion: safety.guardrailVersion,
     imageTag: 'test-sha',
@@ -897,4 +898,145 @@ describe('Google credentials reach the deployed task', () => {
       expect(deps).toContain(policyId);
     });
   }
+});
+
+describe('integration credentials survive a task replacement', () => {
+  // The panel's connect flow writes `config.integrations` and `.env`. Both
+  // containers run `readonlyRootFilesystem: true`, and a Fargate task is replaced
+  // on every deploy, so before these secrets existed a credential pasted into the
+  // deployed app lived exactly as long as the task did — and was invisible to any
+  // second process, which is what the Gateway's tool Lambda is about to be.
+  const SERVICES = ['amadeus', 'google', 'spotify', 'whatsapp'] as const;
+
+  /** Every SecretsManager secret in the Data stack, keyed by its `Name`. */
+  function dataSecrets(): Record<string, any> {
+    const found = dataTemplate.findResources('AWS::SecretsManager::Secret');
+    return Object.fromEntries(
+      Object.values<any>(found).map((res) => [res.Properties.Name, res]),
+    );
+  }
+
+  it('declares one secret per connectable service', () => {
+    // The literal list rather than an import: `infra/tsconfig.json` has
+    // `rootDir: '.'`, so nothing here can import `src/`. The runtime half of the
+    // same list is asserted by the `integrationSecretNames` tests in
+    // `src/server/integrations/__tests__/credential-store.test.ts` — if the two
+    // ever disagree, the tool Lambda reads a secret nobody writes.
+    expect(Object.keys(dataSecrets()).sort()).toEqual(
+      SERVICES.map((s) => `valentin/${config.env}/integrations/${s}`).sort(),
+    );
+  });
+
+  it('declares them in the Data stack, not the stack that rolls back', () => {
+    // Compute carries the ECS rolling deploy, so a create there is the one most
+    // likely to be caught in a rollback — and a RETAIN'd secret created by a
+    // rolling-back deploy logs DELETE_SKIPPED, leaves the stack's resource set,
+    // and deadlocks every later deploy with AlreadyExists. That is exactly how
+    // `valentin/<env>/google-oauth` got stuck. Data is a ~16s near-no-op.
+    const computeSecrets = Object.values<any>(
+      computeTemplate.findResources('AWS::SecretsManager::Secret'),
+    ).map((res) => res.Properties.Name);
+    for (const service of SERVICES) {
+      expect(computeSecrets).not.toContain(`valentin/${config.env}/integrations/${service}`);
+    }
+  });
+
+  for (const service of SERVICES) {
+    it(`exempts ${service} from the account janitor`, () => {
+      // SpringClean calls DeleteSecret directly and never reads a stack policy,
+      // so the tag is the only thing standing between these and a seven-day fuse.
+      // It took ValentinTable-dev on 2026-09-01 this way.
+      expect(
+        dataSecrets()[`valentin/${config.env}/integrations/${service}`].Properties.Tags,
+      ).toEqual(
+        // `expect.arrayContaining`, not CDK's `Match.arrayWith` — the latter only
+        // works inside `hasResourceProperties`, and against `toEqual` it silently
+        // compares the matcher object itself.
+        expect.arrayContaining([
+          { Key: 'auto-delete', Value: 'no' },
+          { Key: 'springclean', Value: 'exempt' },
+        ]),
+      );
+    });
+  }
+
+  // RETAIN is not a free "protect the data" choice — it buys the DELETE_SKIPPED
+  // deadlock above. So it is spent only where the value cannot be recovered.
+  for (const [service, policy] of [
+    // Refresh tokens minted by a browser consent popup, which cannot be run
+    // against a Fargate task.
+    ['google', 'Retain'],
+    ['spotify', 'Retain'],
+    // Values a human pastes into the connect form, recoverable in seconds.
+    ['amadeus', 'Delete'],
+    ['whatsapp', 'Delete'],
+  ] as const) {
+    it(`sets ${service} to ${policy}, because of how the value is obtained`, () => {
+      const secret = dataSecrets()[`valentin/${config.env}/integrations/${service}`];
+      expect(secret.DeletionPolicy).toBe(policy);
+      expect(secret.UpdateReplacePolicy).toBe(policy);
+    });
+  }
+
+  it('creates them empty, so a deploy never overwrites a live credential', () => {
+    // `SecretString` is written at create time only, so a later PutSecretValue
+    // survives every subsequent `cdk deploy`. `{}` rather than a generated random
+    // key: `credential-store.ts` reads this as JSON and treats a missing field as
+    // "not connected", which is the honest starting state — a generated value
+    // would read like a real credential to whoever opens the console.
+    for (const secret of Object.values<any>(dataSecrets())) {
+      expect(secret.Properties.SecretString).toBe('{}');
+      expect(secret.Properties.GenerateSecretString).toBeUndefined();
+    }
+  });
+
+  for (const engine of ['valentin', 'agentcore'] as const) {
+    it(`switches the remote store on for engine ${engine}`, () => {
+      // Both engines, not just B: the panel that writes these secrets is served
+      // by whichever task the visitor happens to be talking to. Unset, the whole
+      // module is a no-op and `.env` is the only source.
+      expect(containerEnv(engine).INTEGRATION_SECRETS_PREFIX).toBe(
+        `valentin/${config.env}/integrations`,
+      );
+    });
+  }
+
+  /** Every statement across every Compute IAM policy. */
+  function computeStatements(): Array<any> {
+    return Object.values<any>(computeTemplate.findResources('AWS::IAM::Policy')).flatMap(
+      (res) => res.Properties.PolicyDocument.Statement as Array<any>,
+    );
+  }
+
+  it('can write the integration secrets', () => {
+    const writes = computeStatements().filter((stmt) =>
+      ([] as string[]).concat(stmt.Action ?? []).includes('secretsmanager:PutSecretValue'),
+    );
+    expect(writes.length).toBeGreaterThan(0);
+  });
+
+  it('cannot write any secret outside integrations/', () => {
+    // The read grant is `valentin/<env>/*`, which includes the demo-user secret
+    // holding the password POST /api/demo/login exchanges for Cognito tokens. A
+    // write grant that wide would let a credential pasted into the panel lock
+    // every visitor out of the deployed app. Scoped by prefix so no code path can
+    // reach it, rather than trusting nobody to pass the wrong secret id.
+    for (const stmt of computeStatements()) {
+      const actions = ([] as string[]).concat(stmt.Action ?? []);
+      if (!actions.includes('secretsmanager:PutSecretValue')) continue;
+      for (const resource of ([] as unknown[]).concat(stmt.Resource ?? [])) {
+        expect(String(resource)).toContain(`valentin/${config.env}/integrations/`);
+      }
+    }
+  });
+
+  it('never grants CreateSecret, which would produce an untagged secret', () => {
+    // A secret created at runtime carries none of the exemption tags above, so
+    // the janitor would delete it weeks later with no diff to blame it on. Hence
+    // `putRemoteCredentials` uses PutSecretValue only and treats
+    // ResourceNotFoundException as "the Data stack isn't deployed yet".
+    expect(JSON.stringify(computeTemplate.toJSON())).not.toContain(
+      'secretsmanager:CreateSecret',
+    );
+  });
 });

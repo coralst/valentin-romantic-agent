@@ -96,6 +96,10 @@ const computeStack = new ComputeStack(app, `Valentin-Compute-${env}`, {
   table: dataStack.table,
   photoBucket: dataStack.photoBucket,
   accessLogBucket: dataStack.accessLogBucket,
+  // A literal-valued string, so this crosses the stack boundary as a plain
+  // property and not as a CloudFormation export. Compute already holds enough
+  // exports open that changing one is a two-deploy dance.
+  integrationSecretsPrefix: dataStack.integrationSecretsPrefix,
   guardrailId: safetyStack.guardrailId,
   /*
    * Deliberately not `safetyStack.guardrailVersion`.

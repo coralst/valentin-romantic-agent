@@ -60,6 +60,35 @@ export interface EnvironmentConfig {
    */
   cloudfrontPrefixListId: string;
   cloudfrontPriceClass: cloudfront.PriceClass;
+  /**
+   * Secrets that already exist in the account and must be **adopted** rather
+   * than created, keyed by complete ARN including the six-character suffix.
+   *
+   * Both of these are `RemovalPolicy.RETAIN`, which means a stack rollback that
+   * happens *after* they are created leaves the physical secret behind while the
+   * stack stops tracking it. Every later `cdk deploy` then tries to create a
+   * secret whose name is taken and fails the whole stack with
+   * `AlreadyExists` — which is exactly what happened to dev, and it is not
+   * self-healing: the more valuable the secret, the less acceptable the obvious
+   * fix of deleting it. `valentin/dev/google-oauth` holds a real Google refresh
+   * token that was typed in by hand, so deleting it to let CloudFormation
+   * recreate an empty one is the one option that is off the table.
+   *
+   * Adoption is the non-destructive way out. `Secret.fromSecretCompleteArn`
+   * emits no resource, so CloudFormation stops trying to create what is already
+   * there, the existing value is untouched, and the execution role is still
+   * granted read. An environment that has never deployed these leaves this
+   * undefined and gets the normal created-and-managed secrets.
+   *
+   * The ARN must be **complete**. `fromSecretNameV2` yields a partial ARN, and
+   * an ECS secret built from a partial ARN fails at task start with
+   * `ResourceInitializationError: unable to pull secrets` — a failure that shows
+   * up only on the real deploy, never in synth or in the infra tests.
+   */
+  adoptedSecretArns?: {
+    googleOAuth?: string;
+    shareToken?: string;
+  };
 }
 
 /**
@@ -103,6 +132,15 @@ const baseConfigs: Record<string, Omit<EnvironmentConfig, 'appUrls'>> = {
     photoBucketKmsEncryption: false,
     cloudfrontPrefixListId: 'pl-3b927c52',
     cloudfrontPriceClass: cloudfront.PriceClass.PRICE_CLASS_100,
+    // Both were created by a deploy that later rolled back, and both survived it
+    // because they are RETAIN. See `adoptedSecretArns` above for why adopting is
+    // the only safe resolution for the Google one in particular.
+    adoptedSecretArns: {
+      googleOAuth:
+        'arn:aws:secretsmanager:us-east-1:684394110906:secret:valentin/dev/google-oauth-5hYOo1',
+      shareToken:
+        'arn:aws:secretsmanager:us-east-1:684394110906:secret:valentin/dev/share-token-XnBnfq',
+    },
   },
   staging: {
     env: 'staging',

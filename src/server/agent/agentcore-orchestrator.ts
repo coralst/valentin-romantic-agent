@@ -10,7 +10,7 @@ import {
   type OnPreferenceUpdate,
 } from './agent-orchestrator';
 import { buildSystemPrompt, partnerNameFrom } from './prompts';
-import { readKnownFacts } from './partner-profile';
+import { readKnownFacts, readVisitedPlaces } from './partner-profile';
 import type { AgentCoreRuntime, RememberedPreference } from './agentcore-adapter';
 
 /**
@@ -105,7 +105,13 @@ export class AgentCoreOrchestrator implements AgentOrchestratorInterface {
         sessionId,
         actorId: this.actorId,
         prompt: content,
-        systemPrompt: buildSystemPrompt(await readKnownFacts(this.storage, sessionId)),
+        systemPrompt: buildSystemPrompt(
+          await readKnownFacts(this.storage, sessionId),
+          // No tools on this engine, so no tool guidance — but the history is
+          // read side only, and this is where engine B gets it for free.
+          false,
+          await readVisitedPlaces(this.storage, sessionId),
+        ),
         history: context.recentMessages,
       });
       responseContent = reply.content;

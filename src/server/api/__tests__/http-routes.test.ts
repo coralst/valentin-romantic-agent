@@ -993,6 +993,81 @@ describe('createHttpRoutes', () => {
     });
   });
 
+  describe('where he has taken her', () => {
+    let sessionId: string;
+
+    beforeEach(async () => {
+      sessionId = await store.createSession();
+    });
+
+    const outing = { venueName: 'Claro', city: 'Tel Aviv', occursOn: '2026-06-12' };
+
+    it('records an outing unrated, which is what raises the survey later', async () => {
+      const result = await routes.saveOuting(sessionId, outing);
+
+      expect(result.status).toBe(200);
+      const body = (result.body as { outing: { rating: number | null; ratedAt: string | null } })
+        .outing;
+      expect(body.rating).toBeNull();
+      expect(body.ratedAt).toBeNull();
+    });
+
+    it('rejects an outing with no venue name', async () => {
+      expect((await routes.saveOuting(sessionId, { city: 'Tel Aviv' })).status).toBe(400);
+    });
+
+    it('answers the survey by resending the row, and keeps confirmedAt', async () => {
+      const added = await routes.saveOuting(sessionId, outing);
+      const row = (added.body as { outing: Record<string, unknown> }).outing;
+
+      const rated = await routes.saveOuting(sessionId, { ...row, rating: 4, verdict: 'again' });
+
+      const body = (
+        rated.body as {
+          outing: { rating: number; verdict: string; ratedAt: string; confirmedAt: string };
+        }
+      ).outing;
+      expect(body.rating).toBe(4);
+      expect(body.verdict).toBe('again');
+      expect(body.ratedAt).not.toBeNull();
+      // The survey is answered days later; it must not restamp the booking.
+      expect(body.confirmedAt).toBe(row.confirmedAt);
+      // And it is the same row, not a second visit.
+      expect((await routes.getSessionOutings(sessionId)).body).toEqual({ outings: [body] });
+    });
+
+    it('refuses a rating that is not a whole 1-5, because code compares it', async () => {
+      for (const rating of [0, 6, 3.5, '4']) {
+        expect((await routes.saveOuting(sessionId, { ...outing, rating })).status).toBe(400);
+      }
+    });
+
+    it('refuses a verdict outside the closed set', async () => {
+      expect((await routes.saveOuting(sessionId, { ...outing, verdict: 'meh' })).status).toBe(400);
+    });
+
+    it('deletes one outing', async () => {
+      const added = await routes.saveOuting(sessionId, outing);
+      const { id } = (added.body as { outing: { id: string } }).outing;
+
+      await routes.deleteOuting(sessionId, id);
+
+      expect((await routes.getSessionOutings(sessionId)).body).toEqual({ outings: [] });
+    });
+
+    it('404s every outing route for a session this user does not own', async () => {
+      const stranger = await new InMemoryStoreFactory().forUser('someone-else').createSession();
+
+      for (const call of [
+        routes.getSessionOutings(stranger),
+        routes.saveOuting(stranger, outing),
+        routes.deleteOuting(stranger, 'out-1'),
+      ]) {
+        expect((await call).status).toBe(404);
+      }
+    });
+  });
+
   describe('manual corrections', () => {
     let sessionId: string;
 

@@ -17,7 +17,7 @@ import {
   partnerNameFrom,
   type KnownFact,
 } from './prompts';
-import { readKnownFacts } from './partner-profile';
+import { readKnownFacts, readVisitedPlaces } from './partner-profile';
 import { recordOuting } from './outing-recorder';
 import type { Outing } from '../../shared/interfaces/outing';
 import { LlmError } from '../../shared/errors/llm-error';
@@ -223,6 +223,7 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
         buildSystemPrompt(
           await this.knownFacts(sessionId),
           (this.tools.registry?.size ?? 0) > 0,
+          await readVisitedPlaces(this.storage, sessionId),
         ),
         sessionId,
       );

@@ -3,6 +3,7 @@ import {
   PROFILE_FIELD_GUIDANCE,
   PROFILE_FIELD_IDS,
 } from '../../shared/constants/profile-fields';
+import type { Outing } from '../../shared/interfaces/outing';
 
 /**
  * Valentin's persona and the two goals he serves, in that order of permanence.
@@ -129,12 +130,18 @@ export function partnerNameFrom(facts: readonly KnownFact[]): string | null {
 export function buildSystemPrompt(
   facts: readonly KnownFact[],
   hasTools = false,
+  visited: readonly Outing[] = [],
 ): string {
   // Appended, not interleaved, so the persona and the profile read the same
   // whether or not this deployment has any credentials.
   const tools = hasTools ? `\n${TOOL_GUIDANCE}` : '';
+  const history = visitedBlock(visited);
 
   if (facts.length === 0) {
+    // No history block here even if there somehow is one: an account with no
+    // facts at all and a booked restaurant is a state that only arises from a
+    // half-finished seed, and the opening turn should introduce him rather than
+    // recite a venue.
     return `${VALENTIN_SYSTEM_PROMPT}
 
 CURRENT STATE: You know nothing about her yet. GOAL 1 is live. Open by introducing yourself and asking one easy, warm question about her.${tools}`;
@@ -163,7 +170,45 @@ CURRENT STATE: You already know ${her}. GOAL 2 is live — you are past the intr
 
 WHAT YOU KNOW ABOUT ${(name ?? 'HER').toUpperCase()}:
 ${known}
-${gaps}${tools}`;
+${gaps}${history}${tools}`;
+}
+
+/**
+ * The places they have already been, and what to do about each one.
+ *
+ * Rendered as prose lines with the verdict spelled out rather than as a rating
+ * table, because the instruction attached to a row is the point: a 5/5 is a
+ * place to offer again by name, a 2/5 is a place to keep quiet about, and an
+ * unrated one is a place he was just at, which makes "somewhere new this time" a
+ * reasonable thing for Valentin to say unprompted.
+ *
+ * Capped, and by the most recent, for the same reason the profile reader is
+ * capped: this is sent on every single turn. Ten places is more history than any
+ * suggestion needs and still small enough not to crowd out the facts above it.
+ */
+const MAX_PROMPT_OUTINGS = 10;
+
+function visitedBlock(visited: readonly Outing[]): string {
+  if (visited.length === 0) return '';
+
+  const lines = visited.slice(0, MAX_PROMPT_OUTINGS).map((outing) => {
+    const where = outing.city ? `${outing.venueName}, ${outing.city}` : outing.venueName;
+    const when = outing.occursOn ? ` on ${outing.occursOn}` : '';
+    if (outing.rating === null || outing.rating === undefined) {
+      return `- ${where}${when} — not rated yet, so do not assume it went well`;
+    }
+    const verdict = outing.verdict ? `, "${outing.verdict}"` : '';
+    return `- ${where}${when} — she rated it ${outing.rating}/5${verdict}`;
+  });
+
+  return `
+WHERE YOU HAVE ALREADY TAKEN HER:
+${lines.join('\n')}
+
+Use this. Never present one of these as a new discovery — he was there. Do not
+re-offer anything rated 3 or below unless he asks for it by name; say plainly
+that it did not land last time if he does. A place rated 4 or 5 is worth
+suggesting again by name, as a return rather than a find.`;
 }
 
 /**

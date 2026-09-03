@@ -4,6 +4,7 @@ import { logger } from '../logging';
 import { resetTokenCache as resetAmadeusTokenCache } from './amadeus/client';
 import { resetGoogleTokenCache } from './google/client';
 import { resetSpotifyTokenCache } from './spotify/client';
+import { putRemoteCredentials } from './credential-store';
 
 /**
  * Credential intake at runtime — the server side of "Connect" in the app.
@@ -190,6 +191,7 @@ export async function applyIntegrationCredentials(
     // reconnect must not spend an hour acting as the old account.
     resetAmadeusTokenCache();
     persistEnv({ AMADEUS_CLIENT_ID: clientId, AMADEUS_CLIENT_SECRET: clientSecret });
+    void putRemoteCredentials('amadeus', { clientId, clientSecret });
     logger.info('integration.connected', { integration: 'amadeus' });
     return probe;
   }
@@ -206,6 +208,7 @@ export async function applyIntegrationCredentials(
     config.integrations.whatsappPhoneNumberId = phoneNumberId;
     config.integrations.whatsappToken = token;
     persistEnv({ WHATSAPP_PHONE_NUMBER_ID: phoneNumberId, WHATSAPP_TOKEN: token });
+    void putRemoteCredentials('whatsapp', { phoneNumberId, token });
     logger.info('integration.connected', { integration: 'whatsapp' });
     return probe;
   }
@@ -238,6 +241,14 @@ export async function applyIntegrationCredentials(
       SPOTIFY_CLIENT_ID: clientId,
       SPOTIFY_CLIENT_SECRET: clientSecret,
       ...(refreshToken ? { SPOTIFY_REFRESH_TOKEN: refreshToken } : {}),
+    });
+    void putRemoteCredentials('spotify', {
+      clientId,
+      clientSecret,
+      // Read back from config rather than from `refreshToken`, which is unset on
+      // the ordinary path: PutSecretValue replaces the version wholesale, so
+      // omitting a token the consent popup already earned would erase it.
+      refreshToken: config.integrations.spotifyRefreshToken,
     });
     logger.info('integration.connected', { integration: 'spotify' });
     return refreshToken
@@ -283,6 +294,11 @@ export async function applyIntegrationCredentials(
   config.integrations.googleClientId = clientId;
   config.integrations.googleClientSecret = clientSecret;
   persistEnv({ GOOGLE_CLIENT_ID: clientId, GOOGLE_CLIENT_SECRET: clientSecret });
+  void putRemoteCredentials('google', {
+    clientId,
+    clientSecret,
+    refreshToken: config.integrations.googleRefreshToken,
+  });
   logger.info('integration.oauth-client-saved', { integration: 'google' });
   return {
     ok: true,
@@ -296,6 +312,14 @@ export function applyGoogleRefreshToken(refreshToken: string): void {
   config.integrations.googleRefreshToken = refreshToken;
   resetGoogleTokenCache();
   persistEnv({ GOOGLE_REFRESH_TOKEN: refreshToken });
+  // The most important of these writes: a refresh token is the one credential a
+  // human cannot paste back in, because it only exists as the output of a
+  // consent popup that cannot be run against a Fargate task.
+  void putRemoteCredentials('google', {
+    clientId: config.integrations.googleClientId,
+    clientSecret: config.integrations.googleClientSecret,
+    refreshToken,
+  });
   logger.info('integration.connected', { integration: 'google' });
 }
 
@@ -310,6 +334,11 @@ export function applySpotifyRefreshToken(refreshToken: string): void {
   config.integrations.spotifyRefreshToken = refreshToken;
   resetSpotifyTokenCache();
   persistEnv({ SPOTIFY_REFRESH_TOKEN: refreshToken });
+  void putRemoteCredentials('spotify', {
+    clientId: config.integrations.spotifyClientId,
+    clientSecret: config.integrations.spotifyClientSecret,
+    refreshToken,
+  });
   logger.info('integration.connected', { integration: 'spotify' });
 }
 
@@ -337,6 +366,12 @@ export function clearIntegrationCredentials(id: ConnectableId): void {
     resetGoogleTokenCache();
     removeEnv(['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_REFRESH_TOKEN']);
   }
+  // Cleared remotely too, or a disconnect would leave the value where the tool
+  // Lambda still reads it — the panel would say "not connected" while the agent
+  // went on using the credential, which is the worst of the available states.
+  // An empty body rather than a delete: the secret is declared by the stack, and
+  // deleting it would orphan the resource from CloudFormation's point of view.
+  void putRemoteCredentials(id, {});
   logger.info('integration.disconnected', { integration: id });
 }
 

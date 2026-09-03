@@ -21,6 +21,7 @@ import { EventRouter } from './api/event-router';
 import { WsGateway } from './api/ws-gateway';
 import { createHttpRoutes } from './api/http-routes';
 import { buildToolRegistry } from './integrations';
+import { loadRemoteCredentials } from './integrations/credential-store';
 import { probeBrowserReadiness } from './integrations/browser/session';
 import { startSpanBridge } from './telemetry/span-bridge';
 import {
@@ -369,6 +370,25 @@ export function createServer(deps: ServerDeps = {}) {
    */
   void probeBrowserReadiness().then((ready) => {
     if (ready) buildToolRegistry();
+  });
+
+  /*
+   * Pick up any credential this task did not get from its environment.
+   *
+   * Not awaited, for the same reason and by the same mechanism as the browser
+   * probe above: `buildToolRegistry` refills the registry map *in place*, so
+   * every holder — including the orchestrator built before this resolves — sees
+   * the new tools. Until it lands, a service with no env credential reports
+   * unready, which is the safe direction to be briefly wrong in.
+   *
+   * Deliberately NOT blocking. Awaiting it would put Secrets Manager in the boot
+   * path of a layer whose stated contract is "absent rather than broken", and
+   * turn a Secrets Manager blip into a health check the load balancer never sees
+   * answered. `loadRemoteCredentials` also never rejects, so the `.then` is
+   * reached either way.
+   */
+  void loadRemoteCredentials().then(() => {
+    buildToolRegistry();
   });
 
   // Register the agent on startup

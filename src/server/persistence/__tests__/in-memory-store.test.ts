@@ -26,8 +26,22 @@ function newStore(userId = 'user-under-test'): StorageInterface {
  * It is the same call `dynamodb-store.test.ts` makes. Everything below is what is
  * true of *this* store in particular — the property tests, and the isolation cases
  * that need two stores from one factory.
+ *
+ * The factory is captured rather than rebuilt for the reader: the index side has to
+ * be the *same* factory's, or every row the store writes is invisible to it and the
+ * due-index half of the spec would pass by seeing nothing at all.
  */
-describeStoreConformance('InMemoryStore', () => newStore());
+const CONFORMANCE_USER = 'user-under-test';
+let conformanceFactory = new InMemoryStoreFactory();
+
+describeStoreConformance(
+  'InMemoryStore',
+  () => {
+    conformanceFactory = new InMemoryStoreFactory();
+    return conformanceFactory.forUser(CONFORMANCE_USER);
+  },
+  { makeReader: () => conformanceFactory, userId: CONFORMANCE_USER },
+);
 
 // --- Generators ---
 

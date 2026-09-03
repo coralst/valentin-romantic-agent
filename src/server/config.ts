@@ -9,6 +9,29 @@ export const config = {
   port: parseInt(process.env.PORT ?? '3001', 10),
 
   /**
+   * Where the app is reachable from, for links in outbound mail.
+   *
+   * `integrations/google/oauth.ts` already reads this variable directly; this is
+   * the same value with a name, so a reminder and an OAuth callback cannot
+   * disagree about which host the user is on. It falls back rather than throwing
+   * because a wrong origin costs a dead link in a mail, not a failed send.
+   */
+  publicOrigin: process.env.PUBLIC_ORIGIN ?? 'http://localhost:5173',
+
+  /**
+   * The reminder sweeper.
+   *
+   * A minute is far finer than the hour `dueAt` is pinned to, so a late sweep is
+   * never visible to the reader. `REMINDERS_ENABLED=false` stops the timer without
+   * removing the rows, for a demo where nothing should leave the building.
+   */
+  reminders: {
+    enabled: process.env.REMINDERS_ENABLED !== 'false',
+    channel: process.env.REMINDER_CHANNEL ?? 'log',
+    intervalMs: parseInt(process.env.REMINDER_INTERVAL_MS ?? '60000', 10),
+  },
+
+  /**
    * Cognito wiring, all supplied by compute-stack.ts.
    *
    * Deliberately optional: with `userPoolId` unset the server falls back to the

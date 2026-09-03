@@ -31,10 +31,13 @@ import {
 } from './auth/token-verifier';
 import { DemoLoginService } from './auth/demo-login';
 import type {
+  ReminderIndexReader,
   ScopedStorageFactory,
   ScopedStorageOptions,
   StorageInterface,
 } from './persistence/storage-interface';
+import { startReminderScheduler } from './reminders/scheduler';
+import { resolveSender } from './reminders/sender';
 import { config } from './config';
 import { logger } from './logging';
 import type { ServerEvent } from '../shared/interfaces/ws-events';
@@ -153,7 +156,7 @@ export interface UserServices {
  * `resolveStorageBackend` also normalises case and falls back to memory with a
  * warning on a typo rather than taking the server down.
  */
-function defaultStoreFactory(): ScopedStorageFactory {
+function defaultStoreFactory(): ScopedStorageFactory & ReminderIndexReader {
   const backend = resolveStorageBackend();
 
   // Which backend is live is invisible once the server is running — everything
@@ -170,12 +173,32 @@ function defaultStoreFactory(): ScopedStorageFactory {
   // counter the difference.
   return {
     forUser: (userId, opts) => countingStore(factory.forUser(userId, opts)),
+    // The due-index passes straight through uncounted: it is not user-scoped, so
+    // there is no per-user counter that could wrap it.
+    dueBefore: (at, limit) => factory.dueBefore(at, limit),
+    markSent: (reminder, sentAt) => factory.markSent(reminder, sentAt),
+    recordFailure: (reminder, error) => factory.recordFailure(reminder, error),
   };
+}
+
+/**
+ * The store factory to serve requests from, and the due-index to sweep — which is
+ * only ever the server's own factory. An injected store is a `ScopedStorageFactory`
+ * and carries no cross-user index by design, so a test that supplies one gets a
+ * null index and therefore no timer, which is what every existing test expects.
+ */
+function resolveStores(deps: ServerDeps): {
+  storeFactory: ScopedStorageFactory;
+  reminderIndex: ReminderIndexReader | null;
+} {
+  if (deps.store) return { storeFactory: deps.store, reminderIndex: null };
+  const own = defaultStoreFactory();
+  return { storeFactory: own, reminderIndex: own };
 }
 
 /** Initialize all dependencies and start the server */
 export function createServer(deps: ServerDeps = {}) {
-  const storeFactory = deps.store ?? defaultStoreFactory();
+  const { storeFactory, reminderIndex } = resolveStores(deps);
   const verifier = deps.verifier ?? createTokenVerifier();
 
   // AWS Bedrock — always use real LLM, no stubs
@@ -377,8 +400,24 @@ export function createServer(deps: ServerDeps = {}) {
     console.error('[server] Failed to register agent:', err);
   });
 
+  /*
+   * Started here rather than in `dev-server.ts` so both the deployed task and a
+   * local run sweep identically — a reminder path that only exists in production is
+   * one nobody has watched fire.
+   */
+  const reminderScheduler =
+    reminderIndex && config.reminders.enabled
+      ? startReminderScheduler({
+          reader: reminderIndex,
+          sender: resolveSender(config.reminders.channel),
+          intervalMs: config.reminders.intervalMs,
+          origin: config.publicOrigin,
+        })
+      : null;
+
   return {
     gateway,
+    reminderScheduler,
     storeFactory,
     verifier,
     demoLogin,

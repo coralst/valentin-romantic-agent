@@ -33,9 +33,31 @@ import type { PreferenceCategory } from '../../shared/interfaces/preference';
  * | Task    | `USER#<sub>#SESSION#<sid>`| `TASK#<taskId>`       | —           | —                       |
  * | Manual  | `USER#<sub>#SESSION#<sid>`| `MANUAL#<fieldId>`    | —           | —                       |
  * | Outing  | `USER#<sub>#SESSION#<sid>`| `OUTING#<outingId>`   | —           | —                       |
+ * | Reminder| `USER#<sub>#SESSION#<sid>`| `REMINDER#<id>`       | `DUE#<date>`| `T<HH:mm:ss>#<id>`      |
  *
- * Only session-meta items carry `gsi1pk`, so GSI1 is **sparse**: listing a
- * user's sessions is one query returning one row per session, with no filter.
+ * ## GSI1 carries two disjoint kinds of row, and that is deliberate
+ *
+ * It used to be true that only session-meta items carried `gsi1pk`. A pending
+ * reminder carries one too — but in a **reserved partition space** that
+ * `listSessions` can never see. That query is an *equality* match on
+ * `gsi1pk = USER#<sub>`, so a row at `DUE#2026-10-04` is not merely filtered out
+ * of it, it is not in the partition being read. This is textbook index
+ * overloading, and it is what lets the dispatcher ask "what is due before now?"
+ * across every user without a second GSI.
+ *
+ * Two rules keep the two kinds from ever meeting:
+ *
+ *  - **Nothing in the `USER#` partition space gets a `gsi1pk` except session
+ *    meta.** Adding one to a person or a task row would put it in the sidebar.
+ *    `listSessions` also filters on `entityType` as belt and braces, since the
+ *    read capacity is already spent.
+ *  - **A sent reminder drops out of the index.** The write that stamps `sentAt`
+ *    also `REMOVE`s `gsi1pk` and `gsi1sk`, so the due-index stays sparse over
+ *    *pending* reminders only and the poller never re-reads history.
+ *
+ * Day buckets rather than one constant `DUE` partition, because a single
+ * partition holding every reminder in the system is the definition of a hot one,
+ * and a poller sweeping a window only ever needs today's bucket and yesterday's.
  *
  * Every non-meta item shares its session's partition, so a reset is one query
  * plus a chunked BatchWrite, and `begins_with` is applied to the **sort** key —
@@ -145,6 +167,9 @@ export const MANUAL_PREFIX = 'MANUAL#';
 /** Sort-key prefix shared by every recorded outing in a session */
 export const OUTING_PREFIX = 'OUTING#';
 
+/** Sort-key prefix shared by every reminder in a session */
+export const REMINDER_PREFIX = 'REMINDER#';
+
 /**
  * Sort key of a person.
  *
@@ -187,6 +212,54 @@ export function outingSk(outingId: string): string {
 export function manualSk(fieldId: string): string {
   assertComponent('fieldId', fieldId);
   return withinLimit(`${MANUAL_PREFIX}${fieldId}`, 'fieldId', fieldId);
+}
+
+/**
+ * Sort key of a reminder. Keyed by id, like a task.
+ *
+ * The id is itself derived from the occasion (`shared/interfaces/reminder.ts`), so
+ * re-planning the same birthday overwrites one row rather than accumulating a
+ * mailbox full of them.
+ */
+export function reminderSk(reminderId: string): string {
+  assertComponent('reminderId', reminderId);
+  return withinLimit(`${REMINDER_PREFIX}${reminderId}`, 'reminderId', reminderId);
+}
+
+/**
+ * The reserved GSI1 partition prefix for the due-index.
+ *
+ * Exported so a test can assert no other entity ever writes a `gsi1pk` starting
+ * with it, which is the invariant that keeps reminders out of the sidebar.
+ */
+export const DUE_PREFIX = 'DUE#';
+
+/**
+ * GSI1 partition key of a pending reminder — one bucket per calendar day.
+ *
+ * Takes the day as a string rather than a `Date` on purpose. The bucket a
+ * reminder belongs in is a *UTC* day derived from its `dueAt`, and handing this a
+ * `Date` would invite a caller to build the string from local calendar fields
+ * instead, putting a 09:00-Israel reminder in yesterday's bucket for three hours
+ * of every day and making the sweep miss it.
+ */
+export function dueGsi1pk(utcDay: string): string {
+  assertComponent('utcDay', utcDay);
+  return `${DUE_PREFIX}${utcDay}`;
+}
+
+/**
+ * GSI1 sort key of a pending reminder, ordering one day's bucket by time.
+ *
+ * `T` before the clock time so the key can never begin with a digit that a future
+ * prefix scheme might want, and the id last to break ties between two reminders
+ * due in the same second — which happens routinely, since every reminder in a
+ * bucket is pinned to the same local hour.
+ */
+export function reminderGsi1sk(utcTime: string, reminderId: string): string {
+  assertComponent('utcTime', utcTime);
+  assertComponent('reminderId', reminderId);
+  return withinLimit(`T${utcTime}#${reminderId}`, 'reminderId', reminderId);
 }
 
 /** GSI1 partition key — the sparse index that lists one user's sessions */

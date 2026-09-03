@@ -8,6 +8,7 @@ import type { Person } from '../../shared/interfaces/person';
 import type { SessionData } from '../../shared/interfaces/session';
 import type { Task } from '../../shared/interfaces/task';
 import type { Outing } from '../../shared/interfaces/outing';
+import type { Reminder } from '../../shared/interfaces/reminder';
 
 /** Structured preference data extracted from conversation, before persistence */
 export interface ExtractedPreference {
@@ -133,6 +134,21 @@ export interface StorageInterface {
   /** Remove one outing. A no-op for an id this session does not have. */
   deleteOuting(sessionId: string, outingId: string): Promise<void>;
 
+  // --- What he is going to be reminded about ---
+  /**
+   * Write one reminder, keyed by its own id.
+   *
+   * Idempotent, and that is what makes re-planning safe: the id is derived from
+   * the occasion, so a corrected date or a changed lead time overwrites the row it
+   * supersedes instead of adding a second mail about the same birthday.
+   */
+  saveReminder(sessionId: string, reminder: Reminder): Promise<Reminder>;
+
+  getRemindersBySession(sessionId: string): Promise<Reminder[]>;
+
+  /** Remove one reminder. A no-op for an id this session does not have. */
+  deleteReminder(sessionId: string, reminderId: string): Promise<void>;
+
   // --- Corrections the user made by hand ---
   /**
    * Record what the user says a field's value is, overriding what Valentin
@@ -215,4 +231,55 @@ export interface ScopedStorageOptions {
  */
 export interface ScopedStorageFactory {
   forUser(userId: string, opts?: ScopedStorageOptions): StorageInterface;
+}
+
+/**
+ * The one read in this codebase that crosses users, kept apart so it is obvious.
+ *
+ * ## Why this is not a method on `StorageInterface`
+ *
+ * Everything above is user-scoped and cannot be otherwise: an instance is obtained
+ * by naming a user and every key it builds is already narrowed to them. That is the
+ * whole "authorization is structural" argument in `keys.ts`, and it works because
+ * there is no way to ask a store for something outside its own partition.
+ *
+ * A dispatcher genuinely needs the other thing. It sweeps the due-index for
+ * everything ready to send, which by definition spans users, so putting `dueBefore`
+ * on `StorageInterface` would hand every request handler in the process a method
+ * that reads across tenants — and the next person to reach for a store would find
+ * it sitting there next to `getSession` looking equally safe to call.
+ *
+ * So it lives here: a separate, deliberately tiny interface, implemented on the
+ * **unscoped factory** side, reachable only by something that was handed a factory
+ * rather than a store. Two methods, no reads of message or preference content, and
+ * the rows it returns carry only what is needed to compose and address a reminder.
+ */
+export interface ReminderIndexReader {
+  /**
+   * Every pending reminder due at or before `at`, across all users, soonest first.
+   *
+   * Bounded by `limit` because a sweep that fell behind — a deploy, a throttle —
+   * must not try to send a month of backlog in one interval and time out
+   * repeatedly on the same first batch. The next sweep takes the next slice.
+   */
+  dueBefore(at: Date, limit: number): Promise<Reminder[]>;
+
+  /**
+   * Mark one reminder sent, and only if nobody else already has.
+   *
+   * Returns `true` when this caller is the one that claimed it and `false` when it
+   * was already claimed — which is not an error. That distinction is what makes
+   * running two containers safe: both sweeps see the row, both attempt it, exactly
+   * one send happens, and the loser simply moves on.
+   */
+  markSent(reminder: Reminder, sentAt: Date): Promise<boolean>;
+
+  /**
+   * Record a failed attempt, leaving the row pending for the next sweep.
+   *
+   * Separate from `markSent` because the two must not be one call with a flag: a
+   * failure must never be able to stamp `sentAt` by passing the wrong argument,
+   * and a reminder that was not delivered has to stay in the index.
+   */
+  recordFailure(reminder: Reminder, error: string): Promise<void>;
 }

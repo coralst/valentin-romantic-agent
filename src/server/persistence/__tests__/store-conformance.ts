@@ -2,7 +2,26 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { Person } from '../../../shared/interfaces/person';
 import type { Task } from '../../../shared/interfaces/task';
 import type { Outing } from '../../../shared/interfaces/outing';
-import type { StorageInterface } from '../storage-interface';
+import type { Reminder } from '../../../shared/interfaces/reminder';
+import type { ReminderIndexReader, StorageInterface } from '../storage-interface';
+
+/**
+ * The unscoped index side of the same engine, and the user the store is scoped to.
+ *
+ * Optional so a caller can run the scoped spec alone, but both concrete factories
+ * implement {@link ReminderIndexReader} and both pass one: `dueBefore` /
+ * `markSent` / `recordFailure` are as much a storage contract as `saveReminder`,
+ * and a store whose index disagreed with the other's would be exactly the kind of
+ * divergence this file exists to catch.
+ *
+ * `userId` is here because a reminder row names its owner — the dispatcher gets
+ * back to the owner's partition through that field — so a fixture has to name the
+ * same user `makeStore` scoped to.
+ */
+export interface ConformanceIndex {
+  makeReader: () => Promise<ReminderIndexReader> | ReminderIndexReader;
+  userId: string;
+}
 
 /**
  * The behaviour both `StorageInterface` implementations owe their callers.
@@ -45,12 +64,17 @@ import type { StorageInterface } from '../storage-interface';
 export function describeStoreConformance(
   name: string,
   makeStore: () => Promise<StorageInterface> | StorageInterface,
+  index?: ConformanceIndex,
 ): void {
   describe(`StorageInterface conformance (${name})`, () => {
     let store: StorageInterface;
+    let reader: ReminderIndexReader | undefined;
 
     beforeEach(async () => {
       store = await makeStore();
+      // After the store, deliberately: an in-memory caller builds one factory per
+      // case inside `makeStore` and hands back its index side here.
+      reader = index ? await index.makeReader() : undefined;
     });
 
     // --- Fixtures ---
@@ -658,6 +682,302 @@ export function describeStoreConformance(
         await store.saveOutingsBatch(sessionId, [outing(), outing({ id: 'o2' })]);
 
         expect((await store.getSession(sessionId))!.preferenceCount).toBe(0);
+      });
+    });
+
+    // --- What he is going to be reminded about ---
+
+    /**
+     * A pending reminder about her birthday.
+     *
+     * `sentAt: null` is spelled out rather than omitted because that null *is* the
+     * due-index: it is what the poller selects on and what `markSent` claims. A
+     * fixture that left it off would be testing the store's defaults instead of the
+     * row the planner writes.
+     *
+     * `sessionId` is a parameter, not an override, because every case needs the
+     * session it just created; `userId` names the owner the store is scoped to,
+     * since the dispatcher returns to that partition through this field.
+     */
+    function reminder(sessionId: string, overrides: Partial<Reminder> = {}): Reminder {
+      return {
+        id: 'birthday-2026-10-04',
+        sessionId,
+        userId: index?.userId ?? 'user-under-test',
+        kind: 'birthday',
+        occursOn: '2026-10-04',
+        dueAt: '2026-09-27T06:00:00.000Z',
+        leadDays: 7,
+        occasion: 'her birthday',
+        channel: 'log',
+        target: null,
+        sentAt: null,
+        attempts: 0,
+        lastError: null,
+        createdAt: '2026-09-01T00:00:00.000Z',
+        ...overrides,
+      };
+    }
+
+    describe('reminders', () => {
+      it('round trips a pending reminder with its null sentAt intact', async () => {
+        const sessionId = await store.createSession();
+
+        await store.saveReminder(sessionId, reminder(sessionId));
+
+        const [read] = await store.getRemindersBySession(sessionId);
+        expect(read).toMatchObject({
+          id: 'birthday-2026-10-04',
+          kind: 'birthday',
+          occursOn: '2026-10-04',
+          dueAt: '2026-09-27T06:00:00.000Z',
+          leadDays: 7,
+          occasion: 'her birthday',
+          channel: 'log',
+        });
+        expect(read.sentAt ?? null).toBeNull();
+        expect(read.target ?? null).toBeNull();
+        expect(read.lastError ?? null).toBeNull();
+        expect(read.attempts).toBe(0);
+      });
+
+      it('re-planning the same occasion revises one row rather than adding a second', async () => {
+        // The id is derived from (kind, occursOn), so changing the lead time has to
+        // *move* this reminder. Keyed by anything else, the user gets two mails
+        // about one birthday — one of them at the old notice.
+        const sessionId = await store.createSession();
+        await store.saveReminder(sessionId, reminder(sessionId));
+
+        await store.saveReminder(
+          sessionId,
+          reminder(sessionId, { leadDays: 14, dueAt: '2026-09-20T06:00:00.000Z' }),
+        );
+
+        const reminders = await store.getRemindersBySession(sessionId);
+        expect(reminders).toHaveLength(1);
+        expect(reminders[0].leadDays).toBe(14);
+        expect(reminders[0].dueAt).toBe('2026-09-20T06:00:00.000Z');
+      });
+
+      it('reads only the named session’s reminders', async () => {
+        // Two sessions of one user, both holding a reminder keyed the same way: the
+        // partition keeps them apart, not a field compared after the read.
+        const first = await store.createSession();
+        const second = await store.createSession();
+        await store.saveReminder(first, reminder(first, { occasion: 'her birthday' }));
+        await store.saveReminder(second, reminder(second, { occasion: 'our anniversary' }));
+
+        expect((await store.getRemindersBySession(first)).map((r) => r.occasion)).toEqual([
+          'her birthday',
+        ]);
+        expect((await store.getRemindersBySession(second)).map((r) => r.occasion)).toEqual([
+          'our anniversary',
+        ]);
+      });
+
+      it('deletes one reminder and leaves the rest', async () => {
+        const sessionId = await store.createSession();
+        await store.saveReminder(sessionId, reminder(sessionId));
+        await store.saveReminder(
+          sessionId,
+          reminder(sessionId, { id: 'anniversary-2026-11-02', kind: 'anniversary' }),
+        );
+
+        await store.deleteReminder(sessionId, 'anniversary-2026-11-02');
+
+        expect((await store.getRemindersBySession(sessionId)).map((r) => r.id)).toEqual([
+          'birthday-2026-10-04',
+        ]);
+      });
+
+      it('ignores a delete for an id the session does not have', async () => {
+        const sessionId = await store.createSession();
+        await store.saveReminder(sessionId, reminder(sessionId));
+
+        await store.deleteReminder(sessionId, 'never-planned');
+
+        expect(await store.getRemindersBySession(sessionId)).toHaveLength(1);
+      });
+
+      it('does not count a reminder as a profile field', async () => {
+        // preferenceCount drives the board's "21 of 21" coverage reading, and a
+        // date Valentin is going to mail about is not a field he has filled in.
+        const sessionId = await store.createSession();
+
+        await store.saveReminder(sessionId, reminder(sessionId));
+
+        expect((await store.getSession(sessionId))!.preferenceCount).toBe(0);
+      });
+    });
+
+    // --- The due-index the dispatcher sweeps ---
+
+    describe.skipIf(!index)('the due-index', () => {
+      /**
+       * A few hours after every fixture's `dueAt`, on the same UTC day.
+       *
+       * Not "long after": a bounded sweep reads today's day bucket and yesterday's
+       * and deliberately no further, so a fake clock a week out would test that a
+       * backlog is *not* returned rather than that a due reminder is.
+       */
+      const SWEEP_AT = new Date('2026-09-27T12:00:00.000Z');
+
+      /** One pending reminder, and the row as the index reader hands it back. */
+      async function seedDue(overrides: Partial<Reminder> = {}): Promise<Reminder> {
+        const sessionId = await store.createSession();
+        return store.saveReminder(sessionId, reminder(sessionId, overrides));
+      }
+
+      it('returns a reminder that has come due', async () => {
+        await seedDue();
+
+        const due = await reader!.dueBefore(SWEEP_AT, 10);
+
+        expect(due.map((r) => r.id)).toEqual(['birthday-2026-10-04']);
+      });
+
+      it('still finds one that came due just before midnight UTC', async () => {
+        // The seam a single-bucket poller drops on the floor: a sweep a few minutes
+        // into a new UTC day must still see the last minutes of the old one, or
+        // those reminders are never sent by anybody.
+        await seedDue({ dueAt: '2026-09-26T23:58:00.000Z' });
+
+        const due = await reader!.dueBefore(new Date('2026-09-27T00:03:00.000Z'), 10);
+
+        expect(due.map((r) => r.id)).toEqual(['birthday-2026-10-04']);
+      });
+
+      it('does not return one that is not due yet', async () => {
+        await seedDue({ dueAt: '2026-11-27T06:00:00.000Z' });
+
+        expect(await reader!.dueBefore(SWEEP_AT, 10)).toEqual([]);
+      });
+
+      it('does not return one that has already been sent', async () => {
+        // A sent reminder is invisible to the poller rather than filtered out of
+        // every sweep for ever.
+        await seedDue({ sentAt: '2026-09-27T06:00:01.000Z' });
+
+        expect(await reader!.dueBefore(SWEEP_AT, 10)).toEqual([]);
+      });
+
+      it('orders the sweep soonest first', async () => {
+        // Contractual, not incidental: `dueAt` is the one field the dispatcher
+        // orders on, so both stores owe this ordering.
+        await seedDue({ id: 'later', dueAt: '2026-09-27T09:00:00.000Z' });
+        await seedDue({ id: 'sooner', dueAt: '2026-09-27T06:00:00.000Z' });
+
+        const due = await reader!.dueBefore(SWEEP_AT, 10);
+
+        expect(due.map((r) => r.id)).toEqual(['sooner', 'later']);
+      });
+
+      it('takes no more than the limit, so a backlog cannot time out a sweep', async () => {
+        await seedDue({ id: 'first', dueAt: '2026-09-27T06:00:00.000Z' });
+        await seedDue({ id: 'second', dueAt: '2026-09-27T09:00:00.000Z' });
+
+        expect((await reader!.dueBefore(SWEEP_AT, 1)).map((r) => r.id)).toEqual([
+          'first',
+        ]);
+      });
+
+      it('markSent claims a reminder once and refuses the second caller', async () => {
+        // Two containers sweeping at once both see the row and both attempt it.
+        // Exactly one send may happen, and the loser has to be *told* it lost
+        // rather than erroring or sending anyway.
+        const row = await seedDue();
+
+        const first = await reader!.markSent(row, new Date('2026-09-27T06:00:01.000Z'));
+        const second = await reader!.markSent(row, new Date('2026-09-27T06:00:02.000Z'));
+
+        expect(first).toBe(true);
+        expect(second).toBe(false);
+      });
+
+      it('a sent reminder is stamped and drops out of the index', async () => {
+        const row = await seedDue();
+
+        await reader!.markSent(row, new Date('2026-09-27T06:00:01.000Z'));
+
+        const [read] = await store.getRemindersBySession(row.sessionId);
+        expect(read.sentAt).toBe('2026-09-27T06:00:01.000Z');
+        expect(await reader!.dueBefore(SWEEP_AT, 10)).toEqual([]);
+      });
+
+      it('markSent refuses a reminder nobody stored', async () => {
+        const sessionId = await store.createSession();
+
+        expect(
+          await reader!.markSent(reminder(sessionId, { id: 'never-stored' }), new Date()),
+        ).toBe(false);
+      });
+
+      it('recordFailure counts the attempt and leaves the row pending', async () => {
+        // A reminder that was not delivered has to stay in the index, or one
+        // provider hiccup silently cancels the reminder altogether.
+        const row = await seedDue();
+
+        await reader!.recordFailure(row, 'gmail returned 429');
+
+        const [read] = await store.getRemindersBySession(row.sessionId);
+        expect(read.attempts).toBe(1);
+        expect(read.sentAt ?? null).toBeNull();
+        expect(read.lastError).toContain('429');
+        expect((await reader!.dueBefore(SWEEP_AT, 10)).map((r) => r.id)).toEqual([
+          row.id,
+        ]);
+      });
+
+      it('recordFailure accumulates across sweeps', async () => {
+        const row = await seedDue();
+
+        await reader!.recordFailure(row, 'first failure');
+        await reader!.recordFailure(row, 'second failure');
+
+        const [read] = await store.getRemindersBySession(row.sessionId);
+        expect(read.attempts).toBe(2);
+        expect(read.lastError).toContain('second');
+      });
+
+      it('records a failure against a claimed row without undoing the claim', async () => {
+        // This is the dispatcher's actual failure path, not a hypothetical: it
+        // claims the row *before* it sends, so every send that throws reaches
+        // `recordFailure` with `sentAt` already stamped. If this annotated nothing,
+        // a channel failing for every user would leave a table full of rows that
+        // look delivered, with `attempts` at 0 and the reason only in the logs.
+        const row = await seedDue();
+        await reader!.markSent(row, new Date('2026-09-27T06:00:01.000Z'));
+
+        await reader!.recordFailure(row, 'gmail returned 500');
+
+        const [read] = await store.getRemindersBySession(row.sessionId);
+        expect(read.attempts).toBe(1);
+        expect(read.lastError).toContain('500');
+        // The claim itself is untouched — and so is index membership, so a failed
+        // send is not silently retried by the next sweep.
+        expect(read.sentAt).toBe('2026-09-27T06:00:01.000Z');
+        expect(await reader!.dueBefore(SWEEP_AT, 10)).toEqual([]);
+      });
+
+      it('clearSession leaves nothing in the index', async () => {
+        // The consequential one. A reminder that outlives its session keeps its
+        // index row, so the dispatcher keeps mailing someone about a conversation
+        // that was reset out from under them.
+        const row = await seedDue();
+
+        await store.clearSession(row.sessionId);
+
+        expect(await store.getRemindersBySession(row.sessionId)).toEqual([]);
+        expect(await reader!.dueBefore(SWEEP_AT, 10)).toEqual([]);
+      });
+
+      it('deleteSession leaves nothing in the index', async () => {
+        const row = await seedDue();
+
+        await store.deleteSession(row.sessionId);
+
+        expect(await store.getRemindersBySession(row.sessionId)).toEqual([]);
+        expect(await reader!.dueBefore(SWEEP_AT, 10)).toEqual([]);
       });
     });
 

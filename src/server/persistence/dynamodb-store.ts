@@ -21,9 +21,12 @@ import type { SessionData } from '../../shared/interfaces/session';
 import type { Task } from '../../shared/interfaces/task';
 import { isOutingVerdict } from '../../shared/interfaces/outing';
 import type { Outing } from '../../shared/interfaces/outing';
+import { isReminderKind } from '../../shared/interfaces/reminder';
+import type { Reminder } from '../../shared/interfaces/reminder';
 import type {
   PreferenceInput,
   PreferenceRef,
+  ReminderIndexReader,
   ScopedStorageFactory,
   ScopedStorageOptions,
   SessionMetaPatch,
@@ -35,13 +38,17 @@ import {
   MSG_PREFIX,
   PERSON_PREFIX,
   PREF_PREFIX,
+  REMINDER_PREFIX,
   TASK_PREFIX,
   OUTING_PREFIX,
+  dueGsi1pk,
   outingSk,
   manualSk,
   msgSk,
   personSk,
   prefSk,
+  reminderGsi1sk,
+  reminderSk,
   sessionGsi1sk,
   sessionPk,
   taskSk,
@@ -69,6 +76,76 @@ function chunk<T>(items: readonly T[], size: number): T[][] {
     chunks.push(items.slice(i, i + size));
   }
   return chunks;
+}
+
+/** Milliseconds in a day, for stepping back one due-index bucket */
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * How much of a failure message is worth keeping.
+ *
+ * A provider error can arrive with a stack trace and a full request dump
+ * attached, and the row it lands on is read by a human answering "why did my
+ * reminder not arrive?" — the first sentence answers that. Whatever is stored
+ * here is a *message*: nothing on this path ever writes a token, an OAuth refresh
+ * secret or an app password onto the row.
+ */
+const MAX_STORED_ERROR_CHARS = 500;
+
+/**
+ * The due-index day bucket an instant belongs to.
+ *
+ * Derived from the UTC instant, never from local calendar fields: a 09:00
+ * Asia/Jerusalem reminder is 06:00 UTC, and a bucket built from the local date
+ * would sit in a partition the sweep does not read.
+ */
+function utcDayOf(at: Date): string {
+  return at.toISOString().slice(0, 10);
+}
+
+/** The `HH:mm:ss` an instant falls at, in UTC, for the same reason as `utcDayOf` */
+function utcClockOf(at: Date): string {
+  return at.toISOString().slice(11, 19);
+}
+
+/**
+ * An id that sorts after every real one, for the upper bound of a bucket query.
+ *
+ * The bound has to *include* the reminders due in `at`'s own second, and
+ * `T<HH:mm:ss>#` alone would exclude them all — every real key has an id after
+ * the '#'. `dueBefore` re-filters on `dueAt` anyway, so erring inclusive here
+ * costs one discarded row and erring exclusive loses a send.
+ */
+const ID_SORT_SENTINEL = '\uffff';
+
+/**
+ * Run a Query to exhaustion.
+ *
+ * DynamoDB caps a single Query response at 1 MB regardless of Limit, so a
+ * one-shot Query silently truncates. The store this replaced did exactly that in
+ * clearSession, which could therefore report success while leaving data behind
+ * past the first page.
+ *
+ * A free function rather than a method because both the scoped store and the
+ * unscoped index reader on the factory need it, and a second hand-rolled
+ * pagination loop is a second chance to forget `LastEvaluatedKey`.
+ */
+async function queryAllPages(
+  docClient: DynamoDBDocumentClient,
+  input: ConstructorParameters<typeof QueryCommand>[0],
+): Promise<Record<string, unknown>[]> {
+  const items: Record<string, unknown>[] = [];
+  let startKey: Record<string, unknown> | undefined;
+
+  do {
+    const result = await docClient.send(
+      new QueryCommand({ ...input, ExclusiveStartKey: startKey }),
+    );
+    items.push(...((result.Items ?? []) as Record<string, unknown>[]));
+    startKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (startKey);
+
+  return items;
 }
 
 /**
@@ -151,7 +228,16 @@ export class DynamoDBStore implements StorageInterface {
       TableName: this.tableName,
       IndexName: 'GSI1',
       KeyConditionExpression: 'gsi1pk = :pk',
-      ExpressionAttributeValues: { ':pk': userGsi1pk(this.userId) },
+      // Belt and braces only: reminders live in the disjoint `DUE#` partition
+      // space, so an equality match on `USER#<sub>` cannot reach them in the first
+      // place. That, not this filter, is the guarantee — but the read capacity is
+      // already spent, so anything that ever gained a stray gsi1pk in the user
+      // partition surfaces as a bug here rather than as a ghost in the sidebar.
+      FilterExpression: 'entityType = :entityType',
+      ExpressionAttributeValues: {
+        ':pk': userGsi1pk(this.userId),
+        ':entityType': 'Session',
+      },
       // Newest first: gsi1sk is TS#<createdAt>#<id>, so descending is reverse
       // chronological with no client-side sort.
       ScanIndexForward: false,
@@ -625,6 +711,79 @@ export class DynamoDBStore implements StorageInterface {
     );
   }
 
+  // --- What he is going to be reminded about ---
+
+  async saveReminder(sessionId: string, reminder: Reminder): Promise<Reminder> {
+    // The owner and the conversation come from the store's own scope rather than
+    // from the record. Both are on the row for the dispatcher's benefit, and a row
+    // in this partition claiming a different owner is a row `markSent` would look
+    // for in a partition that has no such item.
+    const record: Reminder = { ...reminder, sessionId, userId: this.userId };
+    const dueAt = new Date(record.dueAt);
+
+    await this.docClient.send(
+      new PutCommand({
+        TableName: this.tableName,
+        Item: this.withTtl({
+          pk: sessionPk(this.userId, sessionId),
+          sk: reminderSk(record.id),
+          ...record,
+          entityType: 'Reminder',
+          // Pending means the attribute is *absent*, not present and NULL.
+          // `markSent` and `recordFailure` both guard on
+          // `attribute_not_exists(sentAt)`, and DynamoDB counts a stored NULL as
+          // existing — so a row spelling out `sentAt: null` could never be claimed
+          // and every reminder would sit in the index for ever, unsendable.
+          // `toReminder` reads the absence back as null, so the interface is
+          // unchanged either way. (`removeUndefinedValues` is what drops it.)
+          sentAt: record.sentAt ?? undefined,
+          // Only a *pending* reminder belongs in the due-index. Re-putting a sent
+          // row with these attributes would put it back in front of the poller and
+          // mail the same birthday again.
+          //
+          // Both halves come from the UTC instant, never from the local calendar
+          // fields the reminder was planned in: 09:00 Asia/Jerusalem is 06:00 UTC,
+          // and a bucket named after the local date would land in a partition the
+          // sweep never reads.
+          ...(record.sentAt
+            ? {}
+            : {
+                gsi1pk: dueGsi1pk(utcDayOf(dueAt)),
+                gsi1sk: reminderGsi1sk(utcClockOf(dueAt), record.id),
+              }),
+        }),
+      }),
+    );
+
+    await this.updateSessionIfExists(sessionId, 'SET lastActivity = :now', {
+      ':now': new Date().toISOString(),
+    });
+
+    return record;
+  }
+
+  async getRemindersBySession(sessionId: string): Promise<Reminder[]> {
+    const items = await this.queryAll({
+      TableName: this.tableName,
+      KeyConditionExpression: 'pk = :pk AND begins_with(sk, :prefix)',
+      ExpressionAttributeValues: {
+        ':pk': sessionPk(this.userId, sessionId),
+        ':prefix': REMINDER_PREFIX,
+      },
+    });
+
+    return items.map(toReminder);
+  }
+
+  async deleteReminder(sessionId: string, reminderId: string): Promise<void> {
+    await this.docClient.send(
+      new DeleteCommand({
+        TableName: this.tableName,
+        Key: { pk: sessionPk(this.userId, sessionId), sk: reminderSk(reminderId) },
+      }),
+    );
+  }
+
   // --- Corrections the user made by hand ---
 
   async setManualValue(sessionId: string, fieldId: string, value: string): Promise<void> {
@@ -686,29 +845,11 @@ export class DynamoDBStore implements StorageInterface {
     };
   }
 
-  /**
-   * Run a Query to exhaustion.
-   *
-   * DynamoDB caps a single Query response at 1 MB regardless of Limit, so a
-   * one-shot Query silently truncates. The store this replaced did exactly that
-   * in clearSession, which could therefore report success while leaving data
-   * behind past the first page.
-   */
+  /** Run a Query to exhaustion — see {@link queryAllPages} */
   private async queryAll(
     input: ConstructorParameters<typeof QueryCommand>[0],
   ): Promise<Record<string, unknown>[]> {
-    const items: Record<string, unknown>[] = [];
-    let startKey: Record<string, unknown> | undefined;
-
-    do {
-      const result = await this.docClient.send(
-        new QueryCommand({ ...input, ExclusiveStartKey: startKey }),
-      );
-      items.push(...((result.Items ?? []) as Record<string, unknown>[]));
-      startKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
-    } while (startKey);
-
-    return items;
+    return queryAllPages(this.docClient, input);
   }
 
   /** Query every key under a session partition matching an sk prefix */
@@ -730,16 +871,26 @@ export class DynamoDBStore implements StorageInterface {
   }
 
   /**
-   * Keys of every person, task and manual value in a session.
+   * Keys of every person, task, outing, reminder and manual value in a session.
    *
-   * Kept as one helper rather than three call-site queries so that adding a
-   * fourth item type later cannot leave one of the two session sweeps behind —
-   * an item missed by `deleteSession` outlives the session that owned it and is
-   * then unreachable, since nothing will ever query that partition again.
+   * Kept as one helper rather than five call-site queries so that adding another
+   * item type later cannot leave one of the two session sweeps behind — an item
+   * missed by `deleteSession` outlives the session that owned it and is then
+   * unreachable, since nothing will ever query that partition again.
+   *
+   * A missed *reminder* is worse than unreachable. Its index row stays in the
+   * `DUE#` partition, so the dispatcher keeps finding it and keeps mailing someone
+   * about a conversation that no longer exists.
    */
   private async collectOwnedItemKeys(sessionId: string): Promise<ItemKey[]> {
     const keys: ItemKey[] = [];
-    for (const prefix of [PERSON_PREFIX, TASK_PREFIX, OUTING_PREFIX, MANUAL_PREFIX]) {
+    for (const prefix of [
+      PERSON_PREFIX,
+      TASK_PREFIX,
+      OUTING_PREFIX,
+      REMINDER_PREFIX,
+      MANUAL_PREFIX,
+    ]) {
       keys.push(...(await this.collectItemKeys(sessionId, prefix)));
     }
     return keys;
@@ -895,13 +1046,48 @@ function toOuting(item: Record<string, unknown>): Outing {
   };
 }
 
+function toReminder(item: Record<string, unknown>): Reminder {
+  const attempts = item.attempts;
+  return {
+    id: item.id as string,
+    sessionId: item.sessionId as string,
+    userId: item.userId as string,
+    // A row written by an older build can name a kind this one has dropped.
+    // Wording it as a generic occasion beats not mailing at all.
+    kind: isReminderKind(item.kind) ? item.kind : 'occasion',
+    occursOn: item.occursOn as string,
+    dueAt: item.dueAt as string,
+    leadDays: item.leadDays as number,
+    occasion: item.occasion as string,
+    // An unknown channel must not be honoured: `log` is a real channel that always
+    // works, so an unrecognised value degrades to a delivered-and-visible reminder
+    // rather than a silent one.
+    channel: item.channel === 'gmail' ? 'gmail' : 'log',
+    target: (item.target as string | null | undefined) ?? null,
+    // `sentAt` decides whether the poller may still claim this row, so an absent
+    // attribute must read as pending rather than as a falsy "sent".
+    sentAt: (item.sentAt as string | null | undefined) ?? null,
+    // A stored string would make `attempts + 1` a type error at the next failure.
+    attempts: typeof attempts === 'number' ? attempts : 0,
+    lastError: (item.lastError as string | null | undefined) ?? null,
+    createdAt: item.createdAt as string,
+  };
+}
+
 /**
  * Hands out user-scoped DynamoDB stores over one shared connection pool.
  *
- * This is what production injects into createServer. There is no unscoped
+ * This is what production injects into createServer. There is no unscoped store
  * variant, by design.
+ *
+ * It also carries {@link ReminderIndexReader}. That is not a hole in the scoping
+ * argument, it is the point of it: the three methods below are *deliberately* the
+ * unscoped side, and they are reachable only by something that was handed the
+ * factory rather than a store. See the interface's own doc comment for why the
+ * dispatcher's cross-user read must not sit on `StorageInterface` next to
+ * `getSession` looking equally safe to call.
  */
-export class DynamoDBStoreFactory implements ScopedStorageFactory {
+export class DynamoDBStoreFactory implements ScopedStorageFactory, ReminderIndexReader {
   private readonly docClient: DynamoDBDocumentClient;
   private readonly tableName: string;
 
@@ -912,5 +1098,127 @@ export class DynamoDBStoreFactory implements ScopedStorageFactory {
 
   forUser(userId: string, opts?: ScopedStorageOptions): StorageInterface {
     return new DynamoDBStore(userId, this.docClient, this.tableName, opts?.ttlSeconds);
+  }
+
+  // --- The due-index, across every user ---
+
+  async dueBefore(at: Date, limit: number): Promise<Reminder[]> {
+    /*
+     * Two buckets, today's and yesterday's — and exactly two.
+     *
+     * A sweep running at 00:03 UTC must still find the reminder that came due at
+     * 23:58, and a poller that only ever read `DUE#<today>` would skip the last
+     * minutes of every single day: nothing would ever revisit them, because the
+     * next sweep's "today" has moved on. Yesterday's bucket closes that seam.
+     *
+     * Reading further back deliberately is not done. Anything older than yesterday
+     * means the dispatcher was down for a day or more, and that is a backlog — a
+     * decision about what is still worth mailing, taken with a human in the loop.
+     * A bounded sweep that quietly widened its window would instead discover a
+     * month of missed anniversaries and send all of them at once.
+     */
+    const previous = new Date(at.getTime() - ONE_DAY_MS);
+
+    const untilNow = await queryAllPages(this.docClient, {
+      TableName: this.tableName,
+      IndexName: 'GSI1',
+      KeyConditionExpression: 'gsi1pk = :pk AND gsi1sk <= :sk',
+      ExpressionAttributeValues: {
+        ':pk': dueGsi1pk(utcDayOf(at)),
+        ':sk': reminderGsi1sk(utcClockOf(at), ID_SORT_SENTINEL),
+      },
+    });
+
+    // The whole of the previous bucket: every row in it is due before every row in
+    // today's, so there is nothing to bound it by.
+    const yesterday = await queryAllPages(this.docClient, {
+      TableName: this.tableName,
+      IndexName: 'GSI1',
+      KeyConditionExpression: 'gsi1pk = :pk',
+      ExpressionAttributeValues: { ':pk': dueGsi1pk(utcDayOf(previous)) },
+    });
+
+    return (
+      [...yesterday, ...untilNow]
+        .map(toReminder)
+        // The sort key is a clock time, so it bounds the bucket but does not prove
+        // the instant: this compares the fact the dispatcher orders on.
+        .filter((reminder) => new Date(reminder.dueAt).getTime() <= at.getTime())
+        .sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime())
+        .slice(0, limit)
+    );
+  }
+
+  async markSent(reminder: Reminder, sentAt: Date): Promise<boolean> {
+    try {
+      await this.docClient.send(
+        new UpdateCommand({
+          TableName: this.tableName,
+          // Back into the owner's partition, which is why `userId` is an attribute
+          // on the row as well as a component of its key.
+          Key: {
+            pk: sessionPk(reminder.userId, reminder.sessionId),
+            sk: reminderSk(reminder.id),
+          },
+          // The same write that stamps the send drops the row out of the due-index,
+          // so a sent reminder becomes invisible to the poller instead of being
+          // filtered out of every future sweep for ever.
+          UpdateExpression: 'SET sentAt = :sentAt REMOVE gsi1pk, gsi1sk',
+          // *This* is the idempotency guarantee, and it is why two containers can
+          // sweep at once: both see the row, both attempt it, the condition admits
+          // exactly one, and the loser is told so rather than erroring.
+          ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(sentAt)',
+          ExpressionAttributeValues: { ':sentAt': sentAt.toISOString() },
+        }),
+      );
+      return true;
+    } catch (err) {
+      if ((err as { name?: string }).name === 'ConditionalCheckFailedException') {
+        // Already claimed, or already gone. Not an error: the send this caller was
+        // about to make is precisely the one that must not happen twice.
+        return false;
+      }
+      throw err;
+    }
+  }
+
+  async recordFailure(reminder: Reminder, error: string): Promise<void> {
+    try {
+      await this.docClient.send(
+        new UpdateCommand({
+          TableName: this.tableName,
+          Key: {
+            pk: sessionPk(reminder.userId, reminder.sessionId),
+            sk: reminderSk(reminder.id),
+          },
+          // No REMOVE of the index keys, and no write of them either: a row that was
+          // never claimed stays visible to the next sweep, and a claimed one stays
+          // out of the index.
+          UpdateExpression:
+            'SET attempts = if_not_exists(attempts, :zero) + :one, lastError = :error',
+          /*
+           * Deliberately *not* guarded on `sentAt`, which is the difference between
+           * this and `markSent`. The dispatcher claims a row before it sends, so by
+           * the time a send throws `sentAt` is already stamped — and an
+           * `attribute_not_exists(sentAt)` guard here would make the entire failure
+           * path a silent no-op: the row would look delivered, `attempts` would stay
+           * 0 and the reason would live only in the logs. This expression writes
+           * neither `sentAt` nor the index keys, so it cannot overwrite the record of
+           * a send; it only annotates it.
+           */
+          ConditionExpression: 'attribute_exists(pk)',
+          ExpressionAttributeValues: {
+            ':zero': 0,
+            ':one': 1,
+            ':error': error.slice(0, MAX_STORED_ERROR_CHARS),
+          },
+        }),
+      );
+    } catch (err) {
+      if ((err as { name?: string }).name === 'ConditionalCheckFailedException') {
+        return;
+      }
+      throw err;
+    }
   }
 }

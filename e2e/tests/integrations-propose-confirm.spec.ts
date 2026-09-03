@@ -109,61 +109,66 @@ test.describe('Integrations — propose and confirm', () => {
     await expect(panel).toBeVisible();
 
     /*
-     * The fan-out is organised by *capability*, not by vendor — the visitor cares
-     * that Valentin can book dinner, not that Ontopo exists. So these are the
-     * capabilities the integration layer backs, and `rides` is deliberately
-     * present-but-unbuilt alongside them.
+     * The fan-out is organised by *provider*, one row per account Valentin actually
+     * touches, with the capability written underneath — a visitor in front of a
+     * consent sheet is asking whose account this is about to reach.
      *
-     * `flowers` and `grocery` moved out of that unbuilt list when Wolt landed, and
-     * `music` when Spotify did. Each was the same correction: real code on the
-     * server while the panel still called the row a drawing.
+     * It used to be organised by capability ("Restaurant booking", "Flower
+     * delivery"), which hid two things: that "Messages" was two unrelated accounts,
+     * and that flowers and groceries were one Wolt client wearing two hats. Both are
+     * fixed here — the ids below are `IntegrationId`s now.
      */
     for (const id of [
-      'dining',
-      'calendar',
-      'travel',
-      'messages',
-      'occasions',
-      'flowers',
-      'music',
+      'ontopo',
+      'google-calendar',
+      'amadeus',
+      'gmail',
+      'whatsapp',
+      'hebcal',
+      'wolt',
+      'spotify',
     ]) {
       await expect(panel.getByTestId(`integration-node-${id}`)).toBeVisible();
     }
 
-    // Hebcal is arithmetic in-process, so `occasions` is live with no credential at
-    // all — the one capability whose readiness is not a deployment question.
-    await expect(panel.getByTestId('integration-readiness-occasions').first()).toContainText(
+    // Ride booking is gone rather than dark: no provider, no tool, nothing to grant.
+    await expect(panel.getByTestId('integration-node-rides')).toHaveCount(0);
+
+    // Hebcal is arithmetic in-process, so it is live with no credential at all — the
+    // one row whose readiness is not a deployment question.
+    await expect(panel.getByTestId('integration-readiness-hebcal').first()).toContainText(
       'live',
     );
 
-    // Wolt needs no credential either, so the florist row is live for the same
-    // reason `occasions` is. This assertion used to expect "not built yet" here,
-    // which made the spec agree with the bug it should have caught.
-    await expect(panel.getByTestId('integration-readiness-flowers').first()).toContainText(
+    // Wolt needs no credential either, so its row is live for the same reason Hebcal
+    // is. This assertion used to expect "not built yet" here, which made the spec
+    // agree with the bug it should have caught.
+    await expect(panel.getByTestId('integration-readiness-wolt').first()).toContainText(
       'live',
     );
 
     /*
-     * Music is Spotify, and the badge it shows depends on the deployment rather
-     * than on the catalogue: `spotifyTools` register on any process holding a
-     * client id and secret, so a machine with them set reads "live" and one
-     * without reads "needs credentials". Both are correct and the spec must not
-     * pin whichever this runner happens to have — what it pins is that the row is
-     * no longer called a drawing, because the code exists either way.
+     * Spotify's badge depends on the deployment rather than on the catalogue:
+     * `spotifyTools` register on any process holding a client id and secret, so a
+     * machine with them set reads "live" and one without reads "needs credentials".
+     * Both are correct and the spec must not pin whichever this runner happens to
+     * have — what it pins is that the row is no longer called a drawing, because
+     * the code exists either way.
      */
-    await expect(panel.getByTestId('integration-readiness-music').first()).toContainText(
+    await expect(panel.getByTestId('integration-readiness-spotify').first()).toContainText(
       /live|needs credentials/,
     );
-    await expect(panel.getByTestId('integration-readiness-music').first()).not.toContainText(
+    await expect(panel.getByTestId('integration-readiness-spotify').first()).not.toContainText(
       'not built yet',
     );
 
-    // And the honest half: a capability with nothing behind it says so, rather than
-    // showing a dot that implies it is merely unconfigured. `rides` has no provider
-    // anywhere in src/server/integrations.
-    await expect(panel.getByTestId('integration-readiness-rides').first()).toContainText(
-      'not built yet',
-    );
+    /*
+     * And the honest half, which no longer has a subject: every row now reaches a
+     * real service, so nothing on this page may say "not built yet". The rides row
+     * was deleted rather than kept as a dark promise, and Spotify was the last row
+     * to stop being a drawing.
+     */
+    await expect(panel.getByText('not built yet')).toHaveCount(0);
   });
 
   test('the hub is named Valentin, not AgentCore', async ({ page }) => {

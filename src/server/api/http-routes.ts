@@ -7,6 +7,8 @@ import { resolvePersona } from '../fixtures/demo-personas';
 import type { DemoConversation } from '../fixtures/demo-personas';
 import { resolveDemoTasks } from '../fixtures/demo-tasks';
 import type { DemoTask } from '../fixtures/demo-tasks';
+import { resolveDemoOutings } from '../fixtures/demo-outings';
+import type { DemoOuting } from '../fixtures/demo-outings';
 import { isPartnerNamePreference } from '../extraction/partner-name';
 import { DEFAULT_GENERATION, isPersonGeneration } from '../../shared/interfaces/person';
 import type { Person } from '../../shared/interfaces/person';
@@ -115,10 +117,11 @@ async function seedDemoPeopleAndTasks(
   sessionId: string,
   people: readonly Omit<Person, 'updatedAt'>[],
   tasks: readonly DemoTask[],
+  outings: readonly DemoOuting[],
   now: number,
-): Promise<{ peopleCount: number; taskCount: number }> {
+): Promise<{ peopleCount: number; taskCount: number; outingCount: number }> {
   const stamp = new Date(now).toISOString();
-  const [writtenPeople, writtenTasks] = await Promise.all([
+  const [writtenPeople, writtenTasks, writtenOutings] = await Promise.all([
     // Guarded individually: an empty batch is a round trip some backends reject,
     // and a persona could reasonably have a family but no to-do list.
     people.length > 0
@@ -130,8 +133,15 @@ async function seedDemoPeopleAndTasks(
     tasks.length > 0
       ? storage.saveTasksBatch(sessionId, resolveDemoTasks(tasks, now))
       : Promise.resolve([]),
+    outings.length > 0
+      ? storage.saveOutingsBatch(sessionId, resolveDemoOutings(outings, now))
+      : Promise.resolve([]),
   ]);
-  return { peopleCount: writtenPeople.length, taskCount: writtenTasks.length };
+  return {
+    peopleCount: writtenPeople.length,
+    taskCount: writtenTasks.length,
+    outingCount: writtenOutings.length,
+  };
 }
 
 /** Longest a person's name, relationship or note may be, in characters */
@@ -762,7 +772,7 @@ export function createHttpRoutes(storage: StorageInterface) {
      * the newest conversation and always the one holding the preferences.
      */
     async seedSession(persona?: unknown): Promise<HttpResponse> {
-      const { id, preferences, people, tasks, history } = resolvePersona(persona);
+      const { id, preferences, people, tasks, outings, history } = resolvePersona(persona);
       const now = Date.now();
       const conversations = history ?? [];
 
@@ -805,11 +815,12 @@ export function createHttpRoutes(storage: StorageInterface) {
       // `lastActivity`, and the two racing on one session row is a write nobody
       // needs to reason about for a saving of a few milliseconds on a click that
       // already wrote thirty rows.
-      const { peopleCount, taskCount } = await seedDemoPeopleAndTasks(
+      const { peopleCount, taskCount, outingCount } = await seedDemoPeopleAndTasks(
         storage,
         sessionId,
         people ?? [],
         tasks ?? [],
+        outings ?? [],
         now,
       );
 
@@ -820,6 +831,7 @@ export function createHttpRoutes(storage: StorageInterface) {
           preferenceCount,
           peopleCount,
           taskCount,
+          outingCount,
           persona: id,
           historyCount: Math.max(sessionIds.length - 1, 0),
         },

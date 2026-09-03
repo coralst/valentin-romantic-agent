@@ -10,6 +10,7 @@ import type { Person } from '../../../shared/interfaces/person';
 import type { StorageInterface } from '../storage-interface';
 import type { Task } from '../../../shared/interfaces/task';
 import { META_SK, manualSk, personSk, prefSk, sessionPk, taskSk } from '../keys';
+import { describeStoreConformance } from './store-conformance';
 
 /**
  * Contract tests for the DynamoDB store, run against **DynamoDB Local**.
@@ -120,6 +121,20 @@ describe.runIf(available)('DynamoDBStore (contract, DynamoDB Local)', () => {
     alice = new DynamoDBStore('alice', docClient, TABLE_NAME);
     bob = new DynamoDBStore('bob', docClient, TABLE_NAME);
   });
+
+  /*
+   * The shared spec, run against the real engine.
+   *
+   * Nested inside this describe so the table teardown/create above still runs
+   * before each of its cases, and so it disappears with the rest of the file when
+   * DynamoDB Local is not listening. Everything below is what is true of *this*
+   * store in particular: TTL attributes, (pk, sk) layout, GSI1 sparseness, rows an
+   * older build wrote, and behaviour that needs two users at once.
+   */
+  describeStoreConformance(
+    'DynamoDBStore',
+    () => new DynamoDBStore('alice', docClient, TABLE_NAME),
+  );
 
   // --- Sessions ---
 

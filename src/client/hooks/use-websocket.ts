@@ -4,6 +4,7 @@ import type { ChatAction } from './use-chat-state';
 import type { PreferencesAction } from './use-preferences-state';
 import type { PeopleStoreAction } from './use-people-store';
 import type { TaskStoreAction } from './use-task-store';
+import type { OutingStoreAction } from './use-outing-store';
 import {
   publishInboundWsEvent,
   publishOutboundWsEvent,
@@ -28,7 +29,7 @@ export interface UseWebSocketReturn {
 }
 
 /**
- * The two boards that fill in mid-conversation but are not the chat or the
+ * The boards that fill in mid-conversation but are not the chat or the
  * preferences.
  *
  * Optional, because both stores are mounted by providers a test may not have:
@@ -38,6 +39,7 @@ export interface UseWebSocketReturn {
 export interface LiveBoardDispatchers {
   peopleDispatch?: React.Dispatch<PeopleStoreAction>;
   tasksDispatch?: React.Dispatch<TaskStoreAction>;
+  outingsDispatch?: React.Dispatch<OutingStoreAction>;
 }
 
 /** Configuration for the WebSocket hook */
@@ -145,6 +147,15 @@ export function dispatchServerEvent(
       boards.tasksDispatch?.({ type: 'MERGE_TASK', task: event.payload.task });
       break;
 
+    // Not for the same reason as its two neighbours. A person or a task appears
+    // because the extractor read the turn; an outing appears because he pressed
+    // Confirm on a proposal card, and the row is written server-side after the
+    // reply is composed. Without this frame the place he just booked would be
+    // missing from the history until the next reload.
+    case 'outing_update':
+      boards.outingsDispatch?.({ type: 'MERGE_OUTING', outing: event.payload.outing });
+      break;
+
     case 'connection_status':
       chatDispatch({ type: 'SET_CONNECTION', status: event.payload.status });
       break;
@@ -170,6 +181,7 @@ export function useWebSocket({
   preferencesDispatch,
   peopleDispatch,
   tasksDispatch,
+  outingsDispatch,
   sessionId,
   url,
   engine,
@@ -198,8 +210,12 @@ export function useWebSocket({
    * tear the socket down and rebuild it every time the user picked a different
    * conversation — mid-turn, if he was typing.
    */
-  const boardsRef = useRef<LiveBoardDispatchers>({ peopleDispatch, tasksDispatch });
-  boardsRef.current = { peopleDispatch, tasksDispatch };
+  const boardsRef = useRef<LiveBoardDispatchers>({
+    peopleDispatch,
+    tasksDispatch,
+    outingsDispatch,
+  });
+  boardsRef.current = { peopleDispatch, tasksDispatch, outingsDispatch };
   /**
    * Whether the server has accepted this connection's `auth` frame.
    *

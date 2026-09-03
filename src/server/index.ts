@@ -285,6 +285,13 @@ export function createServer(deps: ServerDeps = {}) {
                 expiresAt: proposal.expiresAt,
               });
             },
+            // Sits next to `onProposal` and is its counterpart: a proposal is the
+            // question, this is the answer having happened. It fires after the
+            // confirm succeeded and the row is written, so the history on screen
+            // gains the place he just booked without waiting for a reload.
+            onBooking: (sessionId, outing) => {
+              eventRouter?.emitOutingUpdate(sessionId, outing);
+            },
           },
         );
 

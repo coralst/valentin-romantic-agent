@@ -1,5 +1,6 @@
 import type { EngineId } from './engine';
 import type { ChatMessage } from './message';
+import type { Outing } from './outing';
 import type { Person } from './person';
 import type { PreferenceWithHistory } from './preference';
 import type { Task } from './task';
@@ -216,6 +217,15 @@ export type ServerEvent =
   | WsEnvelope<'person_update', { sessionId: string; person: Person; isNew: boolean }>
   /** Something the user said he would do was learned from the conversation. */
   | WsEnvelope<'task_update', { sessionId: string; task: Task; isNew: boolean }>
+  /**
+   * A booking was confirmed, so there is now a place he has taken her.
+   *
+   * No `isNew` flag, unlike its two neighbours. An outing is only ever announced
+   * on creation: the other write to the row is the survey, which the client makes
+   * itself and already holds the result of, so a frame for it would be an echo the
+   * client would have to recognise and drop.
+   */
+  | WsEnvelope<'outing_update', { sessionId: string; outing: Outing }>
   | WsEnvelope<'connection_status', { status: 'connected' | 'reconnecting' | 'disconnected' }>
   | WsEnvelope<'session_init', { sessionId: string; welcomeMessage: ChatMessage }>
   | WsEnvelope<'error', { code: string; message: string }>

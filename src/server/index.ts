@@ -15,7 +15,7 @@ import {
   type AgentOrchestratorInterface,
 } from './agent/agent-orchestrator';
 import { AgentCoreOrchestrator } from './agent/agentcore-orchestrator';
-import { resolveEngine, type AgentEngine } from './agent/engine';
+import { DEFAULT_ENGINE, resolveEngine, type AgentEngine } from './agent/engine';
 import { PreferenceExtractor } from './extraction/preference-extractor';
 import { EventRouter } from './api/event-router';
 import { WsGateway } from './api/ws-gateway';
@@ -196,17 +196,38 @@ export function createServer(deps: ServerDeps = {}) {
    * the AgentCore wiring is missing, so the value logged here is what actually
    * ran, not what was asked for.
    */
-  const engine = deps.engine ?? resolveEngine();
-  logger.info('agent.engine', { requested: process.env.AGENT_ENGINE ?? null, resolved: engine });
+  const requestedEngine = deps.engine ?? resolveEngine();
 
   /*
    * Built only on engine B, and only once — the client holds a connection pool,
    * so one per user would open a pool per signed-in visitor. Constructing it on
    * engine A would try to read config that is deliberately unset there and throw
    * `AgentCoreNotConfiguredError` at boot.
+   *
+   * Caught rather than allowed to propagate, because `resolveEngine`'s promise is
+   * that a requested-but-unavailable engine downgrades loudly instead of taking
+   * the task down — and it can only keep half of that promise on its own. It
+   * checks `runtimeArn`, but `BedrockAgentCoreRuntime` also requires
+   * `AGENTCORE_MEMORY_ID`, and `deps.engine` bypasses the check altogether. So
+   * the construction itself is the honest place to decide availability: whatever
+   * is missing, engine A answers and `agent.engine` reports what actually ran.
    */
-  const agentCoreRuntime: AgentCoreRuntime | null =
-    engine === 'agentcore' ? (deps.agentCoreRuntime ?? new BedrockAgentCoreRuntime()) : null;
+  let engine = requestedEngine;
+  let agentCoreRuntime: AgentCoreRuntime | null = null;
+  if (engine === 'agentcore') {
+    try {
+      agentCoreRuntime = deps.agentCoreRuntime ?? new BedrockAgentCoreRuntime();
+    } catch (err) {
+      logger.error('agent.engine.unavailable', {
+        requested: 'agentcore',
+        resolved: DEFAULT_ENGINE,
+        reason: err instanceof Error ? err.message : String(err),
+      });
+      engine = DEFAULT_ENGINE;
+    }
+  }
+
+  logger.info('agent.engine', { requested: process.env.AGENT_ENGINE ?? null, resolved: engine });
 
   console.log(`[server] AWS Bedrock (region: ${process.env.AWS_REGION ?? 'us-east-1'}, model: ${process.env.BEDROCK_MODEL_ID ?? 'claude-3-haiku'})`);
 

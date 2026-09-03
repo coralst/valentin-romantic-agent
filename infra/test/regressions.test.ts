@@ -954,19 +954,55 @@ describe('Google credentials reach the deployed task', () => {
   // fails with EROFS and is only logged.
   const SPOTIFY_VARS = ['SPOTIFY_CLIENT_ID', 'SPOTIFY_CLIENT_SECRET', 'SPOTIFY_REFRESH_TOKEN'];
 
-  it('creates a Spotify secret separate from the Google one', () => {
+  /**
+   * Spotify joined `adoptedSecretArns` on 2026-09-03, for the same reason Google
+   * and the share token did: the deploy that introduced the secret created it and
+   * then failed elsewhere in the stack, the rollback logged `DELETE_SKIPPED`, and
+   * every later deploy of this stack died with `AlreadyExists` on a name that was
+   * taken. So — exactly as with Google above — these assertions have to hold on
+   * both paths, because on dev there is no longer a secret resource to inspect.
+   */
+  const adoptedSpotifyArn = config.adoptedSecretArns?.spotifyOAuth;
+
+  it('reads Spotify from its own secret, separate from the Google one', () => {
     // Separate, because put-secret-value is a whole-document write: sharing one
     // secret would mean rewriting Google's refresh token to rotate Spotify's.
-    computeTemplate.hasResourceProperties('AWS::SecretsManager::Secret', {
-      Name: `valentin/${config.env}/spotify-oauth`,
-    });
+    if (!adoptedSpotifyArn) {
+      computeTemplate.hasResourceProperties('AWS::SecretsManager::Secret', {
+        Name: `valentin/${config.env}/spotify-oauth`,
+      });
+      return;
+    }
+    // Complete ARN, for the reason spelled out on the Google case: ECS cannot pull
+    // a secret from a partial ARN, and that failure surfaces at task start rather
+    // than at synth, so this is the only place it can be caught early.
+    expect(adoptedSpotifyArn).toMatch(
+      new RegExp(`:secret:valentin/${config.env}/spotify-oauth-[A-Za-z0-9]{6}$`),
+    );
+    // Still a different secret from Google's — the separation is the invariant, and
+    // it survives adoption.
+    const secrets = containerSecrets();
+    expect(JSON.stringify(secrets.SPOTIFY_CLIENT_ID)).toContain(adoptedSpotifyArn);
+    expect(JSON.stringify(secrets.GOOGLE_CLIENT_ID)).not.toContain(adoptedSpotifyArn);
   });
 
   it('keeps the Spotify secret out of the janitor’s reach', () => {
-    computeTemplate.hasResourceProperties('AWS::SecretsManager::Secret', {
-      Name: `valentin/${config.env}/spotify-oauth`,
-      Tags: Match.arrayWith([{ Key: 'auto-delete', Value: 'no' }]),
-    });
+    if (!adoptedSpotifyArn) {
+      computeTemplate.hasResourceProperties('AWS::SecretsManager::Secret', {
+        Name: `valentin/${config.env}/spotify-oauth`,
+        Tags: Match.arrayWith([{ Key: 'auto-delete', Value: 'no' }]),
+      });
+      return;
+    }
+    // An adopted secret is not this stack's resource, so there is no template tag to
+    // assert; the live one carries `auto-delete=no` from the deploy that created it.
+    // What is still assertable is that adoption stays a dev-only repair.
+    for (const name of ['staging', 'prod']) {
+      expect(
+        getConfig(name, 'https://example.invalid/').adoptedSecretArns,
+        name,
+      ).toBeUndefined();
+    }
   });
 
   it('does not seed SPOTIFY_REFRESH_TOKEN with a generated value', () => {
@@ -974,11 +1010,24 @@ describe('Google credentials reach the deployed task', () => {
     // reads the same field to choose between saving a playlist and handing over
     // links. A *generated* token is present but invalid, so the app would claim a
     // connected account and promise a save it cannot perform. Empty is honest.
-    const secret = Object.values(
-      computeTemplate.findResources('AWS::SecretsManager::Secret', {
-        Properties: { Name: `valentin/${config.env}/spotify-oauth` },
-      }),
-    )[0] as { Properties: { GenerateSecretString: Record<string, string> } };
+    //
+    // This one is genuinely weaker after adoption, and it is worth being explicit
+    // about why rather than deleting it: `generateSecretString` only ever runs at
+    // *create* time, so on dev the shape is already fixed in Secrets Manager and no
+    // template assertion can reach it — the live document has all three keys with
+    // the refresh token empty, which is what this test was defending. The create
+    // path still exists for staging and prod, and this keeps guarding it there.
+    const found = computeTemplate.findResources('AWS::SecretsManager::Secret', {
+      Properties: { Name: `valentin/${config.env}/spotify-oauth` },
+    });
+    if (adoptedSpotifyArn) {
+      expect(Object.keys(found), 'adoption must emit no secret resource').toHaveLength(0);
+      return;
+    }
+
+    const secret = Object.values(found)[0] as {
+      Properties: { GenerateSecretString: Record<string, string> };
+    };
 
     const generate = secret.Properties.GenerateSecretString;
     expect(generate.GenerateStringKey).not.toBe('SPOTIFY_REFRESH_TOKEN');

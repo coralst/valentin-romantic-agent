@@ -88,6 +88,7 @@ export interface EnvironmentConfig {
   adoptedSecretArns?: {
     googleOAuth?: string;
     shareToken?: string;
+    spotifyOAuth?: string;
   };
 }
 
@@ -132,14 +133,23 @@ const baseConfigs: Record<string, Omit<EnvironmentConfig, 'appUrls'>> = {
     photoBucketKmsEncryption: false,
     cloudfrontPrefixListId: 'pl-3b927c52',
     cloudfrontPriceClass: cloudfront.PriceClass.PRICE_CLASS_100,
-    // Both were created by a deploy that later rolled back, and both survived it
-    // because they are RETAIN. See `adoptedSecretArns` above for why adopting is
-    // the only safe resolution for the Google one in particular.
+    // All three were created by a deploy that later rolled back, and all three
+    // survived it because they are RETAIN. See `adoptedSecretArns` above for why
+    // adopting is the only safe resolution for the Google one in particular.
+    //
+    // Spotify joined the list on 2026-09-03, one rollback after the other two: the
+    // deploy that introduced it created the secret and then failed elsewhere in the
+    // stack, so `valentin/dev/spotify-oauth` is now an orphan of exactly the same
+    // shape. Its id and secret hold real credentials typed in by hand, so this is
+    // the Google case rather than the share-token case — deleting to let
+    // CloudFormation recreate an empty one is off the table.
     adoptedSecretArns: {
       googleOAuth:
         'arn:aws:secretsmanager:us-east-1:684394110906:secret:valentin/dev/google-oauth-5hYOo1',
       shareToken:
         'arn:aws:secretsmanager:us-east-1:684394110906:secret:valentin/dev/share-token-XnBnfq',
+      spotifyOAuth:
+        'arn:aws:secretsmanager:us-east-1:684394110906:secret:valentin/dev/spotify-oauth-Bo59tY',
     },
   },
   staging: {

@@ -420,27 +420,41 @@ export class ComputeStack extends cdk.Stack {
      * CloudFormation regenerates the value and would clobber real credentials.
      */
     /*
-     * Not adoptable, and deliberately not listed in `adoptedSecretArns`: this
-     * secret has never been created, so there is no orphan to adopt. It must go
-     * through a normal create. Adding it to that list would break the first deploy
-     * in the opposite direction — a complete ARN for a secret that does not exist.
+     * Adopted on dev, for the same reason Google's is. An earlier note here said
+     * this secret was "not adoptable" because it had never been created — that was
+     * true when it was written and is not true now. The deploy that introduced it
+     * created the secret and then failed elsewhere in the stack; the rollback logged
+     * `DELETE_SKIPPED`, so Secrets Manager kept it while CloudFormation stopped
+     * tracking it, and every later update of this stack failed `AlreadyExists` on a
+     * name that is taken.
+     *
+     * The stale reasoning was still sound in one respect: an environment that has
+     * never deployed this must go through a normal create, because a complete ARN
+     * for a secret that does not exist fails in the opposite direction. Hence the
+     * per-environment branch rather than adopting unconditionally.
      */
-    const spotifySecret = new secretsmanager.Secret(this, 'SpotifyOAuthSecret', {
-      secretName: `valentin/${env}/spotify-oauth`,
-      description:
-        'Spotify client id/secret for track search, plus an optional refresh token ' +
-        'for writing playlists. Populate with `aws secretsmanager put-secret-value`.',
-      generateSecretString: {
-        secretStringTemplate: JSON.stringify({
-          SPOTIFY_CLIENT_ID: '',
-          SPOTIFY_CLIENT_SECRET: '',
-          SPOTIFY_REFRESH_TOKEN: '',
-        }),
-        generateStringKey: 'UNUSED_PLACEHOLDER',
-      },
-      removalPolicy: cdk.RemovalPolicy.RETAIN,
-    });
-    cdk.Tags.of(spotifySecret).add('auto-delete', 'no');
+    const spotifySecret: secretsmanager.ISecret = adopted?.spotifyOAuth
+      ? secretsmanager.Secret.fromSecretCompleteArn(
+          this,
+          'SpotifyOAuthSecret',
+          adopted.spotifyOAuth,
+        )
+      : new secretsmanager.Secret(this, 'SpotifyOAuthSecret', {
+          secretName: `valentin/${env}/spotify-oauth`,
+          description:
+            'Spotify client id/secret for track search, plus an optional refresh token ' +
+            'for writing playlists. Populate with `aws secretsmanager put-secret-value`.',
+          generateSecretString: {
+            secretStringTemplate: JSON.stringify({
+              SPOTIFY_CLIENT_ID: '',
+              SPOTIFY_CLIENT_SECRET: '',
+              SPOTIFY_REFRESH_TOKEN: '',
+            }),
+            generateStringKey: 'UNUSED_PLACEHOLDER',
+          },
+          removalPolicy: cdk.RemovalPolicy.RETAIN,
+        });
+    if (!adopted?.spotifyOAuth) cdk.Tags.of(spotifySecret).add('auto-delete', 'no');
 
     /**
      * The key share links are signed with.

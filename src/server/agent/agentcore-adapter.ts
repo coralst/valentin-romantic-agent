@@ -51,6 +51,19 @@ export interface AgentCoreTurn {
    * preference extraction would never accumulate anything.
    */
   actorId: string;
+  /**
+   * The id the *table* is keyed by — `storageId`, exactly as engine A uses it.
+   *
+   * Deliberately separate from {@link AgentCoreTurn.actorId} even though both
+   * describe the same person, because `actorIdFor` sanitises `actorId` for
+   * AgentCore Memory (which rejects `#`) and a demo visitor's id is
+   * `<sub>#<visitorId>`. Sending the sanitised form to the Gateway's profile
+   * tools would key `USER#<sub>-<visitor>#SESSION#…`, a partition engine A never
+   * writes — the profile would read as empty rather than wrong, which is the
+   * hardest kind of bug to see. So this one travels raw and `actorId` stays
+   * sanitised, and the two are never interchangeable.
+   */
+  userId: string;
   /** The user's message. */
   prompt: string;
   /** Valentin's persona plus the profile, exactly as engine A builds it. */
@@ -179,6 +192,10 @@ export class BedrockAgentCoreRuntime implements AgentCoreRuntime {
       system_prompt: turn.systemPrompt,
       session_id: turn.sessionId,
       actor_id: actorIdFor(turn.actorId),
+      // Raw, unsanitised, and not the same field as `actor_id` above. The agent
+      // forwards this to every Gateway tool call as `user_id`, so it has to be
+      // the id the table is keyed by. See `AgentCoreTurn.userId`.
+      user_id: turn.userId,
       memory_id: this.memoryId,
       history: turn.history.map((message) => ({
         role: message.sender === 'user' ? 'user' : 'assistant',

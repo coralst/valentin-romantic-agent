@@ -104,6 +104,35 @@ function requireId(name, value) {
   return value;
 }
 
+/**
+ * A user id, which — unlike every other id here — may contain exactly one '#'.
+ *
+ * A demo visitor's storage id is `<sub>#<visitorId>`: `scopeToVisitor` in
+ * `src/server/auth/demo-login.ts` builds it that way so several people sharing
+ * the demo account get separate profiles. That id is what engine A keys the
+ * partition with, so rejecting it here would make every demo visitor's profile
+ * read as empty on engine B — the same data, invisible, with nothing failing.
+ *
+ * So one '#' is allowed and the character class is otherwise closed. The
+ * delimiter argument that {@link requireId} rests on still holds for
+ * `session_id`, which keeps the no-'#' rule: with the user half pinned to at
+ * most two segments, a caller cannot use it to address a partition other than
+ * the one its arguments describe.
+ */
+const USER_ID_PATTERN = /^[A-Za-z0-9._:-]+(#[A-Za-z0-9._:-]+)?$/;
+
+function requireUserId(value) {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 128) {
+    throw new Error('user_id must be a non-empty string of at most 128 characters');
+  }
+  if (!USER_ID_PATTERN.test(value)) {
+    throw new Error(
+      "user_id may contain only letters, digits, '.', '_', ':', '-' and at most one '#'",
+    );
+  }
+  return value;
+}
+
 function requireCategory(value) {
   if (!CATEGORIES.has(value)) {
     throw new Error(
@@ -155,7 +184,7 @@ const tools = {
    * fewer category mistakes than one reading forty sibling rows.
    */
   async get_partner_profile(input) {
-    const userId = requireId('user_id', input.user_id);
+    const userId = requireUserId(input.user_id);
     const sessionId = requireId('session_id', input.session_id);
 
     // The partner's name lives on the session meta item, not among the
@@ -195,7 +224,7 @@ const tools = {
    * Memory — correct for both engines.
    */
   async save_preference(input) {
-    const userId = requireId('user_id', input.user_id);
+    const userId = requireUserId(input.user_id);
     const sessionId = requireId('session_id', input.session_id);
     const category = requireCategory(input.category);
     const key = requireId('key', input.key);
@@ -238,7 +267,7 @@ const tools = {
 
   /** The flat rows, optionally narrowed to one category. */
   async list_preferences(input) {
-    const userId = requireId('user_id', input.user_id);
+    const userId = requireUserId(input.user_id);
     const sessionId = requireId('session_id', input.session_id);
     const category = input.category === undefined ? undefined : requireCategory(input.category);
 

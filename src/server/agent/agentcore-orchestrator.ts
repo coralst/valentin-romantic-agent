@@ -46,16 +46,22 @@ export class AgentCoreOrchestrator implements AgentOrchestratorInterface {
     private readonly memory: ConversationMemory,
     private readonly runtime: AgentCoreRuntime,
     /**
-     * Whose memory this is — the Cognito `sub`, threaded in from
+     * Who this conversation belongs to — the raw `storageId`, threaded in from
      * `forUser(userId)`.
      *
      * `StorageInterface` needs no user because an instance carries one
-     * internally, but AgentCore Memory is not our store: it partitions by
-     * `actorId` explicitly, so this has to be passed. See
-     * `agentcore-adapter.ts` for what goes wrong if a session id is passed here
-     * instead.
+     * internally, but AgentCore is not our store, so this has to be passed
+     * explicitly. See `agentcore-adapter.ts` for what goes wrong if a session id
+     * is passed here instead.
+     *
+     * Named `storageId` rather than `actorId` because it now feeds two contracts
+     * that disagree about spelling: Memory partitions by a sanitised `actorId`
+     * (no `#`, applied downstream by `actorIdFor`), while the Gateway's profile
+     * tools key the DynamoDB partition and need this value *raw*. Holding the
+     * raw form here and sanitising at the single point of use is what keeps the
+     * two from drifting.
      */
-    private readonly actorId: string,
+    private readonly storageId: string,
     private readonly onPreferenceUpdate: OnPreferenceUpdate | null,
   ) {}
 
@@ -103,7 +109,11 @@ export class AgentCoreOrchestrator implements AgentOrchestratorInterface {
     try {
       const reply = await this.runtime.invoke({
         sessionId,
-        actorId: this.actorId,
+        actorId: this.storageId,
+        // Same value, two contracts: `actorId` gets sanitised for Memory inside
+        // the adapter, `userId` travels raw because the Gateway's profile tools
+        // key DynamoDB with it. See `AgentCoreTurn.userId`.
+        userId: this.storageId,
         prompt: content,
         systemPrompt: buildSystemPrompt(await readKnownFacts(this.storage, sessionId)),
         history: context.recentMessages,
@@ -189,11 +199,11 @@ export class AgentCoreOrchestrator implements AgentOrchestratorInterface {
     try {
       await this.runtime.recordTurn(
         sessionId,
-        this.actorId,
+        this.storageId,
         userMessage.content,
         agentMessage.content,
       );
-      const remembered = await this.runtime.recallPreferences(sessionId, this.actorId);
+      const remembered = await this.runtime.recallPreferences(sessionId, this.storageId);
       await this.mirrorPreferences(sessionId, userMessage.id, remembered);
     } catch (err) {
       logger.error('agentcore.memory.failed', {

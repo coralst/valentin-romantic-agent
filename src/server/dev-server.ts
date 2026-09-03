@@ -1,3 +1,6 @@
+// First, and it must stay first: it fills `process.env` from `.env` before
+// `config.ts` — reached through `./index` below — snapshots it.
+import './env-first';
 import { createServer as createHttpServer } from 'http';
 import { createServer } from './index';
 import { createExpressApp, type LogFn } from './http/express-app';

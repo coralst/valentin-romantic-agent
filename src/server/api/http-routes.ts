@@ -30,6 +30,7 @@ import {
   isConnectable,
 } from '../integrations/credentials';
 import { buildAuthUrl } from '../integrations/google/oauth';
+import { buildSpotifyAuthUrl } from '../integrations/spotify/oauth';
 
 /** Simple framework-agnostic request representation */
 export interface HttpRequest {
@@ -336,6 +337,20 @@ export function createHttpRoutes(storage: StorageInterface) {
      */
     async googleAuthUrl(): Promise<HttpResponse> {
       const result = buildAuthUrl();
+      return result.ok
+        ? { status: 200, body: { url: result.url } }
+        : { status: result.status, body: { error: result.message } };
+    },
+
+    /**
+     * GET /integrations/spotify/auth-url — the same, for the playlist scope.
+     *
+     * Separate from Google's rather than parameterised: they are two providers
+     * whose flows differ in small ways that a shared handler would have to branch
+     * on anyway, and a wrong branch here binds the wrong account.
+     */
+    async spotifyAuthUrl(): Promise<HttpResponse> {
+      const result = buildSpotifyAuthUrl();
       return result.ok
         ? { status: 200, body: { url: result.url } }
         : { status: result.status, body: { error: result.message } };

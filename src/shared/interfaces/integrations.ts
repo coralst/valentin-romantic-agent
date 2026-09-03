@@ -21,6 +21,7 @@ export type IntegrationId =
   | 'gmail'
   | 'whatsapp'
   | 'wolt'
+  | 'spotify'
   | 'events'
   /**
    * The headless browser itself, which is a dependency rather than a destination.
@@ -43,6 +44,7 @@ export const INTEGRATION_IDS: readonly IntegrationId[] = [
   'whatsapp',
   'browser',
   'wolt',
+  'spotify',
   'events',
 ] as const;
 
@@ -80,6 +82,9 @@ export const INTEGRATION_TRANSPORT: Record<IntegrationId, IntegrationTransport> 
   // direct. Completing an order is not, but that is a handoff to Wolt's own
   // checkout rather than something Valentin drives.
   wolt: 'direct',
+  // Spotify publishes a real, documented Web API, so both halves are direct: the
+  // catalogue search that picks the tracks and the playlist write that saves them.
+  spotify: 'direct',
   events: 'browser',
   browser: 'browser',
 };
@@ -147,6 +152,7 @@ export const INTEGRATION_LABELS: Record<IntegrationId, string> = {
   gmail: 'Gmail',
   whatsapp: 'WhatsApp',
   wolt: 'Wolt',
+  spotify: 'Spotify',
   events: 'Event listings',
   // Named for what it is rather than for Playwright: the visitor is being told
   // that a real browser is involved, not which library drives it.

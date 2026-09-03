@@ -389,6 +389,7 @@ describe('GET /api/integrations', () => {
       // deployment may simply not have Chromium.
       'browser',
       'wolt',
+      'spotify',
       'events',
     ]);
     // Hebcal is arithmetic in-process, so it is configured on every deployment.

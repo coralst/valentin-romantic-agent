@@ -10,7 +10,8 @@ import { storageUserId } from '../auth/demo-login';
 import { describePersonas } from '../fixtures/demo-personas';
 import { DEFAULT_ENGINE, type AgentEngine } from '../agent/engine';
 import { consumeState, exchangeCode } from '../integrations/google/oauth';
-import { applyGoogleRefreshToken } from '../integrations/credentials';
+import { consumeSpotifyState, exchangeSpotifyCode } from '../integrations/spotify/oauth';
+import { applyGoogleRefreshToken, applySpotifyRefreshToken } from '../integrations/credentials';
 import { buildToolRegistry } from '../integrations';
 
 /**
@@ -319,6 +320,67 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
     }
   });
 
+  /**
+   * Where Spotify sends the visitor back after they approve the scope.
+   *
+   * Unauthenticated for exactly the reason the Google callback above is, and
+   * secured the same way: a server-minted single-use `state` with a ten-minute
+   * TTL. Kept deliberately parallel to that handler — two OAuth callbacks that
+   * differ only where the providers differ are far easier to audit than two that
+   * were each invented once.
+   */
+  app.get('/api/integrations/spotify/callback', async (req, res) => {
+    const { code, state, error } = req.query as Record<string, string | undefined>;
+
+    const finish = (ok: boolean, message: string) => {
+      res.status(ok ? 200 : 400).type('html').send(
+        `<!doctype html><meta charset="utf-8"><title>${ok ? 'Connected' : 'Not connected'}</title>` +
+          `<body style="font:16px/1.5 system-ui;padding:2rem;color:#2a2226">` +
+          `<p>${escapeHtml(message)}</p>` +
+          `<p style="color:#8a7f85">You can close this window.</p>` +
+          `<script>try{window.opener&&window.opener.postMessage(` +
+          `{source:'valentin-spotify-oauth',ok:${ok ? 'true' : 'false'}},'*');}catch(e){}` +
+          `setTimeout(function(){window.close()},${ok ? 1200 : 6000});</script>`,
+      );
+    };
+
+    if (error) {
+      finish(false, 'Spotify sign-in was cancelled. Nothing was changed.');
+      return;
+    }
+    if (!consumeSpotifyState(state)) {
+      deps.log('warn', 'Rejected a Spotify OAuth callback with an unknown state');
+      finish(false, 'This sign-in link has expired or was not started here. Press Connect again.');
+      return;
+    }
+    if (!code) {
+      finish(false, 'Spotify did not return an authorisation code.');
+      return;
+    }
+
+    try {
+      const result = await exchangeSpotifyCode(code);
+      if (!result.ok || !result.refreshToken) {
+        finish(false, result.message);
+        return;
+      }
+      applySpotifyRefreshToken(result.refreshToken);
+      // The playlist tool can save now rather than hand over links; re-register
+      // so that takes effect without a restart.
+      buildToolRegistry();
+      deps.log('info', 'Spotify connected via OAuth', { integration: 'spotify' });
+      finish(
+        true,
+        'Spotify is connected. Valentin can now save the playlists he offers you, as private playlists.',
+      );
+    } catch (err) {
+      deps.log('error', 'Spotify OAuth callback failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      finish(false, 'Something went wrong finishing the sign-in.');
+    }
+  });
+
   // --- Everything below requires a token ---
 
   app.use('/api', requireAuth(deps));
@@ -387,6 +449,13 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
   app.get(
     '/api/integrations/google/auth-url',
     scoped(deps, (routes) => routes.googleAuthUrl()),
+  );
+
+  // Same for Spotify: authenticated, because the panel asks for it, while the
+  // callback above cannot be.
+  app.get(
+    '/api/integrations/spotify/auth-url',
+    scoped(deps, (routes) => routes.spotifyAuthUrl()),
   );
 
   app.get(

@@ -82,6 +82,9 @@ const agentCoreStack = new AgentCoreStack(app, `Valentin-AgentCore-${env}`, {
   guardrailVersion,
   userPool: authStack.userPool,
   cognitoDomainPrefix: authStack.userPoolDomainPrefix,
+  // Same literal string the compute stack gets, for the same reason: the tool
+  // Lambda grants against a prefix, not against four secret references.
+  integrationSecretsPrefix: dataStack.integrationSecretsPrefix,
   imageTag: agentImageTag,
   env: stackEnv,
   description: `Valentin AgentCore Runtime, Memory and Gateway (${env})`,

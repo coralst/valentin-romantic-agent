@@ -46,6 +46,7 @@ beforeAll(() => {
     guardrailVersion: 'DRAFT',
     userPool: auth.userPool,
     cognitoDomainPrefix: auth.userPoolDomainPrefix,
+    integrationSecretsPrefix: data.integrationSecretsPrefix,
     imageTag: 'test-sha',
     env: stackEnv,
   });
@@ -751,12 +752,121 @@ describe('agentcore engine B', () => {
     ]);
   });
 
-  it('bounds log retention on both new log groups', () => {
-    agentCoreTemplate.resourceCountIs('AWS::Logs::LogGroup', 2);
+  it('bounds log retention on every log group this stack creates', () => {
+    // Three: the AgentCore telemetry group, the profile-tools group and the
+    // integration-tools group. An exact count rather than "at least" because the
+    // failure this guards against is a Lambda created without an explicit
+    // `logGroup`, which silently gets a never-expiring one from the service.
+    agentCoreTemplate.resourceCountIs('AWS::Logs::LogGroup', 3);
     const groups = agentCoreTemplate.findResources('AWS::Logs::LogGroup');
     for (const group of Object.values(groups)) {
       expect((group as any).Properties.RetentionInDays).toBe(config.logRetention);
     }
+  });
+});
+
+describe('the integration-tools Lambda', () => {
+  /** The one function whose name says integrations. */
+  function integrationTools(): any {
+    const fns = agentCoreTemplate.findResources('AWS::Lambda::Function');
+    const found = Object.values<any>(fns).filter(
+      (f) => f.Properties.FunctionName === `valentin-integration-tools-${config.env}`,
+    );
+    expect(found).toHaveLength(1);
+    return found[0];
+  }
+
+  /** Every policy statement attached to that function's role. */
+  function statements(): any[] {
+    const fn = integrationTools();
+    // The role's logical id, matched verbatim — an earlier version of this helper
+    // trimmed it and silently matched nothing, which made the two negative
+    // assertions below pass without reading a single statement.
+    const roleRef: string = fn.Properties.Role['Fn::GetAtt'][0];
+    const policies = agentCoreTemplate.findResources('AWS::IAM::Policy');
+    const matched = Object.values<any>(policies).filter((p) =>
+      JSON.stringify(p.Properties.Roles ?? []).includes(roleRef),
+    );
+    expect(matched.length).toBeGreaterThan(0);
+    return matched.flatMap((p) => p.Properties.PolicyDocument.Statement);
+  }
+
+  it('runs the same runtime and architecture as the agent image', () => {
+    // ARM64 matters beyond consistency: a bundle built for the wrong
+    // architecture fails at invoke, not at deploy, so it would surface as engine
+    // B's tools all being broken.
+    const props = integrationTools().Properties;
+    expect(props.Runtime).toBe('nodejs22.x');
+    expect(props.Architectures).toEqual(['arm64']);
+  });
+
+  it('gets long enough to make a third-party HTTP call', () => {
+    // Ontopo and Amadeus both sit behind a token exchange; the 10s the profile
+    // tools get would time out mid-booking-search.
+    expect(integrationTools().Properties.Timeout).toBe(30);
+  });
+
+  it('is told where the credentials live', () => {
+    expect(integrationTools().Properties.Environment.Variables).toMatchObject({
+      INTEGRATION_SECRETS_PREFIX: `valentin/${config.env}/integrations`,
+    });
+  });
+
+  it('is exempt from the account janitor', () => {
+    const tags = integrationTools().Properties.Tags ?? [];
+    expect(tags).toEqual(
+      expect.arrayContaining([
+        { Key: 'auto-delete', Value: 'no' },
+        { Key: 'springclean', Value: 'exempt' },
+      ]),
+    );
+  });
+
+  it('can read the integration secrets', () => {
+    const reads = statements().filter((s) =>
+      JSON.stringify(s.Action).includes('secretsmanager:GetSecretValue'),
+    );
+    expect(reads.length).toBeGreaterThan(0);
+  });
+
+  it('cannot write any secret, anywhere', () => {
+    // This function serves a model's tool calls. The panel that writes these
+    // secrets runs in the compute stack and holds the only PutSecretValue grant;
+    // a write grant here would put a language model one bug away from
+    // overwriting a credential.
+    expect(JSON.stringify(statements())).not.toContain('secretsmanager:PutSecretValue');
+    expect(JSON.stringify(statements())).not.toContain('secretsmanager:CreateSecret');
+  });
+
+  it('cannot reach a secret outside integrations/', () => {
+    // The wider valentin/<env>/* read grant covers demo-user, whose password
+    // POST /api/demo/login exchanges for Cognito tokens.
+    for (const statement of statements()) {
+      if (!JSON.stringify(statement.Action).includes('secretsmanager')) continue;
+      for (const resource of [statement.Resource].flat()) {
+        expect(JSON.stringify(resource)).toContain(
+          `valentin/${config.env}/integrations/`,
+        );
+      }
+    }
+  });
+
+  it('is not yet wired to a Gateway target', () => {
+    /*
+     * Step ordering, asserted rather than remembered.
+     *
+     * A target naming a Lambda that does not exist yet fails at stack update,
+     * and because the Runtime depends on its targets, the rollback can leave the
+     * Runtime a version behind a proxy that is already new — engine B then
+     * answers with the fallback apology and it reads as AgentCore being slow.
+     * So the function deploys alone first. When the target lands, this test
+     * should be deleted in the same commit, not weakened.
+     */
+    const targets = agentCoreTemplate.findResources(
+      'AWS::BedrockAgentCore::GatewayTarget',
+    );
+    expect(Object.keys(targets)).toHaveLength(1);
+    expect(JSON.stringify(targets)).not.toContain('integration-tools');
   });
 });
 

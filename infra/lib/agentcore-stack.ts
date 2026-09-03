@@ -5,9 +5,11 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import { NodejsFunction, OutputFormat } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
 import { EnvironmentConfig } from '../config/environments';
+import { applySpringCleanExemption } from './springclean-exemption';
 
 export interface AgentCoreStackProps extends cdk.StackProps {
   config: EnvironmentConfig;
@@ -22,6 +24,15 @@ export interface AgentCoreStackProps extends cdk.StackProps {
   cognitoDomainPrefix: string;
   /** Tag of the ARM64 agent image in `valentin-agentcore-<env>`. */
   imageTag: string;
+  /**
+   * Where the integration credentials live — `valentin/<env>/integrations`.
+   *
+   * A plain string rather than four `ISecret`s, matching how the compute stack
+   * receives it: the tool Lambda needs read access to a prefix, not references to
+   * individual secrets, and every `ISecret` passed across a stack boundary is one
+   * more CloudFormation export to hold open.
+   */
+  integrationSecretsPrefix: string;
 }
 
 /**
@@ -138,6 +149,132 @@ export class AgentCoreStack extends cdk.Stack {
     // Read and write preferences, read session meta. Nothing else: this function
     // must not be able to delete a session or touch another table.
     table.grantReadWriteData(profileTools);
+
+    // ---------------------------------------------------------------------
+    // Integration tools: the real fourteen, bundled from the server's own code
+    // ---------------------------------------------------------------------
+
+    /*
+     * The same tools engine A runs, hosted for the Gateway.
+     *
+     * `NodejsFunction`, not `Code.fromAsset`, and the entry point is in `src/`
+     * rather than `infra/lambda/`. Both follow from one decision: engine B must
+     * run the *same* tool code as engine A, or a measured difference between the
+     * engines stops being about AgentCore. `profile-tools/index.mjs` gets away
+     * with re-implementing the key layout because it is forty lines of DynamoDB;
+     * re-implementing fourteen integrations would mean a second Ontopo client and
+     * a second Amadeus token cache, and the first one to drift would make engine
+     * B answer differently for a reason nobody could attribute.
+     *
+     * The cost is that synth now bundles TypeScript, so `npm run test:infra`
+     * needs esbuild — pinned in `infra/devDependencies` deliberately, because
+     * without a local esbuild CDK silently falls back to bundling in Docker,
+     * which in CI is a slow failure rather than a fast one.
+     */
+    const integrationTools = new NodejsFunction(this, 'IntegrationTools', {
+      functionName: `valentin-integration-tools-${env}`,
+      description: 'The integration tools AgentCore Gateway exposes to engine B',
+      runtime: lambda.Runtime.NODEJS_22_X,
+      // Matching `profileTools` and the agent image. Everything bundled here is
+      // pure JS (`@hebcal/core` included), so the build is architecture-neutral —
+      // but a future native binding would compile for x86 here and fail at invoke.
+      architecture: lambda.Architecture.ARM_64,
+      entry: '../src/server/integrations/lambda-handler.ts',
+      handler: 'handler',
+      // The repo root, so esbuild resolves `src/shared/**` and node_modules the
+      // same way `tsc` does.
+      projectRoot: '..',
+      depsLockFilePath: '../package-lock.json',
+      bundling: {
+        /*
+         * CJS, even though the source is ESM — and this was measured, not assumed.
+         *
+         * The obvious choice is `OutputFormat.ESM`, since the root package is
+         * `"type": "module"`. Building it that way produces a bundle that throws
+         * on *import*, before any handler code runs:
+         *
+         *   Error: Dynamic require of "node:https" is not supported
+         *     at @smithy/node-http-handler/dist-cjs/index.js
+         *     at @aws-sdk/client-secrets-manager/dist-cjs/index.js
+         *
+         * The AWS SDK v3 resolves to its CJS build, and esbuild's ESM output
+         * shims `require` with a function that throws. The failure is total — the
+         * module never loads, so *every* tool call becomes a Gateway error — and
+         * it cannot be reproduced by any unit test, because unit tests import the
+         * TypeScript, not the bundle. Found by loading the synthesised asset with
+         * `node` before deploying; do that again if this line is ever changed.
+         *
+         * esbuild converts ESM sources to CJS reliably, so this direction has no
+         * equivalent hazard. The asset ships no `package.json`, so Lambda reads
+         * the emitted `index.js` as CommonJS regardless of the repo's setting.
+         */
+        format: OutputFormat.CJS,
+        /*
+         * Playwright is imported through a *variable* specifier in
+         * `browser/session.ts`, so esbuild leaves it alone — but naming it here
+         * makes that intentional rather than incidental. The browser probe simply
+         * reports false in Lambda, which is the same graceful degradation a
+         * Fargate task without Chromium already gets.
+         */
+        externalModules: ['playwright', 'playwright-core'],
+        minify: false,
+        sourceMap: false,
+      },
+      environment: {
+        VALENTIN_TABLE_NAME: table.tableName,
+        // Switches `credential-store.ts` on. Unset — locally, and in `npm test` —
+        // the whole remote-credential path is a no-op.
+        INTEGRATION_SECRETS_PREFIX: props.integrationSecretsPrefix,
+      },
+      // Ontopo and Amadeus are third-party HTTP calls behind a token exchange, so
+      // 10s (what the profile tools get for a DynamoDB read) is too tight.
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 512,
+      logGroup: new logs.LogGroup(this, 'IntegrationToolsLogs', {
+        logGroupName: `/aws/lambda/valentin-integration-tools-${env}`,
+        retention: config.logRetention,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }),
+    });
+
+    /*
+     * Read-only on the integration secrets, and nothing wider.
+     *
+     * This function serves a model's tool calls; the panel that *writes* these
+     * secrets runs in the compute stack and holds the only `PutSecretValue`
+     * grant. Scoped to `integrations/*` rather than `valentin/<env>/*` so the
+     * demo-user password — which `POST /api/demo/login` exchanges for Cognito
+     * tokens — is not reachable from here at all.
+     *
+     * The `/*` suffix already absorbs Secrets Manager's six-character name
+     * suffix; no extra wildcard is needed.
+     */
+    integrationTools.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['secretsmanager:GetSecretValue', 'secretsmanager:DescribeSecret'],
+        resources: [
+          `arn:aws:secretsmanager:*:*:secret:${props.integrationSecretsPrefix}/*`,
+        ],
+      }),
+    );
+
+    // Belt and braces on top of the app-scope call in `bin/app.ts`: this is the
+    // one new resource holding a state nobody can recreate from the repo in under
+    // a minute, and SpringClean calls service APIs directly — `RemovalPolicy` is
+    // not a defence against it. See `springclean-exemption.ts`.
+    applySpringCleanExemption(integrationTools);
+
+    /*
+     * Deliberately not wired to a Gateway target in this commit.
+     *
+     * A target that names a Lambda which does not exist yet fails at stack
+     * update, and because `CfnRuntime` depends on its targets the rollback can
+     * leave the Runtime on its previous version while the proxy is already new —
+     * which surfaces as engine B answering with the fallback apology and reads
+     * like an AgentCore latency problem. So the function ships first, referenced
+     * by nothing, and the target follows in its own deploy.
+     */
+    void integrationTools;
 
     // ---------------------------------------------------------------------
     // Gateway auth: a machine client, not a user

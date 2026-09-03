@@ -17,7 +17,7 @@ import type { IntegrationId } from '../../shared/interfaces/integrations';
  */
 
 /** The services whose credentials can be handed over from inside the app. */
-export type ConnectableId = 'amadeus' | 'whatsapp' | 'google';
+export type ConnectableId = 'amadeus' | 'whatsapp' | 'google' | 'spotify';
 
 /**
  * Which connect flow backs an integration id.
@@ -32,6 +32,8 @@ export function connectableFor(id: IntegrationId): ConnectableId | null {
       return 'amadeus';
     case 'whatsapp':
       return 'whatsapp';
+    case 'spotify':
+      return 'spotify';
     case 'google-calendar':
     case 'gmail':
       return 'google';
@@ -108,6 +110,29 @@ export const CONNECT_RECIPES: Record<ConnectableId, ConnectRecipe> = {
     href: 'https://developers.amadeus.com/my-apps',
     caution:
       'This build talks to the Amadeus test sandbox, so hotel and activity results are representative rather than bookable. Pointing it at production is a deliberate change, because those endpoints spend real money.',
+  },
+  spotify: {
+    id: 'spotify',
+    provider: 'Spotify',
+    fields: [
+      { name: 'clientId', label: 'Client ID', secret: false },
+      { name: 'clientSecret', label: 'Client secret', secret: true },
+    ],
+    where:
+      'Spotify Developer Dashboard → Create app. Copy the client ID and secret from its settings, and register this server\'s /api/integrations/spotify/callback as a Redirect URI on the same page.',
+    href: 'https://developer.spotify.com/dashboard',
+    /*
+     * Consent, like Google — but for a different half of the capability.
+     *
+     * The id and secret are verified by the connect POST and buy catalogue
+     * search on their own. What they cannot do is write to a library, so the
+     * popup that follows is what upgrades "here are the songs as links" into a
+     * saved playlist. Declining it leaves a working search rather than nothing,
+     * and the hook's copy says so.
+     */
+    needsConsent: true,
+    caution:
+      'Signing in asks for one scope — playlist-modify-private — and nothing else: he cannot read your listening history, and every playlist he makes is private. Whatever account you approve is the library the playlists land in, so use a spare rather than your main. Skip the sign-in and he can still choose the songs; he just hands them to you as links instead of saving them.',
   },
   whatsapp: {
     id: 'whatsapp',

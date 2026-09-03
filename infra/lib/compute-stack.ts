@@ -387,6 +387,62 @@ export class ComputeStack extends cdk.Stack {
     if (!adopted?.googleOAuth) cdk.Tags.of(googleSecret).add('auto-delete', 'no');
 
     /**
+     * Spotify credentials for `find_music` and `propose_playlist`.
+     *
+     * A separate secret from Google's, not three more keys in it: the two
+     * providers are rotated, revoked and re-consented independently, and a
+     * `put-secret-value` is a whole-document write — so sharing one secret means
+     * repopulating Google's refresh token every time Spotify's changes.
+     *
+     * **The id and secret alone are load-bearing.** Track search and playlist
+     * assembly use the client-credentials grant, which needs no user consent, so
+     * id+secret are enough to make the music row work deployed.
+     * `SPOTIFY_REFRESH_TOKEN` is needed only to write a playlist into a real
+     * library; without it `propose_playlist` confirms into a links handoff, which
+     * is a correct and honest outcome rather than a failure. So a half-populated
+     * secret is a legitimate steady state here, unlike Google's all-or-nothing.
+     *
+     * ## Why the generated key is a throwaway
+     *
+     * Secrets Manager requires exactly one generated key, and the obvious choice
+     * would be `SPOTIFY_REFRESH_TOKEN`. That would be wrong. Readiness is
+     * `Boolean(config.integrations.spotifyRefreshToken)` — a *present* value, not
+     * a valid one — and `outcome()` in `spotify/tools.ts` reads the same field to
+     * decide between saving a playlist and handing over links. A random generated
+     * token is present, so the app would advertise a connected Spotify account,
+     * promise on the confirmation card that confirming saves to it, and only then
+     * fail against the real API. Seeding the token as an empty string instead
+     * makes the untouched state read as `links`, which is the truth.
+     *
+     * So the generated key is a field nothing consumes, and all three real keys
+     * start empty in the template. Note this shape only ever applies at *create*
+     * time — and editing `generateSecretString` on a live secret is not a no-op,
+     * CloudFormation regenerates the value and would clobber real credentials.
+     */
+    /*
+     * Not adoptable, and deliberately not listed in `adoptedSecretArns`: this
+     * secret has never been created, so there is no orphan to adopt. It must go
+     * through a normal create. Adding it to that list would break the first deploy
+     * in the opposite direction — a complete ARN for a secret that does not exist.
+     */
+    const spotifySecret = new secretsmanager.Secret(this, 'SpotifyOAuthSecret', {
+      secretName: `valentin/${env}/spotify-oauth`,
+      description:
+        'Spotify client id/secret for track search, plus an optional refresh token ' +
+        'for writing playlists. Populate with `aws secretsmanager put-secret-value`.',
+      generateSecretString: {
+        secretStringTemplate: JSON.stringify({
+          SPOTIFY_CLIENT_ID: '',
+          SPOTIFY_CLIENT_SECRET: '',
+          SPOTIFY_REFRESH_TOKEN: '',
+        }),
+        generateStringKey: 'UNUSED_PLACEHOLDER',
+      },
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+    cdk.Tags.of(spotifySecret).add('auto-delete', 'no');
+
+    /**
      * The key share links are signed with.
      *
      * `sharing/share-token.ts` falls back to a per-process random key when this is
@@ -404,6 +460,9 @@ export class ComputeStack extends cdk.Stack {
      * replacing this secret silently invalidates every share link already in
      * somebody's inbox. The janitor deletes untagged resources regardless of
      * CloudFormation retain policies.
+     *
+     * Adopted on dev for the same reason Google's is: a rolled-back deploy left it
+     * in Secrets Manager but out of the stack's resource set.
      */
     const shareSecret: secretsmanager.ISecret = adopted?.shareToken
       ? secretsmanager.Secret.fromSecretCompleteArn(
@@ -431,10 +490,18 @@ export class ComputeStack extends cdk.Stack {
      * as ordinary environment variables and never appear in the task definition,
      * the console, or `describe-tasks` output.
      *
-     * This — not the integrations panel — is how the deployed app gets its Google
+     * This — not the integrations panel — is how the deployed app gets its
      * credentials. The panel's connect flow writes `.env`, and both containers run
      * `readonlyRootFilesystem: true`, so that path cannot persist anything here.
+     *
+     * Every key named here must *exist* in its secret document, empty or not: ECS
+     * resolves each one individually and a task whose secret is missing a key dies
+     * at launch with `ResourceInitializationError`, indistinguishable from a
+     * missing IAM grant. That is why the populate step writes all three keys of
+     * each secret and uses `""` for absent optional values rather than omitting
+     * them.
      */
+
     const sharedSecrets: Record<string, ecs.Secret> = {
       GOOGLE_CLIENT_ID: ecs.Secret.fromSecretsManager(googleSecret, 'GOOGLE_CLIENT_ID'),
       GOOGLE_CLIENT_SECRET: ecs.Secret.fromSecretsManager(googleSecret, 'GOOGLE_CLIENT_SECRET'),
@@ -442,6 +509,15 @@ export class ComputeStack extends cdk.Stack {
       // No JSON field: the whole secret value *is* the key. A missing JSON key
       // fails task startup, and this secret is generated, so there is none to miss.
       SHARE_TOKEN_SECRET: ecs.Secret.fromSecretsManager(shareSecret),
+      SPOTIFY_CLIENT_ID: ecs.Secret.fromSecretsManager(spotifySecret, 'SPOTIFY_CLIENT_ID'),
+      SPOTIFY_CLIENT_SECRET: ecs.Secret.fromSecretsManager(
+        spotifySecret,
+        'SPOTIFY_CLIENT_SECRET',
+      ),
+      SPOTIFY_REFRESH_TOKEN: ecs.Secret.fromSecretsManager(
+        spotifySecret,
+        'SPOTIFY_REFRESH_TOKEN',
+      ),
     };
 
     /**
@@ -715,6 +791,21 @@ export class ComputeStack extends cdk.Stack {
 
     this.proxyService.attachToApplicationTargetGroup(this.proxyTargetGroup);
 
+    // CloudFormation updates the execution role's DefaultPolicy and the ECS
+    // service in parallel, because nothing in the template connects them. When a
+    // new ECS secret is added, that race is lost by default: on 2026-09-03 the
+    // service update began at 20:21:54 and the two policies only reached
+    // UPDATE_COMPLETE at 20:22:05, so every task launched in those 11 seconds
+    // failed with `ResourceInitializationError ... AccessDeniedException` on
+    // secretsmanager:GetSecretValue. The circuit breaker counts those launches,
+    // trips, and rolls the whole stack back — which reverts the grant too, so
+    // the evidence disappears and the next attempt fails identically.
+    //
+    // Making each service depend on its own execution role forces the grant to
+    // land first. This matters on every future secret addition, not just Google.
+    forceExecutionRolePolicyFirst(this.service, taskDefinition);
+    forceExecutionRolePolicyFirst(this.proxyService, proxyTaskDefinition);
+
     // --- Auto Scaling ---
     const scaling = this.service.autoScaleTaskCount({
       minCapacity: config.desiredCount,
@@ -775,4 +866,37 @@ export class ComputeStack extends cdk.Stack {
       description: 'Engine-B log group — per-engine telemetry lives here',
     });
   }
+}
+
+/**
+ * Make an ECS service wait for its task execution role's inline policy.
+ *
+ * CDK grants `secretsmanager:GetSecretValue` on the execution role when a task
+ * definition references an ECS secret, but it adds no dependency between that
+ * policy and the service that launches the tasks. CloudFormation therefore
+ * updates them concurrently, and a task that starts before the grant exists dies
+ * with `ResourceInitializationError ... AccessDeniedException`.
+ *
+ * The grant lives on the role's auto-generated `DefaultPolicy` child, so the
+ * lookup is by that construct id. If a future CDK version renames it the
+ * dependency would silently stop being added, so a missing child throws rather
+ * than passing quietly.
+ */
+function forceExecutionRolePolicyFirst(
+  service: ecs.FargateService,
+  taskDefinition: ecs.FargateTaskDefinition,
+): void {
+  const executionRole = taskDefinition.executionRole;
+  if (!executionRole) return;
+
+  const defaultPolicy = executionRole.node.tryFindChild('DefaultPolicy');
+  if (!defaultPolicy) {
+    throw new Error(
+      'Execution role has no DefaultPolicy child — the CDK construct id changed, ' +
+        'so the secret grant is no longer ordered before the ECS service. ' +
+        'See forceExecutionRolePolicyFirst in compute-stack.ts.',
+    );
+  }
+
+  service.node.addDependency(defaultPolicy);
 }

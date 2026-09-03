@@ -370,8 +370,11 @@ describe('IconRail', () => {
         JSON.stringify({
           version: 1,
           grants: {
-            flowers: { capUsd: 80, grantedAt: '2026-02-14T09:00:00.000Z' },
-            calendar: { capUsd: null, grantedAt: '2026-02-14T09:00:00.000Z' },
+            // Catalogue ids, because `loadGrants` drops anything the catalogue no
+            // longer offers — a stale id here would count zero and the badge would
+            // agree with itself while testing nothing.
+            wolt: { capUsd: null, grantedAt: '2026-02-14T09:00:00.000Z' },
+            'google-calendar': { capUsd: null, grantedAt: '2026-02-14T09:00:00.000Z' },
           },
         }),
       );

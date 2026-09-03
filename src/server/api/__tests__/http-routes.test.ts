@@ -681,16 +681,25 @@ describe('createHttpRoutes', () => {
        * answer the same question while putting part of a real token into a
        * public payload, so the shape is asserted exactly rather than loosely.
        */
+      const isGoogle = (id: string) => id === 'google-calendar' || id === 'gmail';
+
       for (const entry of integrations) {
         expect(Object.keys(entry).sort()).toEqual([
           'configured',
           'id',
           'label',
+          // Only the Google ids: whether the server already holds an OAuth client,
+          // so the panel can offer a sign-in instead of asking for a client id it
+          // has. Still a boolean, which is why it is allowed here at all.
+          ...(isGoogle(entry.id) ? ['oauthClientPresent'] : []),
           // Whether reaching it needs a browser. A transport is not a secret — it
           // is the same fact the panel draws its relay layout from.
           'transport',
-        ]);
+        ].sort());
         expect(typeof entry.configured).toBe('boolean');
+        // No id may smuggle a value in under the new flag.
+        if (isGoogle(entry.id)) expect(typeof entry.oauthClientPresent).toBe('boolean');
+        else expect(entry.oauthClientPresent).toBeUndefined();
       }
     });
   });

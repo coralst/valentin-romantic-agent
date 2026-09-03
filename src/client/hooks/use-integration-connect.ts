@@ -29,19 +29,62 @@ export type ConnectStatus =
   | { phase: 'done'; id: ConnectableId; message: string }
   | { phase: 'error'; id: ConnectableId; message: string };
 
+/**
+ * The providers whose credentials cannot be verified without a human in a
+ * browser, and so need a consent popup after the values are saved.
+ *
+ * Spotify is here for a slightly different reason than Google. Its id and secret
+ * *are* verifiable server-side — the connect POST probes them — but they only buy
+ * catalogue search. Saving a playlist into a library needs a user grant, which
+ * only this popup can earn. So the POST succeeding is real progress and the
+ * consent leg is the rest of it, which is why a declined popup below reports what
+ * still works rather than a flat failure.
+ */
+const CONSENT_PROVIDERS = ['google', 'spotify'] as const;
+
+type ConsentProvider = (typeof CONSENT_PROVIDERS)[number];
+
+function needsConsentLeg(id: ConnectableId): id is ConsentProvider {
+  return (CONSENT_PROVIDERS as readonly string[]).includes(id);
+}
+
 /** What the OAuth popup posts back to us when it finishes. */
 interface OAuthMessage {
-  source: 'valentin-google-oauth';
+  source: `valentin-${ConsentProvider}-oauth`;
   ok: boolean;
 }
 
-function isOAuthMessage(data: unknown): data is OAuthMessage {
+function isOAuthMessage(data: unknown, provider: ConsentProvider): data is OAuthMessage {
   return (
     typeof data === 'object' &&
     data !== null &&
-    (data as { source?: unknown }).source === 'valentin-google-oauth'
+    (data as { source?: unknown }).source === `valentin-${provider}-oauth`
   );
 }
+
+/** Provider-specific wording, so a message never names the wrong service. */
+const CONSENT_COPY: Record<
+  ConsentProvider,
+  { connected: string; declined: string; closed: string }
+> = {
+  google: {
+    connected: 'Google connected.',
+    declined: 'Google did not complete the sign-in. Nothing was changed.',
+    closed: 'Sign-in window closed before Google could confirm.',
+  },
+  spotify: {
+    connected: 'Spotify connected. Playlists Valentin offers can now be saved.',
+    // Deliberately not "nothing was changed": the id and secret were saved and
+    // probed before the popup opened, so search genuinely works now. Saying
+    // otherwise would send someone back to re-enter credentials that are fine.
+    declined:
+      'Spotify search is connected, but the account sign-in was not completed — so playlists ' +
+      'will be handed to you as links rather than saved. Press Connect again to finish it.',
+    closed:
+      'Spotify search is connected, but the sign-in window closed before the account was ' +
+      'linked, so playlists cannot be saved yet.',
+  },
+};
 
 export interface UseIntegrationConnect {
   status: ConnectStatus;
@@ -82,16 +125,18 @@ export function useIntegrationConnect(onChanged: () => void): UseIntegrationConn
    * and after the redirect it closes itself. A closed-window poll is the fallback
    * for the visitor who dismisses the popup instead of finishing.
    */
-  const runConsent = useCallback(async (): Promise<{ ok: boolean; message: string }> => {
+  const runConsent = useCallback(
+    async (provider: ConsentProvider): Promise<{ ok: boolean; message: string }> => {
+    const copy = CONSENT_COPY[provider];
     const { url } = await apiGetJson<{ url: string }>(
-      '/api/integrations/google/auth-url',
+      `/api/integrations/${provider}/auth-url`,
     );
 
     // Opened *after* the await, which is a real constraint on Safari: a popup is
     // only allowed while the browser still considers a user gesture in progress.
     // If this proves flaky, the fix is to fetch the URL before opening rather
     // than to add a permission prompt.
-    const popup = window.open(url, 'valentin-google-oauth', 'width=520,height=680');
+    const popup = window.open(url, `valentin-${provider}-oauth`, 'width=520,height=680');
     if (!popup) {
       return {
         ok: false,
@@ -113,13 +158,8 @@ export function useIntegrationConnect(onChanged: () => void): UseIntegrationConn
         // Same-origin only: the callback page is served by us, so a message from
         // anywhere else is not our popup and must not be able to report success.
         if (event.origin !== window.location.origin) return;
-        if (!isOAuthMessage(event.data)) return;
-        finish(
-          event.data.ok,
-          event.data.ok
-            ? 'Google connected.'
-            : 'Google did not complete the sign-in. Nothing was changed.',
-        );
+        if (!isOAuthMessage(event.data, provider)) return;
+        finish(event.data.ok, event.data.ok ? copy.connected : copy.declined);
       };
       window.addEventListener('message', onMessage);
 
@@ -128,30 +168,58 @@ export function useIntegrationConnect(onChanged: () => void): UseIntegrationConn
       // waiting.
       const closedPoll = window.setInterval(() => {
         if (popup.closed) {
-          finish(false, 'Sign-in window closed before Google could confirm.');
+          finish(false, copy.closed);
         }
       }, 700);
     });
-  }, []);
+    },
+    [],
+  );
 
   const connect = useCallback(
     async (id: ConnectableId, fields: Record<string, string>): Promise<boolean> => {
       setStatus({ phase: 'working', id });
       try {
-        const { message } = await apiPostJsonExplained<{ message: string }>(
-          `/api/integrations/${id}/connect`,
-          fields,
-        );
+        /*
+         * No fields means "you already have the client, just get me consent" — the
+         * state of a deployment whose id and secret came from the environment. The
+         * save is skipped rather than sent empty, because `applyIntegrationCredentials`
+         * rightly rejects a Google connect with no client id, and a rejection here
+         * would stop the visitor short of the one leg that was actually missing.
+         *
+         * Google-only, and deliberately not widened to Spotify even though Spotify
+         * now has a consent leg too. The skip is only safe where the server says it
+         * already holds the client, and `GET /api/integrations` sends
+         * `oauthClientPresent` for the Google ids alone — so a Spotify consent-only
+         * submission would ask for a grant against a client that may not exist.
+         * Widening it means teaching the server to report Spotify's client first.
+         */
+        const consentOnly = id === 'google' && Object.keys(fields).length === 0;
 
-        if (id !== 'google') {
-          onChanged();
-          if (mounted.current) setStatus({ phase: 'done', id, message });
-          return true;
+        if (!consentOnly) {
+          const { message } = await apiPostJsonExplained<{ message: string }>(
+            `/api/integrations/${id}/connect`,
+            fields,
+          );
+          /*
+           * `needsConsentLeg(id)` rather than `id !== 'google'`, which is what this
+           * read before Spotify existed. Spotify is the second provider whose POST
+           * cannot finish the job on its own, so the question is no longer "is this
+           * Google" but "does this provider still owe us a browser grant" — and
+           * `CONSENT_PROVIDERS` is the one place that answers it.
+           */
+          if (!needsConsentLeg(id)) {
+            onChanged();
+            if (mounted.current) setStatus({ phase: 'done', id, message });
+            return true;
+          }
         }
 
-        // Google: the POST only saved the client. The grant is still to come.
+        // Google and Spotify: the POST got us as far as it can on its own (or there
+        // was nothing to save). The user grant is still to come, and only a browser
+        // can earn it.
         if (mounted.current) setStatus({ phase: 'consenting', id });
-        const consent = await runConsent();
+        const consent = await runConsent(id);
         onChanged();
         if (mounted.current) {
           setStatus(

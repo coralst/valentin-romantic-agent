@@ -111,6 +111,45 @@ export const config = {
     googlePlacesApiKey: process.env.GOOGLE_PLACES_API_KEY,
     googlePlacesSecretArn: process.env.GOOGLE_PLACES_SECRET_ARN,
 
+    /**
+     * Spotify Web API — the playlist Valentin builds for the drive there.
+     *
+     * Two credentials do two different jobs, and the split is why this
+     * integration is useful before anyone signs in:
+     *
+     * - `clientId` + `clientSecret` alone buy the *client-credentials* grant,
+     *   which can search the catalogue. That is enough to choose real tracks
+     *   from her actual taste, so `find_music` works on them alone.
+     * - `refreshToken` is a *user* grant, and the only thing that can write a
+     *   playlist into somebody's library. Without it, confirming a playlist
+     *   hands over Spotify links instead of saving — the same fallback Ontopo
+     *   uses when it has no guest identity, and always safe.
+     *
+     * One account for the whole build, like Google above: a playlist saved here
+     * lands in whoever's library minted the refresh token, so this must be a
+     * demo account rather than a real person's.
+     */
+    spotifyClientId: process.env.SPOTIFY_CLIENT_ID,
+    spotifyClientSecret: process.env.SPOTIFY_CLIENT_SECRET,
+    spotifyRefreshToken: process.env.SPOTIFY_REFRESH_TOKEN,
+
+    /**
+     * Serve the Spotify tools from a local catalogue instead of the network.
+     *
+     * Off unless explicitly asked for. It exists because the playlist path is
+     * the one integration whose *shape* can be demonstrated with no account at
+     * all — searching is a pure lookup and a playlist is a list of ids — and
+     * because `npm test` and `verify:local` must not depend on Spotify being
+     * reachable or on anyone holding keys.
+     *
+     * It is not a way to make the panel lie. Everything produced in this mode
+     * says so in the text the user reads: {@link FIXTURE_NOTICE} is prepended to
+     * every proposal summary and tool result, so a confirmed playlist in fixture
+     * mode reads "nothing was sent to Spotify" rather than claiming a save. If
+     * you find yourself wanting the notice gone, what you want is credentials.
+     */
+    spotifyFixture: process.env.SPOTIFY_FIXTURE === '1',
+
     /** WhatsApp Cloud API, via the Graph endpoint for one phone number id. */
     whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
     whatsappToken: process.env.WHATSAPP_TOKEN,

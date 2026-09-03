@@ -59,8 +59,22 @@ export const GOOGLE_PROPOSAL_TTL_MS = 10 * 60 * 1000;
  */
 export const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/calendar.events',
+  // Reading the *list* of calendars is a separate permission from reading events,
+  // and `calendar.events` does not carry it: `calendarList.list` answers
+  // `403 ACCESS_TOKEN_SCOPE_INSUFFICIENT` without it. Until this was added, only
+  // `calendars/primary` was ever reachable, so events living in a shared calendar
+  // — "Yonatan & Coral", a subscribed holiday feed — were invisible, and the model
+  // had no way to know they existed or to tell the user they had been left out.
+  'https://www.googleapis.com/auth/calendar.readonly',
   'https://www.googleapis.com/auth/gmail.send',
 ] as const;
+
+/** One calendar the account can read. `primary` is the account's own. */
+export interface CalendarSummary {
+  id: string;
+  summary: string;
+  primary: boolean;
+}
 
 export interface CalendarEvent {
   id: string;
@@ -70,6 +84,14 @@ export interface CalendarEvent {
   /** True when Google returned a `date` rather than a `dateTime`. */
   allDay: boolean;
   location?: string;
+  /**
+   * Which calendar this came out of, for the model to attribute it.
+   *
+   * "Rosh Hashana" from a subscribed holiday feed and "dinner" from the shared
+   * couple's calendar mean very different things to a suggestion, and the user
+   * asks about them by name.
+   */
+  calendar?: string;
 }
 
 interface TokenCache {
@@ -195,12 +217,45 @@ export interface EventSearchQuery {
  * thing this app ever wants to know.
  */
 export async function listEvents(query: EventSearchQuery): Promise<CalendarEvent[] | null> {
-  const url = new URL(`${CALENDAR_BASE}/calendars/primary/events`);
+  const limit = query.limit ?? 25;
+  const calendars = await listCalendars();
+
+  // No calendar list means the `calendar.readonly` scope was never granted — an
+  // older refresh token, minted before it was asked for. Degrade to the account's
+  // own calendar rather than failing: a partial answer the model knows is partial
+  // beats no answer, and re-consenting is a human action nobody can automate.
+  const targets: CalendarSummary[] =
+    calendars && calendars.length > 0
+      ? calendars
+      : [{ id: 'primary', summary: 'primary', primary: true }];
+
+  const perCalendar = await Promise.all(
+    targets.map((calendar) => listEventsIn(calendar, query, limit)),
+  );
+
+  // A single calendar failing must not blank the whole answer — one revoked share
+  // among six calendars is not a reason to tell the user their diary is empty.
+  const reachable = perCalendar.filter((events): events is CalendarEvent[] => events !== null);
+  if (reachable.length === 0) return null;
+
+  return reachable
+    .flat()
+    .sort((a, b) => a.start.localeCompare(b.start))
+    .slice(0, limit);
+}
+
+/** Events from one named calendar. `null` if that calendar could not be read. */
+async function listEventsIn(
+  calendar: CalendarSummary,
+  query: EventSearchQuery,
+  limit: number,
+): Promise<CalendarEvent[] | null> {
+  const url = new URL(`${CALENDAR_BASE}/calendars/${encodeURIComponent(calendar.id)}/events`);
   url.searchParams.set('timeMin', query.timeMin);
   url.searchParams.set('timeMax', query.timeMax);
   url.searchParams.set('singleEvents', 'true');
   url.searchParams.set('orderBy', 'startTime');
-  url.searchParams.set('maxResults', String(query.limit ?? 25));
+  url.searchParams.set('maxResults', String(limit));
   if (query.q) url.searchParams.set('q', query.q);
 
   const body = await call(url.toString());
@@ -210,7 +265,43 @@ export async function listEvents(query: EventSearchQuery): Promise<CalendarEvent
   return items
     .map(readEvent)
     .filter((event): event is CalendarEvent => event !== null)
-    .slice(0, query.limit ?? 25);
+    .map((event) => ({ ...event, calendar: calendar.summary }));
+}
+
+/**
+ * Every calendar the account can read.
+ *
+ * `null` — not `[]` — when the call fails, so the caller can tell "no scope for
+ * this" from "this account genuinely has one calendar" and degrade accordingly.
+ * `minAccessRole=reader` drops calendars that are listed but unreadable, which
+ * would otherwise each cost a doomed request in the fan-out.
+ */
+export async function listCalendars(): Promise<CalendarSummary[] | null> {
+  const url = new URL(`${CALENDAR_BASE}/users/me/calendarList`);
+  url.searchParams.set('minAccessRole', 'reader');
+  url.searchParams.set('maxResults', '50');
+
+  const body = await call(url.toString());
+  if (!body) return null;
+
+  const items = Array.isArray(body.items) ? body.items : [];
+  return items
+    .map((raw): CalendarSummary | null => {
+      if (!raw || typeof raw !== 'object') return null;
+      const record = raw as { id?: unknown; summary?: unknown; primary?: unknown; selected?: unknown };
+      if (typeof record.id !== 'string') return null;
+      // Calendars the user has unticked in Google's own sidebar are ones they have
+      // chosen not to look at. Honouring that keeps the fan-out to what they'd
+      // consider "my calendar", instead of resurrecting a feed they muted.
+      if (record.selected === false) return null;
+      return {
+        id: record.id,
+        summary:
+          typeof record.summary === 'string' && record.summary ? record.summary : record.id,
+        primary: record.primary === true,
+      };
+    })
+    .filter((calendar): calendar is CalendarSummary => calendar !== null);
 }
 
 export interface NewEvent {

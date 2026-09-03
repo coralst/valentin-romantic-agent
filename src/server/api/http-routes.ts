@@ -16,7 +16,11 @@ import type { Task } from '../../shared/interfaces/task';
 import { OUTING_VERDICTS, isOutingVerdict } from '../../shared/interfaces/outing';
 import type { Outing } from '../../shared/interfaces/outing';
 import { isProfileFieldId } from '../../shared/constants/profile-fields';
-import { buildToolRegistry, integrationReadiness } from '../integrations';
+import {
+  buildToolRegistry,
+  googleOAuthClientPresent,
+  integrationReadiness,
+} from '../integrations';
 import { readAccountPreferences } from '../agent/partner-profile';
 import type { IntegrationStatusResponse } from '../../shared/interfaces/integrations';
 import {
@@ -30,6 +34,7 @@ import {
   isConnectable,
 } from '../integrations/credentials';
 import { buildAuthUrl } from '../integrations/google/oauth';
+import { buildSpotifyAuthUrl } from '../integrations/spotify/oauth';
 import {
   geocode,
   placesConfigured,
@@ -477,9 +482,26 @@ export function createHttpRoutes(storage: StorageInterface, userId?: string) {
         : { status: result.status, body: { error: result.message } };
     },
 
+    /**
+     * GET /integrations/spotify/auth-url — the same, for the playlist scope.
+     *
+     * Separate from Google's rather than parameterised: they are two providers
+     * whose flows differ in small ways that a shared handler would have to branch
+     * on anyway, and a wrong branch here binds the wrong account.
+     */
+    async spotifyAuthUrl(): Promise<HttpResponse> {
+      const result = buildSpotifyAuthUrl();
+      return result.ok
+        ? { status: 200, body: { url: result.url } }
+        : { status: result.status, body: { error: result.message } };
+    },
+
     /** The readiness payload, shared by the list and both connect routes. */
     readinessBody(): IntegrationStatusResponse {
       const ready = integrationReadiness();
+      // Read once rather than per id: it is the same fact for both Google rows,
+      // and they must not be able to disagree.
+      const googleClient = googleOAuthClientPresent();
       return {
         integrations: INTEGRATION_IDS.map((id) => ({
           id,
@@ -488,6 +510,12 @@ export function createHttpRoutes(storage: StorageInterface, userId?: string) {
           // Sent rather than inferred client-side, so the panel's relay layout
           // follows this deployment instead of a table baked into the bundle.
           transport: INTEGRATION_TRANSPORT[id],
+          // Only the Google ids carry this; for everything else "configured" is
+          // the whole story and an always-false flag would invite the panel to
+          // draw a sign-in button for a provider that has no consent step.
+          ...(id === 'google-calendar' || id === 'gmail'
+            ? { oauthClientPresent: googleClient }
+            : {}),
         })),
       };
     },

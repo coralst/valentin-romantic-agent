@@ -11,6 +11,8 @@ import { woltTools } from './wolt/tools';
 import { placesConfigured } from './google-places/client';
 import { googlePlacesTools } from './google-places/tools';
 import { sharingTools } from '../sharing/tools';
+import { spotifyTools } from './spotify/tools';
+import { spotifyFixtureMode } from './spotify/client';
 
 export type { ToolRegistry, AgentTool, ActionProposal, IntegrationId } from './tool-registry';
 
@@ -35,12 +37,28 @@ export type { ToolRegistry, AgentTool, ActionProposal, IntegrationId } from './t
  * it is impossible, and reporting it as ready would have the model confidently
  * offer something that cannot run.
  */
+/**
+ * Whether this process knows which Google app it is, consent aside.
+ *
+ * The client id and secret reach a process the same way in both environments —
+ * as `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`, from `.env` locally and from
+ * Secrets Manager when `compute-stack.ts` injects them — so one predicate serves
+ * localhost and the deployed task with no branch.
+ *
+ * Separate from readiness because it answers a different question. Readiness asks
+ * "can Valentin call Google?", which needs the refresh token too. This asks "do I
+ * need to be told who this app is?", and the panel needs that answer to decide
+ * between showing two inputs and showing a single sign-in button.
+ */
+export function googleOAuthClientPresent(): boolean {
+  const { integrations } = config;
+  return Boolean(integrations.googleClientId && integrations.googleClientSecret);
+}
+
 export function integrationReadiness(): Record<IntegrationId, boolean> {
   const { integrations } = config;
   const google = Boolean(
-    integrations.googleClientId &&
-      integrations.googleClientSecret &&
-      integrations.googleRefreshToken,
+    googleOAuthClientPresent() && integrations.googleRefreshToken,
   );
   const browser = browserReadyCached();
 
@@ -59,6 +77,27 @@ export function integrationReadiness(): Record<IntegrationId, boolean> {
     // Wolt's catalogue is an unauthenticated JSON API, so it needs nothing — the
     // same shape as Ontopo.
     wolt: true,
+    /*
+     * An id and secret are enough, and that is a real distinction rather than a
+     * lax one.
+     *
+     * Spotify's client-credentials grant can search the catalogue, which is what
+     * `find_music` does and most of what `propose_playlist` needs — so a
+     * deployment holding only those two is genuinely able to build a playlist,
+     * and reporting it dark would be the same lie in the other direction that
+     * the florist row was fixed for. What it cannot do is *save* to a library;
+     * that needs a user refresh token, and `confirm` degrades to handing over
+     * track links when there isn't one, telling the user so in as many words.
+     *
+     * Fixture mode is deliberately NOT counted here, even though it makes the
+     * tools answer. This boolean is what the panel renders as "this server holds
+     * working Spotify credentials", and in fixture mode it holds none — so
+     * including it put a false claim about a credential in front of the visitor,
+     * which is the one thing that surface may not do. Registration is OR-ed with
+     * fixture mode separately in `buildToolRegistry`, so a fixture demo still
+     * works; it just reads "needs credentials", which is true.
+     */
+    spotify: Boolean(integrations.spotifyClientId && integrations.spotifyClientSecret),
     events: browser,
     /*
      * Reads a module variable rather than the env var, because the key may arrive
@@ -138,6 +177,19 @@ export function buildToolRegistry(): ToolRegistry {
   // `integrationReadiness` gives — and load-bearing for the reminder flow, since
   // "email me the options" is worth little if the mail cannot point back here.
   if (ready.sharing) tools.push(...sharingTools);
+  /*
+   * The playlist for the drive there. Search needs only an app credential, so this
+   * is on for any deployment holding an id and secret — saving to a library is the
+   * part that additionally needs someone's account, and `confirm` says which of the
+   * two it did.
+   *
+   * Registration, not readiness, is where fixture mode is honoured: the tools can
+   * answer from the local catalogue with no credential at all, but the *panel* must
+   * not therefore claim this server holds one. So the tools register and
+   * `ready.spotify` stays false, which reads as "needs credentials" — the accurate
+   * description of a process with no key.
+   */
+  if (ready.spotify || spotifyFixtureMode()) tools.push(...spotifyTools);
 
   // Cleared first, so a *disconnect* actually removes tools. Refilling without
   // clearing would leave the old ones registered and let the model keep calling

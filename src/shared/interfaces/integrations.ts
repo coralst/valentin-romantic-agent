@@ -21,6 +21,7 @@ export type IntegrationId =
   | 'gmail'
   | 'whatsapp'
   | 'wolt'
+  | 'spotify'
   | 'events'
   /**
    * Google Maps Platform: geocoding, reverse geocoding and Nearby Search.
@@ -67,6 +68,7 @@ export const INTEGRATION_IDS: readonly IntegrationId[] = [
   'whatsapp',
   'browser',
   'wolt',
+  'spotify',
   'events',
   'google-places',
   'sharing',
@@ -106,6 +108,9 @@ export const INTEGRATION_TRANSPORT: Record<IntegrationId, IntegrationTransport> 
   // direct. Completing an order is not, but that is a handoff to Wolt's own
   // checkout rather than something Valentin drives.
   wolt: 'direct',
+  // Spotify publishes a real, documented Web API, so both halves are direct: the
+  // catalogue search that picks the tracks and the playlist write that saves them.
+  spotify: 'direct',
   events: 'browser',
   browser: 'browser',
   'google-places': 'direct',
@@ -139,6 +144,23 @@ export interface IntegrationStatus {
    * from a table compiled into the bundle.
    */
   transport: IntegrationTransport;
+  /**
+   * Whether the server already holds an OAuth *client* for this integration,
+   * independently of whether a human has consented yet.
+   *
+   * Only meaningful for the Google ids, where readiness needs three values and a
+   * deployment routinely has the first two before it has the third: the client id
+   * and secret arrive from the environment — `.env` locally, Secrets Manager
+   * injected by `compute-stack.ts` when deployed — while the refresh token can
+   * only be earned by a browser round trip. Without this flag `configured: false`
+   * is ambiguous between "nobody has told me who this app is" and "I know who
+   * this app is, I just need someone to sign in", and the panel answers the first
+   * question by demanding credentials that are already loaded.
+   *
+   * Still a boolean, so the endpoint's rule holds: never a credential, not even a
+   * masked one. Optional because only Google sets it.
+   */
+  oauthClientPresent?: boolean;
 }
 
 export interface IntegrationStatusResponse {
@@ -160,6 +182,7 @@ export const INTEGRATION_LABELS: Record<IntegrationId, string> = {
   gmail: 'Gmail',
   whatsapp: 'WhatsApp',
   wolt: 'Wolt',
+  spotify: 'Spotify',
   events: 'Event listings',
   // Named for what it is rather than for Playwright: the visitor is being told
   // that a real browser is involved, not which library drives it.

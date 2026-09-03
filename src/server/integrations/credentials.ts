@@ -3,6 +3,7 @@ import { config } from '../config';
 import { logger } from '../logging';
 import { resetTokenCache as resetAmadeusTokenCache } from './amadeus/client';
 import { resetGoogleTokenCache } from './google/client';
+import { resetSpotifyTokenCache } from './spotify/client';
 
 /**
  * Credential intake at runtime — the server side of "Connect" in the app.
@@ -33,10 +34,10 @@ import { resetGoogleTokenCache } from './google/client';
  * share a refresh token, so "connect Google" is a single act. Hebcal and
  * Ontopo need nothing and so are not connectable; they are simply on.
  */
-export type ConnectableId = 'amadeus' | 'whatsapp' | 'google';
+export type ConnectableId = 'amadeus' | 'whatsapp' | 'google' | 'spotify';
 
 export function isConnectable(id: string): id is ConnectableId {
-  return id === 'amadeus' || id === 'whatsapp' || id === 'google';
+  return id === 'amadeus' || id === 'whatsapp' || id === 'google' || id === 'spotify';
 }
 
 /** What an intake attempt came to. Never carries a credential. */
@@ -134,6 +135,35 @@ async function probeWhatsapp(phoneNumberId: string, token: string): Promise<Inta
 }
 
 /**
+ * Try a candidate Spotify id/secret against the client-credentials grant.
+ *
+ * This proves the pair, which is exactly the capability being connected: search.
+ * An optional refresh token is *not* probed here — the same request cannot
+ * validate both grants, and a working id/secret with a stale refresh token is
+ * still a useful connection (playlists hand over links instead of saving). So a
+ * bad refresh token degrades the capability rather than rejecting the connect,
+ * and `confirm` is where the user finds out, in words.
+ */
+async function probeSpotify(clientId: string, clientSecret: string): Promise<IntakeResult> {
+  let response: Response;
+  try {
+    response = await fetch('https://accounts.spotify.com/api/token', {
+      method: 'POST',
+      headers: {
+        authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`, 'utf8').toString('base64')}`,
+        'content-type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({ grant_type: 'client_credentials' }).toString(),
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+    });
+  } catch {
+    return unreachable('Spotify');
+  }
+  if (!response.ok) return rejected('Spotify');
+  return { ok: true, status: 200, message: 'Spotify connected.' };
+}
+
+/**
  * Accept credentials for one service, if the provider vouches for them.
  *
  * Google is the exception to probe-before-apply: a client id and secret cannot
@@ -180,8 +210,73 @@ export async function applyIntegrationCredentials(
     return probe;
   }
 
+  if (id === 'spotify') {
+    const clientId = fieldValue(body, 'clientId');
+    const clientSecret = fieldValue(body, 'clientSecret');
+    if (!clientId || !clientSecret) {
+      return badRequest('Spotify needs both a client ID and a client secret.');
+    }
+    const probe = await probeSpotify(clientId, clientSecret);
+    if (!probe.ok) return probe;
+
+    config.integrations.spotifyClientId = clientId;
+    config.integrations.spotifyClientSecret = clientSecret;
+
+    /*
+     * Still accepted, though the panel no longer asks for it.
+     *
+     * The normal route to a refresh token is now the consent popup, which ends in
+     * `applySpotifyRefreshToken`. This field stays because a deployed environment
+     * may well have one already minted and prefer to hand it over directly rather
+     * than run a browser flow against a Fargate task.
+     */
+    const refreshToken = fieldValue(body, 'refreshToken');
+    if (refreshToken) config.integrations.spotifyRefreshToken = refreshToken;
+
+    resetSpotifyTokenCache();
+    persistEnv({
+      SPOTIFY_CLIENT_ID: clientId,
+      SPOTIFY_CLIENT_SECRET: clientSecret,
+      ...(refreshToken ? { SPOTIFY_REFRESH_TOKEN: refreshToken } : {}),
+    });
+    logger.info('integration.connected', { integration: 'spotify' });
+    return refreshToken
+      ? probe
+      : {
+          ok: true,
+          status: 200,
+          message:
+            'Spotify credentials accepted. Now sign in to the account playlists should be ' +
+            'saved to — until then, confirming a playlist hands over track links.',
+        };
+  }
+
   const clientId = fieldValue(body, 'clientId');
   const clientSecret = fieldValue(body, 'clientSecret');
+
+  /*
+   * An empty body is "keep the client you already have, I only came for consent".
+   * The panel normally skips this route entirely in that case, so reaching here
+   * means a direct caller or a retry — either way, answering with a 400 that names
+   * two values the process is already holding would be a lie, and it would strand a
+   * deployment whose client came from the environment.
+   *
+   * Nothing is written and nothing is logged as saved, because nothing changed.
+   */
+  const clientAlreadyLoaded = Boolean(
+    // Read from config rather than through `googleOAuthClientPresent()` in
+    // `./index`, which pulls in every tool module and would make this file part of
+    // an import cycle for one boolean.
+    config.integrations.googleClientId && config.integrations.googleClientSecret,
+  );
+  if (!clientId && !clientSecret && clientAlreadyLoaded) {
+    return {
+      ok: true,
+      status: 200,
+      message: 'OAuth client already loaded. Sign in with Google to finish connecting.',
+    };
+  }
+
   if (!clientId || !clientSecret) {
     return badRequest('Google needs an OAuth client id and client secret (a "Web application" client).');
   }
@@ -204,6 +299,20 @@ export function applyGoogleRefreshToken(refreshToken: string): void {
   logger.info('integration.connected', { integration: 'google' });
 }
 
+/**
+ * Store the refresh token the Spotify OAuth callback earned.
+ *
+ * Called only after a real code exchange, which is what makes this the moment the
+ * playlist tool stops handing over links and starts saving. Same contract as
+ * {@link applyGoogleRefreshToken}: the value goes in and never comes back out.
+ */
+export function applySpotifyRefreshToken(refreshToken: string): void {
+  config.integrations.spotifyRefreshToken = refreshToken;
+  resetSpotifyTokenCache();
+  persistEnv({ SPOTIFY_REFRESH_TOKEN: refreshToken });
+  logger.info('integration.connected', { integration: 'spotify' });
+}
+
 /** Forget one service's credentials, in memory and in `.env`. */
 export function clearIntegrationCredentials(id: ConnectableId): void {
   if (id === 'amadeus') {
@@ -211,6 +320,12 @@ export function clearIntegrationCredentials(id: ConnectableId): void {
     config.integrations.amadeusClientSecret = undefined;
     resetAmadeusTokenCache();
     removeEnv(['AMADEUS_CLIENT_ID', 'AMADEUS_CLIENT_SECRET']);
+  } else if (id === 'spotify') {
+    config.integrations.spotifyClientId = undefined;
+    config.integrations.spotifyClientSecret = undefined;
+    config.integrations.spotifyRefreshToken = undefined;
+    resetSpotifyTokenCache();
+    removeEnv(['SPOTIFY_CLIENT_ID', 'SPOTIFY_CLIENT_SECRET', 'SPOTIFY_REFRESH_TOKEN']);
   } else if (id === 'whatsapp') {
     config.integrations.whatsappPhoneNumberId = undefined;
     config.integrations.whatsappToken = undefined;

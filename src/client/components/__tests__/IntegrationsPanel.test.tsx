@@ -134,10 +134,10 @@ describe('IntegrationsPanel', () => {
       const user = userEvent.setup();
       await renderPanel();
 
-      await user.click(screen.getByTestId('integration-node-flowers'));
+      await user.click(screen.getByTestId('integration-node-wolt'));
       expect(screen.getByTestId('integration-consent-sheet')).toBeInTheDocument();
       // Still not connected — the sheet is the grant, the click is only the ask.
-      expect(screen.getByTestId('integration-node-flowers')).toHaveAttribute(
+      expect(screen.getByTestId('integration-node-wolt')).toHaveAttribute(
         'data-connected',
         'false',
       );
@@ -148,9 +148,9 @@ describe('IntegrationsPanel', () => {
       const user = userEvent.setup();
       await renderPanel();
 
-      await user.click(screen.getByTestId('integration-node-flowers'));
+      await user.click(screen.getByTestId('integration-node-wolt'));
       const scopes = screen.getByTestId('integration-scopes');
-      for (const scope of INTEGRATION_CATALOGUE.find((s) => s.id === 'flowers')!.scopes) {
+      for (const scope of INTEGRATION_CATALOGUE.find((s) => s.id === 'wolt')!.scopes) {
         expect(scopes).toHaveTextContent(scope.label);
       }
     });
@@ -159,14 +159,14 @@ describe('IntegrationsPanel', () => {
       const user = userEvent.setup();
       await renderPanel();
 
-      await connect(user, 'flowers');
+      await connect(user, 'wolt');
 
       expect(screen.queryByTestId('integration-consent-sheet')).not.toBeInTheDocument();
-      expect(screen.getByTestId('integration-node-flowers')).toHaveAttribute(
+      expect(screen.getByTestId('integration-node-wolt')).toHaveAttribute(
         'data-connected',
         'true',
       );
-      expect(screen.getByTestId('integration-edge-flowers')).toHaveAttribute(
+      expect(screen.getByTestId('integration-edge-wolt')).toHaveAttribute(
         'data-connected',
         'true',
       );
@@ -177,7 +177,7 @@ describe('IntegrationsPanel', () => {
       const user = userEvent.setup();
       await renderPanel();
 
-      await user.click(screen.getByTestId('integration-node-flowers'));
+      await user.click(screen.getByTestId('integration-node-wolt'));
       await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
       expect(screen.queryByTestId('integration-consent-sheet')).not.toBeInTheDocument();
@@ -188,11 +188,11 @@ describe('IntegrationsPanel', () => {
       const user = userEvent.setup();
       await renderPanel();
 
-      await connect(user, 'flowers');
-      await user.click(screen.getByTestId('integration-node-flowers'));
+      await connect(user, 'wolt');
+      await user.click(screen.getByTestId('integration-node-wolt'));
       await user.click(screen.getByTestId('integration-disconnect-button'));
 
-      expect(screen.getByTestId('integration-node-flowers')).toHaveAttribute(
+      expect(screen.getByTestId('integration-node-wolt')).toHaveAttribute(
         'data-connected',
         'false',
       );
@@ -202,11 +202,11 @@ describe('IntegrationsPanel', () => {
     it('survives a remount, because a grant is not a session detail', async () => {
       const user = userEvent.setup();
       const { unmount } = await renderPanel();
-      await connect(user, 'flowers');
+      await connect(user, 'wolt');
       unmount();
 
       await renderPanel();
-      expect(screen.getByTestId('integration-node-flowers')).toHaveAttribute(
+      expect(screen.getByTestId('integration-node-wolt')).toHaveAttribute(
         'data-connected',
         'true',
       );
@@ -218,57 +218,49 @@ describe('IntegrationsPanel', () => {
    * appear exactly where money can move and nowhere else.
    */
   describe('the spend cap', () => {
-    it('offers a cap on a service that can spend, and shows it on the node', async () => {
+    /*
+     * There is no longer a service that can spend, so there is no longer a test
+     * that grants a cap — and that is the finding, not a gap in coverage.
+     *
+     * Wolt stood here first, back when the catalogue claimed Valentin could "place
+     * an order" for $80; he never could, because the handoff ends at the shop's own
+     * page. Amadeus took over and turned out to be the same mistake:
+     * `propose_hotel_booking.confirm` re-prices an offer and stops, because the
+     * order endpoint wants a payment card Valentin must never hold. So the $400
+     * ceiling governed a purchase that cannot happen, and implied a hold that never
+     * did.
+     *
+     * What is left to assert is that the slider is absent everywhere. If a real
+     * spending capability is ever built, restore the granting test alongside it —
+     * cap first, code second.
+     */
+    it('offers no cap on Amadeus, which re-prices but cannot spend', async () => {
       const user = userEvent.setup();
       await renderPanel();
 
-      /*
-       * `rides`, and it is the last one left. Flowers stood here first, back when
-       * the catalogue claimed Valentin could "place an order" for $80 — he never
-       * could, because the Wolt handoff ends at the shop's own page. Travel took
-       * over, and travel turned out to be the same mistake: `propose_hotel_booking`
-       * re-prices an offer and stops, because the Amadeus order endpoint needs a
-       * payment card Valentin must never hold.
-       *
-       * So the only capability that would genuinely move money is one that is not
-       * built yet, and the cap slider now exists solely for it. That is the right
-       * place for it to live: the promise is made before the code, not after.
-       */
-      await user.click(screen.getByTestId('integration-node-rides'));
-      // The catalogue's default for rides, echoed next to the slider.
-      expect(screen.getByTestId('integration-cap-slider')).toHaveValue('40');
-      expect(screen.getByTestId('integration-cap-value')).toHaveTextContent('$40');
-
-      await user.click(screen.getByTestId('integration-confirm-button'));
-      expect(screen.getByTestId('integration-node-rides')).toHaveTextContent('up to $40');
-    });
-
-    it('offers no cap on travel, which cannot actually spend', async () => {
-      const user = userEvent.setup();
-      await renderPanel();
-
-      // Guards the correction directly: a hotel confirm re-prices and hands over,
-      // so a $400 ceiling on it governed nothing and implied a hold that never
-      // happened.
-      await user.click(screen.getByTestId('integration-node-travel'));
+      await user.click(screen.getByTestId('integration-node-amadeus'));
       expect(screen.queryByTestId('integration-cap-slider')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('integration-cap-value')).not.toBeInTheDocument();
     });
 
     it('offers no cap on a service that cannot spend', async () => {
       const user = userEvent.setup();
       await renderPanel();
 
-      await user.click(screen.getByTestId('integration-node-music'));
+      await user.click(screen.getByTestId('integration-node-spotify'));
       expect(screen.queryByTestId('integration-cap-slider')).not.toBeInTheDocument();
     });
 
-    it('reads the cap back when the grant is revisited', async () => {
+    it('shows no cap on a node whose grant is revisited', async () => {
       const user = userEvent.setup();
       await renderPanel();
 
-      await connect(user, 'rides');
-      await user.click(screen.getByTestId('integration-node-rides'));
-      expect(screen.getByTestId('integration-cap-value')).toHaveTextContent('$40');
+      // The read-back half of the same finding: a granted integration must not
+      // acquire a "up to $N" line it was never given.
+      await connect(user, 'amadeus');
+      await user.click(screen.getByTestId('integration-node-amadeus'));
+      expect(screen.queryByTestId('integration-cap-value')).not.toBeInTheDocument();
+      expect(screen.getByTestId('integration-node-amadeus')).not.toHaveTextContent('up to $');
     });
   });
 
@@ -297,7 +289,7 @@ describe('IntegrationsPanel', () => {
       const user = userEvent.setup();
       await renderPanel({ onClose });
 
-      await user.click(screen.getByTestId('integration-node-flowers'));
+      await user.click(screen.getByTestId('integration-node-wolt'));
       await user.keyboard('{Escape}');
 
       expect(screen.queryByTestId('integration-consent-sheet')).not.toBeInTheDocument();
@@ -319,7 +311,7 @@ describe('IntegrationsPanel', () => {
       const user = userEvent.setup();
       await renderPanel({ isMobile: true });
 
-      await user.click(screen.getByTestId('integration-card-flowers'));
+      await user.click(screen.getByTestId('integration-card-wolt'));
       await user.click(screen.getByTestId('integration-confirm-button'));
       expect(screen.getByTestId('integrations-connected-count')).toHaveTextContent('1 connected');
     });
@@ -332,7 +324,7 @@ describe('IntegrationsPanel', () => {
     const user = userEvent.setup();
     await renderPanel();
 
-    await connect(user, 'flowers');
+    await connect(user, 'wolt');
     expect(screen.getByTestId('integrations-storage-error')).toBeInTheDocument();
     vi.restoreAllMocks();
   });
@@ -377,71 +369,99 @@ describe('IntegrationsPanel', () => {
        */
       serverReports({ hebcal: true, ontopo: true, 'google-places': true });
       await renderPanel();
-      const badge = await screen.findByTestId('integration-readiness-dining');
+      const badge = await screen.findByTestId('integration-readiness-ontopo');
       expect(badge).toHaveAttribute('data-readiness', 'ready');
       expect(badge).toHaveTextContent('live');
     });
 
-    it('marks dining partial when it can book but not discover', async () => {
-      // The shape of a real deployment with no Maps key: tables can still be held,
-      // so going dark here would understate what works.
-      await renderPanel();
-      const badge = await screen.findByTestId('integration-readiness-dining');
-      expect(badge).toHaveAttribute('data-readiness', 'partial');
-    });
-
-    it('says an unbuilt capability is not built yet, not merely unconfigured', async () => {
-      await renderPanel();
+    it('keeps tables live when discovery has no key', async () => {
       /*
-       * The distinction the visitor cannot see by looking: music is a drawing,
-       * whereas travel is real code waiting on an Amadeus key. Both are dark, and
-       * conflating them either overpromises or slanders working code.
-       *
-       * `music` rather than `flowers`, which this used to assert: flowers is Wolt
-       * and has been real since the browser tier landed, so using it here was the
-       * test agreeing with the bug — it badged working code "not built yet". Music
-       * has no provider anywhere in src/server/integrations, so it is the honest
-       * example of a row that contacts nobody.
+       * The shape of a real deployment with no Maps key. Ontopo and Places are two
+       * rows precisely so this state is sayable: booking is live, discovery is not,
+       * and neither claim contaminates the other. One row spanning both would have
+       * to pick a single badge and would be wrong either way.
        */
-      const music = await screen.findByTestId('integration-readiness-music');
-      expect(music).toHaveAttribute('data-readiness', 'aspirational');
-      expect(music).toHaveTextContent('not built yet');
+      serverReports({ ontopo: true, 'google-places': false });
+      await renderPanel();
 
-      const travel = screen.getByTestId('integration-readiness-travel');
-      expect(travel).toHaveAttribute('data-readiness', 'unconfigured');
-      expect(travel).toHaveTextContent('needs credentials');
+      const tables = await screen.findByTestId('integration-readiness-ontopo');
+      expect(tables).toHaveAttribute('data-readiness', 'ready');
+      const places = await screen.findByTestId('integration-readiness-google-places');
+      expect(places).toHaveAttribute('data-readiness', 'unconfigured');
     });
 
-    it('names the half that works when Gmail is configured and WhatsApp is not', async () => {
+    it('says a configurable capability needs credentials, and badges nothing "not built yet"', async () => {
+      await renderPanel();
       /*
-       * The realistic deployment, and the reason `partial` exists at all. Gmail
-       * needs one refresh token; WhatsApp needs a Meta business number and
-       * template review, which lands days later. "Not configured" would tell the
-       * visitor email is broken, and "live" would promise a nudge that cannot be
-       * sent — so it names Gmail.
+       * This test has been chasing a moving target, and it has finally run out of
+       * target. It asserted "not built yet" on flowers, then music, then rides —
+       * each time because the row it named stopped being a drawing and the test
+       * went on slandering working code until someone moved it.
+       *
+       * There is now nothing left to name: flowers became real with Wolt, music
+       * with Spotify, and the rides row was deleted rather than left as a promise
+       * with nothing behind it. So the assertion inverts. Instead of naming the one
+       * aspirational row, it pins that there is *no* such row, which is both the
+       * stronger claim and the one that cannot rot.
+       *
+       * The distinction the visitor cannot see by looking is still the point:
+       * Amadeus is real code waiting on a key, and "needs credentials" is what
+       * separates it from code that does not exist.
+       */
+      const amadeus = await screen.findByTestId('integration-readiness-amadeus');
+      expect(amadeus).toHaveAttribute('data-readiness', 'unconfigured');
+      expect(amadeus).toHaveTextContent('needs credentials');
+
+      expect(screen.queryByText('not built yet')).not.toBeInTheDocument();
+    });
+
+    it('badges Gmail and WhatsApp separately when only Gmail is configured', async () => {
+      /*
+       * The realistic deployment, and what splitting the old Messages row bought.
+       * Gmail needs one refresh token; WhatsApp needs a Meta business number and
+       * template review, which lands days later.
+       *
+       * This used to assert `partial` — "live via Gmail" on one combined row —
+       * because a single row had to summarise two unequal services, and that summary
+       * was the least bad of three wrong answers ("not configured" said email was
+       * broken, "live" promised a nudge that could not be sent). With one row per
+       * provider there is nothing to summarise: each badge states its own truth, and
+       * the visitor is told exactly which account still needs work.
        */
       serverReports({ hebcal: true, ontopo: true, gmail: true });
       await renderPanel();
 
-      const badge = await screen.findByTestId('integration-readiness-messages');
-      expect(badge).toHaveAttribute('data-readiness', 'partial');
-      expect(badge).toHaveTextContent('live via Gmail');
+      const gmail = await screen.findByTestId('integration-readiness-gmail');
+      expect(gmail).toHaveAttribute('data-readiness', 'ready');
+      expect(gmail).toHaveTextContent('live');
+
+      const whatsapp = screen.getByTestId('integration-readiness-whatsapp');
+      expect(whatsapp).toHaveAttribute('data-readiness', 'unconfigured');
+      expect(whatsapp).toHaveTextContent('needs credentials');
     });
 
     it('claims nothing at all when the server cannot be reached', async () => {
       api.get.mockRejectedValue(new Error('offline'));
       await renderPanel();
 
-      // Deliberately no badge rather than a guess in either direction. The
-      // aspirational rows still show theirs — those need no server to be true.
-      await screen.findByTestId('integration-readiness-music');
-      expect(screen.queryByTestId('integration-readiness-dining')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('integration-readiness-messages')).not.toBeInTheDocument();
+      /*
+       * Deliberately no badge rather than a guess in either direction.
+       *
+       * This used to wait on an aspirational row's badge, which needed no server to
+       * be true. No row is aspirational any more, so there is no badge to wait on —
+       * and asserting absence directly would pass before the rejected fetch had even
+       * settled. Waiting on the row itself instead pins the real claim: the rows
+       * render, and not one of them says anything about readiness.
+       */
+      await screen.findByTestId('integration-node-ontopo');
+      expect(screen.queryByTestId('integration-readiness-ontopo')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('integration-readiness-gmail')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('integration-readiness-spotify')).not.toBeInTheDocument();
     });
 
     it('shows the same badges on a mobile card', async () => {
       await renderPanel({ isMobile: true });
-      const badge = await screen.findByTestId('integration-readiness-occasions');
+      const badge = await screen.findByTestId('integration-readiness-hebcal');
       expect(badge).toHaveAttribute('data-readiness', 'ready');
     });
   });
@@ -460,7 +480,9 @@ describe('IntegrationsPanel', () => {
  * x≈862 with ~578px of nothing beside it.
  */
 describe('IntegrationsPanel — the fan uses the width it is given', () => {
-  const COUNT = 9;
+  // One node per catalogue row: eight, since Flower delivery and Groceries & gifts
+  // became the single Wolt row and Ride booking was dropped.
+  const COUNT = INTEGRATION_CATALOGUE.length;
   /** Right edge of the widest card, which is the one that bulges furthest out. */
   const rightmostEdge = (width: number, height = 560) => {
     const centres = Array.from({ length: COUNT }, (_, i) => nodeLayout(i, COUNT, width, height).x);

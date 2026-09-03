@@ -119,7 +119,11 @@ function describeEvent(event: CalendarEvent): string {
         hour: '2-digit',
         minute: '2-digit',
       });
-  return `${event.summary} — ${when}${event.location ? ` (${event.location})` : ''}`;
+  const where = event.location ? ` (${event.location})` : '';
+  // The calendar name is worth its tokens: the user asks "did you check Yonatan &
+  // Coral?" by name, and the model can only answer that if it was told.
+  const source = event.calendar ? ` [${event.calendar}]` : '';
+  return `${event.summary} — ${when}${where}${source}`;
 }
 
 /**
@@ -181,29 +185,52 @@ export const findOccasionsTool: AgentTool = {
       };
     }
 
-    // With an explicit query, trust Google's search. Without one, the window is
-    // full of standups and the occasion filter is the whole value.
-    const matches = query ? events : events.filter(isOccasion);
-
-    if (matches.length === 0) {
+    if (events.length === 0) {
       return {
         ok: true,
         summary: query
           ? `Nothing in the calendar matches "${query}" in the next ${days} days. Ask the user for the date.`
-          : `No birthdays or anniversaries in the calendar for the next ${days} days. Ask the user when the occasion is.`,
+          : `The calendar has nothing at all in the next ${days} days. Say so plainly.`,
         data: { events: [] },
       };
     }
 
+    // With an explicit query, trust Google's search. Without one, occasions lead
+    // — they are what this tool is for — but the rest still goes back.
+    //
+    // It used to be `events.filter(isOccasion)`, and that was a bug with teeth: a
+    // keyword list of ten words decided what the model was allowed to know the
+    // calendar contained, so a diary holding a flight, six hotel bookings, two
+    // restaurant reservations and two court dates was reported as *empty*. The
+    // model then said so, in prose, with total confidence. A read tool that
+    // silently drops seventeen of seventeen rows does not narrow a result, it
+    // fabricates one — and "your calendar is empty" is a lie the user cannot
+    // catch without opening Google themselves.
+    //
+    // So the filter is now a *sort key*, never a gate.
+    const occasions = query ? [] : events.filter(isOccasion);
+    const rest = query ? events : events.filter((event) => !isOccasion(event));
+    const ordered = [...occasions, ...rest];
+
+    const headline = query
+      ? `${ordered.length} matching "${query}" in the next ${days} days`
+      : occasions.length > 0
+        ? `${occasions.length} occasion(s) and ${rest.length} other entr(ies) in the next ${days} days` +
+          ` — occasions first`
+        : `No birthdays or anniversaries in the next ${days} days, but ${rest.length} other ` +
+          `entr(ies) are in the diary — use them to judge when the user is busy or travelling`;
+
     return {
       ok: true,
-      summary: `${matches.length} in the next ${days} days: ${matches.map(describeEvent).join(' | ')}`,
+      summary: `${headline}: ${ordered.map(describeEvent).join(' | ')}`,
       data: {
-        events: matches.map((event) => ({
+        events: ordered.map((event) => ({
           summary: event.summary,
           start: event.start,
           allDay: event.allDay,
           location: event.location,
+          calendar: event.calendar,
+          isOccasion: isOccasion(event),
         })),
       },
     };

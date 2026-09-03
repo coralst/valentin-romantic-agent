@@ -4,6 +4,7 @@ import { MOBILE_STRIP_HEIGHT } from './AppWindow';
 import { reservedDrawerSpace } from './LiveArchitectureDrawer';
 import { useArchitectureDrawer } from '../context/architecture-drawer-context';
 import { INTEGRATION_CATALOGUE, type IntegrationService } from '../utils/integration-catalogue';
+import { BrandMark, brandTileStyle } from '../design-system/brand-marks';
 import { useIntegrations } from '../context/integrations-context';
 import {
   capabilityReadiness,
@@ -25,9 +26,14 @@ import { useIntegrationConnect } from '../hooks/use-integration-connect';
  * and a hub-and-spoke drawing says that in one glance where a settings list says
  * only "seven rows".
  *
- * On mobile the fan collapses to cards. A 375px canvas cannot hold a hub, nine
+ * On mobile the fan collapses to cards. A 375px canvas cannot hold a hub, eight
  * labelled nodes and their edges without becoming illegible, and an illegible
  * diagram is worse than the list it replaced.
+ *
+ * Each node is one *provider* — Gmail, Wolt, Amadeus — rather than one capability,
+ * and carries that provider's mark. See the header of
+ * `utils/integration-catalogue.ts` for why that swap was worth making and what it
+ * cost.
  *
  * Each node now also carries what the *server* says about it, fetched once from
  * `GET /api/integrations`. Half this catalogue is now real code against a real
@@ -222,19 +228,6 @@ function nodeStyle(isConnected: boolean): React.CSSProperties {
   };
 }
 
-function glyphStyle(isConnected: boolean): React.CSSProperties {
-  return {
-    width: 30,
-    height: 30,
-    flexShrink: 0,
-    borderRadius: radii.kv,
-    display: 'grid',
-    placeItems: 'center',
-    fontSize: typography.px.bodyLarge,
-    backgroundColor: isConnected ? colors.petal : colors.sand,
-  };
-}
-
 const nodeNameStyle: React.CSSProperties = {
   fontFamily: typography.bodyFontFamily,
   fontSize: typography.px.small,
@@ -347,9 +340,11 @@ const cardBlurbStyle: React.CSSProperties = {
  * rather than a hedge — no badge at all is quieter than a badge saying nothing, and
  * this is the state that exists only for the moment before the fetch lands.
  *
- * `partial` names the service that does work. Messages backed by a configured Gmail
- * and an unconfigured WhatsApp reads "live via Gmail", which is exactly true: he
- * can email her and cannot message her.
+ * `partial` names the service that does work — "live via Gmail" for a row backed by
+ * a configured Gmail and an unconfigured WhatsApp. No row reaches it today, because
+ * every row now has exactly one backing service; it is kept because the readiness
+ * fold it renders still returns the state, and a row spanning two providers is a
+ * catalogue edit rather than a code change away.
  */
 function readinessLabel(
   reach: CapabilityReadiness,
@@ -600,8 +595,8 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
                     state.grants[service.id]?.capUsd,
                   ).toLowerCase()}`}
                 >
-                  <span style={glyphStyle(connected)} aria-hidden="true">
-                    {service.glyph}
+                  <span style={brandTileStyle(connected)} aria-hidden="true">
+                    <BrandMark id={service.mark} />
                   </span>
                   <span style={{ minWidth: 0 }}>
                     <span style={nodeNameStyle}>{service.name}</span>
@@ -610,7 +605,7 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
                     <span style={nodeStateStyle(connected)}>
                       {connected
                         ? connectionLabel(connected, reach, state.grants[service.id]?.capUsd)
-                        : `Not connected · ${service.category}`}
+                        : `Not connected · ${service.capability}`}
                     </span>
                     {badge && (
                       <>
@@ -692,15 +687,15 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
                   state.grants[service.id]?.capUsd,
                 ).toLowerCase()}`}
               >
-                <span style={glyphStyle(connected)} aria-hidden="true">
-                  {service.glyph}
+                <span style={brandTileStyle(connected)} aria-hidden="true">
+                  <BrandMark id={service.mark} />
                 </span>
                 <span style={{ minWidth: 0 }}>
                   <span style={nodeNameStyle}>{service.name}</span>
                   <span style={nodeStateStyle(connected)}>
                     {connected
                       ? connectionLabel(connected, reach, state.grants[service.id]?.capUsd)
-                      : service.category}
+                      : service.capability}
                   </span>
                   {badge && (
                     <span

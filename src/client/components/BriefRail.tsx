@@ -23,7 +23,9 @@ import { ValentinNudge } from './brief/ValentinNudge';
 import { PinnedEveryYear } from './brief/PinnedEveryYear';
 import { NextActions } from './brief/NextActions';
 import { onClaret } from './brief/rail-tones';
+import { LocationConsent } from './LocationConsent';
 import { useOptionalViewContext } from '../context/view-context';
+import { useOptionalSessionContext } from '../context/session-context';
 import { useOptionalTasksContext } from '../context/tasks-context';
 import { derivePinnedDates } from '../utils/pinned-dates';
 import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
@@ -192,7 +194,7 @@ const storageErrorStyle: React.CSSProperties = {
  * and `e2e/` is not this component's lane to edit. A QA follow-up renames them.
  */
 export function BriefRail() {
-  const { state: preferencesState } = usePreferencesContext();
+  const { state: preferencesState, dispatch: preferencesDispatch } = usePreferencesContext();
   const { state: profileState, getFieldValue } = useProfileStoreContext();
   const { dispatch: chatDispatch } = useChatContext();
   /*
@@ -207,6 +209,13 @@ export function BriefRail() {
    * to-do list would have the dependency backwards.
    */
   const tasks = useOptionalTasksContext();
+  /*
+   * Which conversation to write a home city into. Optional for the same reason as
+   * the two above — and when it is absent the location control simply does not
+   * render, because there is nothing to write to.
+   */
+  const session = useOptionalSessionContext();
+  const activeSessionId = session?.state.activeSessionId ?? null;
 
   /** Field ids whose nudge the user has waved off this session. */
   const [dismissedGaps, setDismissedGaps] = useState<Set<string>>(new Set());
@@ -411,6 +420,19 @@ export function BriefRail() {
             reason={nudgeGap.reason}
             onAsk={() => askAbout(nudgeGap)}
             onLater={handleLater}
+            answerHere={
+              // The home city is the one gap nobody should have to hold a
+              // conversation about: the browser already knows the answer, and
+              // typing "Ra'anana" is faster than being asked for it.
+              nudgeGap.fieldId === 'home_city' && activeSessionId ? (
+                <LocationConsent
+                  sessionId={activeSessionId}
+                  onSaved={(preference) =>
+                    preferencesDispatch({ type: 'MERGE_PREFERENCE', preference })
+                  }
+                />
+              ) : undefined
+            }
           />
         )}
       </aside>

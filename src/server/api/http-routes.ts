@@ -26,6 +26,23 @@ import {
   isConnectable,
 } from '../integrations/credentials';
 import { buildAuthUrl } from '../integrations/google/oauth';
+import {
+  geocode,
+  placesConfigured,
+  rememberCityCoords,
+  reverseGeocode,
+} from '../integrations/google-places/client';
+import { isGeoPoint } from '../../shared/constants/geo';
+
+/**
+ * The `sourceMessageId` on a location row.
+ *
+ * Every preference carries the turn it came from, and this one came from a button
+ * rather than from anything the user said. A recognisable sentinel is better than a
+ * borrowed message id: it makes the provenance of the row obvious in the table and
+ * in the history entry, which is the whole point of the field.
+ */
+const LOCATION_SOURCE_MESSAGE_ID = 'location-consent';
 
 /** Simple framework-agnostic request representation */
 export interface HttpRequest {
@@ -535,6 +552,90 @@ export function createHttpRoutes(storage: StorageInterface) {
       return { status: 200, body: { fieldId, value: value.trim() } };
     },
 
+    /**
+     * POST /session/:id/location — turn a position or an address into a home city.
+     *
+     * ## Only the city is stored
+     *
+     * The body may carry `{lat, lon}` from the browser or `{address}` typed by
+     * someone who would rather not share a position. Either way what gets written is
+     * one preference row — `travel`/`home city`/`home_city` — and the coordinate is
+     * thrown away after being seeded into the in-memory geocode cache.
+     *
+     * That is a deliberate privacy *and* architecture choice, and it buys more than
+     * it costs:
+     *
+     * - No coordinate is ever persisted, so there is nothing to leak, nothing to
+     *   expire and no new consent question about retention.
+     * - No persistence lockstep. `home_city` is an ordinary profile field, so it
+     *   renders in the dossier, is correctable by hand, and reaches the system prompt
+     *   through `readKnownFacts` — which means **both engines** see it for free.
+     * - City-centre precision (~2–5 km) is what the downstream radius filter needs;
+     *   the stored radii run from 1 to 50 km. Sub-city precision, if it is ever
+     *   wanted, belongs in a `home_area` neighbourhood field, not in a stored point.
+     *
+     * Confidence is 1.0 because this is not an inference from prose — the user either
+     * granted their position or typed the city.
+     */
+    async setLocation(sessionId: string, body: unknown): Promise<HttpResponse> {
+      if (!(await storage.getSession(sessionId))) {
+        return { status: 404, body: { error: 'Session not found' } };
+      }
+
+      const input = (body ?? {}) as Record<string, unknown>;
+      const address = typeof input.address === 'string' ? input.address.trim() : '';
+      const point =
+        typeof input.lat === 'number' && typeof input.lon === 'number'
+          ? { lat: input.lat, lon: input.lon }
+          : null;
+
+      if (!address && !(point && isGeoPoint(point))) {
+        return {
+          status: 400,
+          body: { error: 'Send either { lat, lon } or { address }' },
+        };
+      }
+
+      // Reverse-geocoding a position and geocoding an address are the same
+      // operation from here: both answer "which city is this?". A transport fault
+      // returns null, which is a 502 and not a 400 — the request was fine.
+      const resolved =
+        point && isGeoPoint(point)
+          ? { city: await reverseGeocode(point.lat, point.lon), coords: point }
+          : await geocode(address).then((hit) => ({
+              city: hit?.city ?? null,
+              coords: hit,
+            }));
+
+      if (!resolved.city) {
+        return {
+          status: 502,
+          body: {
+            error: placesConfigured()
+              ? 'Could not work out which city that is'
+              : 'Location lookup is not configured — type a city instead',
+          },
+        };
+      }
+
+      // Seed the cache with the browser's own coordinate, which is better than
+      // anything geocoding the city name would return, and costs nothing. This is
+      // also what lets a radius search work on a deployment with no Maps key.
+      if (resolved.coords) rememberCityCoords(resolved.city, resolved.coords);
+
+      const preference = await storage.savePreference({
+        sessionId,
+        category: 'travel',
+        key: 'home city',
+        fieldId: 'home_city',
+        value: resolved.city,
+        confidence: 1,
+        sourceMessageId: LOCATION_SOURCE_MESSAGE_ID,
+      });
+
+      return { status: 200, body: { preference, city: resolved.city } };
+    },
+
     /** DELETE /session/:id/manual/:fieldId — let Valentin's own guess show again */
     async clearManualValue(sessionId: string, fieldId: string): Promise<HttpResponse> {
       if (!(await storage.getSession(sessionId))) {
@@ -743,6 +844,12 @@ export function createHttpRoutes(storage: StorageInterface) {
       const taskMatch = req.url.match(/^\/session\/([^/]+)\/tasks\/([^/]+)$/);
       if (req.method === 'DELETE' && taskMatch) {
         return this.deleteTask(taskMatch[1], taskMatch[2]);
+      }
+
+      // POST /session/:id/location
+      const locationMatch = req.url.match(/^\/session\/([^/]+)\/location$/);
+      if (req.method === 'POST' && locationMatch) {
+        return this.setLocation(locationMatch[1], req.body);
       }
 
       // /session/:id/manual and /session/:id/manual/:fieldId

@@ -13,7 +13,15 @@ import {
   ontopoTools,
   proposeReservationTool,
 } from '../tools';
-import { CURATED_VENUES, findVenues, resolveVenueName, venueBySlug } from '../venues';
+import {
+  CURATED_VENUES,
+  STYLE_TO_VIBES,
+  findVenues,
+  resolveVenueName,
+  venueBySlug,
+  venueCoords,
+} from '../venues';
+import { RESTAURANT_STYLE_OPTIONS } from '../../../../shared/constants/profile-fields';
 
 /**
  * Ontopo, tested against the shapes the real endpoint actually returned.
@@ -173,6 +181,56 @@ describe('the curated venue list', () => {
 
   it('returns the default shortlist when asked for nothing', () => {
     expect(findVenues(undefined, 3)).toHaveLength(3);
+  });
+
+  it('maps every stored style onto vibes something is actually tagged with', () => {
+    // A style whose vibes nothing carries would return an empty shortlist and look
+    // like "we have nothing for you" rather than like a broken table.
+    for (const style of RESTAURANT_STYLE_OPTIONS) {
+      expect(STYLE_TO_VIBES[style].length).toBeGreaterThan(0);
+      expect(findVenues(undefined, 5, { style })).not.toHaveLength(0);
+    }
+  });
+
+  it('ranks the vibe that defines a style above a secondary one', () => {
+    const [first] = findVenues(undefined, 5, { style: 'Romantic & quiet' });
+    expect(first.vibes).toContain('romantic');
+  });
+
+  it('lets a style and a text query both count', () => {
+    // "wine bar in jaffa" with style "Wine bar" has to prefer the Jaffa wine bar,
+    // which needs the two signals to add rather than one to override the other.
+    const [first] = findVenues('jaffa', 5, { style: 'Wine bar' });
+    expect(first.city.toLowerCase() === 'tel aviv' || first.city === 'Jaffa').toBe(true);
+    expect(first.vibes.some((v) => v === 'wine' || v === 'cocktails')).toBe(true);
+  });
+
+  it('drops venues outside the radius', () => {
+    // Ra'anana is ~20 km from Tel Aviv, so 5 km reaches nothing and 30 km reaches
+    // the list. This is the assertion that makes "within 10 km of me" meaningful.
+    const raanana = { lat: 32.1848, lon: 34.8713 };
+    expect(findVenues(undefined, 20, { origin: raanana, radiusMetres: 5_000 })).toEqual([]);
+    expect(
+      findVenues(undefined, 20, { origin: raanana, radiusMetres: 30_000 }).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('ignores a radius with nowhere to measure from', () => {
+    // Half a filter is worse than none: silently returning nothing would read as
+    // "there are no restaurants" rather than "I do not know where you are".
+    expect(findVenues(undefined, 3, { radiusMetres: 1_000 })).toHaveLength(3);
+  });
+
+  it('excludes a venue whose area has no coordinate rather than assuming one', () => {
+    // Every current entry is mapped; this guards the next one added in an area that
+    // is not, which must go missing from a radius search instead of passing all of
+    // them.
+    for (const venue of CURATED_VENUES) {
+      expect(venueCoords(venue)).toBeDefined();
+    }
+    expect(
+      venueCoords({ ...CURATED_VENUES[0], city: 'Eilat', neighbourhood: undefined }),
+    ).toBeUndefined();
   });
 
   it('does not let a stopword be the reason something matched', () => {

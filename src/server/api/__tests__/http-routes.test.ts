@@ -14,6 +14,10 @@ import type { IntegrationStatusResponse } from '../../../shared/interfaces/integ
 import { INTEGRATION_IDS } from '../../../shared/interfaces/integrations';
 import { PROFILE_FIELD_REGISTRY } from '../../../client/utils/profile-field-registry';
 import { resolveField } from '../../../client/utils/preference-field-mapper';
+import {
+  rememberCityCoords,
+  resetPlacesCacheForTests,
+} from '../../integrations/google-places/client';
 
 interface SeedBody {
   sessionId: string;
@@ -1038,6 +1042,83 @@ describe('createHttpRoutes', () => {
       expect(
         (await routes.setManualValue('nope', 'favourite_dinosaur', { value: 'x' })).status,
       ).toBe(400);
+    });
+  });
+
+  describe('setLocation', () => {
+    let sessionId: string;
+
+    beforeEach(async () => {
+      sessionId = await store.createSession();
+      resetPlacesCacheForTests();
+    });
+
+    it('rejects a body with neither a coordinate nor an address', async () => {
+      for (const body of [{}, null, { lat: 32.18 }, { address: '   ' }]) {
+        expect((await routes.setLocation(sessionId, body)).status).toBe(400);
+      }
+    });
+
+    it('rejects 0,0 — that is what an uninitialised pair looks like', async () => {
+      expect((await routes.setLocation(sessionId, { lat: 0, lon: 0 })).status).toBe(400);
+    });
+
+    it('404s for a session that is not there', async () => {
+      expect((await routes.setLocation('nope', { address: 'Tel Aviv' })).status).toBe(404);
+    });
+
+    it('says so plainly when lookup is not configured, rather than 500ing', async () => {
+      // No Maps key in the test environment, so this is the real deployment
+      // default: the feature is absent, and the error tells the user what to do
+      // instead of asking them to retry something that cannot work.
+      const result = await routes.setLocation(sessionId, { lat: 32.184, lon: 34.871 });
+
+      expect(result.status).toBe(502);
+      expect(String((result.body as { error: string }).error)).toContain('type a city');
+    });
+
+    it('writes only a home city, never a coordinate', async () => {
+      // Priming the cache is what a granted browser position does via
+      // `rememberCityCoords`, and it is why this path works with no API key.
+      rememberCityCoords("Ra'anana", { lat: 32.1848, lon: 34.8713 });
+
+      const result = await routes.setLocation(sessionId, { address: "Ra'anana" });
+      expect(result.status).toBe(200);
+      expect((result.body as { city: string }).city).toBe("Ra'anana");
+
+      const stored = await store.getPreferencesBySession(sessionId);
+      expect(stored).toHaveLength(1);
+      expect(stored[0]).toMatchObject({
+        category: 'travel',
+        key: 'home city',
+        fieldId: 'home_city',
+        value: "Ra'anana",
+        confidence: 1,
+      });
+      // The thing that must not be here. A coordinate is an input, not a record.
+      expect(JSON.stringify(stored)).not.toContain('32.18');
+    });
+
+    it('overwrites rather than accumulating when someone moves', async () => {
+      rememberCityCoords("Ra'anana", { lat: 32.1848, lon: 34.8713 });
+      rememberCityCoords('Tel Aviv', { lat: 32.0853, lon: 34.7818 });
+
+      await routes.setLocation(sessionId, { address: "Ra'anana" });
+      await routes.setLocation(sessionId, { address: 'Tel Aviv' });
+
+      const stored = await store.getPreferencesBySession(sessionId);
+      expect(stored).toHaveLength(1);
+      expect(stored[0].value).toBe('Tel Aviv');
+    });
+
+    it('lands the city where the dossier reads it from', async () => {
+      rememberCityCoords('Tel Aviv', { lat: 32.0853, lon: 34.7818 });
+      await routes.setLocation(sessionId, { address: 'Tel Aviv' });
+
+      const [stored] = await store.getPreferencesBySession(sessionId);
+      // The row has to resolve to `home_city` through the same mapper the client
+      // uses, or the field renders as a gap the user just filled in.
+      expect(resolveField(stored.category, stored.key)).toBe('home_city');
     });
   });
 

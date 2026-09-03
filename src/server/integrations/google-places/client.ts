@@ -3,8 +3,8 @@
  * "within 10 km of *me*".
  *
  * Everything else in this layer works from a name. Wolt takes a coordinate but
- * gets it from a twelve-entry table of Israeli city centres; Ontopo searches five
- * curated venues by free text. Neither can answer a radius, and a radius is what
+ * gets it from a twelve-entry table of Israeli city centres; Ontopo searches a
+ * checked-in list by free text. Neither can answer a radius, and a radius is what
  * the demo promises. This module is what makes the promise true: a browser
  * coordinate or a typed address becomes a city and a coordinate, and a coordinate
  * plus a radius becomes real places.
@@ -42,6 +42,12 @@
 
 import { config } from '../../config';
 import { logger } from '../../logging';
+import { distanceMetres, type GeoPoint } from '../../../shared/constants/geo';
+
+// Re-exported because the Ontopo venue list needs the same two things and must not
+// import this module to get them — the coordinate type and the haversine live in
+// `shared/constants/geo.ts` for exactly that reason.
+export { distanceMetres, type GeoPoint };
 
 const GEOCODE_BASE = 'https://maps.googleapis.com/maps/api/geocode/json';
 const NEARBY_URL = 'https://places.googleapis.com/v1/places:searchNearby';
@@ -83,13 +89,6 @@ const FIELD_MASK = [
   'places.priceLevel',
   'places.currentOpeningHours.openNow',
 ].join(',');
-
-export interface GeoPoint {
-  lat: number;
-  lon: number;
-  /** The locality Google put this coordinate in, when it named one. */
-  city?: string;
-}
 
 export interface NearbyPlace {
   placeId: string;
@@ -446,19 +445,6 @@ export async function placesNearby(query: NearbyQuery): Promise<NearbyPlace[] | 
 
   nearbyCache.set(key, { value: chosen, fetchedAt: Date.now() });
   return chosen;
-}
-
-/** Metres between two coordinates. Used to sort the bookable set by distance. */
-export function distanceMetres(a: GeoPoint, b: GeoPoint): number {
-  const EARTH_RADIUS_M = 6_371_000;
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLon = toRad(b.lon - a.lon);
-  const lat1 = toRad(a.lat);
-  const lat2 = toRad(b.lat);
-  const h =
-    Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
-  return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
 /** One line per place, for the model to quote. */

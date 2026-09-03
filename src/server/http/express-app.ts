@@ -493,6 +493,12 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
     ),
   );
 
+  // Writes a home city, not a coordinate — see `setLocation` for why.
+  app.post(
+    '/api/session/:id/location',
+    scoped(deps, (routes, req) => routes.setLocation(pathParam(req, 'id'), req.body)),
+  );
+
   // Registered last of the /api/session routes, so the more specific patterns
   // above are matched first.
   app.get(

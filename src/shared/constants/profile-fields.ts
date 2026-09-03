@@ -158,6 +158,9 @@ export const RESTAURANT_STYLE_OPTIONS = [
   'Casual neighbourhood',
 ] as const;
 
+/** One of the stored restaurant styles. */
+export type RestaurantStyle = (typeof RESTAURANT_STYLE_OPTIONS)[number];
+
 /** A profile field id, narrowed to the canonical set. */
 export type ProfileFieldId = (typeof PROFILE_FIELD_IDS)[number];
 

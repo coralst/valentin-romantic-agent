@@ -327,7 +327,10 @@ export function createServer(deps: ServerDeps = {}) {
       orchestrator,
       engine,
       eventRouter,
-      httpRoutes: createHttpRoutes(store),
+      // The user id is passed as well as the scoped store, and only so that
+      // `shareSession` can mint a token naming an owner — see the factory's header
+      // for why that beats injecting a `mintShare` callback from here.
+      httpRoutes: createHttpRoutes(store, userId),
     };
   }
 

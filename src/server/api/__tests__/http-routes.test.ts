@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createHttpRoutes } from '../http-routes';
 import { InMemoryStoreFactory } from '../../persistence/in-memory-store';
 import type { StorageInterface } from '../../persistence/storage-interface';
@@ -18,6 +18,14 @@ import {
   rememberCityCoords,
   resetPlacesCacheForTests,
 } from '../../integrations/google-places/client';
+import { verifyShareToken } from '../../sharing/share-token';
+import { SHARE_PARAM } from '../../../shared/constants/share-link';
+import type { ShareLinkResponse } from '../../../shared/constants/share-link';
+import { RESUME_PARAM } from '../../../shared/constants/resume-link';
+import { subscribeToServerLogs, type ServerLogRecord } from '../../logging';
+import { config } from '../../config';
+
+const originalShareSecret = config.shareTokenSecret;
 
 interface SeedBody {
   sessionId: string;
@@ -1217,6 +1225,230 @@ describe('createHttpRoutes', () => {
       // The row has to resolve to `home_city` through the same mapper the client
       // uses, or the field renders as a gap the user just filled in.
       expect(resolveField(stored.category, stored.key)).toBe('home_city');
+    });
+  });
+
+  /**
+   * Sharing and mailing a conversation.
+   *
+   * The share assertions are about the token naming its owner rather than trusting a
+   * caller, and about the response carrying a link and not a raw credential. The
+   * email assertions are about the 409 — "you have not told me where to write" is a
+   * state the user can fix, and answering it with a 500 would send them looking for a
+   * fault that is not there.
+   */
+  describe('shareSession', () => {
+    let owned: ReturnType<typeof createHttpRoutes>;
+
+    beforeEach(() => {
+      config.shareTokenSecret = 'test-share-secret';
+      // The routes object used everywhere else in this file is built with no user
+      // id, which is the state that cannot mint. This one knows whose store it is.
+      owned = createHttpRoutes(store, 'user-under-test');
+    });
+
+    afterEach(() => {
+      config.shareTokenSecret = originalShareSecret;
+    });
+
+    it('404s on a session it cannot read', async () => {
+      // Also the cross-tenant answer: the key names the caller, so a foreign id
+      // misses and no token can be minted for it.
+      expect((await owned.shareSession('no-such-session')).status).toBe(404);
+    });
+
+    it('answers with a link and an expiry, and nothing else', async () => {
+      const sessionId = await store.createSession();
+
+      const result = await owned.shareSession(sessionId);
+
+      expect(result.status).toBe(200);
+      expect(Object.keys(result.body as object).sort()).toEqual(['expiresAt', 'url']);
+    });
+
+    it('hands over an assembled URL rather than the raw token', async () => {
+      const sessionId = await store.createSession();
+
+      const { url } = (await owned.shareSession(sessionId)).body as ShareLinkResponse;
+
+      expect(url).toContain(`?${SHARE_PARAM}=`);
+      expect(url.startsWith('http')).toBe(true);
+    });
+
+    it('mints a token naming this owner and this session', async () => {
+      const sessionId = await store.createSession();
+
+      const { url } = (await owned.shareSession(sessionId)).body as ShareLinkResponse;
+      const token = decodeURIComponent(new URL(url).searchParams.get(SHARE_PARAM) ?? '');
+
+      expect(verifyShareToken(token)).toMatchObject({
+        userId: 'user-under-test',
+        sessionId,
+      });
+    });
+
+    it('reports 503 rather than minting an unowned token', async () => {
+      // A routes object with no user id cannot name an owner, and a token with no
+      // owner would resolve to nobody's store.
+      const sessionId = await store.createSession();
+
+      expect((await routes.shareSession(sessionId)).status).toBe(503);
+    });
+
+    it('is reachable through the router', async () => {
+      const sessionId = await store.createSession();
+
+      const result = await owned.handleRequest({
+        method: 'POST',
+        url: `/session/${sessionId}/share`,
+        params: {},
+        body: null,
+      });
+
+      expect(result.status).toBe(200);
+    });
+
+    it('does not swallow the /share segment into the session id', async () => {
+      // The regex arm has to sit ahead of the bare `/session/:id` pattern, or a POST
+      // here would fall through to the two-segment arm.
+      const result = await owned.handleRequest({
+        method: 'GET',
+        url: `/session/${await store.createSession()}/share`,
+        params: {},
+        body: null,
+      });
+
+      // GET is not a verb this route has, and the detail arm must not claim it.
+      expect(result.status).toBe(404);
+    });
+  });
+
+  describe('emailSession', () => {
+    let sessionId: string;
+    let sent: ServerLogRecord[];
+    let unsubscribe: () => void;
+
+    beforeEach(async () => {
+      sessionId = await store.createSession();
+      sent = [];
+      // `loggingSender` is the default channel, so the send is observable as a log
+      // record: subject, body and recipient all real, only the last hop absent.
+      unsubscribe = subscribeToServerLogs((record) => sent.push(record));
+    });
+
+    afterEach(() => {
+      unsubscribe();
+    });
+
+    it('404s on a session it cannot read', async () => {
+      expect((await routes.emailSession('no-such-session')).status).toBe(404);
+    });
+
+    it('409s when no address has been given, and says where to fix it', async () => {
+      const result = await routes.emailSession(sessionId);
+
+      expect(result.status).toBe(409);
+      expect((result.body as { error: string }).error).toContain('panel');
+      expect(sent.some((record) => record.event === 'reminder.sent')).toBe(false);
+    });
+
+    it('409s rather than 502s on something that cannot be an address', async () => {
+      // A typo is the same fixable state as an absence; failing it at the channel
+      // would report a transport fault for a value the user can correct.
+      await store.setManualValue(sessionId, 'notify_email', 'not-an-address');
+
+      expect((await routes.emailSession(sessionId)).status).toBe(409);
+    });
+
+    it('sends to the hand-typed address', async () => {
+      await store.setManualValue(sessionId, 'notify_email', 'him@example.test');
+
+      const result = await routes.emailSession(sessionId);
+
+      expect(result.status).toBe(200);
+      const record = sent.find((entry) => entry.event === 'reminder.sent');
+      expect(record?.data).toMatchObject({ to: 'him@example.test' });
+    });
+
+    it('prefers the hand-typed address over the inferred one', async () => {
+      // The same precedence `reminder-sync` plans on, and shared with it: someone
+      // who corrected the address must not be mailed at the model's guess.
+      await store.savePreference({
+        sessionId,
+        category: 'personality_traits',
+        key: 'notify email',
+        fieldId: 'notify_email',
+        value: 'guessed@example.test',
+        confidence: 0.6,
+        sourceMessageId: 'msg-1',
+      });
+      await store.setManualValue(sessionId, 'notify_email', 'typed@example.test');
+
+      await routes.emailSession(sessionId);
+
+      const record = sent.find((entry) => entry.event === 'reminder.sent');
+      expect(record?.data).toMatchObject({ to: 'typed@example.test' });
+    });
+
+    it('falls back to the inferred address when nothing was typed', async () => {
+      await store.savePreference({
+        sessionId,
+        category: 'personality_traits',
+        key: 'notify email',
+        fieldId: 'notify_email',
+        value: 'inferred@example.test',
+        confidence: 0.6,
+        sourceMessageId: 'msg-1',
+      });
+
+      expect((await routes.emailSession(sessionId)).status).toBe(200);
+      const record = sent.find((entry) => entry.event === 'reminder.sent');
+      expect(record?.data).toMatchObject({ to: 'inferred@example.test' });
+    });
+
+    it('mails a body carrying the transcript and the resume link', async () => {
+      await store.setManualValue(sessionId, 'notify_email', 'him@example.test');
+      await store.updateSessionMeta(sessionId, { title: 'Her birthday' });
+      await store.saveMessage({
+        id: 'm1',
+        sessionId,
+        sender: 'user',
+        content: 'Something quiet for her birthday',
+        timestamp: new Date().toISOString(),
+      });
+
+      await routes.emailSession(sessionId);
+
+      const record = sent.find((entry) => entry.event === 'reminder.sent');
+      const body = String((record?.data as { body: string }).body);
+      expect(body).toContain('Something quiet for her birthday');
+      expect(body).toContain(`?${RESUME_PARAM}=${sessionId}`);
+      expect(String((record?.data as { subject: string }).subject)).toContain('Her birthday');
+    });
+
+    it('claims nothing was booked', async () => {
+      await store.setManualValue(sessionId, 'notify_email', 'him@example.test');
+
+      await routes.emailSession(sessionId);
+
+      const record = sent.find((entry) => entry.event === 'reminder.sent');
+      const body = String((record?.data as { body: string }).body).toLowerCase();
+      for (const claim of ['reserved', 'booked', 'confirmed']) {
+        expect(body).not.toContain(claim);
+      }
+    });
+
+    it('is reachable through the router', async () => {
+      await store.setManualValue(sessionId, 'notify_email', 'him@example.test');
+
+      const result = await routes.handleRequest({
+        method: 'POST',
+        url: `/session/${sessionId}/email`,
+        params: {},
+        body: null,
+      });
+
+      expect(result.status).toBe(200);
     });
   });
 

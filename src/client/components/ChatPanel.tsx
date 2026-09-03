@@ -7,6 +7,7 @@ import { MessageInput } from './MessageInput';
 import { TypingIndicator } from './TypingIndicator';
 import { ConnectionBanner } from './ConnectionBanner';
 import { GuidedIntro } from './GuidedIntro';
+import { ShareMenu } from './ShareMenu';
 import { colors, insets, typography } from '../design-system/tokens';
 import { chatMeasureStyle } from './chat-measure';
 import type { ChatMessage } from '../../shared/interfaces/message';
@@ -132,6 +133,10 @@ export function ChatPanel() {
             <b style={headNameStyle}>{partnerName ?? 'Someone special'}</b>
             <em style={headStatusStyle}>{status}</em>
           </div>
+          {/* Shares *this* conversation, so it belongs beside the header that names
+              it rather than in the rail, which is scoped to the whole app. Renders
+              nothing until there is a session id to share. */}
+          <ShareMenu sessionId={state.sessionId} />
         </div>
       </div>
       <div style={separatorStyle} />

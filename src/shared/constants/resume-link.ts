@@ -16,6 +16,14 @@
  * scoped to the authenticated user, so following someone else's link asks the
  * server for a session that is not yours and gets a 404 — see `session-api.ts`.
  * That is why this can safely ride in plain text in an email.
+ *
+ * The corollary, and the reason `share-link.ts` exists next door: this link works
+ * **only for the person who owns the conversation.** It is what a reminder mail
+ * carries, because that mail goes to its owner. Do not reach for it to let somebody
+ * *else* read a conversation — it will 404 for them, correctly. Handing a link to
+ * another person needs a credential in the link, which is `SHARE_PARAM` and a signed
+ * token, and which is deliberately a separate parameter so that nobody can turn this
+ * one into a bearer token by accident.
  */
 
 /** The query parameter naming the conversation to resume. */

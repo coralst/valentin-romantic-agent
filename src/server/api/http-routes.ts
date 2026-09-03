@@ -37,7 +37,18 @@ import {
   reverseGeocode,
 } from '../integrations/google-places/client';
 import { isGeoPoint } from '../../shared/constants/geo';
-import { syncReminders, touchesReminders } from '../reminders/reminder-sync';
+import {
+  profileFieldValue,
+  syncReminders,
+  touchesReminders,
+} from '../reminders/reminder-sync';
+import { buildConversationEmail } from '../reminders/conversation-email';
+import { resolveSender } from '../reminders/sender';
+import { mintShareToken } from '../sharing/share-token';
+import { shareLink } from '../../shared/constants/share-link';
+import type { ShareLinkResponse } from '../../shared/constants/share-link';
+import { config } from '../config';
+import { logger } from '../logging';
 
 /**
  * The `sourceMessageId` on a location row.
@@ -337,8 +348,46 @@ async function fillConversation(
   await storage.updateSessionMeta(sessionId, { title: conversation.title });
 }
 
-/** Creates HTTP route handlers bound to the given storage */
-export function createHttpRoutes(storage: StorageInterface) {
+/** The profile field holding where outbound mail for this user goes. */
+const NOTIFY_EMAIL_FIELD = 'notify_email';
+
+/**
+ * Roughly an address, which is all this can honestly check.
+ *
+ * Not a validator — there is no useful client-side test for deliverability, and
+ * RFC 5322 in a regex is a famous waste of a day. This exists only to separate "the
+ * user has not told us where to write" from "the user typed something that cannot be
+ * an address", because both are the same fixable state and both should get the same
+ * answer: go and set it in the panel.
+ */
+function looksLikeEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+/**
+ * Creates HTTP route handlers bound to the given storage.
+ *
+ * ## Why this now takes a user id
+ *
+ * Everything else here works precisely *because* it does not know who the caller is:
+ * the store is already scoped, so no handler can forget an ownership check and none
+ * of them can be handed the wrong user by a caller. Minting a share token is the one
+ * operation that needs the identity as *data* — the token has to carry the owner so
+ * that the guest read can go back through that owner's own scoped store (see
+ * `sharing/share-token.ts`).
+ *
+ * The alternative considered was a `mintShare(sessionId)` callback injected from
+ * `index.ts`, keeping the id out of this file entirely. Rejected as the less honest
+ * of the two: the callback would close over exactly the same user id one stack frame
+ * away, so it hides the coupling rather than removing it, and it puts a piece of the
+ * share contract in `index.ts` where nothing else about routing lives. A named,
+ * documented parameter says the true thing — this object knows whose store it holds.
+ *
+ * Optional, and read for nothing but minting. Callers that never share (the demo
+ * login's seed path, most tests) pass nothing and `shareSession` reports 503, which
+ * is the truth for a routes object that cannot name an owner.
+ */
+export function createHttpRoutes(storage: StorageInterface, userId?: string) {
   return {
     /** GET /health — health check */
     async health(): Promise<HttpResponse> {
@@ -912,6 +961,129 @@ export function createHttpRoutes(storage: StorageInterface) {
       return { status: 200, body: { sessionId, cleared: true } };
     },
 
+    /**
+     * POST /session/:id/share — mint a link that shows this conversation to anyone.
+     *
+     * The 404 guard is first and is the whole authorisation story: `getSession`
+     * misses for a session that does not exist *and* for one belonging to somebody
+     * else, because the key names the caller. So a token can only ever be minted for
+     * a conversation the caller can already read — the route cannot be used to sign
+     * a claim about a session id somebody guessed.
+     *
+     * Answers with the assembled URL, never the raw token: the client has no use for
+     * the token on its own, and a bare token in a response body is a credential
+     * looking for somewhere to be logged.
+     */
+    async shareSession(sessionId: string): Promise<HttpResponse> {
+      if (!(await storage.getSession(sessionId))) {
+        return { status: 404, body: { error: 'Session not found' } };
+      }
+
+      if (!userId) {
+        // No owner to name, so no token can be minted — see the factory's header.
+        return {
+          status: 503,
+          body: { error: 'Sharing is not available on this deployment' },
+        };
+      }
+
+      const { token, expiresAt } = mintShareToken(userId, sessionId);
+      const body: ShareLinkResponse = {
+        url: shareLink(config.publicOrigin, token),
+        expiresAt,
+      };
+      return { status: 200, body };
+    },
+
+    /**
+     * POST /session/:id/email — post this conversation to the user, now.
+     *
+     * The reminder path proves the timer, the due-index and the idempotent write; it
+     * cannot be demonstrated in a meeting, because the interesting part happens days
+     * ahead of an occasion. This is the same channel with the clock taken out: one
+     * button, one send, the same `ReminderSender` seam.
+     *
+     * `loggingSender` is the default channel, so this is fully demonstrable with
+     * Gmail dark — the subject, the body and the recipient all appear as a
+     * `reminder.sent` log line, and only the final hop is missing. That is the same
+     * bargain `sender.ts` argues for at length, and it is why this route does not
+     * check `integrationReadiness().gmail` and refuse.
+     *
+     * ## Three distinct outcomes, three distinct statuses
+     *
+     * - No session (or somebody else's): **404**, from the same structural guard as
+     *   every other route here.
+     * - No usable `notify_email`: **409**. Not a 400 — the request was perfectly
+     *   well formed — and not a 500, because nothing failed. It is a state the user
+     *   can fix in one field in the panel, and the message says so.
+     * - The channel threw: **502**, with a generic message. The provider's own error
+     *   text is the one thing that could name a credential, a secret ARN or an
+     *   internal host, so it goes to the log and nowhere near the client.
+     */
+    async emailSession(sessionId: string): Promise<HttpResponse> {
+      const session = await storage.getSession(sessionId);
+      if (!session) {
+        return { status: 404, body: { error: 'Session not found' } };
+      }
+
+      const [messages, preferences, manual] = await Promise.all([
+        storage.getMessagesBySession(sessionId),
+        storage.getPreferencesBySession(sessionId),
+        storage.getManualValues(sessionId),
+      ]);
+
+      // Manual over inferred, the same precedence `reminder-sync.ts` plans on — and
+      // shared with it rather than reimplemented, so a corrected address cannot be
+      // honoured by the reminder and ignored by the button.
+      const recipient = profileFieldValue(NOTIFY_EMAIL_FIELD, manual, preferences)?.trim();
+      if (!recipient || !looksLikeEmail(recipient)) {
+        return {
+          status: 409,
+          body: {
+            error:
+              'I do not have an email address for you yet — add one in the panel ' +
+              'and I will send this over.',
+          },
+        };
+      }
+
+      const email = buildConversationEmail({
+        title: session.title ?? session.partnerName ?? '',
+        partnerName: session.partnerName ?? null,
+        turns: messages.map((message) => ({
+          sender: message.sender,
+          content: message.content,
+        })),
+        origin: config.publicOrigin,
+        sessionId,
+      });
+
+      const sender = resolveSender(config.reminders.channel);
+      try {
+        await sender.send(recipient, email);
+      } catch (cause) {
+        logger.error('conversation.email_failed', {
+          sessionId,
+          channel: sender.channel,
+          cause: cause instanceof Error ? cause.message : String(cause),
+        });
+        return {
+          status: 502,
+          body: { error: 'I could not send that just now. Try again in a moment.' },
+        };
+      }
+
+      // The address is logged (it is not a credential and the log sink already
+      // carries it for every reminder), the body is not — `loggingSender` decides
+      // that, and this route should not log it a second time.
+      logger.info('conversation.emailed', {
+        sessionId,
+        channel: sender.channel,
+        to: recipient,
+      });
+      return { status: 200, body: { sessionId, sent: true, channel: sender.channel } };
+    },
+
     /** Route an incoming request to the appropriate handler */
     async handleRequest(req: HttpRequest): Promise<HttpResponse> {
       // GET /health
@@ -1010,6 +1182,22 @@ export function createHttpRoutes(storage: StorageInterface) {
         if (req.method === 'DELETE') {
           return this.clearManualValue(manualMatch[1], manualMatch[2]);
         }
+      }
+
+      // POST /session/:id/share — before the bare /session/:id arm, or the
+      // two-segment pattern below would never see a request ending in /share.
+      const shareMatch = req.url.match(/^\/session\/([^/]+)\/share$/);
+      if (req.method === 'POST' && shareMatch) {
+        return this.shareSession(shareMatch[1]);
+      }
+
+      // POST /session/:id/email — mail the transcript to its owner. Note this is
+      // *not* the guest route: `GET /api/share/:token` is registered ahead of
+      // `requireAuth` in express-app.ts and deliberately never reaches this router,
+      // which only ever runs with a caller's own scoped store.
+      const emailMatch = req.url.match(/^\/session\/([^/]+)\/email$/);
+      if (req.method === 'POST' && emailMatch) {
+        return this.emailSession(emailMatch[1]);
       }
 
       // /session/:id — last, so the more specific patterns above win

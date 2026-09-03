@@ -58,8 +58,15 @@ function plannedChannel(name: string | undefined): ReminderChannelName {
  * discoveredValues[f]`), and it matters more here than it does there. Someone who
  * fixed the model's guess at her birthday by hand must be reminded on the date
  * they typed; mailing them on the guess is worse than not mailing them at all.
+ *
+ * Exported because it now has a second caller — `emailSession` in
+ * `api/http-routes.ts` resolves `notify_email` the same way to decide where to post
+ * a conversation. A third private copy of this two-line precedence is exactly how
+ * one of the paths ends up quietly mailing the inferred address after the user
+ * corrected it, so there is one implementation and it lives next to the reminder
+ * planner that established the rule.
  */
-function fieldValue(
+export function profileFieldValue(
   fieldId: string,
   manual: Record<string, string>,
   preferences: readonly PreferenceWithHistory[],
@@ -91,7 +98,7 @@ export async function syncReminders(
     ]);
 
     const value = (fieldId: string): string | null =>
-      fieldValue(fieldId, manual, preferences);
+      profileFieldValue(fieldId, manual, preferences);
 
     const planned = planReminders(
       {

@@ -19,6 +19,18 @@ export const config = {
   publicOrigin: process.env.PUBLIC_ORIGIN ?? 'http://localhost:5173',
 
   /**
+   * The key that signs shareable-conversation links.
+   *
+   * Deliberately optional and deliberately undefaulted. `sharing/share-token.ts`
+   * falls back to a per-process random key and warns once, which means links break
+   * across a restart or a second container; a hardcoded default here would instead
+   * mean links **forgeable by anyone holding this repository**, since a share token
+   * is the one credential in the system that names its own owner. Breaking is the
+   * safe direction — see that file's header for the full argument.
+   */
+  shareTokenSecret: process.env.SHARE_TOKEN_SECRET,
+
+  /**
    * The reminder sweeper.
    *
    * A minute is far finer than the hour `dueAt` is pinned to, so a late sweep is

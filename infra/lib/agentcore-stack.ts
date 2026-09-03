@@ -9,6 +9,7 @@ import { NodejsFunction, OutputFormat } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
 import { EnvironmentConfig } from '../config/environments';
+import { GATEWAY_IDENTITY_ARGS } from './gateway-identity-args';
 import { applySpringCleanExemption } from './springclean-exemption';
 
 export interface AgentCoreStackProps extends cdk.StackProps {
@@ -428,14 +429,14 @@ export class AgentCoreStack extends cdk.Stack {
     });
     gateway.node.addDependency(gatewayRole);
 
-    /** Shared shape: every tool is called with the user and session it acts on. */
-    const identityArgs = {
-      user_id: {
-        type: 'string',
-        description: 'Storage id of the signed-in user, supplied by the proxy service',
-      },
-      session_id: { type: 'string', description: 'The conversation session id' },
-    };
+    /**
+     * Shared shape: every tool is called with the user and session it acts on.
+     *
+     * Imported rather than declared here, so the integration target's generated
+     * schemas and these hand-written ones cannot drift apart. See the module for
+     * why identity is an argument and not a claim.
+     */
+    const identityArgs = GATEWAY_IDENTITY_ARGS;
 
     const categoryArg = {
       type: 'string',

@@ -1,0 +1,600 @@
+[
+  {
+    "name": "check_availability",
+    "description": "Ask Ontopo which tables are actually free at one restaurant on a given date, for a given party size. Returns real bookable times grouped by seating area, including times either side of the one asked for. Always check this before proposing a reservation, and check Shabbat first for a Friday or Saturday — most of these kitchens are closed then.",
+    "requiresConfirmation": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Storage id of the signed-in user, supplied by the proxy service"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "The conversation session id"
+        },
+        "restaurant": {
+          "type": "string",
+          "description": "Name of the restaurant, from find_restaurants."
+        },
+        "date": {
+          "type": "string",
+          "description": "The date, as \"2026-09-05\"."
+        },
+        "time": {
+          "type": "string",
+          "description": "Preferred time, as \"20:00\". Ontopo returns nearby times too."
+        },
+        "party_size": {
+          "type": "number",
+          "description": "How many people. Defaults to 2."
+        }
+      },
+      "required": [
+        "user_id",
+        "session_id",
+        "restaurant",
+        "date"
+      ]
+    }
+  },
+  {
+    "name": "check_shabbat",
+    "description": "Look up when Shabbat begins (candle lighting) and ends (Havdalah) in an Israeli city, and whether a specific date and time falls inside it. Use this before proposing any Friday or Saturday plan — most restaurants are closed from candle lighting until Havdalah, and Havdalah moves by more than an hour across the year. Never guess these times.",
+    "requiresConfirmation": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Storage id of the signed-in user, supplied by the proxy service"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "The conversation session id"
+        },
+        "city": {
+          "type": "string",
+          "description": "City to check, e.g. \"Tel Aviv\", \"Jerusalem\", \"Haifa\". Defaults to Tel Aviv."
+        },
+        "when": {
+          "type": "string",
+          "description": "Optional date, or date and time, being considered — \"2026-02-14\" or \"2026-02-14T20:00\". The answer says whether it falls during Shabbat."
+        }
+      },
+      "required": [
+        "user_id",
+        "session_id"
+      ]
+    }
+  },
+  {
+    "name": "find_gift_delivery",
+    "description": "Find flowers, wine, chocolates or a gift that can be delivered today in an Israeli city, via Wolt. Returns real shops with delivery estimates and whether they are open right now. Use this when the user wants something sent rather than booked. It only looks — use propose_gift once they have chosen.",
+    "requiresConfirmation": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Storage id of the signed-in user, supplied by the proxy service"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "The conversation session id"
+        },
+        "city": {
+          "type": "string",
+          "description": "Which city to deliver in, e.g. \"Ra'anana\" or \"Tel Aviv\"."
+        },
+        "kind": {
+          "type": "string",
+          "description": "What sort of thing: one of flowers, wine, gift, sweets, groceries. Defaults to gift."
+        },
+        "query": {
+          "type": "string",
+          "description": "Optional refinement — a shop name, or words like \"roses\", \"kosher\", \"chocolate\". Omit to see what is nearby."
+        },
+        "limit": {
+          "type": "number",
+          "description": "How many to return. Defaults to 5."
+        }
+      },
+      "required": [
+        "user_id",
+        "session_id",
+        "city"
+      ]
+    }
+  },
+  {
+    "name": "find_music",
+    "description": "Search Spotify for real tracks matching a mood, artist, genre or occasion — e.g. \"warm Hebrew folk for a drive\" or \"Shlomo Artzi\". Use it to check something exists before you name it, and to gather tracks for a playlist. It only looks; use propose_playlist once you have chosen.",
+    "requiresConfirmation": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Storage id of the signed-in user, supplied by the proxy service"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "The conversation session id"
+        },
+        "query": {
+          "type": "string",
+          "description": "What to look for: an artist, a song, a genre, or a mood in plain words. Draw it from what the profile says she actually likes rather than guessing."
+        },
+        "limit": {
+          "type": "number",
+          "description": "How many tracks to return. Defaults to 8, max 10 — Spotify rejects anything higher outright. Ask twice with different wording rather than once for more."
+        }
+      },
+      "required": [
+        "user_id",
+        "session_id",
+        "query"
+      ]
+    }
+  },
+  {
+    "name": "find_occasions",
+    "description": "Look in the user's Google Calendar for dates that matter — birthdays, anniversaries, trips already booked. Use this before suggesting a date, so you know what is already happening and when the occasion actually is. Read-only. Pass a query to search for something specific, or omit it to see upcoming occasions.",
+    "requiresConfirmation": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Storage id of the signed-in user, supplied by the proxy service"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "The conversation session id"
+        },
+        "query": {
+          "type": "string",
+          "description": "Free text to search titles and locations, e.g. \"anniversary\". Omit to list upcoming occasions."
+        },
+        "days_ahead": {
+          "type": "number",
+          "description": "How far ahead to look. Defaults to 120."
+        }
+      },
+      "required": [
+        "user_id",
+        "session_id"
+      ]
+    }
+  },
+  {
+    "name": "find_restaurants",
+    "description": "Search the restaurants Valentin can book in Tel Aviv and Jaffa, by mood, cuisine or neighbourhood — \"quiet and romantic\", \"wine bar\", \"Jaffa\", \"Italian\". Returns names with a short note on each. Use this first when the user has not named a specific place, then check_availability on the one they like. Only these venues are bookable; do not offer a restaurant that is not in the result.",
+    "requiresConfirmation": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Storage id of the signed-in user, supplied by the proxy service"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "The conversation session id"
+        },
+        "query": {
+          "type": "string",
+          "description": "What they are after: a mood, a cuisine, a neighbourhood, or a name. Omit to see the default shortlist."
+        },
+        "limit": {
+          "type": "number",
+          "description": "How many to return. Defaults to 5."
+        }
+      },
+      "required": [
+        "user_id",
+        "session_id"
+      ]
+    }
+  },
+  {
+    "name": "get_hebrew_occasions",
+    "description": "Look up upcoming Jewish holidays, and convert a Hebrew-date anniversary (a wedding, a first date) into the civil dates it next falls on. Hebrew anniversaries move against the civil calendar by up to three weeks a year, so always look this up rather than assuming the same date each year.",
+    "requiresConfirmation": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Storage id of the signed-in user, supplied by the proxy service"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "The conversation session id"
+        },
+        "days_ahead": {
+          "type": "number",
+          "description": "How far ahead to look for holidays. Defaults to 90."
+        },
+        "anniversary_date": {
+          "type": "string",
+          "description": "The civil date of the original event, e.g. \"2019-05-20\". Its Hebrew date is read off and projected forward."
+        },
+        "anniversary_title": {
+          "type": "string",
+          "description": "What the anniversary is, e.g. \"their wedding anniversary\"."
+        }
+      },
+      "required": [
+        "user_id",
+        "session_id"
+      ]
+    }
+  },
+  {
+    "name": "propose_calendar_event",
+    "description": "Offer to add something to the user's Google Calendar — a dinner reservation, a reminder to buy flowers, the occasion itself. This does NOT write anything: it shows a card, and the entry is created only after they confirm. Omit the time for an all-day entry like an anniversary.",
+    "requiresConfirmation": true,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Storage id of the signed-in user, supplied by the proxy service"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "The conversation session id"
+        },
+        "title": {
+          "type": "string",
+          "description": "What the entry says, e.g. \"Dinner at NOEMA\"."
+        },
+        "date": {
+          "type": "string",
+          "description": "The date, as \"2026-09-05\"."
+        },
+        "time": {
+          "type": "string",
+          "description": "Start time as \"20:00\", in Israel time. Omit for an all-day entry."
+        },
+        "duration_minutes": {
+          "type": "number",
+          "description": "How long it runs. Defaults to 120 for a timed entry."
+        },
+        "location": {
+          "type": "string",
+          "description": "Where, if it has a place."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Anything else to put in the entry body."
+        }
+      },
+      "required": [
+        "user_id",
+        "session_id",
+        "title",
+        "date"
+      ]
+    }
+  },
+  {
+    "name": "propose_email",
+    "description": "Offer to send an email — a note to a restaurant, a message to a partner, a gift order enquiry. This does NOT send anything: it shows the user the exact recipient and text, and it is sent only after they confirm. Write the body in full; the user reads it before it goes. Never claim an email has been sent.",
+    "requiresConfirmation": true,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Storage id of the signed-in user, supplied by the proxy service"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "The conversation session id"
+        },
+        "to": {
+          "type": "string",
+          "description": "Recipient email address."
+        },
+        "subject": {
+          "type": "string",
+          "description": "Subject line. Hebrew is fine."
+        },
+        "body": {
+          "type": "string",
+          "description": "The full text of the email, exactly as it should be sent. Plain text."
+        },
+        "why": {
+          "type": "string",
+          "description": "One line on why you are offering to send this. Shown on the card."
+        }
+      },
+      "required": [
+        "user_id",
+        "session_id",
+        "to",
+        "subject",
+        "body"
+      ]
+    }
+  },
+  {
+    "name": "propose_gift",
+    "description": "Offer to send flowers, wine or a gift from a specific Wolt shop. This does NOT order anything: it shows a card, and confirming opens that shop on Wolt where the user chooses the item and pays. Never say something has been ordered or sent. Use only after find_gift_delivery returned that shop.",
+    "requiresConfirmation": true,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Storage id of the signed-in user, supplied by the proxy service"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "The conversation session id"
+        },
+        "city": {
+          "type": "string",
+          "description": "The city, as passed to find_gift_delivery."
+        },
+        "shop": {
+          "type": "string",
+          "description": "Shop name or slug from find_gift_delivery."
+        },
+        "kind": {
+          "type": "string",
+          "description": "One of flowers, wine, gift, sweets, groceries. Defaults to gift."
+        },
+        "occasion": {
+          "type": "string",
+          "description": "What it is for, e.g. \"your anniversary\". Shown on the card so the user sees why. Keep it brief."
+        },
+        "note": {
+          "type": "string",
+          "description": "What to look for in the shop, e.g. \"a dozen white roses\". Shown on the card as guidance; Valentin cannot put it in the basket."
+        }
+      },
+      "required": [
+        "user_id",
+        "session_id",
+        "city",
+        "shop"
+      ]
+    }
+  },
+  {
+    "name": "propose_hotel_booking",
+    "description": "Offer the user a specific hotel room from search_hotels. This does NOT book or pay for anything — it shows them a card, and confirming re-checks that the room is still available at that price. They complete the booking and payment themselves; Valentin never handles card details. Never tell the user a hotel is booked.",
+    "requiresConfirmation": true,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Storage id of the signed-in user, supplied by the proxy service"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "The conversation session id"
+        },
+        "offer_id": {
+          "type": "string",
+          "description": "The offer id from search_hotels. Required — do not invent one."
+        },
+        "occasion": {
+          "type": "string",
+          "description": "What the trip is, e.g. \"your anniversary weekend\". Shown on the card. Brief."
+        }
+      },
+      "required": [
+        "user_id",
+        "session_id",
+        "offer_id"
+      ]
+    }
+  },
+  {
+    "name": "propose_playlist",
+    "description": "Offer to build a playlist from tracks find_music returned. This does NOT save anything: it shows a card, and only confirming writes the playlist. Never say a playlist has been created or saved before it is confirmed. Use track ids exactly as find_music gave them.",
+    "requiresConfirmation": true,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Storage id of the signed-in user, supplied by the proxy service"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "The conversation session id"
+        },
+        "name": {
+          "type": "string",
+          "description": "What to call the playlist, e.g. \"For the drive to Rosh Pina\". Keep it short and about the occasion rather than about you."
+        },
+        "trackIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Track ids from find_music, in the order they should play. Only ids you were actually given — never composed or remembered ones."
+        },
+        "occasion": {
+          "type": "string",
+          "description": "What it is for, e.g. \"your anniversary drive\". Shown on the card so she sees why."
+        },
+        "note": {
+          "type": "string",
+          "description": "One line on why these songs, shown on the card. This is where the thought goes."
+        }
+      },
+      "required": [
+        "user_id",
+        "session_id",
+        "name",
+        "trackIds"
+      ]
+    }
+  },
+  {
+    "name": "propose_reservation",
+    "description": "Offer the user a specific table at a specific time. Calling this books NOTHING — it puts a card in front of them, and only their confirmation acts. Use only after check_availability returned that exact time. When you call this, say you have found a table and it is waiting for them to confirm; never say it is booked or held. After they confirm, the result tells you whether the reservation completed or whether they still need to finish it on a link — report exactly what that result says and never upgrade a link into a booking.",
+    "requiresConfirmation": true,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Storage id of the signed-in user, supplied by the proxy service"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "The conversation session id"
+        },
+        "restaurant": {
+          "type": "string",
+          "description": "Name of the restaurant."
+        },
+        "date": {
+          "type": "string",
+          "description": "The date, as \"2026-09-05\"."
+        },
+        "time": {
+          "type": "string",
+          "description": "Exact time from check_availability, as \"20:30\"."
+        },
+        "party_size": {
+          "type": "number",
+          "description": "How many people. Defaults to 2."
+        },
+        "area": {
+          "type": "string",
+          "description": "Seating area from check_availability, e.g. \"Inside\", \"Outside\". Omit to take whichever area has that time."
+        },
+        "occasion": {
+          "type": "string",
+          "description": "What the evening is, e.g. \"your anniversary\". Shown on the card so the user sees why this night. Keep it brief."
+        }
+      },
+      "required": [
+        "user_id",
+        "session_id",
+        "restaurant",
+        "date",
+        "time"
+      ]
+    }
+  },
+  {
+    "name": "propose_whatsapp_nudge",
+    "description": "Offer to send a short WhatsApp reminder — that an occasion is coming up, that a table is booked, or that you have an idea ready. This does NOT send anything: it shows the user the exact message and it is sent only after they confirm. WhatsApp only allows these three pre-approved messages, so you cannot write your own text; pick the closest one and fill in its parameters. Available: \"valentin_occasion_reminder\" — sends: A quiet reminder: {{1}} is on {{2}}. Would you like me to start planning something? | needs: occasion (What the occasion is, e.g. \"your anniversary\"), date (When it falls, e.g. \"Saturday 5 September\") || \"valentin_reservation_reminder\" — sends: Your table at {{1}} is on {{2}} at {{3}}. Nothing to do — just a reminder. | needs: venue (Restaurant name), date (Date, e.g. \"Saturday 5 September\"), time (Time, e.g. \"20:30\") || \"valentin_plan_ready\" — sends: I have put together an idea for {{1}}. Open Valentin when you have a moment and I will walk you through it. | needs: occasion (What the plan is for, e.g. \"next Friday\")",
+    "requiresConfirmation": true,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Storage id of the signed-in user, supplied by the proxy service"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "The conversation session id"
+        },
+        "to": {
+          "type": "string",
+          "description": "The phone number to message. Israeli local form (\"050-123-4567\") or international (\"+972501234567\") both work. Ask the user for it — never guess."
+        },
+        "template": {
+          "type": "string",
+          "description": "Which pre-approved message to send. One of the names listed above."
+        },
+        "params": {
+          "type": "object",
+          "description": "The values for that template, keyed by the parameter names listed above, e.g. {\"occasion\": \"your anniversary\", \"date\": \"Saturday 5 September\"}."
+        }
+      },
+      "required": [
+        "user_id",
+        "session_id",
+        "to",
+        "template",
+        "params"
+      ]
+    }
+  },
+  {
+    "name": "search_activities",
+    "description": "Find bookable tours, tastings and experiences in a city — boat trips, food tours, workshops. This is a commercial tours catalogue, not a listing of local events, so do not present its results as \"what is on this weekend\". Good for building a day around a trip.",
+    "requiresConfirmation": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Storage id of the signed-in user, supplied by the proxy service"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "The conversation session id"
+        },
+        "city": {
+          "type": "string",
+          "description": "City name, e.g. \"Tel Aviv\"."
+        },
+        "limit": {
+          "type": "number",
+          "description": "How many to return. Defaults to 5."
+        }
+      },
+      "required": [
+        "user_id",
+        "session_id",
+        "city"
+      ]
+    }
+  },
+  {
+    "name": "search_hotels",
+    "description": "Find hotels with real prices for a specific stay — a city, a check-in and a check-out date. Returns the cheapest few offers with the total price, the room type and whether it can be cancelled free. Use this for a night away or a weekend, not for dinner. Each result carries an offer id: keep it for propose_hotel_booking, but never read an offer id out to the user.",
+    "requiresConfirmation": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Storage id of the signed-in user, supplied by the proxy service"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "The conversation session id"
+        },
+        "city": {
+          "type": "string",
+          "description": "City name, e.g. \"Tel Aviv\", \"Jerusalem\", \"Eilat\"."
+        },
+        "check_in": {
+          "type": "string",
+          "description": "Arrival date, as \"2026-09-05\"."
+        },
+        "check_out": {
+          "type": "string",
+          "description": "Departure date, as \"2026-09-06\". Defaults to one night."
+        },
+        "adults": {
+          "type": "number",
+          "description": "How many adults. Defaults to 2."
+        }
+      },
+      "required": [
+        "user_id",
+        "session_id",
+        "city",
+        "check_in"
+      ]
+    }
+  }
+]

@@ -23,6 +23,15 @@ export type IntegrationId =
   | 'wolt'
   | 'events'
   /**
+   * Google Maps Platform: geocoding, reverse geocoding and Nearby Search.
+   *
+   * One id for all three, because all three ride the same static API key and
+   * therefore have exactly one readiness bit. Splitting them the way `gmail` and
+   * `google-calendar` are split would be pretending a visitor could grant one and
+   * withhold another, which is true there and false here.
+   */
+  | 'google-places'
+  /**
    * The headless browser itself, which is a dependency rather than a destination.
    *
    * It earns an id because the panel draws it as a node and because it has its own
@@ -44,6 +53,7 @@ export const INTEGRATION_IDS: readonly IntegrationId[] = [
   'browser',
   'wolt',
   'events',
+  'google-places',
 ] as const;
 
 /**
@@ -82,6 +92,7 @@ export const INTEGRATION_TRANSPORT: Record<IntegrationId, IntegrationTransport> 
   wolt: 'direct',
   events: 'browser',
   browser: 'browser',
+  'google-places': 'direct',
 };
 
 /**
@@ -134,6 +145,7 @@ export const INTEGRATION_LABELS: Record<IntegrationId, string> = {
   // Named for what it is rather than for Playwright: the visitor is being told
   // that a real browser is involved, not which library drives it.
   browser: 'Headless browser',
+  'google-places': 'Google Places',
 };
 
 /** The ids reached by driving a page, for the panel's relay layout. */

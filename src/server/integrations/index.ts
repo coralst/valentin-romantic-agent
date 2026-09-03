@@ -8,6 +8,8 @@ import { ontopoTools } from './ontopo/tools';
 import { whatsappTools } from './whatsapp/tools';
 import { browserReadyCached } from './browser/session';
 import { woltTools } from './wolt/tools';
+import { placesConfigured } from './google-places/client';
+import { googlePlacesTools } from './google-places/tools';
 
 export type { ToolRegistry, AgentTool, ActionProposal, IntegrationId } from './tool-registry';
 
@@ -57,6 +59,13 @@ export function integrationReadiness(): Record<IntegrationId, boolean> {
     // same shape as Ontopo.
     wolt: true,
     events: browser,
+    /*
+     * Reads a module variable rather than the env var, because the key may arrive
+     * from Secrets Manager a moment after boot — see `primePlacesKey`. Until it
+     * lands this reports false, so the tool is simply absent rather than present
+     * and failing on the first call.
+     */
+    'google-places': placesConfigured(),
   };
 }
 
@@ -112,6 +121,10 @@ export function buildToolRegistry(): ToolRegistry {
   // Flowers, wine and gifts. Needs no credential — Wolt's catalogue endpoint is
   // unauthenticated — so this is on wherever the process can reach the internet.
   if (ready.wolt) tools.push(...woltTools);
+  // Discovery within a radius. Absent without a key, which is why the dining row's
+  // `backing` lists Ontopo as well — the panel then reads "live via Ontopo" rather
+  // than going dark on a capability that still half works.
+  if (ready['google-places']) tools.push(...googlePlacesTools);
 
   // Cleared first, so a *disconnect* actually removes tools. Refilling without
   // clearing would leave the old ones registered and let the model keep calling

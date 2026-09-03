@@ -57,6 +57,21 @@ const SKELETON_GROUPS: ReadonlyArray<{ label: string; fieldIds: readonly string[
     label: 'Her sizes',
     fieldIds: ['clothing_size', 'shoe_size', 'ring_size'],
   },
+  {
+    /*
+     * The only group that is about him, and two rows rather than the four
+     * logistics fields, because the skeleton is capped at twelve — a longer wall
+     * of dashes pushes the pinned nudge off the fold, which is the bug pinning it
+     * was meant to fix (`BriefSkeleton.test.tsx`).
+     *
+     * These two earn the slots because they are the ones with no usable default:
+     * with no city there is nowhere to search from and with no occasion there is
+     * nothing to count down to. A radius and a lead time both fall back to a
+     * sensible value in `profile-fields.ts`, so leaving them blank costs nothing.
+     */
+    label: 'Where and when',
+    fieldIds: ['home_city', 'next_occasion'],
+  },
 ];
 
 const groupStyle: React.CSSProperties = {

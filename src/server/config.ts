@@ -62,6 +62,20 @@ export const config = {
     googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
     googleRefreshToken: process.env.GOOGLE_REFRESH_TOKEN,
 
+    /**
+     * Google Maps Platform: geocoding and Nearby Search.
+     *
+     * Deliberately *not* injected as an ECS secret the way the OAuth trio is.
+     * `ecs.Secret.fromSecretsManager` fails **task startup** when the JSON key it
+     * names is absent, so a Maps key that had not been populated yet would take
+     * the whole app down instead of merely disabling place search. Passing the
+     * secret's ARN as a plain env var and reading it at runtime — the
+     * `DEMO_SECRET_ARN` pattern — makes absence degrade to "Places not
+     * configured", which is the failure this integration should have.
+     */
+    googlePlacesApiKey: process.env.GOOGLE_PLACES_API_KEY,
+    googlePlacesSecretArn: process.env.GOOGLE_PLACES_SECRET_ARN,
+
     /** WhatsApp Cloud API, via the Graph endpoint for one phone number id. */
     whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
     whatsappToken: process.env.WHATSAPP_TOKEN,

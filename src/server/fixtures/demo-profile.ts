@@ -275,4 +275,52 @@ export const DEMO_PROFILE_PREFERENCES: readonly ExtractedPreference[] = [
     value: 'Prefers to Choose',
     confidence: 0.83,
   },
+
+  // --- Planning & Logistics ---
+  //
+  // The first rows here that are facts about *him*. They are what make the demo's
+  // three steps run end to end: an occasion to count down to, an origin to search
+  // from, a style and a radius to search with, and a lead time that decides when
+  // the reminder fires.
+  {
+    category: 'important_dates',
+    key: 'next occasion',
+    fieldId: 'next_occasion',
+    // A one-off, deliberately not her birthday or their anniversary — both are
+    // already seeded above, and repeating either here would show the same date
+    // twice in the dossier.
+    value: '2026-10-04@her promotion dinner',
+    confidence: 0.88,
+  },
+  {
+    category: 'travel',
+    key: 'home city',
+    fieldId: 'home_city',
+    // Ra'anana rather than Tel Aviv because it is a key in `CITY_COORDS`
+    // (`wolt/client.ts`), so the delivery path resolves a coordinate with no
+    // Maps key configured and the demo works offline.
+    value: "Ra'anana",
+    confidence: 1,
+  },
+  {
+    category: 'food',
+    key: 'restaurant style',
+    fieldId: 'restaurant_style',
+    value: 'Romantic & quiet',
+    confidence: 0.86,
+  },
+  {
+    category: 'important_dates',
+    key: 'reminder lead time',
+    fieldId: 'reminder_lead_time',
+    value: '1 week before',
+    confidence: 0.8,
+  },
+  {
+    category: 'travel',
+    key: 'search radius',
+    fieldId: 'search_radius',
+    value: '10 km',
+    confidence: 0.75,
+  },
 ] as const;

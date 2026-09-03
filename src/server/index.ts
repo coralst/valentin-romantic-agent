@@ -22,6 +22,7 @@ import { WsGateway } from './api/ws-gateway';
 import { createHttpRoutes } from './api/http-routes';
 import { buildToolRegistry } from './integrations';
 import { probeBrowserReadiness } from './integrations/browser/session';
+import { primePlacesKey } from './integrations/google-places/client';
 import { startSpanBridge } from './telemetry/span-bridge';
 import {
   ANONYMOUS_USER_ID,
@@ -347,6 +348,18 @@ export function createServer(deps: ServerDeps = {}) {
    * waiting for, on behalf of a capability that may not even be installed.
    */
   void probeBrowserReadiness().then((ready) => {
+    if (ready) buildToolRegistry();
+  });
+
+  /*
+   * Same shape, same reasoning: read the Maps key out of Secrets Manager and, if it
+   * is there, register the tool that needs it.
+   *
+   * Not awaited, because a Secrets Manager round trip is not something the health
+   * check should wait behind, and not a boot failure, because a deployment with no
+   * Maps key should lose place search and nothing else.
+   */
+  void primePlacesKey().then((ready) => {
     if (ready) buildToolRegistry();
   });
 

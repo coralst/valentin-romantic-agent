@@ -39,6 +39,22 @@ export const FIELD_PAYOFFS: Readonly<Record<string, FieldPayoff>> = {
     rank: 90,
     reason: 'Her birthday sets every deadline in this rail — it is the one date I really need.',
   },
+  /*
+   * The occasion outranks her birthday's neighbours and the home city outranks
+   * hobbies, because these two are the only fields that gate *action*. Without a
+   * date there is nothing to count down to and no reminder to send; without a
+   * city every search has no origin and "within 10 km" cannot be answered at all.
+   * A field that unblocks a capability is worth more than one that colours a
+   * suggestion.
+   */
+  next_occasion: {
+    rank: 92,
+    reason: 'What is the next thing you are planning for? Give me the date and I will count down to it.',
+  },
+  home_city: {
+    rank: 85,
+    reason: 'Tell me where you are planning from and I can look for places you could actually get to.',
+  },
 
   // --- Tier 2: shapes what a specific plan looks like. ---
   hobbies: {
@@ -48,6 +64,10 @@ export const FIELD_PAYOFFS: Readonly<Record<string, FieldPayoff>> = {
   favorite_cuisine: {
     rank: 75,
     reason: 'Her cuisine narrows a hundred restaurants down to three worth booking.',
+  },
+  restaurant_style: {
+    rank: 72,
+    reason: 'What kind of room do you want to be in? It narrows the list faster than the food does.',
   },
   surprise_preference: {
     rank: 70,
@@ -92,9 +112,23 @@ export const FIELD_PAYOFFS: Readonly<Record<string, FieldPayoff>> = {
     rank: 35,
     reason: 'Knowing how long it has been lets me mark the quieter milestones too.',
   },
+  /*
+   * The two settings sit low on purpose. Both have a sensible default in
+   * `profile-fields.ts` (a week's notice, ten kilometres), so an empty one costs
+   * nothing — unlike an empty home city, which costs the search. The rail should
+   * not spend an early turn asking someone to confirm a default.
+   */
+  reminder_lead_time: {
+    rank: 33,
+    reason: 'How much warning do you want before a date like that? I default to a week.',
+  },
   fragrance_preference: {
     rank: 30,
     reason: 'A fragrance she already wears is the safest gift there is.',
+  },
+  search_radius: {
+    rank: 28,
+    reason: 'How far would you go for a good evening? I assume ten kilometres unless you say otherwise.',
   },
   clothing_style: {
     rank: 26,

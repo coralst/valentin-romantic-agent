@@ -223,18 +223,35 @@ describe('IntegrationsPanel', () => {
       await renderPanel();
 
       /*
-       * `travel`, not `flowers`. Flowers used to stand here, back when the catalogue
-       * claimed Valentin could "place an order" for $80 — he never could, because
-       * the Wolt handoff ends at the shop's own page. Travel is the real example: an
-       * Amadeus hold is money moving.
+       * `rides`, and it is the last one left. Flowers stood here first, back when
+       * the catalogue claimed Valentin could "place an order" for $80 — he never
+       * could, because the Wolt handoff ends at the shop's own page. Travel took
+       * over, and travel turned out to be the same mistake: `propose_hotel_booking`
+       * re-prices an offer and stops, because the Amadeus order endpoint needs a
+       * payment card Valentin must never hold.
+       *
+       * So the only capability that would genuinely move money is one that is not
+       * built yet, and the cap slider now exists solely for it. That is the right
+       * place for it to live: the promise is made before the code, not after.
        */
-      await user.click(screen.getByTestId('integration-node-travel'));
-      // The catalogue's default for travel, echoed next to the slider.
-      expect(screen.getByTestId('integration-cap-slider')).toHaveValue('400');
-      expect(screen.getByTestId('integration-cap-value')).toHaveTextContent('$400');
+      await user.click(screen.getByTestId('integration-node-rides'));
+      // The catalogue's default for rides, echoed next to the slider.
+      expect(screen.getByTestId('integration-cap-slider')).toHaveValue('40');
+      expect(screen.getByTestId('integration-cap-value')).toHaveTextContent('$40');
 
       await user.click(screen.getByTestId('integration-confirm-button'));
-      expect(screen.getByTestId('integration-node-travel')).toHaveTextContent('up to $400');
+      expect(screen.getByTestId('integration-node-rides')).toHaveTextContent('up to $40');
+    });
+
+    it('offers no cap on travel, which cannot actually spend', async () => {
+      const user = userEvent.setup();
+      await renderPanel();
+
+      // Guards the correction directly: a hotel confirm re-prices and hands over,
+      // so a $400 ceiling on it governed nothing and implied a hold that never
+      // happened.
+      await user.click(screen.getByTestId('integration-node-travel'));
+      expect(screen.queryByTestId('integration-cap-slider')).not.toBeInTheDocument();
     });
 
     it('offers no cap on a service that cannot spend', async () => {
@@ -249,9 +266,9 @@ describe('IntegrationsPanel', () => {
       const user = userEvent.setup();
       await renderPanel();
 
-      await connect(user, 'travel');
-      await user.click(screen.getByTestId('integration-node-travel'));
-      expect(screen.getByTestId('integration-cap-value')).toHaveTextContent('$400');
+      await connect(user, 'rides');
+      await user.click(screen.getByTestId('integration-node-rides'));
+      expect(screen.getByTestId('integration-cap-value')).toHaveTextContent('$40');
     });
   });
 
@@ -352,10 +369,25 @@ describe('IntegrationsPanel', () => {
    */
   describe('what the server says is ready', () => {
     it('marks a capability live when its backing service is configured', async () => {
+      /*
+       * Dining is backed by two services now — Ontopo books, Google Places
+       * discovers — so "live" means both. The default `beforeEach` deployment has
+       * no Maps key, which is why this test states its own readiness rather than
+       * leaning on the default the way it used to.
+       */
+      serverReports({ hebcal: true, ontopo: true, 'google-places': true });
       await renderPanel();
       const badge = await screen.findByTestId('integration-readiness-dining');
       expect(badge).toHaveAttribute('data-readiness', 'ready');
       expect(badge).toHaveTextContent('live');
+    });
+
+    it('marks dining partial when it can book but not discover', async () => {
+      // The shape of a real deployment with no Maps key: tables can still be held,
+      // so going dark here would understate what works.
+      await renderPanel();
+      const badge = await screen.findByTestId('integration-readiness-dining');
+      expect(badge).toHaveAttribute('data-readiness', 'partial');
     });
 
     it('says an unbuilt capability is not built yet, not merely unconfigured', async () => {

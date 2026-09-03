@@ -68,14 +68,20 @@ export const INTEGRATION_CATALOGUE: readonly IntegrationService[] = [
   {
     id: 'dining',
     name: 'Restaurant booking',
-    backing: ['ontopo'],
+    backing: ['ontopo', 'google-places'],
     category: 'reservations',
     glyph: '🍽',
     blurb: 'Finds somewhere quiet near her favourites, and holds the table.',
     scopes: [
       { label: 'search restaurants', detail: 'Read-only', reach: 'read' },
+      { label: 'find places near you', detail: 'A city or a coordinate is all it needs — nothing is stored', reach: 'read' },
       { label: 'offer you a table to confirm', detail: 'The booking only happens once you press Confirm', reach: 'write' },
-      { label: 'cancel a booking he made', detail: 'Never one you made yourself', reach: 'write' },
+      /*
+       * There was a "cancel a booking he made" scope here, and no cancel tool
+       * behind it — Ontopo's integration proposes and books, and that is all.
+       * A scope the visitor grants and nothing can exercise is the same lie as a
+       * cap on a capability that cannot spend; see `defaultCapUsd`.
+       */
     ],
     defaultCapUsd: null,
   },
@@ -181,12 +187,20 @@ export const INTEGRATION_CATALOGUE: readonly IntegrationService[] = [
     backing: ['amadeus'],
     category: 'flights & hotels',
     glyph: '✈️',
-    blurb: 'Surprise weekends, priced against the cap you set.',
+    blurb: 'Surprise weekends, priced for real before you commit to one.',
     scopes: [
       { label: 'search flights and rooms', detail: 'Read-only', reach: 'read' },
-      { label: 'hold a booking', detail: 'A hold, never a purchase, and always with your yes', reach: 'spend' },
+      /*
+       * This read "hold a booking", `spend`, against a $400 cap — and Amadeus
+       * holds nothing. `proposeHotelBookingTool.confirm` re-prices the offer and
+       * stops, deliberately: the booking endpoint wants a payment card in the
+       * request body, and Valentin should never hold one. So confirming is a
+       * *read* that tells you the room is still there at that price, and the cap
+       * governed a purchase that cannot happen.
+       */
+      { label: 're-check a room is still available at that price', detail: 'No hold, no payment, no card details — you book with the hotel yourself', reach: 'read' },
     ],
-    defaultCapUsd: 400,
+    defaultCapUsd: null,
   },
   {
     id: 'messages',

@@ -390,6 +390,10 @@ describe('GET /api/integrations', () => {
       'browser',
       'wolt',
       'events',
+      // Geocoding and Nearby Search behind one static key, so one id and one
+      // readiness bit — unlike Gmail and Calendar, which a visitor can grant
+      // separately.
+      'google-places',
     ]);
     // Hebcal is arithmetic in-process, so it is configured on every deployment.
     expect(body.integrations.find((i) => i.id === 'hebcal')?.configured).toBe(true);

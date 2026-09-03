@@ -420,27 +420,49 @@ export class ComputeStack extends cdk.Stack {
      * CloudFormation regenerates the value and would clobber real credentials.
      */
     /*
-     * Not adoptable, and deliberately not listed in `adoptedSecretArns`: this
-     * secret has never been created, so there is no orphan to adopt. It must go
-     * through a normal create. Adding it to that list would break the first deploy
-     * in the opposite direction — a complete ARN for a secret that does not exist.
+     * Adopted on dev, for the same reason Google's is. An earlier note here said
+     * this secret was "not adoptable" because it had never been created — that was
+     * true when it was written and is not true now.
+     *
+     * How it orphaned is worth stating precisely, because the obvious guess is
+     * wrong: no deploy failed. This secret reached `CREATE_COMPLETE`, its deploy
+     * finished `UPDATE_COMPLETE`, and then a second successful deploy ran from a
+     * branch that did not yet contain the commit adding it. The resource was absent
+     * from that template, so CloudFormation moved to delete it during
+     * `UPDATE_COMPLETE_CLEANUP_IN_PROGRESS`, and RETAIN turned that into
+     * `DELETE_SKIPPED` — leaving the secret in the account and out of the stack.
+     * Every later update then failed `AlreadyExists` on a name that is taken.
+     *
+     * So the thing to avoid is not a failed deploy. It is deploying a stack from a
+     * branch that is behind on any RETAIN'd resource in it.
+     *
+     * The stale reasoning was still sound in one respect: an environment that has
+     * never deployed this must go through a normal create, because a complete ARN
+     * for a secret that does not exist fails in the opposite direction. Hence the
+     * per-environment branch rather than adopting unconditionally.
      */
-    const spotifySecret = new secretsmanager.Secret(this, 'SpotifyOAuthSecret', {
-      secretName: `valentin/${env}/spotify-oauth`,
-      description:
-        'Spotify client id/secret for track search, plus an optional refresh token ' +
-        'for writing playlists. Populate with `aws secretsmanager put-secret-value`.',
-      generateSecretString: {
-        secretStringTemplate: JSON.stringify({
-          SPOTIFY_CLIENT_ID: '',
-          SPOTIFY_CLIENT_SECRET: '',
-          SPOTIFY_REFRESH_TOKEN: '',
-        }),
-        generateStringKey: 'UNUSED_PLACEHOLDER',
-      },
-      removalPolicy: cdk.RemovalPolicy.RETAIN,
-    });
-    cdk.Tags.of(spotifySecret).add('auto-delete', 'no');
+    const spotifySecret: secretsmanager.ISecret = adopted?.spotifyOAuth
+      ? secretsmanager.Secret.fromSecretCompleteArn(
+          this,
+          'SpotifyOAuthSecret',
+          adopted.spotifyOAuth,
+        )
+      : new secretsmanager.Secret(this, 'SpotifyOAuthSecret', {
+          secretName: `valentin/${env}/spotify-oauth`,
+          description:
+            'Spotify client id/secret for track search, plus an optional refresh token ' +
+            'for writing playlists. Populate with `aws secretsmanager put-secret-value`.',
+          generateSecretString: {
+            secretStringTemplate: JSON.stringify({
+              SPOTIFY_CLIENT_ID: '',
+              SPOTIFY_CLIENT_SECRET: '',
+              SPOTIFY_REFRESH_TOKEN: '',
+            }),
+            generateStringKey: 'UNUSED_PLACEHOLDER',
+          },
+          removalPolicy: cdk.RemovalPolicy.RETAIN,
+        });
+    if (!adopted?.spotifyOAuth) cdk.Tags.of(spotifySecret).add('auto-delete', 'no');
 
     /**
      * The key share links are signed with.

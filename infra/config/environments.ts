@@ -64,15 +64,25 @@ export interface EnvironmentConfig {
    * Secrets that already exist in the account and must be **adopted** rather
    * than created, keyed by complete ARN including the six-character suffix.
    *
-   * Both of these are `RemovalPolicy.RETAIN`, which means a stack rollback that
-   * happens *after* they are created leaves the physical secret behind while the
-   * stack stops tracking it. Every later `cdk deploy` then tries to create a
-   * secret whose name is taken and fails the whole stack with
-   * `AlreadyExists` — which is exactly what happened to dev, and it is not
-   * self-healing: the more valuable the secret, the less acceptable the obvious
-   * fix of deleting it. `valentin/dev/google-oauth` holds a real Google refresh
-   * token that was typed in by hand, so deleting it to let CloudFormation
-   * recreate an empty one is the one option that is off the table.
+   * All three are `RemovalPolicy.RETAIN`, and that is what makes them orphanable.
+   * If a deploy runs from a branch whose template does not contain one of them —
+   * because the commit that added it has not been merged into that branch yet —
+   * CloudFormation correctly moves to delete a resource it no longer sees, and
+   * RETAIN converts the delete into `DELETE_SKIPPED`. The physical secret survives,
+   * the stack stops tracking it, and every later `cdk deploy` fails the whole stack
+   * with `AlreadyExists` on a name that is taken.
+   *
+   * **The deploy that does this does not fail.** It goes green, the app stays
+   * healthy, and the orphaning happens in the ordinary cleanup phase of a
+   * successful update. Nothing announces it; the bill arrives on the next person's
+   * deploy, reported as an error naming an integration they may never have touched.
+   * It is not self-healing, and the more valuable the secret, the less acceptable
+   * the obvious fix of deleting it: `valentin/dev/google-oauth` holds a real Google
+   * refresh token typed in by hand, and `valentin/dev/spotify-oauth` a real client
+   * id and secret, so recreating them empty is the one option that is off the table.
+   *
+   * Adoption is the cure for an existing orphan. The prevention is upstream and not
+   * expressible here: merge before deploying, and deploy once from main.
    *
    * Adoption is the non-destructive way out. `Secret.fromSecretCompleteArn`
    * emits no resource, so CloudFormation stops trying to create what is already
@@ -88,6 +98,7 @@ export interface EnvironmentConfig {
   adoptedSecretArns?: {
     googleOAuth?: string;
     shareToken?: string;
+    spotifyOAuth?: string;
   };
 }
 
@@ -132,14 +143,38 @@ const baseConfigs: Record<string, Omit<EnvironmentConfig, 'appUrls'>> = {
     photoBucketKmsEncryption: false,
     cloudfrontPrefixListId: 'pl-3b927c52',
     cloudfrontPriceClass: cloudfront.PriceClass.PRICE_CLASS_100,
-    // Both were created by a deploy that later rolled back, and both survived it
-    // because they are RETAIN. See `adoptedSecretArns` above for why adopting is
-    // the only safe resolution for the Google one in particular.
+    // All three were created by a deploy that later rolled back, and all three
+    // survived it because they are RETAIN. See `adoptedSecretArns` above for why
+    // adopting is the only safe resolution for the Google one in particular.
+    //
+    // Spotify joined the list on 2026-09-03, and its orphaning is the one worth
+    // understanding, because no deploy failed. The stack event history is explicit:
+    // the secret reached CREATE_COMPLETE at 19:13:21Z and that deploy finished
+    // UPDATE_COMPLETE at 19:16:31Z. A *second*, also entirely successful, deploy ran
+    // at 19:20:50Z from a branch that did not contain the commit introducing the
+    // secret — so the resource was absent from its template, and CloudFormation did
+    // the correct thing and moved to delete it during
+    // UPDATE_COMPLETE_CLEANUP_IN_PROGRESS. RETAIN turned that into DELETE_SKIPPED at
+    // 19:27:02Z: the physical secret survived, the stack stopped tracking it, and
+    // every later deploy failed AlreadyExists on a name that is taken.
+    //
+    // So the hazard is not "a rollback leaves things behind". It is that **a green,
+    // healthy, wholly successful deploy from a branch missing a RETAIN'd resource
+    // silently orphans it** — nothing fails, nothing is logged as an error, and the
+    // cost lands on whoever deploys next. That is what happened to all three of
+    // these. Adoption unblocks each instance; only merging before deploying, and
+    // deploying once from main, prevents the next one.
+    //
+    // Spotify's id and secret hold real credentials typed in by hand, so this is the
+    // Google case rather than the share-token case — deleting to let CloudFormation
+    // recreate an empty one is off the table.
     adoptedSecretArns: {
       googleOAuth:
         'arn:aws:secretsmanager:us-east-1:684394110906:secret:valentin/dev/google-oauth-5hYOo1',
       shareToken:
         'arn:aws:secretsmanager:us-east-1:684394110906:secret:valentin/dev/share-token-XnBnfq',
+      spotifyOAuth:
+        'arn:aws:secretsmanager:us-east-1:684394110906:secret:valentin/dev/spotify-oauth-Bo59tY',
     },
   },
   staging: {

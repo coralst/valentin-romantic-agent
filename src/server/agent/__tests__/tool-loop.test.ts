@@ -105,6 +105,7 @@ function run(registry: ToolRegistry, client: BedrockClient) {
     systemPrompt: 'be Valentin',
     registry,
     sessionId: 'sess-1',
+    userId: 'user-1',
   });
 }
 
@@ -134,7 +135,7 @@ describe('runToolLoop', () => {
     expect(result.iterations).toBe(2);
     expect(tool.execute).toHaveBeenCalledWith(
       { city: 'Tel Aviv' },
-      { sessionId: 'sess-1' },
+      { sessionId: 'sess-1', userId: 'user-1' },
     );
 
     // The second call must carry the assistant turn verbatim and a toolResult

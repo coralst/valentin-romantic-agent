@@ -10,6 +10,7 @@ import { browserReadyCached } from './browser/session';
 import { woltTools } from './wolt/tools';
 import { placesConfigured } from './google-places/client';
 import { googlePlacesTools } from './google-places/tools';
+import { sharingTools } from '../sharing/tools';
 
 export type { ToolRegistry, AgentTool, ActionProposal, IntegrationId } from './tool-registry';
 
@@ -66,6 +67,14 @@ export function integrationReadiness(): Record<IntegrationId, boolean> {
      * and failing on the first call.
      */
     'google-places': placesConfigured(),
+    /*
+     * Always true. This is not an outside service — the token is signed in this
+     * process and the guest view is served by it, so there is no credential that
+     * could be missing. `share-token.ts` falls back to a per-process random key
+     * when `SHARE_TOKEN_SECRET` is unset, which weakens a link's lifetime across
+     * a restart but never makes minting one impossible.
+     */
+    sharing: true,
   };
 }
 
@@ -125,6 +134,10 @@ export function buildToolRegistry(): ToolRegistry {
   // `backing` lists Ontopo as well — the panel then reads "live via Ontopo" rather
   // than going dark on a capability that still half works.
   if (ready['google-places']) tools.push(...googlePlacesTools);
+  // A link to the conversation Valentin is already in. Always on, for the reason
+  // `integrationReadiness` gives — and load-bearing for the reminder flow, since
+  // "email me the options" is worth little if the mail cannot point back here.
+  if (ready.sharing) tools.push(...sharingTools);
 
   // Cleared first, so a *disconnect* actually removes tools. Refilling without
   // clearing would leave the old ones registered and let the model keep calling

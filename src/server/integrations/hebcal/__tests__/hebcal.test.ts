@@ -10,7 +10,7 @@ import {
 } from '../client';
 import { checkShabbatTool, hebrewOccasionsTool } from '../tools';
 
-const CTX = { sessionId: 'sess-1' };
+const CTX = { sessionId: 'sess-1', userId: 'user-1' };
 
 /**
  * Every assertion here is against a fixed date, because the whole value of this

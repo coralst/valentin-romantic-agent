@@ -81,6 +81,16 @@ export interface ToolSupport {
    * push down, and the row is on her file either way.
    */
   onBooking?: (sessionId: string, outing: Outing) => void;
+  /**
+   * Who this orchestrator belongs to, passed to every tool via `ToolContext`.
+   *
+   * An orchestrator is already built per user (`forUser` in `index.ts`), so this
+   * is constructor-time knowledge rather than anything a turn decides. Optional
+   * only so the existing tests that construct one with no tools keep compiling;
+   * a tool that needs it — `create_conversation_link` — fails loudly rather than
+   * minting a link naming the empty string.
+   */
+  userId?: string;
 }
 
 /**
@@ -321,9 +331,10 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
       );
     }
 
+    const ctx = { sessionId, userId: this.tools.userId ?? '' };
     const result = pending.tool.confirm
-      ? await pending.tool.confirm(pending.proposal, { sessionId })
-      : await runTool(pending.tool, { confirm: proposalId }, { sessionId });
+      ? await pending.tool.confirm(pending.proposal, ctx)
+      : await runTool(pending.tool, { confirm: proposalId }, ctx);
 
     // Write down where he has taken her, before the reply goes out.
     //
@@ -417,6 +428,7 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
         systemPrompt,
         registry,
         sessionId,
+        userId: this.tools.userId ?? '',
       });
       return { text: result.text, proposals: result.proposals };
     };

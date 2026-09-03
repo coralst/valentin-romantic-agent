@@ -295,6 +295,10 @@ export function createServer(deps: ServerDeps = {}) {
           extractor,
           {
             registry: toolRegistry,
+            // Reaches tools as `ToolContext.userId`. `create_conversation_link`
+            // needs it because a share token names the owner as well as the
+            // session; nothing else reads it, and no tool can change it.
+            userId,
             // The same late-closed edge as the extractor's callback above, and
             // for the same reason: the router is built from the orchestrator.
             onProposal: (proposal) => {

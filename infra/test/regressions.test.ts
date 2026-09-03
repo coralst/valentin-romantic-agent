@@ -383,11 +383,41 @@ describe('guardrail enforcement', () => {
       'CREDIT_DEBIT_CARD_NUMBER',
       'US_SOCIAL_SECURITY_NUMBER',
       'PHONE',
-      'EMAIL',
       'AWS_ACCESS_KEY',
       'AWS_SECRET_KEY',
     ]) {
       expect(actions[type]).toBe('BLOCK');
+    }
+  });
+
+  /*
+   * EMAIL used to be in the list above, and it broke the feature it was guarding.
+   * `propose_email` takes a recipient address as a required input, so "email me
+   * the options" means the visitor has to type one — and with the entity BLOCKing
+   * the prompt they could not. The turn came back `guardrail_intervened`, for
+   * which `bedrock-client.ts` substitutes a canned line, so on screen Valentin
+   * simply declined to discuss it. Reported from the live app 2026-09-03.
+   *
+   * ANONYMIZE is asserted against too, and is the subtler trap: it would let the
+   * turn through while rewriting the address into a placeholder, so the mail would
+   * be addressed to nothing and the failure would move from visible to silent.
+   */
+  it('does not block or anonymise EMAIL — a recipient is an input, not a leak', () => {
+    const actions = Object.fromEntries(
+      sensitiveInfo().PiiEntitiesConfig.map((e: any) => [e.Type, e.Action]),
+    );
+    expect(actions.EMAIL).toBeUndefined();
+  });
+
+  // The three patterns that replaced ADDRESS are address-shaped. If one of them
+  // matched an email the entity's removal would be undone without anyone editing
+  // `piiEntitiesConfig`, which is the sort of thing that only shows up live.
+  it('has no regex that catches an email address', () => {
+    for (const regex of sensitiveInfo().RegexesConfig ?? []) {
+      expect(
+        new RegExp(regex.Pattern).test('send it to koral.example@gmail.com'),
+        regex.Name,
+      ).toBe(false);
     }
   });
 });

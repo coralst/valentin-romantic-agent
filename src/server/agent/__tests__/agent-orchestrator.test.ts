@@ -489,6 +489,10 @@ describe('AgentOrchestrator', () => {
       const subject = new AgentOrchestrator(storage, memory, bedrock, runtime, extractor, {
         registry,
         onProposal: (p) => proposals.push(p),
+        // Reaches the tool as `ToolContext.userId`. Set here rather than left to
+        // the fallback so the assertion below pins the threading — a share link
+        // owned by the empty string is the bug this argument exists to prevent.
+        userId: 'user-1',
       });
       await subject.handleMessage(sessionId, 'book us dinner');
       return { tool, subject, proposals };
@@ -514,7 +518,7 @@ describe('AgentOrchestrator', () => {
 
       expect(tool.confirm).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'prop-1' }),
-        { sessionId: 'sess-1' },
+        { sessionId: 'sess-1', userId: 'user-1' },
       );
       expect(reply.content).toBe('Booked — 21:00 on Saturday.');
       expect(reply.sender).toBe('agent');

@@ -107,6 +107,17 @@ export interface BookingRecord {
 /** Everything a tool may need about the turn it is running inside. */
 export interface ToolContext {
   sessionId: string;
+  /**
+   * Who is talking. Needed by `create_conversation_link`, because a share token
+   * names both the conversation and its owner — a token carrying only a session
+   * id would be honoured for whoever presented it.
+   *
+   * Not an authorisation input: the storage handed to the orchestrator is
+   * already scoped to this user, so a tool cannot reach another user's rows by
+   * lying about it. It is here so a tool can *name* the owner, not so it can
+   * choose one.
+   */
+  userId: string;
 }
 
 /**

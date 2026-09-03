@@ -394,6 +394,9 @@ describe('GET /api/integrations', () => {
       // readiness bit — unlike Gmail and Calendar, which a visitor can grant
       // separately.
       'google-places',
+      // This app handing out a link to one of its own conversations. Always
+      // configured — there is no outside service and no credential to be missing.
+      'sharing',
     ]);
     // Hebcal is arithmetic in-process, so it is configured on every deployment.
     expect(body.integrations.find((i) => i.id === 'hebcal')?.configured).toBe(true);

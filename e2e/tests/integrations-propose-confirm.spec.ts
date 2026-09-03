@@ -118,7 +118,16 @@ test.describe('Integrations — propose and confirm', () => {
      * and that flowers and groceries were one Wolt client wearing two hats. Both are
      * fixed here — the ids below are `IntegrationId`s now.
      */
-    for (const id of ['ontopo', 'google-calendar', 'amadeus', 'gmail', 'whatsapp', 'hebcal', 'wolt']) {
+    for (const id of [
+      'ontopo',
+      'google-calendar',
+      'amadeus',
+      'gmail',
+      'whatsapp',
+      'hebcal',
+      'wolt',
+      'spotify',
+    ]) {
       await expect(panel.getByTestId(`integration-node-${id}`)).toBeVisible();
     }
 
@@ -138,12 +147,30 @@ test.describe('Integrations — propose and confirm', () => {
       'live',
     );
 
-    // And the honest half: a row with nothing behind it says so, rather than showing
-    // a dot that implies it is merely unconfigured. There is no Spotify client
-    // anywhere in src/server/integrations.
-    await expect(panel.getByTestId('integration-readiness-spotify').first()).toContainText(
-      'not built yet',
-    );
+    /*
+     * Spotify's badge depends on the deployment rather than on the catalogue:
+     * `spotifyTools` register on any process holding a client id and secret, so a
+     * machine with them set reads "live" and one without reads "needs credentials".
+     * Both are correct and the spec must not pin whichever this runner happens to
+     * have — what it pins is that the row is not called a drawing, because the code
+     * exists either way.
+     *
+     * This assertion read "not built yet" for one release, written against a `main`
+     * that did not yet have the Spotify server tier. The code was there on a branch;
+     * the spec agreed with the catalogue instead of with the server, which is how a
+     * built capability came to be badged unbuilt.
+     */
+    const spotify = panel.getByTestId('integration-readiness-spotify').first();
+    await expect(spotify).toContainText(/live|needs credentials/);
+    await expect(spotify).not.toContainText('not built yet');
+
+    /*
+     * And nothing is badged unbuilt any more, which is worth asserting positively
+     * rather than leaving as the absence of a row: every catalogue row is backed, so
+     * a "not built yet" appearing anywhere means a row lost its `backing` or gained
+     * one it should not have.
+     */
+    await expect(panel.getByText('not built yet')).toHaveCount(0);
   });
 
   test('the hub is named Valentin, not AgentCore', async ({ page }) => {

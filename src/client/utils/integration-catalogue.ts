@@ -19,18 +19,23 @@
  * partnership.
  *
  * The consequence for the data is that {@link IntegrationService.id} is now the
- * `IntegrationId` of the service behind it, and `backing` is a one-element array
- * of the same value — with a single exception, `spotify`, which is a row with no
- * server counterpart at all. That is pinned by a test rather than left to drift.
+ * `IntegrationId` of the service behind it and `backing` is a one-element array of
+ * the same value, for every row without exception. That is pinned by a test rather
+ * than left to drift.
  *
- * Some rows are real and one is still aspirational, and {@link
- * IntegrationService.backing} is what separates them. A capability with no
- * `backing` reaches nothing: connecting it records a grant in the browser and
- * nothing else. A capability with `backing` names the services behind it, and the
- * panel asks the server whether those services are actually configured. A row
- * that reads "Connected" while no account was ever contacted is the one thing this
- * surface must not imply — which is exactly why the distinction is data here and
- * not a comment.
+ * {@link IntegrationService.backing} stays optional even though nothing omits it
+ * today, because it is what separates a real reach from a drawing and that
+ * distinction has to stay expressible. A capability with no `backing` reaches
+ * nothing: connecting it records a grant in the browser and nothing else. A
+ * capability with `backing` names the services behind it, and the panel asks the
+ * server whether those services are actually configured. A row that reads
+ * "Connected" while no account was ever contacted is the one thing this surface must
+ * not imply — which is exactly why the distinction is data here and not a comment.
+ *
+ * Every row is backed as of the Spotify merge, so "not built yet" is currently
+ * unreachable. Keep it working anyway: it is how the next unbuilt row tells the
+ * truth on the day it is added, and deleting the state would mean the honest badge
+ * has to be reinvented under deadline.
  */
 
 import type { IntegrationId } from '../../shared/interfaces/integrations';
@@ -165,19 +170,48 @@ export const INTEGRATION_CATALOGUE: readonly IntegrationService[] = [
   },
   {
     /*
-     * The one row with no server counterpart, and the only reason `BrandMarkId` is
-     * not simply `IntegrationId`. There is no Spotify client anywhere in
-     * `src/server/integrations`, so this row carries no `backing` and the panel
-     * badges it "not built yet" — which is the honest thing for a page whose whole
-     * argument is that its other rows are real.
+     * Real, and the last row that was not.
+     *
+     * `find_music` searches the catalogue with an app credential and
+     * `propose_playlist` writes a private playlist with a user one, so the row has
+     * code behind it either way. The two credentials buy different things and the row
+     * is honest about the weaker case: with an id and secret but no account,
+     * confirming a playlist hands over track links rather than saving, and both the
+     * card and the reply say so.
+     *
+     * This row carried no `backing` for exactly one deployment, because the Spotify
+     * server tier lived on an unmerged branch and a catalogue written against `main`
+     * could not see it. "Not built yet" was true of the code in front of me and false
+     * of the code that existed — which is the same class of mistake as the Wolt rows,
+     * arrived at from the opposite direction.
      */
     id: 'spotify',
     name: 'Spotify',
+    backing: ['spotify'],
     capability: 'playlists',
     mark: 'spotify',
     blurb: 'Builds the playlist for the drive there.',
     scopes: [
-      { label: 'create playlists', detail: 'He cannot change playlists you made', reach: 'write' },
+      {
+        label: 'search Spotify for songs she likes',
+        detail: "Read-only — the public catalogue, and your listening history is never read",
+        reach: 'read',
+      },
+      {
+        /*
+         * "create playlists" was the old wording and claimed slightly too much:
+         * whether anything is created depends on a Spotify account being
+         * connected, and where it isn't, confirming produces a list of links.
+         * Naming the confirm step instead of the outcome is the version that
+         * cannot become false between one deployment and another.
+         */
+        label: 'offer you a playlist to confirm',
+        detail:
+          'Confirming saves it as a private playlist when a Spotify account is connected — ' +
+          'otherwise he hands you the songs as links. He never touches playlists you made, ' +
+          'and nothing he makes is public',
+        reach: 'write',
+      },
     ],
     defaultCapUsd: null,
   },

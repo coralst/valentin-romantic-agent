@@ -345,8 +345,14 @@ const cardBlurbStyle: React.CSSProperties = {
  * every row now has exactly one backing service; it is kept because the readiness
  * fold it renders still returns the state, and a row spanning two providers is a
  * catalogue edit rather than a code change away.
+ *
+ * `aspirational` is in the same position since Spotify landed: nothing in the
+ * catalogue is unbacked, so no row can reach it through the panel. Exported for that
+ * reason — these two branches are the ones a visitor is most damaged by if they go
+ * wrong, and with no row exercising them the only honest place left to test them is
+ * directly.
  */
-function readinessLabel(
+export function readinessLabel(
   reach: CapabilityReadiness,
   service: IntegrationService,
   readiness: IntegrationReadiness,

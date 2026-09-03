@@ -80,19 +80,27 @@ describe('offering the form', () => {
     expect(screen.getByTestId('integration-field-amadeus-clientId')).toBeInTheDocument();
   });
 
-  it('offers nothing on a capability that is only a drawing', async () => {
+  /*
+   * This slot used to hold "offers nothing on a capability that is only a drawing",
+   * pointed at `flowers`, then `music`, then `rides`, then `spotify` — each row in
+   * turn stopped being a drawing and the assertion moved rather than being reasoned
+   * about. There is no row left to point it at: every catalogue row is backed and
+   * every backed row that needs a credential offers a form.
+   *
+   * So the test asserts the case that replaced it. Spotify was the last drawing and is
+   * now the one row whose sheet offers a form *and* a consent step, because an id and
+   * secret buy catalogue search while saving a playlist needs an account on top.
+   */
+  it('offers Spotify credentials on the Spotify card, which is no longer a drawing', async () => {
     const user = userEvent.setup();
     await renderPanel();
-    // Spotify has no backing service. A credential form here would imply that
-    // connecting achieves something in the world, and it does not.
-    //
-    // Was `flowers`, which is Wolt and genuinely live — asserting it here made the
-    // test agree with the bug it should have caught.
     await openSheet(user, 'spotify');
 
-    expect(screen.queryByTestId('integration-credentials-amadeus')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('integration-credentials-google')).not.toBeInTheDocument();
-    expect(screen.getByText(/not built yet, so connecting/i)).toBeInTheDocument();
+    expect(screen.getByTestId('integration-credentials-spotify')).toBeInTheDocument();
+    expect(screen.getByTestId('integration-field-spotify-clientId')).toBeInTheDocument();
+    // And the row must not still be calling itself unbuilt next to a form asking for
+    // a real credential — that pairing is what this file exists to prevent.
+    expect(screen.queryByText(/not built yet, so connecting/i)).not.toBeInTheDocument();
   });
 
   it('offers nothing on a capability whose provider needs no credential', async () => {

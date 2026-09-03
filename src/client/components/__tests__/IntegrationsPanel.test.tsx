@@ -2,8 +2,17 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { IntegrationsProvider } from '../../context/integrations-context';
-import { IntegrationsPanel, nodeLayout, connectionLabel } from '../IntegrationsPanel';
-import { INTEGRATION_CATALOGUE } from '../../utils/integration-catalogue';
+import {
+  IntegrationsPanel,
+  nodeLayout,
+  connectionLabel,
+  readinessLabel,
+} from '../IntegrationsPanel';
+import {
+  INTEGRATION_CATALOGUE,
+  type IntegrationService,
+} from '../../utils/integration-catalogue';
+import type { IntegrationReadiness } from '../../hooks/use-integration-readiness';
 import {
   INTEGRATION_IDS,
   INTEGRATION_LABELS,
@@ -358,26 +367,34 @@ describe('IntegrationsPanel', () => {
       expect(badge).toHaveTextContent('live');
     });
 
-    it('says an unbuilt capability is not built yet, not merely unconfigured', async () => {
+    it('says a built-but-keyless capability needs credentials, and badges no row unbuilt', async () => {
       await renderPanel();
       /*
-       * The distinction the visitor cannot see by looking: Spotify is a drawing,
-       * whereas Amadeus is real code waiting on a key. Both are dark, and
-       * conflating them either overpromises or slanders working code.
+       * This test has been chasing a moving target, and the moves are the point.
        *
-       * Spotify rather than the Wolt row, which this used to assert: Wolt has been
-       * real since the browser tier landed, so using it here was the test agreeing
-       * with the bug — it badged working code "not built yet". Spotify has no
-       * provider anywhere in src/server/integrations, so it is the honest example
-       * of a row that contacts nobody.
+       * It asserted `flowers` was "not built yet" until Wolt landed, then `music`
+       * until Spotify landed, then `rides` until that row was deleted, then Spotify
+       * again for one release — written against a `main` that could not see the
+       * Spotify branch. Every version badged working code as a drawing.
+       *
+       * There is no honest example left: every catalogue row is backed. So the
+       * assertion inverts. What the panel must show is "needs credentials" — real code
+       * waiting on a key, which looks identical on screen to "not built yet" and is a
+       * completely different claim — and no row anywhere may say "not built yet",
+       * because none of them is. `readinessLabel` covers the aspirational branch
+       * directly for the day a genuinely unbuilt row is added.
        */
-      const spotify = await screen.findByTestId('integration-readiness-spotify');
-      expect(spotify).toHaveAttribute('data-readiness', 'aspirational');
-      expect(spotify).toHaveTextContent('not built yet');
-
-      const amadeus = screen.getByTestId('integration-readiness-amadeus');
+      const amadeus = await screen.findByTestId('integration-readiness-amadeus');
       expect(amadeus).toHaveAttribute('data-readiness', 'unconfigured');
       expect(amadeus).toHaveTextContent('needs credentials');
+
+      const spotify = screen.getByTestId('integration-readiness-spotify');
+      expect(spotify).toHaveAttribute('data-readiness', 'unconfigured');
+
+      for (const service of INTEGRATION_CATALOGUE) {
+        const badge = screen.queryByTestId(`integration-readiness-${service.id}`);
+        expect(badge).not.toHaveAttribute('data-readiness', 'aspirational');
+      }
     });
 
     it('badges Gmail and WhatsApp separately when only Gmail is configured', async () => {
@@ -408,12 +425,24 @@ describe('IntegrationsPanel', () => {
     it('claims nothing at all when the server cannot be reached', async () => {
       api.get.mockRejectedValue(new Error('offline'));
       await renderPanel();
+      // Let the rejected fetch settle, so this is the state after the failure rather
+      // than the state before it.
+      await act(async () => {});
 
-      // Deliberately no badge rather than a guess in either direction. The
-      // aspirational rows still show theirs — those need no server to be true.
-      await screen.findByTestId('integration-readiness-spotify');
-      expect(screen.queryByTestId('integration-readiness-ontopo')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('integration-readiness-gmail')).not.toBeInTheDocument();
+      /*
+       * Deliberately no badge rather than a guess in either direction: claiming "live"
+       * would promise reach the panel cannot verify, and claiming "needs credentials"
+       * would call a working deployment broken.
+       *
+       * This used to make an exception for the unbuilt rows, whose badge is true
+       * without asking anyone. With every row backed there is no such row left, so the
+       * expectation is now uniform — every badge is withheld.
+       */
+      for (const service of INTEGRATION_CATALOGUE) {
+        expect(
+          screen.queryByTestId(`integration-readiness-${service.id}`),
+        ).not.toBeInTheDocument();
+      }
     });
 
     it('shows the same badges on a mobile card', async () => {
@@ -520,5 +549,44 @@ describe('connectionLabel — the two facts kept apart', () => {
     for (const reach of ['unconfigured', 'aspirational', 'unknown'] as const) {
       expect(connectionLabel(true, reach)).not.toMatch(/credential|built|checking/i);
     }
+  });
+});
+
+/*
+ * The two badge states no catalogue row can reach any more.
+ *
+ * `aspirational` became unreachable when Spotify landed and `partial` when the
+ * Messages row split, and both were previously covered only through a rendered row.
+ * Deleting the coverage along with the rows would mean the day someone adds an
+ * unbuilt row — or a row genuinely spanning two providers — the honest badge is
+ * untested at exactly the moment it starts mattering again.
+ *
+ * Tested against the function rather than by stubbing the catalogue: a fake row
+ * injected into a rendered panel would prove the fake works, and this is the same
+ * assertion without the fiction.
+ */
+describe('readinessLabel — the states nothing currently reaches', () => {
+  const row = INTEGRATION_CATALOGUE[0];
+  const nothingConfigured: IntegrationReadiness = { state: 'loaded', configured: {} };
+
+  it('says not built yet for a row with nothing behind it', () => {
+    const unbacked: IntegrationService = { ...row, backing: undefined };
+    expect(readinessLabel('aspirational', unbacked, nothingConfigured)).toBe('not built yet');
+  });
+
+  it('names the service that works when a row spans two and one is configured', () => {
+    const spanning: IntegrationService = { ...row, backing: ['gmail', 'whatsapp'] };
+    const gmailOnly: IntegrationReadiness = {
+      state: 'loaded',
+      configured: { gmail: true, whatsapp: false },
+    };
+
+    expect(readinessLabel('partial', spanning, gmailOnly)).toBe('live via Gmail');
+  });
+
+  it('says nothing at all while readiness is unknown', () => {
+    // Not a hedge like "checking…": no badge is quieter than a badge with no content,
+    // and this is the state that exists only until the fetch lands.
+    expect(readinessLabel('unknown', row, nothingConfigured)).toBeNull();
   });
 });

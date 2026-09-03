@@ -36,26 +36,57 @@ describe('integration catalogue', () => {
     // for email that worked.
     expect(backed.gmail).toEqual(['gmail']);
     expect(backed.whatsapp).toEqual(['whatsapp']);
-
-    // Genuinely unbuilt: there is no Spotify client anywhere in
-    // src/server/integrations, so "not built yet" is the honest badge and this row
-    // must stay unbacked until one exists.
-    expect(backed.spotify).toHaveLength(0);
+    // Spotify, since `spotifyTools` registers on any deployment holding an app
+    // credential — the same correction the Wolt rows needed, and it took one release
+    // badged "not built yet" over working code to notice.
+    expect(backed.spotify).toEqual(['spotify']);
   });
 
   /*
-   * The rides row is gone rather than unbacked, and this asserts it stays gone.
+   * Every row is backed now, and the assertion is written as "none" rather than as a
+   * list so that adding an unbuilt row is a decision someone has to make here.
    *
-   * "Ride booking · not built yet" was a promise with nothing behind it: no
-   * provider client, no tool, no credential to supply, and a $40 spend cap on a
-   * capability that could not spend. A row a visitor can grant and that then does
-   * nothing at all teaches them the rest of the page is decorative too.
+   * The rides row is gone rather than unbacked, which is the other half of this.
+   * "Ride booking · not built yet" was a promise with nothing behind it: no provider
+   * client, no tool, no credential to supply, and a $40 spend cap on a capability
+   * that could not spend. A row a visitor can grant and that then does nothing at all
+   * teaches them the rest of the page is decorative too.
+   *
+   * A future unbuilt row is allowed — `backing` is optional precisely so it can be —
+   * but it has to fail here first and be added on purpose, with the "not built yet"
+   * badge that comes with it.
    */
-  it('lists no capability that was never built beyond the one it admits to', () => {
+  it('has nothing left that was never built, and no rides row', () => {
     const unbacked = INTEGRATION_CATALOGUE.filter(
       (service) => (service.backing?.length ?? 0) === 0,
     );
-    expect(unbacked.map((service) => service.id)).toEqual(['spotify']);
+    expect(unbacked.map((service) => service.id)).toEqual([]);
+    expect(INTEGRATION_CATALOGUE.map((service) => service.id)).not.toContain('rides');
+  });
+
+  /*
+   * The Spotify row's counterpart to the Wolt spend assertion above, and the same
+   * class of over-claim.
+   *
+   * Whether a playlist is *saved* depends on a user refresh token being present;
+   * with only an app credential, confirming hands over track links. So the row may
+   * not promise a created playlist outright — it has to name the confirm step and
+   * the condition. Pinned because "offer you a playlist to confirm" is exactly the
+   * sort of careful wording a later edit would helpfully shorten to "create
+   * playlists", which is the claim that can be false.
+   */
+  it('does not promise the Spotify row saves a playlist unconditionally', () => {
+    const spotify = findIntegration('spotify');
+    expect(spotify?.backing).toContain('spotify');
+    expect(canSpend(spotify!)).toBe(false);
+    expect(spotify?.defaultCapUsd).toBeNull();
+
+    const write = spotify?.scopes.find((scope) => scope.reach === 'write');
+    expect(write).toBeDefined();
+    // Says what confirming does, and that saving is conditional on an account.
+    expect(write!.label).toMatch(/confirm/i);
+    expect(write!.detail).toMatch(/connected/i);
+    expect(write!.detail).toMatch(/link/i);
   });
 
   it('never names a service id the server does not know', () => {

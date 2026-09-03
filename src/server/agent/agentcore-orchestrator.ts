@@ -10,7 +10,7 @@ import {
   type OnPreferenceUpdate,
 } from './agent-orchestrator';
 import { buildSystemPrompt, partnerNameFrom } from './prompts';
-import { readKnownFacts } from './partner-profile';
+import { readKnownFacts, readVisitedPlaces } from './partner-profile';
 import type { AgentCoreRuntime, RememberedPreference } from './agentcore-adapter';
 
 /**
@@ -105,7 +105,13 @@ export class AgentCoreOrchestrator implements AgentOrchestratorInterface {
         sessionId,
         actorId: this.actorId,
         prompt: content,
-        systemPrompt: buildSystemPrompt(await readKnownFacts(this.storage, sessionId)),
+        systemPrompt: buildSystemPrompt(
+          await readKnownFacts(this.storage, sessionId),
+          // No tools on this engine, so no tool guidance — but the history is
+          // read side only, and this is where engine B gets it for free.
+          false,
+          await readVisitedPlaces(this.storage, sessionId),
+        ),
         history: context.recentMessages,
       });
       responseContent = reply.content;
@@ -173,6 +179,21 @@ export class AgentCoreOrchestrator implements AgentOrchestratorInterface {
    * only way to reach this is a client that switched engines with a proposal card
    * still on screen. That is a wiring bug worth seeing in the logs, not something
    * to absorb: the router catches it and the card reports the failure.
+   */
+  /**
+   * Nothing to confirm here — and therefore no outing recorded here either.
+   *
+   * Engine A's `confirmAction` calls `recordOuting` on a successful confirm, so
+   * outing history only ever grows on engine A. That asymmetry is stated rather
+   * than fixed because it is not a gap: this engine is constructed with no tool
+   * registry and no `onProposal`, so it raises no proposals and there is no
+   * booking for it to have made.
+   *
+   * What it does need is the *read* side, and it has it: `readVisitedPlaces` in
+   * `partner-profile.ts` puts the history into the system prompt, which both
+   * engines build through the same module. If this engine ever gains tools,
+   * `recordOuting` is a free function and the hook is one line — see
+   * `agent-orchestrator.ts`'s `confirmAction`.
    */
   async confirmAction(sessionId: string, proposalId: string): Promise<ChatMessage> {
     throw new Error(

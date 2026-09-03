@@ -9,6 +9,41 @@ export const config = {
   port: parseInt(process.env.PORT ?? '3001', 10),
 
   /**
+   * Where the app is reachable from, for links in outbound mail.
+   *
+   * `integrations/google/oauth.ts` already reads this variable directly; this is
+   * the same value with a name, so a reminder and an OAuth callback cannot
+   * disagree about which host the user is on. It falls back rather than throwing
+   * because a wrong origin costs a dead link in a mail, not a failed send.
+   */
+  publicOrigin: process.env.PUBLIC_ORIGIN ?? 'http://localhost:5173',
+
+  /**
+   * The key that signs shareable-conversation links.
+   *
+   * Deliberately optional and deliberately undefaulted. `sharing/share-token.ts`
+   * falls back to a per-process random key and warns once, which means links break
+   * across a restart or a second container; a hardcoded default here would instead
+   * mean links **forgeable by anyone holding this repository**, since a share token
+   * is the one credential in the system that names its own owner. Breaking is the
+   * safe direction — see that file's header for the full argument.
+   */
+  shareTokenSecret: process.env.SHARE_TOKEN_SECRET,
+
+  /**
+   * The reminder sweeper.
+   *
+   * A minute is far finer than the hour `dueAt` is pinned to, so a late sweep is
+   * never visible to the reader. `REMINDERS_ENABLED=false` stops the timer without
+   * removing the rows, for a demo where nothing should leave the building.
+   */
+  reminders: {
+    enabled: process.env.REMINDERS_ENABLED !== 'false',
+    channel: process.env.REMINDER_CHANNEL ?? 'log',
+    intervalMs: parseInt(process.env.REMINDER_INTERVAL_MS ?? '60000', 10),
+  },
+
+  /**
    * Cognito wiring, all supplied by compute-stack.ts.
    *
    * Deliberately optional: with `userPoolId` unset the server falls back to the
@@ -61,6 +96,20 @@ export const config = {
     googleClientId: process.env.GOOGLE_CLIENT_ID,
     googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
     googleRefreshToken: process.env.GOOGLE_REFRESH_TOKEN,
+
+    /**
+     * Google Maps Platform: geocoding and Nearby Search.
+     *
+     * Deliberately *not* injected as an ECS secret the way the OAuth trio is.
+     * `ecs.Secret.fromSecretsManager` fails **task startup** when the JSON key it
+     * names is absent, so a Maps key that had not been populated yet would take
+     * the whole app down instead of merely disabling place search. Passing the
+     * secret's ARN as a plain env var and reading it at runtime — the
+     * `DEMO_SECRET_ARN` pattern — makes absence degrade to "Places not
+     * configured", which is the failure this integration should have.
+     */
+    googlePlacesApiKey: process.env.GOOGLE_PLACES_API_KEY,
+    googlePlacesSecretArn: process.env.GOOGLE_PLACES_SECRET_ARN,
 
     /**
      * Spotify Web API — the playlist Valentin builds for the drive there.

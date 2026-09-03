@@ -1,4 +1,5 @@
 import type { ChatMessage } from '../../shared/interfaces/message';
+import type { Outing } from '../../shared/interfaces/outing';
 import type { Person } from '../../shared/interfaces/person';
 import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
 import type { Task } from '../../shared/interfaces/task';
@@ -164,6 +165,21 @@ export class EventRouter {
     this.emit({
       type: 'task_update',
       payload: { sessionId, task, isNew },
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Emit an outing_update event to the client.
+   *
+   * No `isNew` counterpart to its neighbours, because this only ever fires on
+   * creation: the other write to an outing row is the survey, which the client
+   * makes itself and already holds the answer to. See `ws-events.ts`.
+   */
+  emitOutingUpdate(sessionId: string, outing: Outing): void {
+    this.emit({
+      type: 'outing_update',
+      payload: { sessionId, outing },
       timestamp: new Date().toISOString(),
     });
   }

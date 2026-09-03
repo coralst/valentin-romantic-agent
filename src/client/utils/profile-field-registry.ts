@@ -1,4 +1,9 @@
 import type { PreferenceCategory } from '../../shared/interfaces/preference';
+import {
+  REMINDER_LEAD_OPTIONS,
+  RESTAURANT_STYLE_OPTIONS,
+  SEARCH_RADIUS_OPTIONS,
+} from '../../shared/constants/profile-fields';
 
 /** The set of value types a profile field can hold */
 export type ProfileFieldValueType = 'text' | 'date' | 'list' | 'enum';
@@ -42,6 +47,13 @@ export const PROFILE_FIELD_SECTIONS: readonly FieldSectionDefinition[] = [
    */
   { id: 'sizes', label: 'Sizes', order: 4 },
   { id: 'gifts', label: 'Gifts & Celebrations', order: 5 },
+  /*
+   * The first section whose rows are facts about *him*: where he is planning
+   * from, how far he will travel, how much warning he wants. They are grouped
+   * apart from Basics because mixing "her ring size" and "my search radius" into
+   * one card makes the dossier read as though the radius were hers.
+   */
+  { id: 'logistics', label: 'Planning & Logistics', order: 6 },
 ] as const;
 
 /** The complete profile field registry */
@@ -378,6 +390,107 @@ export const PROFILE_FIELD_REGISTRY: readonly ProfileFieldDefinition[] = [
     enumOptions: ['Loves Surprises', 'Prefers to Choose', 'Depends on Occasion'],
     mappings: [
       { category: 'gifts', key: 'surprise preference' },
+    ],
+  },
+
+  /*
+   * Planning & Logistics — appended, never inserted.
+   *
+   * `profile-field-registry.test.ts` asserts this array against
+   * `PROFILE_FIELD_IDS` by position, so an insertion in the middle renumbers
+   * every field after it.
+   *
+   * No new `PreferenceCategory` for these. `fieldId` is authoritative on the read
+   * path and `category`+`key` is only the legacy fallback, so a ninth category
+   * would buy nothing while widening the extraction tool's enum — an invitation to
+   * file every unclassifiable remark under "logistics" forever. The grouping the
+   * user actually sees comes from `section`, which is client-side and free.
+   *
+   * The three enum option lists come from `shared/constants/profile-fields.ts`
+   * rather than being written out here, because the server parses the same
+   * strings — a radius becomes `radius=` metres on a Places request and a lead
+   * time becomes `dueAt = occasionDate − N days`. Two copies of the option text
+   * is how a stored value silently stops parsing.
+   */
+  {
+    id: 'next_occasion',
+    label: 'Next Occasion',
+    valueType: 'text',
+    section: 'logistics',
+    mappings: [
+      { category: 'important_dates', key: 'next occasion' },
+      { category: 'important_dates', key: 'upcoming occasion' },
+      { category: 'important_dates', key: 'occasion' },
+    ],
+  },
+  {
+    id: 'home_city',
+    label: 'Home City',
+    valueType: 'text',
+    section: 'logistics',
+    mappings: [
+      { category: 'travel', key: 'home city' },
+      { category: 'travel', key: 'city' },
+      { category: 'travel', key: 'lives in' },
+    ],
+  },
+  {
+    id: 'restaurant_style',
+    label: 'Restaurant Style',
+    valueType: 'enum',
+    section: 'logistics',
+    enumOptions: [...RESTAURANT_STYLE_OPTIONS],
+    mappings: [
+      { category: 'food', key: 'restaurant style' },
+      { category: 'food', key: 'dining style' },
+      { category: 'food', key: 'atmosphere' },
+    ],
+  },
+  {
+    id: 'reminder_lead_time',
+    label: 'Reminder Lead Time',
+    valueType: 'enum',
+    section: 'logistics',
+    enumOptions: [...REMINDER_LEAD_OPTIONS],
+    mappings: [
+      { category: 'important_dates', key: 'reminder lead time' },
+      { category: 'important_dates', key: 'notice' },
+    ],
+  },
+  {
+    id: 'search_radius',
+    label: 'Search Radius',
+    valueType: 'enum',
+    section: 'logistics',
+    enumOptions: [...SEARCH_RADIUS_OPTIONS],
+    mappings: [
+      { category: 'travel', key: 'search radius' },
+      { category: 'travel', key: 'radius' },
+    ],
+  },
+  /*
+   * `text`, not a new `'email'` value type.
+   *
+   * A fifth value type would have to be handled by every rendering primitive that
+   * switches on `valueType` — the dossier tile, the editor, the skeleton — for the
+   * sake of one field, and would buy only an input `type` attribute. Whether a
+   * stored string is a plausible address is a question for the route and the
+   * extraction layer, which are the two places that can reject it before it is
+   * written.
+   *
+   * Mapped under `important_dates` because that is the category the reminder rows
+   * already live in (`reminder_lead_time`), and `fieldId` is authoritative on the
+   * read path anyway — the pair is only the legacy fallback.
+   */
+  {
+    id: 'notify_email',
+    label: 'Reminder Email',
+    valueType: 'text',
+    section: 'logistics',
+    mappings: [
+      { category: 'important_dates', key: 'notify email' },
+      { category: 'important_dates', key: 'reminder email' },
+      { category: 'important_dates', key: 'notification email' },
     ],
   },
 ] as const;

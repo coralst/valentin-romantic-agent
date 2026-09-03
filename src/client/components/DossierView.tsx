@@ -20,6 +20,8 @@ import { GiftShortlist } from './dossier/GiftShortlist';
 import { HerWeek } from './dossier/HerWeek';
 import { FourWeekCalendar } from './dossier/FourWeekCalendar';
 import { WhatToDoNext } from './dossier/WhatToDoNext';
+import { OutingHistory } from './dossier/OutingHistory';
+import type { OutingVerdict } from '../../shared/interfaces/outing';
 import { DossierIcon, dossierType } from './dossier/dossier-icons';
 import { EverythingIKnow } from './dossier/EverythingIKnow';
 import { FamilyTree } from './dossier/FamilyTree';
@@ -27,6 +29,7 @@ import { PersonEditor, type PersonDraft } from './dossier/PersonEditor';
 import { AlsoMentioned, groupUnmappedPreferences } from './dossier/AlsoMentioned';
 import { useOptionalPeopleContext } from '../context/people-context';
 import { useOptionalTasksContext } from '../context/tasks-context';
+import { useOptionalOutingsContext } from '../context/outings-context';
 import type { Person, PersonGeneration } from '../../shared/interfaces/person';
 import {
   parsePalette,
@@ -212,13 +215,15 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
    * Her people and his list.
    *
    * Optional contexts, like the profile store's: `DossierView` is mounted in tests
-   * that provide none of the three, and a board with an empty family tree is a
+   * that provide none of them, and a board with an empty family tree is a
    * correct empty state rather than a crash.
    */
   const people = useOptionalPeopleContext();
   const tasks = useOptionalTasksContext();
+  const outings = useOptionalOutingsContext();
   const peopleList = people?.state.people ?? [];
   const taskList = tasks?.state.tasks ?? [];
+  const outingList = outings?.state.outings ?? [];
 
   const rhythm = useMemo(
     () => parseWeeklyRhythm(getFieldValue('weekly_rhythm')?.value),
@@ -378,6 +383,17 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
     [tasks],
   );
 
+  /** Her answer to the survey. Guarded for the same reason as the tick above. */
+  const rateOuting = useCallback(
+    (
+      outingId: string,
+      patch: { rating?: number | null; verdict?: OutingVerdict | null },
+    ) => {
+      outings?.rateOuting(outingId, patch);
+    },
+    [outings],
+  );
+
   /**
    * Valentin's line under the list.
    *
@@ -484,6 +500,12 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
             onAddPerson={(generation) => setEditing({ person: null, generation })}
             onAskAboutGap={askAboutPerson}
           />
+
+          {/* Band four. Where he has taken her, with the survey inline on any
+              past row nobody has answered for yet. Below the tree because it is
+              a record of what has already happened, and above `AlsoMentioned`
+              because it is a card with a control on it rather than a footnote. */}
+          <OutingHistory outings={outingList} onRate={rateOuting} />
 
           {/*
             * Last, and quietest — but not dropped.

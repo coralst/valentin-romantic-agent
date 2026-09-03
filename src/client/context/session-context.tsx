@@ -15,6 +15,7 @@ import {
   saveSidebarCollapsed,
 } from '../hooks/use-session-store';
 import { takeSignInSession } from '../auth/initial-session';
+import { takeResumeSession } from '../auth/resume-session';
 import {
   createRemoteSession,
   deleteRemoteSession,
@@ -307,7 +308,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
      * beside the one it was handed. Trusting the id the login returned makes
      * a fresh sign-in land on exactly one conversation, deterministically.
      */
-    const activeId = focusId !== undefined ? focusId : takeSignInSession() ?? sessions[0]?.id ?? null;
+    /*
+     * A `/?s=<id>` link outranks the newest conversation but not an explicit
+     * `focusId` or a session the sign-in just created. It is read here rather
+     * than in an effect because the auth gate wipes the query string long before
+     * one could run — see `auth/resume-session.ts`.
+     */
+    const linkedId = focusId !== undefined ? null : takeResumeSession();
+    const activeId =
+      focusId !== undefined
+        ? focusId
+        : takeSignInSession() ?? linkedId ?? sessions[0]?.id ?? null;
 
     // Hydrate the conversation we are about to open *before* focusing it.
     // SessionSyncer reacts to the active id changing and reads whatever
@@ -337,9 +348,22 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     dispatch({
       type: 'LOAD_SESSIONS',
       sessions,
-      // Only if it survived hydration: focusing an id that is in no row
-      // leaves the sidebar with nothing selected beside a live transcript.
-      activeId: sessions.some((s) => s.id === activeId) ? activeId : null,
+      /*
+       * Only if it survived hydration: focusing an id that is in no row leaves
+       * the sidebar with nothing selected beside a live transcript.
+       *
+       * An id that came from a link falls back to the newest conversation instead
+       * of to nothing. A link can be stale or belong to another account — in
+       * which case the detail fetch 404s, which is the correct answer, since every
+       * session route is scoped to the authenticated user — and landing someone on
+       * a blank app because they clicked an old email is a worse outcome than
+       * quietly opening what they do have.
+       */
+      activeId: sessions.some((s) => s.id === activeId)
+        ? activeId
+        : linkedId
+          ? sessions[0]?.id ?? null
+          : null,
       collapsed: loadSidebarCollapsed(),
     });
   }, []);

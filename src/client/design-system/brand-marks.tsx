@@ -37,6 +37,7 @@ import { colors, radii, typography } from './tokens';
 export type BrandMarkId =
   | 'ontopo'
   | 'google-calendar'
+  | 'google-places'
   | 'wolt'
   | 'spotify'
   | 'amadeus'
@@ -90,6 +91,19 @@ const MARKS: Record<BrandMarkId, ReactNode> = {
       >
         31
       </text>
+    </>
+  ),
+
+  // A map pin, which is the one shape Google Maps Platform is recognisable by at
+  // 30px — the four-colour logo is not, and redrawing it would be a trademark
+  // asset rather than our own reduction.
+  'google-places': (
+    <>
+      <path
+        d="M12 2.8c-3.5 0-6.3 2.8-6.3 6.3 0 4.4 6.3 11.9 6.3 11.9s6.3-7.5 6.3-11.9c0-3.5-2.8-6.3-6.3-6.3z"
+        fill="#EA4335"
+      />
+      <circle cx="12" cy="9.1" r="2.4" fill="#ffffff" />
     </>
   ),
 

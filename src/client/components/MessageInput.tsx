@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from 'react';
 import { validateMessageContent } from '../../shared/validation/message-validator';
 import { colors, radii, insets, typography, layout } from '../design-system/tokens';
 import { chatMeasureStyle } from './chat-measure';
@@ -29,6 +30,20 @@ const innerStyle: React.CSSProperties = {
   padding: `9px 9px 9px 19px`,
 };
 
+/** One line of `typography.px.chat` at `lineHeight: 1.5`, plus the 3px lead-in. */
+const COMPOSER_MIN_HEIGHT = 24;
+
+/**
+ * Six lines, then the draft scrolls inside itself.
+ *
+ * Uncapped growth would be worse than the bug it replaces: the composer does not
+ * scroll away (`containerStyle`'s `flexShrink: 0`), so a pasted paragraph would
+ * push the transcript off the top of the window and you would lose the
+ * conversation to see the draft. Six lines is enough that ordinary multi-line
+ * messages never scroll at all.
+ */
+const COMPOSER_MAX_HEIGHT = 132;
+
 const inputStyle: React.CSSProperties = {
   flex: 1,
   minWidth: 0,
@@ -43,8 +58,21 @@ const inputStyle: React.CSSProperties = {
   fontSize: typography.px.chat,
   color: colors.ink,
   lineHeight: 1.5,
-  // One line tall by default; the row grows via `rows` as the draft wraps.
-  height: 24,
+  /*
+   * One line tall by default, grown by `autosize` below — never by `rows`.
+   *
+   * This used to be `height: 24` with a comment claiming "the row grows via
+   * `rows`". It did not: `rows` is fixed at 1, and an explicit CSS height beats
+   * row-based sizing anyway, so a draft that wrapped scrolled its own first line
+   * out of a 24px window and you could not see what you had written. `minHeight`
+   * rather than `height` is what lets the measured value win.
+   */
+  boxSizing: 'border-box',
+  minHeight: COMPOSER_MIN_HEIGHT,
+  maxHeight: COMPOSER_MAX_HEIGHT,
+  // Only ever reached once the draft is taller than the cap; below it the element
+  // is exactly its content's height, so there is nothing to scroll.
+  overflowY: 'auto',
   paddingTop: 3,
 };
 
@@ -72,6 +100,28 @@ const disabledButtonStyle: React.CSSProperties = {
 
 export function MessageInput({ value, onChange, onSubmit }: MessageInputProps) {
   const isValid = validateMessageContent(value).valid;
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  /*
+   * Measure the draft and become that tall.
+   *
+   * Keyed on `value` rather than on `onChange`, because the draft is owned by the
+   * parent: sending a message clears it from outside this component, and an
+   * onChange-only autosize would leave the box six lines tall over an empty
+   * placeholder. `height = 'auto'` first is not optional — `scrollHeight` of an
+   * element with a height already set never reports less than that height, so
+   * without the reset the composer could grow but never shrink again.
+   *
+   * `useLayoutEffect` so the resize lands in the same frame as the character that
+   * caused it; in a `useEffect` the one-line box paints first and the composer
+   * visibly judders on every wrap.
+   */
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(Math.max(el.scrollHeight, COMPOSER_MIN_HEIGHT), COMPOSER_MAX_HEIGHT)}px`;
+  }, [value]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey && isValid) {
@@ -84,6 +134,7 @@ export function MessageInput({ value, onChange, onSubmit }: MessageInputProps) {
     <div style={containerStyle}>
       <div style={innerStyle}>
         <textarea
+          ref={textareaRef}
           rows={1}
           value={value}
           onChange={(e) => onChange(e.target.value)}

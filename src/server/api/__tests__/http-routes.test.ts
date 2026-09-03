@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createHttpRoutes } from '../http-routes';
 import { InMemoryStoreFactory } from '../../persistence/in-memory-store';
 import type { StorageInterface } from '../../persistence/storage-interface';
@@ -14,6 +14,18 @@ import type { IntegrationStatusResponse } from '../../../shared/interfaces/integ
 import { INTEGRATION_IDS } from '../../../shared/interfaces/integrations';
 import { PROFILE_FIELD_REGISTRY } from '../../../client/utils/profile-field-registry';
 import { resolveField } from '../../../client/utils/preference-field-mapper';
+import {
+  rememberCityCoords,
+  resetPlacesCacheForTests,
+} from '../../integrations/google-places/client';
+import { verifyShareToken } from '../../sharing/share-token';
+import { SHARE_PARAM } from '../../../shared/constants/share-link';
+import type { ShareLinkResponse } from '../../../shared/constants/share-link';
+import { RESUME_PARAM } from '../../../shared/constants/resume-link';
+import { subscribeToServerLogs, type ServerLogRecord } from '../../logging';
+import { config } from '../../config';
+
+const originalShareSecret = config.shareTokenSecret;
 
 interface SeedBody {
   sessionId: string;
@@ -998,6 +1010,81 @@ describe('createHttpRoutes', () => {
     });
   });
 
+  describe('where he has taken her', () => {
+    let sessionId: string;
+
+    beforeEach(async () => {
+      sessionId = await store.createSession();
+    });
+
+    const outing = { venueName: 'Claro', city: 'Tel Aviv', occursOn: '2026-06-12' };
+
+    it('records an outing unrated, which is what raises the survey later', async () => {
+      const result = await routes.saveOuting(sessionId, outing);
+
+      expect(result.status).toBe(200);
+      const body = (result.body as { outing: { rating: number | null; ratedAt: string | null } })
+        .outing;
+      expect(body.rating).toBeNull();
+      expect(body.ratedAt).toBeNull();
+    });
+
+    it('rejects an outing with no venue name', async () => {
+      expect((await routes.saveOuting(sessionId, { city: 'Tel Aviv' })).status).toBe(400);
+    });
+
+    it('answers the survey by resending the row, and keeps confirmedAt', async () => {
+      const added = await routes.saveOuting(sessionId, outing);
+      const row = (added.body as { outing: Record<string, unknown> }).outing;
+
+      const rated = await routes.saveOuting(sessionId, { ...row, rating: 4, verdict: 'again' });
+
+      const body = (
+        rated.body as {
+          outing: { rating: number; verdict: string; ratedAt: string; confirmedAt: string };
+        }
+      ).outing;
+      expect(body.rating).toBe(4);
+      expect(body.verdict).toBe('again');
+      expect(body.ratedAt).not.toBeNull();
+      // The survey is answered days later; it must not restamp the booking.
+      expect(body.confirmedAt).toBe(row.confirmedAt);
+      // And it is the same row, not a second visit.
+      expect((await routes.getSessionOutings(sessionId)).body).toEqual({ outings: [body] });
+    });
+
+    it('refuses a rating that is not a whole 1-5, because code compares it', async () => {
+      for (const rating of [0, 6, 3.5, '4']) {
+        expect((await routes.saveOuting(sessionId, { ...outing, rating })).status).toBe(400);
+      }
+    });
+
+    it('refuses a verdict outside the closed set', async () => {
+      expect((await routes.saveOuting(sessionId, { ...outing, verdict: 'meh' })).status).toBe(400);
+    });
+
+    it('deletes one outing', async () => {
+      const added = await routes.saveOuting(sessionId, outing);
+      const { id } = (added.body as { outing: { id: string } }).outing;
+
+      await routes.deleteOuting(sessionId, id);
+
+      expect((await routes.getSessionOutings(sessionId)).body).toEqual({ outings: [] });
+    });
+
+    it('404s every outing route for a session this user does not own', async () => {
+      const stranger = await new InMemoryStoreFactory().forUser('someone-else').createSession();
+
+      for (const call of [
+        routes.getSessionOutings(stranger),
+        routes.saveOuting(stranger, outing),
+        routes.deleteOuting(stranger, 'out-1'),
+      ]) {
+        expect((await call).status).toBe(404);
+      }
+    });
+  });
+
   describe('manual corrections', () => {
     let sessionId: string;
 
@@ -1041,12 +1128,336 @@ describe('createHttpRoutes', () => {
       });
     });
 
+    it('re-plans the reminder when a date is corrected by hand', async () => {
+      // The panel is where a reminder email or a corrected birthday is actually
+      // typed; extraction only ever guesses them from prose. Without a sync here the
+      // panel would show the new date while the mail still went out on the old one.
+      await routes.setManualValue(sessionId, 'birthday', { value: '2027-04-18' });
+      await routes.setManualValue(sessionId, 'notify_email', { value: 'him@example.com' });
+
+      const reminders = await store.getRemindersBySession(sessionId);
+      const birthday = reminders.find((r) => r.kind === 'birthday');
+
+      expect(birthday?.occursOn).toBe('2027-04-18');
+      expect(birthday?.target).toBe('him@example.com');
+      expect(birthday?.sentAt ?? null).toBeNull();
+    });
+
+    it('leaves reminders alone for a field no reminder is derived from', async () => {
+      // The gate matters: a re-plan is two reads and up to four writes, and almost
+      // every correction ("34B") has nothing to do with a date.
+      await routes.setManualValue(sessionId, 'bra_size', { value: '34B' });
+
+      expect(await store.getRemindersBySession(sessionId)).toEqual([]);
+    });
+
     it('checks the field id before it checks the session, so a typo is a 400', async () => {
       // A 404 here would send the client looking for a missing session when the
       // real fault is the field name it sent.
       expect(
         (await routes.setManualValue('nope', 'favourite_dinosaur', { value: 'x' })).status,
       ).toBe(400);
+    });
+  });
+
+  describe('setLocation', () => {
+    let sessionId: string;
+
+    beforeEach(async () => {
+      sessionId = await store.createSession();
+      resetPlacesCacheForTests();
+    });
+
+    it('rejects a body with neither a coordinate nor an address', async () => {
+      for (const body of [{}, null, { lat: 32.18 }, { address: '   ' }]) {
+        expect((await routes.setLocation(sessionId, body)).status).toBe(400);
+      }
+    });
+
+    it('rejects 0,0 — that is what an uninitialised pair looks like', async () => {
+      expect((await routes.setLocation(sessionId, { lat: 0, lon: 0 })).status).toBe(400);
+    });
+
+    it('404s for a session that is not there', async () => {
+      expect((await routes.setLocation('nope', { address: 'Tel Aviv' })).status).toBe(404);
+    });
+
+    it('says so plainly when lookup is not configured, rather than 500ing', async () => {
+      // No Maps key in the test environment, so this is the real deployment
+      // default: the feature is absent, and the error tells the user what to do
+      // instead of asking them to retry something that cannot work.
+      const result = await routes.setLocation(sessionId, { lat: 32.184, lon: 34.871 });
+
+      expect(result.status).toBe(502);
+      expect(String((result.body as { error: string }).error)).toContain('type a city');
+    });
+
+    it('writes only a home city, never a coordinate', async () => {
+      // Priming the cache is what a granted browser position does via
+      // `rememberCityCoords`, and it is why this path works with no API key.
+      rememberCityCoords("Ra'anana", { lat: 32.1848, lon: 34.8713 });
+
+      const result = await routes.setLocation(sessionId, { address: "Ra'anana" });
+      expect(result.status).toBe(200);
+      expect((result.body as { city: string }).city).toBe("Ra'anana");
+
+      const stored = await store.getPreferencesBySession(sessionId);
+      expect(stored).toHaveLength(1);
+      expect(stored[0]).toMatchObject({
+        category: 'travel',
+        key: 'home city',
+        fieldId: 'home_city',
+        value: "Ra'anana",
+        confidence: 1,
+      });
+      // The thing that must not be here. A coordinate is an input, not a record.
+      expect(JSON.stringify(stored)).not.toContain('32.18');
+    });
+
+    it('overwrites rather than accumulating when someone moves', async () => {
+      rememberCityCoords("Ra'anana", { lat: 32.1848, lon: 34.8713 });
+      rememberCityCoords('Tel Aviv', { lat: 32.0853, lon: 34.7818 });
+
+      await routes.setLocation(sessionId, { address: "Ra'anana" });
+      await routes.setLocation(sessionId, { address: 'Tel Aviv' });
+
+      const stored = await store.getPreferencesBySession(sessionId);
+      expect(stored).toHaveLength(1);
+      expect(stored[0].value).toBe('Tel Aviv');
+    });
+
+    it('lands the city where the dossier reads it from', async () => {
+      rememberCityCoords('Tel Aviv', { lat: 32.0853, lon: 34.7818 });
+      await routes.setLocation(sessionId, { address: 'Tel Aviv' });
+
+      const [stored] = await store.getPreferencesBySession(sessionId);
+      // The row has to resolve to `home_city` through the same mapper the client
+      // uses, or the field renders as a gap the user just filled in.
+      expect(resolveField(stored.category, stored.key)).toBe('home_city');
+    });
+  });
+
+  /**
+   * Sharing and mailing a conversation.
+   *
+   * The share assertions are about the token naming its owner rather than trusting a
+   * caller, and about the response carrying a link and not a raw credential. The
+   * email assertions are about the 409 — "you have not told me where to write" is a
+   * state the user can fix, and answering it with a 500 would send them looking for a
+   * fault that is not there.
+   */
+  describe('shareSession', () => {
+    let owned: ReturnType<typeof createHttpRoutes>;
+
+    beforeEach(() => {
+      config.shareTokenSecret = 'test-share-secret';
+      // The routes object used everywhere else in this file is built with no user
+      // id, which is the state that cannot mint. This one knows whose store it is.
+      owned = createHttpRoutes(store, 'user-under-test');
+    });
+
+    afterEach(() => {
+      config.shareTokenSecret = originalShareSecret;
+    });
+
+    it('404s on a session it cannot read', async () => {
+      // Also the cross-tenant answer: the key names the caller, so a foreign id
+      // misses and no token can be minted for it.
+      expect((await owned.shareSession('no-such-session')).status).toBe(404);
+    });
+
+    it('answers with a link and an expiry, and nothing else', async () => {
+      const sessionId = await store.createSession();
+
+      const result = await owned.shareSession(sessionId);
+
+      expect(result.status).toBe(200);
+      expect(Object.keys(result.body as object).sort()).toEqual(['expiresAt', 'url']);
+    });
+
+    it('hands over an assembled URL rather than the raw token', async () => {
+      const sessionId = await store.createSession();
+
+      const { url } = (await owned.shareSession(sessionId)).body as ShareLinkResponse;
+
+      expect(url).toContain(`?${SHARE_PARAM}=`);
+      expect(url.startsWith('http')).toBe(true);
+    });
+
+    it('mints a token naming this owner and this session', async () => {
+      const sessionId = await store.createSession();
+
+      const { url } = (await owned.shareSession(sessionId)).body as ShareLinkResponse;
+      const token = decodeURIComponent(new URL(url).searchParams.get(SHARE_PARAM) ?? '');
+
+      expect(verifyShareToken(token)).toMatchObject({
+        userId: 'user-under-test',
+        sessionId,
+      });
+    });
+
+    it('reports 503 rather than minting an unowned token', async () => {
+      // A routes object with no user id cannot name an owner, and a token with no
+      // owner would resolve to nobody's store.
+      const sessionId = await store.createSession();
+
+      expect((await routes.shareSession(sessionId)).status).toBe(503);
+    });
+
+    it('is reachable through the router', async () => {
+      const sessionId = await store.createSession();
+
+      const result = await owned.handleRequest({
+        method: 'POST',
+        url: `/session/${sessionId}/share`,
+        params: {},
+        body: null,
+      });
+
+      expect(result.status).toBe(200);
+    });
+
+    it('does not swallow the /share segment into the session id', async () => {
+      // The regex arm has to sit ahead of the bare `/session/:id` pattern, or a POST
+      // here would fall through to the two-segment arm.
+      const result = await owned.handleRequest({
+        method: 'GET',
+        url: `/session/${await store.createSession()}/share`,
+        params: {},
+        body: null,
+      });
+
+      // GET is not a verb this route has, and the detail arm must not claim it.
+      expect(result.status).toBe(404);
+    });
+  });
+
+  describe('emailSession', () => {
+    let sessionId: string;
+    let sent: ServerLogRecord[];
+    let unsubscribe: () => void;
+
+    beforeEach(async () => {
+      sessionId = await store.createSession();
+      sent = [];
+      // `loggingSender` is the default channel, so the send is observable as a log
+      // record: subject, body and recipient all real, only the last hop absent.
+      unsubscribe = subscribeToServerLogs((record) => sent.push(record));
+    });
+
+    afterEach(() => {
+      unsubscribe();
+    });
+
+    it('404s on a session it cannot read', async () => {
+      expect((await routes.emailSession('no-such-session')).status).toBe(404);
+    });
+
+    it('409s when no address has been given, and says where to fix it', async () => {
+      const result = await routes.emailSession(sessionId);
+
+      expect(result.status).toBe(409);
+      expect((result.body as { error: string }).error).toContain('panel');
+      expect(sent.some((record) => record.event === 'reminder.sent')).toBe(false);
+    });
+
+    it('409s rather than 502s on something that cannot be an address', async () => {
+      // A typo is the same fixable state as an absence; failing it at the channel
+      // would report a transport fault for a value the user can correct.
+      await store.setManualValue(sessionId, 'notify_email', 'not-an-address');
+
+      expect((await routes.emailSession(sessionId)).status).toBe(409);
+    });
+
+    it('sends to the hand-typed address', async () => {
+      await store.setManualValue(sessionId, 'notify_email', 'him@example.test');
+
+      const result = await routes.emailSession(sessionId);
+
+      expect(result.status).toBe(200);
+      const record = sent.find((entry) => entry.event === 'reminder.sent');
+      expect(record?.data).toMatchObject({ to: 'him@example.test' });
+    });
+
+    it('prefers the hand-typed address over the inferred one', async () => {
+      // The same precedence `reminder-sync` plans on, and shared with it: someone
+      // who corrected the address must not be mailed at the model's guess.
+      await store.savePreference({
+        sessionId,
+        category: 'personality_traits',
+        key: 'notify email',
+        fieldId: 'notify_email',
+        value: 'guessed@example.test',
+        confidence: 0.6,
+        sourceMessageId: 'msg-1',
+      });
+      await store.setManualValue(sessionId, 'notify_email', 'typed@example.test');
+
+      await routes.emailSession(sessionId);
+
+      const record = sent.find((entry) => entry.event === 'reminder.sent');
+      expect(record?.data).toMatchObject({ to: 'typed@example.test' });
+    });
+
+    it('falls back to the inferred address when nothing was typed', async () => {
+      await store.savePreference({
+        sessionId,
+        category: 'personality_traits',
+        key: 'notify email',
+        fieldId: 'notify_email',
+        value: 'inferred@example.test',
+        confidence: 0.6,
+        sourceMessageId: 'msg-1',
+      });
+
+      expect((await routes.emailSession(sessionId)).status).toBe(200);
+      const record = sent.find((entry) => entry.event === 'reminder.sent');
+      expect(record?.data).toMatchObject({ to: 'inferred@example.test' });
+    });
+
+    it('mails a body carrying the transcript and the resume link', async () => {
+      await store.setManualValue(sessionId, 'notify_email', 'him@example.test');
+      await store.updateSessionMeta(sessionId, { title: 'Her birthday' });
+      await store.saveMessage({
+        id: 'm1',
+        sessionId,
+        sender: 'user',
+        content: 'Something quiet for her birthday',
+        timestamp: new Date().toISOString(),
+      });
+
+      await routes.emailSession(sessionId);
+
+      const record = sent.find((entry) => entry.event === 'reminder.sent');
+      const body = String((record?.data as { body: string }).body);
+      expect(body).toContain('Something quiet for her birthday');
+      expect(body).toContain(`?${RESUME_PARAM}=${sessionId}`);
+      expect(String((record?.data as { subject: string }).subject)).toContain('Her birthday');
+    });
+
+    it('claims nothing was booked', async () => {
+      await store.setManualValue(sessionId, 'notify_email', 'him@example.test');
+
+      await routes.emailSession(sessionId);
+
+      const record = sent.find((entry) => entry.event === 'reminder.sent');
+      const body = String((record?.data as { body: string }).body).toLowerCase();
+      for (const claim of ['reserved', 'booked', 'confirmed']) {
+        expect(body).not.toContain(claim);
+      }
+    });
+
+    it('is reachable through the router', async () => {
+      await store.setManualValue(sessionId, 'notify_email', 'him@example.test');
+
+      const result = await routes.handleRequest({
+        method: 'POST',
+        url: `/session/${sessionId}/email`,
+        params: {},
+        body: null,
+      });
+
+      expect(result.status).toBe(200);
     });
   });
 

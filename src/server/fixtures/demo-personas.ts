@@ -16,6 +16,8 @@ import type { ExtractedPreference } from '../persistence/storage-interface';
 import { DEMO_PROFILE_PREFERENCES } from './demo-profile';
 import { DEMO_PEOPLE } from './demo-people';
 import { DEMO_TASKS } from './demo-tasks';
+import { DEMO_OUTINGS } from './demo-outings';
+import type { DemoOuting } from './demo-outings';
 import type { DemoTask } from './demo-tasks';
 import { SAMANTHA_HISTORY } from './demo-history';
 import type { DemoConversation } from './demo-history';
@@ -69,6 +71,15 @@ export interface DemoPersona {
   /** What he has to do next. Dues are resolved against the seed moment. */
   tasks?: readonly DemoTask[];
   /**
+   * Where he has already taken her, two of them rated.
+   *
+   * Seeded rather than left to the demo to produce, because the only thing that
+   * writes an outing is a confirmed booking — so the history card and the survey
+   * on it would both demo as empty boxes until someone booked a restaurant live
+   * on stage.
+   */
+  outings?: readonly DemoOuting[];
+  /**
    * Backdated conversations to seed alongside the preferences, oldest first.
    *
    * Absent — not empty — for a persona with no past, so "this persona has no
@@ -91,6 +102,7 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
     preferences: DEMO_PROFILE_PREFERENCES,
     people: DEMO_PEOPLE,
     tasks: DEMO_TASKS,
+    outings: DEMO_OUTINGS,
     history: SAMANTHA_HISTORY,
   },
   {

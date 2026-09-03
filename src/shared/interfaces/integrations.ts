@@ -24,6 +24,15 @@ export type IntegrationId =
   | 'spotify'
   | 'events'
   /**
+   * Google Maps Platform: geocoding, reverse geocoding and Nearby Search.
+   *
+   * One id for all three, because all three ride the same static API key and
+   * therefore have exactly one readiness bit. Splitting them the way `gmail` and
+   * `google-calendar` are split would be pretending a visitor could grant one and
+   * withhold another, which is true there and false here.
+   */
+  | 'google-places'
+  /**
    * The headless browser itself, which is a dependency rather than a destination.
    *
    * It earns an id because the panel draws it as a node and because it has its own
@@ -32,7 +41,22 @@ export type IntegrationId =
    * unreachable when this one is not ready, which is a failure mode none of the
    * direct integrations have and the reason it is modelled at all.
    */
-  | 'browser';
+  | 'browser'
+  /**
+   * This app handing out a link to one of its own conversations.
+   *
+   * Not a third party at all, which is why it is always ready and needs no
+   * credential: the signing key has a documented fallback and the guest view is
+   * served by this same process. It earns an id because `AgentTool.service` is
+   * typed as an `IntegrationId` and drives telemetry — a tool has to say which
+   * service it belongs to, and claiming `gmail` would make the sidebar go dark on
+   * link-making whenever Google credentials were absent, which is false.
+   *
+   * Deliberately **not** a row in `integration-catalogue.ts`. That panel lists
+   * outside services a visitor grants or revokes, and there is nothing here to
+   * connect — the same reasoning `browser` is left out on.
+   */
+  | 'sharing';
 
 /** Every id, for iteration. Same order the tool registry registers them in. */
 export const INTEGRATION_IDS: readonly IntegrationId[] = [
@@ -46,6 +70,8 @@ export const INTEGRATION_IDS: readonly IntegrationId[] = [
   'wolt',
   'spotify',
   'events',
+  'google-places',
+  'sharing',
 ] as const;
 
 /**
@@ -87,6 +113,10 @@ export const INTEGRATION_TRANSPORT: Record<IntegrationId, IntegrationTransport> 
   spotify: 'direct',
   events: 'browser',
   browser: 'browser',
+  'google-places': 'direct',
+  // Not a network hop at all — the token is signed in-process and the guest view
+  // is served by this same container. `direct` is the honest of the two.
+  sharing: 'direct',
 };
 
 /**
@@ -157,6 +187,8 @@ export const INTEGRATION_LABELS: Record<IntegrationId, string> = {
   // Named for what it is rather than for Playwright: the visitor is being told
   // that a real browser is involved, not which library drives it.
   browser: 'Headless browser',
+  'google-places': 'Google Places',
+  sharing: 'Shareable links',
 };
 
 /** The ids reached by driving a page, for the panel's relay layout. */

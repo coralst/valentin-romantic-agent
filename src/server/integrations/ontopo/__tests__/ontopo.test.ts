@@ -13,7 +13,15 @@ import {
   ontopoTools,
   proposeReservationTool,
 } from '../tools';
-import { CURATED_VENUES, findVenues, resolveVenueName, venueBySlug } from '../venues';
+import {
+  CURATED_VENUES,
+  STYLE_TO_VIBES,
+  findVenues,
+  resolveVenueName,
+  venueBySlug,
+  venueCoords,
+} from '../venues';
+import { RESTAURANT_STYLE_OPTIONS } from '../../../../shared/constants/profile-fields';
 
 /**
  * Ontopo, tested against the shapes the real endpoint actually returned.
@@ -173,6 +181,56 @@ describe('the curated venue list', () => {
 
   it('returns the default shortlist when asked for nothing', () => {
     expect(findVenues(undefined, 3)).toHaveLength(3);
+  });
+
+  it('maps every stored style onto vibes something is actually tagged with', () => {
+    // A style whose vibes nothing carries would return an empty shortlist and look
+    // like "we have nothing for you" rather than like a broken table.
+    for (const style of RESTAURANT_STYLE_OPTIONS) {
+      expect(STYLE_TO_VIBES[style].length).toBeGreaterThan(0);
+      expect(findVenues(undefined, 5, { style })).not.toHaveLength(0);
+    }
+  });
+
+  it('ranks the vibe that defines a style above a secondary one', () => {
+    const [first] = findVenues(undefined, 5, { style: 'Romantic & quiet' });
+    expect(first.vibes).toContain('romantic');
+  });
+
+  it('lets a style and a text query both count', () => {
+    // "wine bar in jaffa" with style "Wine bar" has to prefer the Jaffa wine bar,
+    // which needs the two signals to add rather than one to override the other.
+    const [first] = findVenues('jaffa', 5, { style: 'Wine bar' });
+    expect(first.city.toLowerCase() === 'tel aviv' || first.city === 'Jaffa').toBe(true);
+    expect(first.vibes.some((v) => v === 'wine' || v === 'cocktails')).toBe(true);
+  });
+
+  it('drops venues outside the radius', () => {
+    // Ra'anana is ~20 km from Tel Aviv, so 5 km reaches nothing and 30 km reaches
+    // the list. This is the assertion that makes "within 10 km of me" meaningful.
+    const raanana = { lat: 32.1848, lon: 34.8713 };
+    expect(findVenues(undefined, 20, { origin: raanana, radiusMetres: 5_000 })).toEqual([]);
+    expect(
+      findVenues(undefined, 20, { origin: raanana, radiusMetres: 30_000 }).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('ignores a radius with nowhere to measure from', () => {
+    // Half a filter is worse than none: silently returning nothing would read as
+    // "there are no restaurants" rather than "I do not know where you are".
+    expect(findVenues(undefined, 3, { radiusMetres: 1_000 })).toHaveLength(3);
+  });
+
+  it('excludes a venue whose area has no coordinate rather than assuming one', () => {
+    // Every current entry is mapped; this guards the next one added in an area that
+    // is not, which must go missing from a radius search instead of passing all of
+    // them.
+    for (const venue of CURATED_VENUES) {
+      expect(venueCoords(venue)).toBeDefined();
+    }
+    expect(
+      venueCoords({ ...CURATED_VENUES[0], city: 'Eilat', neighbourhood: undefined }),
+    ).toBeUndefined();
   });
 
   it('does not let a stopword be the reason something matched', () => {
@@ -357,7 +415,7 @@ describe('find_restaurants', () => {
   it('answers from the list without calling Ontopo', async () => {
     stubFetch(() => NOEMA_AVAILABILITY);
 
-    const result = await findRestaurantsTool.execute({ query: 'wine bar' }, { sessionId: 's1' });
+    const result = await findRestaurantsTool.execute({ query: 'wine bar' }, { userId: 'user-1', sessionId: 's1' });
 
     expect(result.ok).toBe(true);
     expect(calls).toHaveLength(0);
@@ -366,7 +424,7 @@ describe('find_restaurants', () => {
   it('tells the model to say so rather than invent a restaurant', async () => {
     const result = await findRestaurantsTool.execute(
       { query: 'haifa teppanyaki' },
-      { sessionId: 's1' },
+      { userId: 'user-1', sessionId: 's1' },
     );
 
     expect(result.ok).toBe(true);
@@ -386,7 +444,7 @@ describe('check_availability', () => {
 
     const result = await checkAvailabilityTool.execute(
       { restaurant: 'NOEMA', date: '2026-09-05', time: '20:00', party_size: 2 },
-      { sessionId: 's1' },
+      { userId: 'user-1', sessionId: 's1' },
     );
 
     expect(result.ok).toBe(true);
@@ -400,7 +458,7 @@ describe('check_availability', () => {
     // The model writes "Montefiore" for "Hotel Montefiore" constantly.
     await checkAvailabilityTool.execute(
       { restaurant: 'Montefiore', date: '2026-09-05' },
-      { sessionId: 's1' },
+      { userId: 'user-1', sessionId: 's1' },
     );
 
     expect(calls[0].body.slug).toBe('33687997');
@@ -411,7 +469,7 @@ describe('check_availability', () => {
 
     await checkAvailabilityTool.execute(
       { restaurant: 'NOEMA', date: '2026-09-05' },
-      { sessionId: 's1' },
+      { userId: 'user-1', sessionId: 's1' },
     );
 
     // `new Date('2026-09-05')` is UTC midnight, which is 4 September in Israel.
@@ -423,7 +481,7 @@ describe('check_availability', () => {
 
     await checkAvailabilityTool.execute(
       { restaurant: 'NOEMA', date: '2026-09-05' },
-      { sessionId: 's1' },
+      { userId: 'user-1', sessionId: 's1' },
     );
 
     expect(calls[0].body.criteria).toMatchObject({ time: '2000', size: '2' });
@@ -432,7 +490,7 @@ describe('check_availability', () => {
   it('refuses a restaurant that is not bookable', async () => {
     const result = await checkAvailabilityTool.execute(
       { restaurant: 'The French Laundry', date: '2026-09-05' },
-      { sessionId: 's1' },
+      { userId: 'user-1', sessionId: 's1' },
     );
 
     expect(result.ok).toBe(false);
@@ -445,7 +503,7 @@ describe('check_availability', () => {
 
     const result = await checkAvailabilityTool.execute(
       { restaurant: 'NOEMA', date: '2026-09-05' },
-      { sessionId: 's1' },
+      { userId: 'user-1', sessionId: 's1' },
     );
 
     expect(result.ok).toBe(false);
@@ -457,7 +515,7 @@ describe('check_availability', () => {
 
     const result = await checkAvailabilityTool.execute(
       { restaurant: 'NOEMA', date: '2026-09-05' },
-      { sessionId: 's1' },
+      { userId: 'user-1', sessionId: 's1' },
     );
 
     expect(result.ok).toBe(true);
@@ -478,7 +536,7 @@ describe('propose_reservation', () => {
   it('returns a proposal and books nothing', async () => {
     stubFetch(() => NOEMA_AVAILABILITY);
 
-    const result = await proposeReservationTool.execute(args, { sessionId: 's1' });
+    const result = await proposeReservationTool.execute(args, { userId: 'user-1', sessionId: 's1' });
 
     expect(result.ok).toBe(true);
     expect(result.proposal).toBeDefined();
@@ -491,7 +549,7 @@ describe('propose_reservation', () => {
   it('carries the booking details in the server-only payload', async () => {
     stubFetch(() => NOEMA_AVAILABILITY);
 
-    const result = await proposeReservationTool.execute(args, { sessionId: 's1' });
+    const result = await proposeReservationTool.execute(args, { userId: 'user-1', sessionId: 's1' });
 
     expect(result.proposal?.payload).toMatchObject({
       slug: SLUG,
@@ -505,7 +563,7 @@ describe('propose_reservation', () => {
   it('tells the user nothing is held', async () => {
     stubFetch(() => NOEMA_AVAILABILITY);
 
-    const result = await proposeReservationTool.execute(args, { sessionId: 's1' });
+    const result = await proposeReservationTool.execute(args, { userId: 'user-1', sessionId: 's1' });
 
     expect(result.proposal?.summary).toMatch(/nothing is held/i);
     expect(result.summary).toMatch(/do not say it is booked/i);
@@ -514,7 +572,7 @@ describe('propose_reservation', () => {
   it('scopes the proposal to the session that asked', async () => {
     stubFetch(() => NOEMA_AVAILABILITY);
 
-    const result = await proposeReservationTool.execute(args, { sessionId: 'session-9' });
+    const result = await proposeReservationTool.execute(args, { userId: 'user-1', sessionId: 'session-9' });
 
     expect(result.proposal?.sessionId).toBe('session-9');
   });
@@ -524,7 +582,7 @@ describe('propose_reservation', () => {
     vi.setSystemTime(new Date('2026-09-05T10:00:00.000Z'));
     stubFetch(() => NOEMA_AVAILABILITY);
 
-    const result = await proposeReservationTool.execute(args, { sessionId: 's1' });
+    const result = await proposeReservationTool.execute(args, { userId: 'user-1', sessionId: 's1' });
 
     expect(result.proposal?.expiresAt).toBe('2026-09-05T10:15:00.000Z');
   });
@@ -532,7 +590,7 @@ describe('propose_reservation', () => {
   it('offers what is free instead when the requested slot has gone', async () => {
     stubFetch(() => NO_TABLES);
 
-    const result = await proposeReservationTool.execute(args, { sessionId: 's1' });
+    const result = await proposeReservationTool.execute(args, { userId: 'user-1', sessionId: 's1' });
 
     // Not an error — there is a useful answer to give.
     expect(result.ok).toBe(true);
@@ -545,7 +603,7 @@ describe('propose_reservation', () => {
 
     const result = await proposeReservationTool.execute(
       { ...args, time: '19:30' },
-      { sessionId: 's1' },
+      { userId: 'user-1', sessionId: 's1' },
     );
 
     expect(result.proposal).toBeUndefined();
@@ -557,7 +615,7 @@ describe('propose_reservation', () => {
 
     const result = await proposeReservationTool.execute(
       { ...args, area: 'Outside' },
-      { sessionId: 's1' },
+      { userId: 'user-1', sessionId: 's1' },
     );
 
     expect(result.proposal?.payload).toMatchObject({ area: 'outside' });
@@ -566,7 +624,7 @@ describe('propose_reservation', () => {
   it('refuses a time it cannot send to Ontopo', async () => {
     const result = await proposeReservationTool.execute(
       { ...args, time: 'sometime after eight' },
-      { sessionId: 's1' },
+      { userId: 'user-1', sessionId: 's1' },
     );
 
     expect(result.ok).toBe(false);
@@ -598,7 +656,7 @@ describe('propose_reservation confirm', () => {
       'availability_id' in body ? { checkout_id: 'QbnyJrlN2' } : NOEMA_AVAILABILITY,
     );
 
-    const result = await proposeReservationTool.confirm?.(proposal, { sessionId: 's1' });
+    const result = await proposeReservationTool.confirm?.(proposal, { userId: 'user-1', sessionId: 's1' });
 
     expect(result?.ok).toBe(true);
     expect(result?.data).toMatchObject({ url: 'https://ontopo.com/en/checkout/QbnyJrlN2' });
@@ -611,7 +669,7 @@ describe('propose_reservation confirm', () => {
   it('fails without minting when the table went in the meantime', async () => {
     stubFetch(() => NO_TABLES);
 
-    const result = await proposeReservationTool.confirm?.(proposal, { sessionId: 's1' });
+    const result = await proposeReservationTool.confirm?.(proposal, { userId: 'user-1', sessionId: 's1' });
 
     expect(result?.ok).toBe(false);
     expect(result?.summary).toMatch(/nothing was reserved/i);
@@ -622,7 +680,7 @@ describe('propose_reservation confirm', () => {
   it('says nothing was reserved when Ontopo will not open a booking page', async () => {
     stubFetch(({ body }) => ('availability_id' in body ? null : NOEMA_AVAILABILITY));
 
-    const result = await proposeReservationTool.confirm?.(proposal, { sessionId: 's1' });
+    const result = await proposeReservationTool.confirm?.(proposal, { userId: 'user-1', sessionId: 's1' });
 
     expect(result?.ok).toBe(false);
     expect(result?.summary).toMatch(/nothing was reserved/i);
@@ -631,7 +689,7 @@ describe('propose_reservation confirm', () => {
   it('fails clearly when the proposal lost its payload', async () => {
     const result = await proposeReservationTool.confirm?.(
       { ...proposal, payload: undefined },
-      { sessionId: 's1' },
+      { userId: 'user-1', sessionId: 's1' },
     );
 
     expect(result?.ok).toBe(false);

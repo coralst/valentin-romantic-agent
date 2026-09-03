@@ -36,6 +36,9 @@
  * `__tests__/venues.test.ts` for the invariants that are cheap to keep true.
  */
 
+import { distanceMetres, type GeoPoint } from '../../../shared/constants/geo';
+import type { RestaurantStyle } from '../../../shared/constants/profile-fields';
+
 /** A vibe tag the model can filter on. Deliberately few, and about *mood*. */
 export type VenueVibe =
   | 'romantic'
@@ -245,6 +248,70 @@ export function venueBySlug(slug: string): CuratedVenue | undefined {
 }
 
 /**
+ * Where each stored restaurant style lands in the closed {@link VenueVibe} set.
+ *
+ * `RESTAURANT_STYLE_OPTIONS` was written against this table rather than the other
+ * way round, which is why every option maps onto vibes that actually occur in
+ * `CURATED_VENUES`. A style listing vibes nothing is tagged with would silently
+ * return an empty shortlist, so `__tests__/venues.test.ts` asserts every style
+ * matches at least one venue.
+ *
+ * Ordering inside each list is meaningful: the first vibe is the one that defines
+ * the style, and a venue carrying it scores higher than one that only carries a
+ * secondary. That is what keeps "romantic and quiet" from ranking a loud room
+ * ahead of a quiet one merely because both are `intimate`.
+ */
+export const STYLE_TO_VIBES: Readonly<Record<RestaurantStyle, readonly VenueVibe[]>> = {
+  'Romantic & quiet': ['romantic', 'intimate'],
+  'Lively & buzzy': ['lively', 'cocktails'],
+  "Chef's tasting": ['chef', 'wine'],
+  'Wine bar': ['wine', 'cocktails'],
+  'Rooftop or view': ['view'],
+  'Casual neighbourhood': ['mediterranean', 'italian', 'lively'],
+};
+
+/** Whether a string is one of the stored styles, so an unknown one is ignorable. */
+export function isRestaurantStyle(value: string): value is RestaurantStyle {
+  return Object.prototype.hasOwnProperty.call(STYLE_TO_VIBES, value);
+}
+
+/**
+ * Approximate coordinates for the areas the bookable list covers.
+ *
+ * **Neighbourhood centroids, not venue addresses.** Deliberately: this exists to
+ * answer "within 10 km of me", and the caller's own position is a city centroid
+ * resolved from `home_city`, so a hundred metres of precision on the venue side
+ * would be false accuracy in a comparison whose other operand is already kilometres
+ * wide. Twenty invented street-level coordinates would also be twenty facts nobody
+ * verified, in a file whose header is careful about which fields are Ontopo's data
+ * and which are editorial — these are neither, so they are labelled as what they
+ * are.
+ *
+ * The same trade `CITY_COORDS` in `wolt/client.ts` already makes. If sub-city
+ * precision is ever needed it belongs in a `home_area` field on the user side, not
+ * in stored coordinates.
+ */
+const AREA_COORDS: Readonly<Record<string, GeoPoint>> = {
+  'tel aviv': { lat: 32.0853, lon: 34.7818 },
+  jaffa: { lat: 32.0533, lon: 34.7509 },
+  'jaffa port': { lat: 32.0503, lon: 34.7511 },
+  montefiore: { lat: 32.0641, lon: 34.7745 },
+};
+
+/**
+ * The coordinate to measure a venue from, or nothing when the area is unmapped.
+ *
+ * Returning `undefined` rather than a default matters: a venue whose area is not in
+ * the table must be *excluded* from a radius filter, never silently placed at the
+ * centre of Tel Aviv where it would pass every radius the user could ask for.
+ */
+export function venueCoords(venue: CuratedVenue): GeoPoint | undefined {
+  const neighbourhood = venue.neighbourhood?.trim().toLowerCase();
+  if (neighbourhood && AREA_COORDS[neighbourhood]) return AREA_COORDS[neighbourhood];
+  return AREA_COORDS[venue.city.trim().toLowerCase()];
+}
+
+/**
  * Words that must never be the reason a venue matched.
  *
  * This list is not tidiness. `note` used to be part of the searchable text, and
@@ -307,21 +374,75 @@ function queryTerms(query: string | undefined): string[] {
 export function findVenues(
   query: string | undefined,
   limit = 5,
+  filters: VenueFilters = {},
 ): CuratedVenue[] {
   const terms = queryTerms(query);
-  if (terms.length === 0) return CURATED_VENUES.slice(0, limit);
+  const styleVibes = filters.style ? STYLE_TO_VIBES[filters.style] : undefined;
 
-  const scored = CURATED_VENUES.map((venue) => {
-    const haystack = searchableText(venue);
-    const score = terms.reduce(
-      (total, term) => total + (haystack.includes(term) ? 1 : 0),
-      0,
-    );
-    return { venue, score };
-  }).filter((entry) => entry.score > 0);
+  // The radius is a *filter*, applied before scoring, because a venue outside it is
+  // not a worse answer — it is not an answer. Style is a *bonus*, because a room
+  // tagged `chef` and `intimate` is a reasonable reply to "romantic and quiet" even
+  // though it is not tagged `romantic`.
+  const candidates = CURATED_VENUES.filter((venue) => withinRadius(venue, filters));
+
+  if (terms.length === 0 && !styleVibes) return candidates.slice(0, limit);
+
+  const scored = candidates
+    .map((venue) => {
+      const haystack = searchableText(venue);
+      const textScore = terms.reduce(
+        (total, term) => total + (haystack.includes(term) ? 1 : 0),
+        0,
+      );
+      return { venue, score: textScore + styleScore(venue, styleVibes) };
+    })
+    .filter((entry) => entry.score > 0);
 
   scored.sort((a, b) => b.score - a.score);
   return scored.slice(0, limit).map((entry) => entry.venue);
+}
+
+/** Optional narrowing on top of the text query. Every field may be absent. */
+export interface VenueFilters {
+  /** A stored `restaurant_style`, resolved through {@link STYLE_TO_VIBES}. */
+  style?: RestaurantStyle;
+  /** Where the user is. Without it a radius is meaningless and is ignored. */
+  origin?: GeoPoint;
+  /** How far they are willing to go. Ignored unless `origin` is set too. */
+  radiusMetres?: number;
+}
+
+/**
+ * How well a venue answers a style.
+ *
+ * Weighted by position so the vibe that *defines* the style outranks a secondary —
+ * 2 for the first, 1 for any other. Deliberately additive with the text score
+ * rather than multiplicative: "wine bar in Jaffa" with style "Wine bar" should
+ * prefer a Jaffa wine bar over a Tel Aviv one, which needs both signals to count.
+ */
+function styleScore(venue: CuratedVenue, styleVibes: readonly VenueVibe[] | undefined): number {
+  if (!styleVibes) return 0;
+  return styleVibes.reduce((total, vibe, index) => {
+    if (!venue.vibes.includes(vibe)) return total;
+    return total + (index === 0 ? 2 : 1);
+  }, 0);
+}
+
+/**
+ * Whether a venue is close enough, when the caller said where they are.
+ *
+ * A venue whose area is not in {@link AREA_COORDS} is dropped rather than kept, so
+ * an unmapped neighbourhood shows up as a missing option — which someone will
+ * notice and fix — instead of as a place that satisfies every radius ever asked
+ * for. That is the failure mode worth choosing between the two.
+ */
+function withinRadius(venue: CuratedVenue, filters: VenueFilters): boolean {
+  const { origin, radiusMetres } = filters;
+  if (!origin || !radiusMetres || radiusMetres <= 0) return true;
+
+  const coords = venueCoords(venue);
+  if (!coords) return false;
+  return distanceMetres(origin, coords) <= radiusMetres;
 }
 
 /**

@@ -147,7 +147,7 @@ function stubEverything(): void {
   });
 }
 
-const ctx = { sessionId: 'session-1' };
+const ctx = { sessionId: 'session-1', userId: 'user-1' };
 
 beforeEach(() => {
   calls = [];

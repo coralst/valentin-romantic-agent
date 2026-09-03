@@ -218,23 +218,29 @@ describe('IntegrationsPanel', () => {
    * appear exactly where money can move and nowhere else.
    */
   describe('the spend cap', () => {
-    it('offers a cap on a service that can spend, and shows it on the node', async () => {
+    /*
+     * There is no longer a service that can spend, so there is no longer a test
+     * that grants a cap — and that is the finding, not a gap in coverage.
+     *
+     * Wolt stood here first, back when the catalogue claimed Valentin could "place
+     * an order" for $80; he never could, because the handoff ends at the shop's own
+     * page. Amadeus took over and turned out to be the same mistake:
+     * `propose_hotel_booking.confirm` re-prices an offer and stops, because the
+     * order endpoint wants a payment card Valentin must never hold. So the $400
+     * ceiling governed a purchase that cannot happen, and implied a hold that never
+     * did.
+     *
+     * What is left to assert is that the slider is absent everywhere. If a real
+     * spending capability is ever built, restore the granting test alongside it —
+     * cap first, code second.
+     */
+    it('offers no cap on Amadeus, which re-prices but cannot spend', async () => {
       const user = userEvent.setup();
       await renderPanel();
 
-      /*
-       * Amadeus, not Wolt. The Wolt row used to stand here, back when the catalogue
-       * claimed Valentin could "place an order" for $80 — he never could, because
-       * the Wolt handoff ends at the shop's own page. Amadeus is the real example: a
-       * hold is money moving.
-       */
       await user.click(screen.getByTestId('integration-node-amadeus'));
-      // The catalogue's default for Amadeus, echoed next to the slider.
-      expect(screen.getByTestId('integration-cap-slider')).toHaveValue('400');
-      expect(screen.getByTestId('integration-cap-value')).toHaveTextContent('$400');
-
-      await user.click(screen.getByTestId('integration-confirm-button'));
-      expect(screen.getByTestId('integration-node-amadeus')).toHaveTextContent('up to $400');
+      expect(screen.queryByTestId('integration-cap-slider')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('integration-cap-value')).not.toBeInTheDocument();
     });
 
     it('offers no cap on a service that cannot spend', async () => {
@@ -245,13 +251,16 @@ describe('IntegrationsPanel', () => {
       expect(screen.queryByTestId('integration-cap-slider')).not.toBeInTheDocument();
     });
 
-    it('reads the cap back when the grant is revisited', async () => {
+    it('shows no cap on a node whose grant is revisited', async () => {
       const user = userEvent.setup();
       await renderPanel();
 
+      // The read-back half of the same finding: a granted integration must not
+      // acquire a "up to $N" line it was never given.
       await connect(user, 'amadeus');
       await user.click(screen.getByTestId('integration-node-amadeus'));
-      expect(screen.getByTestId('integration-cap-value')).toHaveTextContent('$400');
+      expect(screen.queryByTestId('integration-cap-value')).not.toBeInTheDocument();
+      expect(screen.getByTestId('integration-node-amadeus')).not.toHaveTextContent('up to $');
     });
   });
 
@@ -352,10 +361,33 @@ describe('IntegrationsPanel', () => {
    */
   describe('what the server says is ready', () => {
     it('marks a capability live when its backing service is configured', async () => {
+      /*
+       * Dining is backed by two services now — Ontopo books, Google Places
+       * discovers — so "live" means both. The default `beforeEach` deployment has
+       * no Maps key, which is why this test states its own readiness rather than
+       * leaning on the default the way it used to.
+       */
+      serverReports({ hebcal: true, ontopo: true, 'google-places': true });
       await renderPanel();
       const badge = await screen.findByTestId('integration-readiness-ontopo');
       expect(badge).toHaveAttribute('data-readiness', 'ready');
       expect(badge).toHaveTextContent('live');
+    });
+
+    it('keeps tables live when discovery has no key', async () => {
+      /*
+       * The shape of a real deployment with no Maps key. Ontopo and Places are two
+       * rows precisely so this state is sayable: booking is live, discovery is not,
+       * and neither claim contaminates the other. One row spanning both would have
+       * to pick a single badge and would be wrong either way.
+       */
+      serverReports({ ontopo: true, 'google-places': false });
+      await renderPanel();
+
+      const tables = await screen.findByTestId('integration-readiness-ontopo');
+      expect(tables).toHaveAttribute('data-readiness', 'ready');
+      const places = await screen.findByTestId('integration-readiness-google-places');
+      expect(places).toHaveAttribute('data-readiness', 'unconfigured');
     });
 
     it('says a configurable capability needs credentials, and badges nothing "not built yet"', async () => {

@@ -7,10 +7,14 @@ import { resolvePersona } from '../fixtures/demo-personas';
 import type { DemoConversation } from '../fixtures/demo-personas';
 import { resolveDemoTasks } from '../fixtures/demo-tasks';
 import type { DemoTask } from '../fixtures/demo-tasks';
+import { resolveDemoOutings } from '../fixtures/demo-outings';
+import type { DemoOuting } from '../fixtures/demo-outings';
 import { isPartnerNamePreference } from '../extraction/partner-name';
 import { DEFAULT_GENERATION, isPersonGeneration } from '../../shared/interfaces/person';
 import type { Person } from '../../shared/interfaces/person';
 import type { Task } from '../../shared/interfaces/task';
+import { OUTING_VERDICTS, isOutingVerdict } from '../../shared/interfaces/outing';
+import type { Outing } from '../../shared/interfaces/outing';
 import { isProfileFieldId } from '../../shared/constants/profile-fields';
 import {
   buildToolRegistry,
@@ -31,6 +35,35 @@ import {
 } from '../integrations/credentials';
 import { buildAuthUrl } from '../integrations/google/oauth';
 import { buildSpotifyAuthUrl } from '../integrations/spotify/oauth';
+import {
+  geocode,
+  placesConfigured,
+  rememberCityCoords,
+  reverseGeocode,
+} from '../integrations/google-places/client';
+import { isGeoPoint } from '../../shared/constants/geo';
+import {
+  profileFieldValue,
+  syncReminders,
+  touchesReminders,
+} from '../reminders/reminder-sync';
+import { buildConversationEmail } from '../reminders/conversation-email';
+import { resolveSender } from '../reminders/sender';
+import { mintShareToken } from '../sharing/share-token';
+import { shareLink } from '../../shared/constants/share-link';
+import type { ShareLinkResponse } from '../../shared/constants/share-link';
+import { config } from '../config';
+import { logger } from '../logging';
+
+/**
+ * The `sourceMessageId` on a location row.
+ *
+ * Every preference carries the turn it came from, and this one came from a button
+ * rather than from anything the user said. A recognisable sentinel is better than a
+ * borrowed message id: it makes the provenance of the row obvious in the table and
+ * in the history entry, which is the whole point of the field.
+ */
+const LOCATION_SOURCE_MESSAGE_ID = 'location-consent';
 
 /** Simple framework-agnostic request representation */
 export interface HttpRequest {
@@ -101,10 +134,11 @@ async function seedDemoPeopleAndTasks(
   sessionId: string,
   people: readonly Omit<Person, 'updatedAt'>[],
   tasks: readonly DemoTask[],
+  outings: readonly DemoOuting[],
   now: number,
-): Promise<{ peopleCount: number; taskCount: number }> {
+): Promise<{ peopleCount: number; taskCount: number; outingCount: number }> {
   const stamp = new Date(now).toISOString();
-  const [writtenPeople, writtenTasks] = await Promise.all([
+  const [writtenPeople, writtenTasks, writtenOutings] = await Promise.all([
     // Guarded individually: an empty batch is a round trip some backends reject,
     // and a persona could reasonably have a family but no to-do list.
     people.length > 0
@@ -116,8 +150,15 @@ async function seedDemoPeopleAndTasks(
     tasks.length > 0
       ? storage.saveTasksBatch(sessionId, resolveDemoTasks(tasks, now))
       : Promise.resolve([]),
+    outings.length > 0
+      ? storage.saveOutingsBatch(sessionId, resolveDemoOutings(outings, now))
+      : Promise.resolve([]),
   ]);
-  return { peopleCount: writtenPeople.length, taskCount: writtenTasks.length };
+  return {
+    peopleCount: writtenPeople.length,
+    taskCount: writtenTasks.length,
+    outingCount: writtenOutings.length,
+  };
 }
 
 /** Longest a person's name, relationship or note may be, in characters */
@@ -205,6 +246,67 @@ function parseTask(body: unknown): { task: Task } | { error: string } {
   };
 }
 
+/**
+ * Build an Outing from an untrusted body, or return why it cannot be built.
+ *
+ * This is also the survey endpoint's parser: answering the survey is the client
+ * resending the whole row with `rating`, `verdict` and `note` filled in, exactly
+ * as ticking a task resends the task. That is why there is no `/rating` route —
+ * a second endpoint writing part of a row would need its own read-modify-write
+ * and could disagree with this one about what the row says.
+ *
+ * `rating` is accepted only as an integer 1-5 and `verdict` only from the closed
+ * set, because both are read back by code, not just shown: `placesToAvoid`
+ * compares the rating numerically and the prompt block quotes the verdict. A
+ * "4/5" string or a "meh" verdict would sail through and then quietly fail to
+ * match anything.
+ */
+function parseOuting(body: unknown): { outing: Outing } | { error: string } {
+  const input = (body ?? {}) as Record<string, unknown>;
+
+  const venueName = optionalText(input.venueName);
+  if (!venueName) {
+    return { error: 'A venueName is required' };
+  }
+
+  const rating = input.rating;
+  const rated =
+    typeof rating === 'number' && Number.isInteger(rating) && rating >= 1 && rating <= 5
+      ? rating
+      : null;
+  if (rating !== undefined && rating !== null && rated === null) {
+    return { error: 'A rating must be a whole number from 1 to 5' };
+  }
+
+  const verdict = input.verdict;
+  if (verdict !== undefined && verdict !== null && !isOutingVerdict(verdict)) {
+    return { error: `A verdict must be one of: ${OUTING_VERDICTS.join(', ')}` };
+  }
+
+  const now = new Date().toISOString();
+  const hasVerdict = isOutingVerdict(verdict) ? verdict : null;
+
+  return {
+    outing: {
+      id: typeof input.id === 'string' && input.id.length > 0 ? input.id : crypto.randomUUID(),
+      venueSlug: optionalText(input.venueSlug),
+      venueName,
+      city: optionalText(input.city),
+      occursOn: optionalDate(input.occursOn),
+      // Preserved on a round trip: `confirmedAt` is when the booking happened,
+      // and answering the survey days later must not move it to today.
+      confirmedAt: typeof input.confirmedAt === 'string' ? input.confirmedAt : now,
+      rating: rated,
+      verdict: hasVerdict,
+      note: optionalText(input.note),
+      // Stamped here rather than taken from the client, so "when did she say
+      // this" is the server's clock — and cleared again if a rating is withdrawn,
+      // which is what keeps `unratedOutings` and `ratedAt` from disagreeing.
+      ratedAt: rated !== null || hasVerdict !== null ? now : null,
+    },
+  };
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** How far apart two consecutive turns of a seeded transcript are placed */
@@ -251,8 +353,46 @@ async function fillConversation(
   await storage.updateSessionMeta(sessionId, { title: conversation.title });
 }
 
-/** Creates HTTP route handlers bound to the given storage */
-export function createHttpRoutes(storage: StorageInterface) {
+/** The profile field holding where outbound mail for this user goes. */
+const NOTIFY_EMAIL_FIELD = 'notify_email';
+
+/**
+ * Roughly an address, which is all this can honestly check.
+ *
+ * Not a validator — there is no useful client-side test for deliverability, and
+ * RFC 5322 in a regex is a famous waste of a day. This exists only to separate "the
+ * user has not told us where to write" from "the user typed something that cannot be
+ * an address", because both are the same fixable state and both should get the same
+ * answer: go and set it in the panel.
+ */
+function looksLikeEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+/**
+ * Creates HTTP route handlers bound to the given storage.
+ *
+ * ## Why this now takes a user id
+ *
+ * Everything else here works precisely *because* it does not know who the caller is:
+ * the store is already scoped, so no handler can forget an ownership check and none
+ * of them can be handed the wrong user by a caller. Minting a share token is the one
+ * operation that needs the identity as *data* — the token has to carry the owner so
+ * that the guest read can go back through that owner's own scoped store (see
+ * `sharing/share-token.ts`).
+ *
+ * The alternative considered was a `mintShare(sessionId)` callback injected from
+ * `index.ts`, keeping the id out of this file entirely. Rejected as the less honest
+ * of the two: the callback would close over exactly the same user id one stack frame
+ * away, so it hides the coupling rather than removing it, and it puts a piece of the
+ * share contract in `index.ts` where nothing else about routing lives. A named,
+ * documented parameter says the true thing — this object knows whose store it holds.
+ *
+ * Optional, and read for nothing but minting. Callers that never share (the demo
+ * login's seed path, most tests) pass nothing and `shareSession` reports 503, which
+ * is the truth for a routes object that cannot name an owner.
+ */
+export function createHttpRoutes(storage: StorageInterface, userId?: string) {
   return {
     /** GET /health — health check */
     async health(): Promise<HttpResponse> {
@@ -416,10 +556,10 @@ export function createHttpRoutes(storage: StorageInterface) {
         return { status: 404, body: { error: 'Session not found' } };
       }
 
-      // All five in one round trip. They share the session's partition, and the
+      // All six in one round trip. They share the session's partition, and the
       // dossier needs every one of them to draw a single frame — fetching them
-      // separately would show the board filling in four visible stages.
-      const [messages, preferences, people, tasks, manualValues] = await Promise.all([
+      // separately would show the board filling in five visible stages.
+      const [messages, preferences, people, tasks, manualValues, outings] = await Promise.all([
         storage.getMessagesBySession(sessionId),
         // Account-wide, not this session's rows alone. The partner belongs to the
         // account, so a new conversation must not redraw her brief as a screen of
@@ -430,11 +570,12 @@ export function createHttpRoutes(storage: StorageInterface) {
         storage.getPeopleBySession(sessionId),
         storage.getTasksBySession(sessionId),
         storage.getManualValues(sessionId),
+        storage.getOutingsBySession(sessionId),
       ]);
 
       return {
         status: 200,
-        body: { session, messages, preferences, people, tasks, manualValues },
+        body: { session, messages, preferences, people, tasks, manualValues, outings },
       };
     },
 
@@ -525,6 +666,44 @@ export function createHttpRoutes(storage: StorageInterface) {
       return { status: 200, body: { taskId, deleted: true } };
     },
 
+    /** GET /session/:id/outings — where he has taken her, and how it went */
+    async getSessionOutings(sessionId: string): Promise<HttpResponse> {
+      if (!(await storage.getSession(sessionId))) {
+        return { status: 404, body: { error: 'Session not found' } };
+      }
+      return { status: 200, body: { outings: await storage.getOutingsBySession(sessionId) } };
+    },
+
+    /**
+     * POST /session/:id/outings — record an outing, or answer its survey.
+     *
+     * One endpoint for both, because they are one idempotent whole-row write:
+     * see `parseOuting`. The agent writes the row on a confirmed booking; the
+     * user writes it again, days later, with a rating on it.
+     */
+    async saveOuting(sessionId: string, body: unknown): Promise<HttpResponse> {
+      if (!(await storage.getSession(sessionId))) {
+        return { status: 404, body: { error: 'Session not found' } };
+      }
+
+      const parsed = parseOuting(body);
+      if ('error' in parsed) {
+        return { status: 400, body: { error: parsed.error } };
+      }
+
+      return { status: 200, body: { outing: await storage.saveOuting(sessionId, parsed.outing) } };
+    },
+
+    /** DELETE /session/:id/outings/:outingId */
+    async deleteOuting(sessionId: string, outingId: string): Promise<HttpResponse> {
+      if (!(await storage.getSession(sessionId))) {
+        return { status: 404, body: { error: 'Session not found' } };
+      }
+
+      await storage.deleteOuting(sessionId, outingId);
+      return { status: 200, body: { outingId, deleted: true } };
+    },
+
     /** GET /session/:id/manual — every value the user typed themselves */
     async getManualValues(sessionId: string): Promise<HttpResponse> {
       if (!(await storage.getSession(sessionId))) {
@@ -560,7 +739,102 @@ export function createHttpRoutes(storage: StorageInterface) {
       }
 
       await storage.setManualValue(sessionId, fieldId, value.trim().slice(0, TEXT_LIMIT));
+
+      /*
+       * A hand-corrected date has to move its reminder, and this route is the most
+       * likely place one is corrected: extraction guesses a birthday from prose, but
+       * a reminder email address is something a person types into the panel. Without
+       * this call the panel would show the new value while the mail still went out
+       * on the old one — and `syncReminders` swallows its own failures, so a storage
+       * fault cannot turn a saved correction into an error the user sees.
+       */
+      if (touchesReminders([fieldId])) await syncReminders(storage, sessionId);
+
       return { status: 200, body: { fieldId, value: value.trim() } };
+    },
+
+    /**
+     * POST /session/:id/location — turn a position or an address into a home city.
+     *
+     * ## Only the city is stored
+     *
+     * The body may carry `{lat, lon}` from the browser or `{address}` typed by
+     * someone who would rather not share a position. Either way what gets written is
+     * one preference row — `travel`/`home city`/`home_city` — and the coordinate is
+     * thrown away after being seeded into the in-memory geocode cache.
+     *
+     * That is a deliberate privacy *and* architecture choice, and it buys more than
+     * it costs:
+     *
+     * - No coordinate is ever persisted, so there is nothing to leak, nothing to
+     *   expire and no new consent question about retention.
+     * - No persistence lockstep. `home_city` is an ordinary profile field, so it
+     *   renders in the dossier, is correctable by hand, and reaches the system prompt
+     *   through `readKnownFacts` — which means **both engines** see it for free.
+     * - City-centre precision (~2–5 km) is what the downstream radius filter needs;
+     *   the stored radii run from 1 to 50 km. Sub-city precision, if it is ever
+     *   wanted, belongs in a `home_area` neighbourhood field, not in a stored point.
+     *
+     * Confidence is 1.0 because this is not an inference from prose — the user either
+     * granted their position or typed the city.
+     */
+    async setLocation(sessionId: string, body: unknown): Promise<HttpResponse> {
+      if (!(await storage.getSession(sessionId))) {
+        return { status: 404, body: { error: 'Session not found' } };
+      }
+
+      const input = (body ?? {}) as Record<string, unknown>;
+      const address = typeof input.address === 'string' ? input.address.trim() : '';
+      const point =
+        typeof input.lat === 'number' && typeof input.lon === 'number'
+          ? { lat: input.lat, lon: input.lon }
+          : null;
+
+      if (!address && !(point && isGeoPoint(point))) {
+        return {
+          status: 400,
+          body: { error: 'Send either { lat, lon } or { address }' },
+        };
+      }
+
+      // Reverse-geocoding a position and geocoding an address are the same
+      // operation from here: both answer "which city is this?". A transport fault
+      // returns null, which is a 502 and not a 400 — the request was fine.
+      const resolved =
+        point && isGeoPoint(point)
+          ? { city: await reverseGeocode(point.lat, point.lon), coords: point }
+          : await geocode(address).then((hit) => ({
+              city: hit?.city ?? null,
+              coords: hit,
+            }));
+
+      if (!resolved.city) {
+        return {
+          status: 502,
+          body: {
+            error: placesConfigured()
+              ? 'Could not work out which city that is'
+              : 'Location lookup is not configured — type a city instead',
+          },
+        };
+      }
+
+      // Seed the cache with the browser's own coordinate, which is better than
+      // anything geocoding the city name would return, and costs nothing. This is
+      // also what lets a radius search work on a deployment with no Maps key.
+      if (resolved.coords) rememberCityCoords(resolved.city, resolved.coords);
+
+      const preference = await storage.savePreference({
+        sessionId,
+        category: 'travel',
+        key: 'home city',
+        fieldId: 'home_city',
+        value: resolved.city,
+        confidence: 1,
+        sourceMessageId: LOCATION_SOURCE_MESSAGE_ID,
+      });
+
+      return { status: 200, body: { preference, city: resolved.city } };
     },
 
     /** DELETE /session/:id/manual/:fieldId — let Valentin's own guess show again */
@@ -570,6 +844,12 @@ export function createHttpRoutes(storage: StorageInterface) {
       }
 
       await storage.clearManualValue(sessionId, fieldId);
+
+      // Clearing a correction is as much a change as making one: the inferred value
+      // becomes live again, so the reminder has to fall back to it — or be reaped if
+      // there is no longer any value at all behind it.
+      if (touchesReminders([fieldId])) await syncReminders(storage, sessionId);
+
       return { status: 200, body: { fieldId, cleared: true } };
     },
 
@@ -587,7 +867,7 @@ export function createHttpRoutes(storage: StorageInterface) {
      * the newest conversation and always the one holding the preferences.
      */
     async seedSession(persona?: unknown): Promise<HttpResponse> {
-      const { id, preferences, people, tasks, history } = resolvePersona(persona);
+      const { id, preferences, people, tasks, outings, history } = resolvePersona(persona);
       const now = Date.now();
       const conversations = history ?? [];
 
@@ -630,11 +910,12 @@ export function createHttpRoutes(storage: StorageInterface) {
       // `lastActivity`, and the two racing on one session row is a write nobody
       // needs to reason about for a saving of a few milliseconds on a click that
       // already wrote thirty rows.
-      const { peopleCount, taskCount } = await seedDemoPeopleAndTasks(
+      const { peopleCount, taskCount, outingCount } = await seedDemoPeopleAndTasks(
         storage,
         sessionId,
         people ?? [],
         tasks ?? [],
+        outings ?? [],
         now,
       );
 
@@ -645,6 +926,7 @@ export function createHttpRoutes(storage: StorageInterface) {
           preferenceCount,
           peopleCount,
           taskCount,
+          outingCount,
           persona: id,
           historyCount: Math.max(sessionIds.length - 1, 0),
         },
@@ -705,6 +987,129 @@ export function createHttpRoutes(storage: StorageInterface) {
 
       await storage.clearSession(sessionId);
       return { status: 200, body: { sessionId, cleared: true } };
+    },
+
+    /**
+     * POST /session/:id/share — mint a link that shows this conversation to anyone.
+     *
+     * The 404 guard is first and is the whole authorisation story: `getSession`
+     * misses for a session that does not exist *and* for one belonging to somebody
+     * else, because the key names the caller. So a token can only ever be minted for
+     * a conversation the caller can already read — the route cannot be used to sign
+     * a claim about a session id somebody guessed.
+     *
+     * Answers with the assembled URL, never the raw token: the client has no use for
+     * the token on its own, and a bare token in a response body is a credential
+     * looking for somewhere to be logged.
+     */
+    async shareSession(sessionId: string): Promise<HttpResponse> {
+      if (!(await storage.getSession(sessionId))) {
+        return { status: 404, body: { error: 'Session not found' } };
+      }
+
+      if (!userId) {
+        // No owner to name, so no token can be minted — see the factory's header.
+        return {
+          status: 503,
+          body: { error: 'Sharing is not available on this deployment' },
+        };
+      }
+
+      const { token, expiresAt } = mintShareToken(userId, sessionId);
+      const body: ShareLinkResponse = {
+        url: shareLink(config.publicOrigin, token),
+        expiresAt,
+      };
+      return { status: 200, body };
+    },
+
+    /**
+     * POST /session/:id/email — post this conversation to the user, now.
+     *
+     * The reminder path proves the timer, the due-index and the idempotent write; it
+     * cannot be demonstrated in a meeting, because the interesting part happens days
+     * ahead of an occasion. This is the same channel with the clock taken out: one
+     * button, one send, the same `ReminderSender` seam.
+     *
+     * `loggingSender` is the default channel, so this is fully demonstrable with
+     * Gmail dark — the subject, the body and the recipient all appear as a
+     * `reminder.sent` log line, and only the final hop is missing. That is the same
+     * bargain `sender.ts` argues for at length, and it is why this route does not
+     * check `integrationReadiness().gmail` and refuse.
+     *
+     * ## Three distinct outcomes, three distinct statuses
+     *
+     * - No session (or somebody else's): **404**, from the same structural guard as
+     *   every other route here.
+     * - No usable `notify_email`: **409**. Not a 400 — the request was perfectly
+     *   well formed — and not a 500, because nothing failed. It is a state the user
+     *   can fix in one field in the panel, and the message says so.
+     * - The channel threw: **502**, with a generic message. The provider's own error
+     *   text is the one thing that could name a credential, a secret ARN or an
+     *   internal host, so it goes to the log and nowhere near the client.
+     */
+    async emailSession(sessionId: string): Promise<HttpResponse> {
+      const session = await storage.getSession(sessionId);
+      if (!session) {
+        return { status: 404, body: { error: 'Session not found' } };
+      }
+
+      const [messages, preferences, manual] = await Promise.all([
+        storage.getMessagesBySession(sessionId),
+        storage.getPreferencesBySession(sessionId),
+        storage.getManualValues(sessionId),
+      ]);
+
+      // Manual over inferred, the same precedence `reminder-sync.ts` plans on — and
+      // shared with it rather than reimplemented, so a corrected address cannot be
+      // honoured by the reminder and ignored by the button.
+      const recipient = profileFieldValue(NOTIFY_EMAIL_FIELD, manual, preferences)?.trim();
+      if (!recipient || !looksLikeEmail(recipient)) {
+        return {
+          status: 409,
+          body: {
+            error:
+              'I do not have an email address for you yet — add one in the panel ' +
+              'and I will send this over.',
+          },
+        };
+      }
+
+      const email = buildConversationEmail({
+        title: session.title ?? session.partnerName ?? '',
+        partnerName: session.partnerName ?? null,
+        turns: messages.map((message) => ({
+          sender: message.sender,
+          content: message.content,
+        })),
+        origin: config.publicOrigin,
+        sessionId,
+      });
+
+      const sender = resolveSender(config.reminders.channel);
+      try {
+        await sender.send(recipient, email);
+      } catch (cause) {
+        logger.error('conversation.email_failed', {
+          sessionId,
+          channel: sender.channel,
+          cause: cause instanceof Error ? cause.message : String(cause),
+        });
+        return {
+          status: 502,
+          body: { error: 'I could not send that just now. Try again in a moment.' },
+        };
+      }
+
+      // The address is logged (it is not a credential and the log sink already
+      // carries it for every reminder), the body is not — `loggingSender` decides
+      // that, and this route should not log it a second time.
+      logger.info('conversation.emailed', {
+        sessionId,
+        channel: sender.channel,
+        to: recipient,
+      });
+      return { status: 200, body: { sessionId, sent: true, channel: sender.channel } };
     },
 
     /** Route an incoming request to the appropriate handler */
@@ -773,6 +1178,24 @@ export function createHttpRoutes(storage: StorageInterface) {
         return this.deleteTask(taskMatch[1], taskMatch[2]);
       }
 
+      // /session/:id/outings and /session/:id/outings/:outingId
+      const outingsMatch = req.url.match(/^\/session\/([^/]+)\/outings$/);
+      if (outingsMatch) {
+        if (req.method === 'GET') return this.getSessionOutings(outingsMatch[1]);
+        if (req.method === 'POST') return this.saveOuting(outingsMatch[1], req.body);
+      }
+
+      const outingMatch = req.url.match(/^\/session\/([^/]+)\/outings\/([^/]+)$/);
+      if (req.method === 'DELETE' && outingMatch) {
+        return this.deleteOuting(outingMatch[1], outingMatch[2]);
+      }
+
+      // POST /session/:id/location
+      const locationMatch = req.url.match(/^\/session\/([^/]+)\/location$/);
+      if (req.method === 'POST' && locationMatch) {
+        return this.setLocation(locationMatch[1], req.body);
+      }
+
       // /session/:id/manual and /session/:id/manual/:fieldId
       const manualListMatch = req.url.match(/^\/session\/([^/]+)\/manual$/);
       if (req.method === 'GET' && manualListMatch) {
@@ -787,6 +1210,22 @@ export function createHttpRoutes(storage: StorageInterface) {
         if (req.method === 'DELETE') {
           return this.clearManualValue(manualMatch[1], manualMatch[2]);
         }
+      }
+
+      // POST /session/:id/share — before the bare /session/:id arm, or the
+      // two-segment pattern below would never see a request ending in /share.
+      const shareMatch = req.url.match(/^\/session\/([^/]+)\/share$/);
+      if (req.method === 'POST' && shareMatch) {
+        return this.shareSession(shareMatch[1]);
+      }
+
+      // POST /session/:id/email — mail the transcript to its owner. Note this is
+      // *not* the guest route: `GET /api/share/:token` is registered ahead of
+      // `requireAuth` in express-app.ts and deliberately never reaches this router,
+      // which only ever runs with a caller's own scoped store.
+      const emailMatch = req.url.match(/^\/session\/([^/]+)\/email$/);
+      if (req.method === 'POST' && emailMatch) {
+        return this.emailSession(emailMatch[1]);
       }
 
       // /session/:id — last, so the more specific patterns above win

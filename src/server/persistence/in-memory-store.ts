@@ -9,15 +9,35 @@ import { DEFAULT_GENERATION, isPersonGeneration } from '../../shared/interfaces/
 import type { Person } from '../../shared/interfaces/person';
 import type { SessionData } from '../../shared/interfaces/session';
 import type { Task } from '../../shared/interfaces/task';
+import type { Outing } from '../../shared/interfaces/outing';
+import type { Reminder } from '../../shared/interfaces/reminder';
 import type {
   PreferenceInput,
   PreferenceRef,
+  ReminderIndexReader,
   ScopedStorageFactory,
   ScopedStorageOptions,
   SessionMetaPatch,
   StorageInterface,
 } from './storage-interface';
-import { manualSk, personSk, prefSk, sessionPk, taskSk } from './keys';
+import {
+  manualSk,
+  outingSk,
+  personSk,
+  prefSk,
+  reminderSk,
+  sessionPk,
+  taskSk,
+} from './keys';
+
+/**
+ * How much of a failure message is worth keeping.
+ *
+ * Mirrors the DynamoDB store's own limit so a test written against this store
+ * cannot accept a `lastError` production would truncate. What is stored is a
+ * message, never a credential.
+ */
+const MAX_STORED_ERROR_CHARS = 500;
 
 /**
  * In-memory storage for tests and local development.
@@ -201,6 +221,58 @@ export class InMemoryStore implements StorageInterface {
     this.shared.tasks.delete(this.itemKey(sessionId, taskSk(taskId)));
   }
 
+  // --- Where he has taken her ---
+
+  async saveOuting(sessionId: string, outing: Outing): Promise<Outing> {
+    const [saved] = await this.saveOutingsBatch(sessionId, [outing]);
+    return saved;
+  }
+
+  async saveOutingsBatch(sessionId: string, outings: readonly Outing[]): Promise<Outing[]> {
+    const now = new Date().toISOString();
+    const records: Outing[] = [];
+
+    for (const outing of outings) {
+      // No `updatedAt` to stamp, unlike a task: an outing's two timestamps are
+      // both facts about events — when it was booked, when it was rated — and
+      // overwriting either from the clock would falsify them.
+      const record: Outing = { ...outing };
+      this.shared.outings.set(this.itemKey(sessionId, outingSk(record.id)), record);
+      records.push(record);
+    }
+
+    this.touchSession(sessionId, now);
+    return records;
+  }
+
+  async getOutingsBySession(sessionId: string): Promise<Outing[]> {
+    return this.itemsUnder(this.shared.outings, sessionId);
+  }
+
+  async deleteOuting(sessionId: string, outingId: string): Promise<void> {
+    this.shared.outings.delete(this.itemKey(sessionId, outingSk(outingId)));
+  }
+
+  // --- What he is going to be reminded about ---
+
+  async saveReminder(sessionId: string, reminder: Reminder): Promise<Reminder> {
+    // Owner and conversation come from the store's scope, exactly as the DynamoDB
+    // store stamps them: a row whose `userId` disagreed with its partition is one
+    // `markSent` would look for in the wrong place.
+    const record: Reminder = { ...reminder, sessionId, userId: this.userId };
+    this.shared.reminders.set(this.itemKey(sessionId, reminderSk(record.id)), record);
+    this.touchSession(sessionId, new Date().toISOString());
+    return record;
+  }
+
+  async getRemindersBySession(sessionId: string): Promise<Reminder[]> {
+    return this.itemsUnder(this.shared.reminders, sessionId);
+  }
+
+  async deleteReminder(sessionId: string, reminderId: string): Promise<void> {
+    this.shared.reminders.delete(this.itemKey(sessionId, reminderSk(reminderId)));
+  }
+
   // --- Corrections the user made by hand ---
 
   async setManualValue(sessionId: string, fieldId: string, value: string): Promise<void> {
@@ -298,7 +370,16 @@ export class InMemoryStore implements StorageInterface {
     // Her family, his to-do list and his corrections are as much "what Valentin
     // knows" as the preferences are — a reset that left them standing would look
     // to the user like it had failed.
-    for (const map of [this.shared.people, this.shared.tasks, this.shared.manualValues]) {
+    //
+    // A reminder left standing would be worse than stale data: the index reader
+    // would keep finding it and keep mailing about a conversation that was reset.
+    for (const map of [
+      this.shared.people,
+      this.shared.tasks,
+      this.shared.outings,
+      this.shared.reminders,
+      this.shared.manualValues,
+    ]) {
       for (const mapKey of [...map.keys()]) {
         if (mapKey.startsWith(prefix)) map.delete(mapKey);
       }
@@ -382,17 +463,29 @@ export interface InMemoryData {
   preferences: Map<string, PreferenceWithHistory>;
   people: Map<string, Person>;
   tasks: Map<string, Task>;
+  outings: Map<string, Outing>;
+  reminders: Map<string, Reminder>;
   manualValues: Map<string, { fieldId: string; value: string }>;
 }
 
-/** Hands out user-scoped in-memory stores backed by one shared data set */
-export class InMemoryStoreFactory implements ScopedStorageFactory {
+/**
+ * Hands out user-scoped in-memory stores backed by one shared data set.
+ *
+ * Carries {@link ReminderIndexReader} for the same reason the DynamoDB factory
+ * does — the dispatcher's sweep spans users, so it belongs on the unscoped side —
+ * and it has to be more than a stub: the dispatcher's own tests run against this
+ * store, so if `markSent` here were merely optimistic, the double-dispatch test
+ * would pass while production was the only place the condition was real.
+ */
+export class InMemoryStoreFactory implements ScopedStorageFactory, ReminderIndexReader {
   private readonly data: InMemoryData = {
     sessions: new Map(),
     messages: new Map(),
     preferences: new Map(),
     people: new Map(),
     tasks: new Map(),
+    outings: new Map(),
+    reminders: new Map(),
     manualValues: new Map(),
   };
 
@@ -400,5 +493,66 @@ export class InMemoryStoreFactory implements ScopedStorageFactory {
   // long enough for an expiry to matter.
   forUser(userId: string, _opts?: ScopedStorageOptions): StorageInterface {
     return new InMemoryStore(userId, this.data);
+  }
+
+  // --- The due-index, across every user ---
+
+  async dueBefore(at: Date, limit: number): Promise<Reminder[]> {
+    // No day buckets to merge: the whole map is one partition here. The behaviour
+    // that has to match DynamoDB is *which rows come back* — pending only, due at
+    // or before `at`, soonest first, no more than `limit` of them.
+    return [...this.data.reminders.values()]
+      .filter(
+        (reminder) =>
+          !reminder.sentAt && new Date(reminder.dueAt).getTime() <= at.getTime(),
+      )
+      .sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime())
+      .slice(0, limit);
+  }
+
+  async markSent(reminder: Reminder, sentAt: Date): Promise<boolean> {
+    const mapKey = this.reminderMapKey(reminder);
+    const stored = this.data.reminders.get(mapKey);
+    // The whole point of the return value: the second caller is told it lost
+    // rather than sending a duplicate. False for an already-sent row and false for
+    // one that has since been deleted, matching the conditional write's two ways
+    // of failing.
+    if (!stored || stored.sentAt) return false;
+
+    this.data.reminders.set(mapKey, { ...stored, sentAt: sentAt.toISOString() });
+    return true;
+  }
+
+  async recordFailure(reminder: Reminder, error: string): Promise<void> {
+    const mapKey = this.reminderMapKey(reminder);
+    const stored = this.data.reminders.get(mapKey);
+    if (!stored) return;
+
+    /*
+     * `sentAt` is deliberately not guarded on, and that is the difference between
+     * this and `markSent`. The dispatcher *claims a row before it sends* — so by the
+     * time a send throws, `sentAt` is already stamped, and a guard here would make
+     * the failure path a silent no-op: the row would look delivered, `attempts`
+     * would stay 0 and the reason would live only in the logs. Nothing below writes
+     * `sentAt`, so recording a failure cannot overwrite the record of a send; it
+     * only annotates it.
+     */
+    this.data.reminders.set(mapKey, {
+      ...stored,
+      attempts: stored.attempts + 1,
+      lastError: error.slice(0, MAX_STORED_ERROR_CHARS),
+      // Deliberately leaves the index membership alone: a row that was never claimed
+      // stays pending for the next sweep, and a claimed one stays out of the index.
+    });
+  }
+
+  /**
+   * The row's own key, built from the reminder's stated owner.
+   *
+   * Mirrors the DynamoDB reader going back into `sessionPk(reminder.userId, …)`,
+   * which is why the owner is an attribute on the row and not only a key component.
+   */
+  private reminderMapKey(reminder: Reminder): string {
+    return `${sessionPk(reminder.userId, reminder.sessionId)}|${reminderSk(reminder.id)}`;
   }
 }

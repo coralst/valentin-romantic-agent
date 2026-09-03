@@ -10,13 +10,14 @@ export interface SafetyStackProps extends cdk.StackProps {
 /**
  * Bumped whenever the guardrail's policy below changes.
  *
+ * 6 — the EMAIL entity is gone; a recipient address is an input, not a leak.
  * 5 — a street-address regex replaces the ADDRESS entity; SEXUAL input MEDIUM.
  * 4 — ADDRESS no longer judges Valentin's own replies.
  * 3 — the off-topic topic no longer judges Valentin's own replies.
  * 2 — NAME and AGE no longer anonymised.
  * 1 — initial policy.
  */
-const POLICY_REVISION = 5;
+const POLICY_REVISION = 6;
 
 export class SafetyStack extends cdk.Stack {
   public readonly guardrailId: string;
@@ -86,15 +87,35 @@ export class SafetyStack extends cdk.Stack {
          * entity can't be blocked without blocking the feature. A street address
          * the user volunteers is stored under their own key, as her name is.
          *
+         * EMAIL is absent for the third time on the same reasoning, and it was
+         * the most direct self-inflicted wound of the three. Valentin's whole
+         * reminder feature is "email me the options", `propose_email` takes a
+         * `to` address as a required input, and a recipient address is
+         * therefore something the visitor has to be able to type. With the
+         * entity BLOCKing the prompt they could not: typing
+         * "send it to me at <address>" scored `guardrail_intervened`, and
+         * `bedrock-client.ts` substitutes a canned line for that, so the reply
+         * was Valentin declining to discuss it. Reported from the live app,
+         * 2026-09-03. ANONYMIZE is not the answer either — it would rewrite the
+         * address into a placeholder and the tool would send to nothing.
+         *
+         * The address is not incidental PII here. It is an argument the user
+         * supplies on purpose so the agent can act on it, like her name and her
+         * birthday, and it is stored under its owner's own key. Note that the
+         * three regexes below are all address-shaped and none of them matches an
+         * email, so removing the entity really does unblock it.
+         *
          * The genuinely dangerous identifiers below stay BLOCKed: nothing about
-         * remembering a name or a city is a reason to carry a card number, an
-         * SSN, a phone number or an AWS key.
+         * remembering a name, a city or a recipient is a reason to carry a card
+         * number, an SSN or an AWS key. PHONE stays too — no tool takes a phone
+         * number as input today, so unlike EMAIL it blocks nothing that works.
+         * If the WhatsApp path is ever built it will hit this exact wall, and
+         * this comment is the reason why.
          */
         piiEntitiesConfig: [
           { type: 'CREDIT_DEBIT_CARD_NUMBER', action: 'BLOCK' },
           { type: 'US_SOCIAL_SECURITY_NUMBER', action: 'BLOCK' },
           { type: 'PHONE', action: 'BLOCK' },
-          { type: 'EMAIL', action: 'BLOCK' },
           { type: 'AWS_ACCESS_KEY', action: 'BLOCK' },
           { type: 'AWS_SECRET_KEY', action: 'BLOCK' },
         ],

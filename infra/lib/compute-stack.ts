@@ -422,11 +422,19 @@ export class ComputeStack extends cdk.Stack {
     /*
      * Adopted on dev, for the same reason Google's is. An earlier note here said
      * this secret was "not adoptable" because it had never been created — that was
-     * true when it was written and is not true now. The deploy that introduced it
-     * created the secret and then failed elsewhere in the stack; the rollback logged
-     * `DELETE_SKIPPED`, so Secrets Manager kept it while CloudFormation stopped
-     * tracking it, and every later update of this stack failed `AlreadyExists` on a
-     * name that is taken.
+     * true when it was written and is not true now.
+     *
+     * How it orphaned is worth stating precisely, because the obvious guess is
+     * wrong: no deploy failed. This secret reached `CREATE_COMPLETE`, its deploy
+     * finished `UPDATE_COMPLETE`, and then a second successful deploy ran from a
+     * branch that did not yet contain the commit adding it. The resource was absent
+     * from that template, so CloudFormation moved to delete it during
+     * `UPDATE_COMPLETE_CLEANUP_IN_PROGRESS`, and RETAIN turned that into
+     * `DELETE_SKIPPED` — leaving the secret in the account and out of the stack.
+     * Every later update then failed `AlreadyExists` on a name that is taken.
+     *
+     * So the thing to avoid is not a failed deploy. It is deploying a stack from a
+     * branch that is behind on any RETAIN'd resource in it.
      *
      * The stale reasoning was still sound in one respect: an environment that has
      * never deployed this must go through a normal create, because a complete ARN

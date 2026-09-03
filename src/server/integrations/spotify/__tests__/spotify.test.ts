@@ -184,6 +184,29 @@ describe('searchTracks', () => {
     expect(calls.filter((call) => /v1\/search/.test(call.url))).toHaveLength(2);
   });
 
+  /*
+   * Ten is Spotify's real ceiling on `/v1/search`, whatever its reference page
+   * says about fifty. `limit=11` and above answer `400 Invalid limit`.
+   *
+   * This is a regression test with a live failure behind it: the transport clamped
+   * to 50 and `find_music` advertised "max 50", so a conversation that asked for
+   * twelve tracks got "Spotify isn't answering" — indistinguishable, from the
+   * outside, from a credential problem. Every hand-run probe passed because they
+   * all happened to use small limits.
+   */
+  it('never asks for more than ten tracks, whatever the caller wants', async () => {
+    const calls = stubFetch([
+      { match: /accounts\.spotify\.com/, body: TOKEN_RESPONSE },
+      { match: /api\.spotify\.com/, body: SEARCH_RESPONSE },
+    ]);
+
+    await searchTracks('anything', 40);
+
+    const search = calls.find((call) => /v1\/search/.test(call.url))?.url ?? '';
+    expect(search).toContain('limit=10');
+    expect(search).not.toContain('limit=40');
+  });
+
   it('returns null when Spotify refuses the credentials', async () => {
     stubFetch([{ match: /accounts\.spotify\.com/, status: 400, body: {} }]);
     expect(await searchTracks('anything')).toBeNull();

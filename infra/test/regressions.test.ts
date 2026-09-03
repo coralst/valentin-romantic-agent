@@ -791,6 +791,20 @@ describe('CloudFront reaches both engines', () => {
     expect(agentcore.ViewerProtocolPolicy).toEqual(baseline.ViewerProtocolPolicy);
   });
 
+  it('does not rewrite an API 404 into a 200 page', () => {
+    // A CloudFront custom error response is distribution-wide — it cannot be
+    // scoped to a behavior — so a `404 -> 200 /index.html` SPA fallback also
+    // rewrites every 404 the API returns. `GET /api/share/<expired>` answers 404
+    // by design, and the guest view then parses index.html as JSON. See the
+    // comment in cdn-stack.ts for why nothing is lost by having no fallback.
+    const distribution = Object.values(
+      cdnTemplate.findResources('AWS::CloudFront::Distribution'),
+    )[0] as any;
+    const custom =
+      distribution.Properties.DistributionConfig.CustomErrorResponses ?? [];
+    expect(custom.filter((r: any) => r.ErrorCode === 404)).toEqual([]);
+  });
+
   it('needs no extra behavior for engine B HTTP routes', () => {
     // `/api/*` already covers `/api/agentcore/*`, and ALL_VIEWER forwards the
     // `X-Valentin-Engine` header the third listener rule matches on.

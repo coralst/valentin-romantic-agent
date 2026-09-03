@@ -798,3 +798,70 @@ describe('CloudFront reaches both engines', () => {
     expect(behaviors()['/api/agentcore/*']).toBeUndefined();
   });
 });
+
+describe('Google credentials reach the deployed task', () => {
+  /** The container's `secrets` block, as a name -> valueFrom map. */
+  function containerSecrets(
+    engine: 'valentin' | 'agentcore' = 'valentin',
+  ): Record<string, unknown> {
+    const entries = (containerDef(engine).Secrets ?? []) as Array<{
+      Name: string;
+      ValueFrom: unknown;
+    }>;
+    return Object.fromEntries(entries.map((e) => [e.Name, e.ValueFrom]));
+  }
+
+  const GOOGLE_VARS = ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_REFRESH_TOKEN'];
+
+  it('creates the secret the credentials live in', () => {
+    computeTemplate.hasResourceProperties('AWS::SecretsManager::Secret', {
+      Name: `valentin/${config.env}/google-oauth`,
+    });
+  });
+
+  it('never puts a Google credential in the template', () => {
+    // The whole point of the secret. A literal here would land in cdk.out, in
+    // the CloudFormation console, and in git.
+    const json = JSON.stringify(computeTemplate.toJSON());
+    expect(json).not.toMatch(/GOCSPX-/); // Google client-secret prefix
+    expect(json).not.toMatch(/apps\.googleusercontent\.com/);
+    expect(json).not.toMatch(/1\/\/0[A-Za-z0-9_-]{20,}/); // refresh-token shape
+  });
+
+  it('survives the account janitor, which ignores retain policies', () => {
+    computeTemplate.hasResourceProperties('AWS::SecretsManager::Secret', {
+      Tags: Match.arrayWith([{ Key: 'auto-delete', Value: 'no' }]),
+    });
+  });
+
+  for (const engine of ['valentin', 'agentcore'] as const) {
+    it(`injects all three Google variables into engine ${engine}`, () => {
+      // All three or none: readiness is gated on the conjunction, so a partial
+      // injection reports Gmail as unavailable with no hint as to which value
+      // is missing.
+      const secrets = containerSecrets(engine);
+      for (const name of GOOGLE_VARS) {
+        expect(secrets[name], `${name} on ${engine}`).toBeDefined();
+      }
+    });
+
+    it(`passes them as secrets, not as plain environment on ${engine}`, () => {
+      expect(Object.keys(containerEnv(engine))).not.toContain('GOOGLE_CLIENT_ID');
+      expect(Object.keys(containerEnv(engine))).not.toContain('GOOGLE_REFRESH_TOKEN');
+    });
+
+    it(`tells engine ${engine} its own public origin, not localhost`, () => {
+      // redirectUri() defaults to http://localhost:5173 when PUBLIC_ORIGIN is
+      // unset, which sends a deployed user's OAuth callback to their laptop.
+      const origin = containerEnv(engine).PUBLIC_ORIGIN;
+      expect(origin).toBe('https://d26dwovftfq9oe.cloudfront.net');
+      expect(origin).not.toContain('localhost');
+    });
+  }
+
+  it('uses an origin Cognito also redirects to', () => {
+    // Derived from appUrls rather than restated, so the two cannot drift.
+    const origin = containerEnv().PUBLIC_ORIGIN as string;
+    expect(config.appUrls.callback).toContain(`${origin}/`);
+  });
+});

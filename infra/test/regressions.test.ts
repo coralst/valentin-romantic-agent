@@ -865,6 +865,70 @@ describe('Google credentials reach the deployed task', () => {
     expect(config.appUrls.callback).toContain(`${origin}/`);
   });
 
+  // Spotify shipped (PR #102) with server code reading SPOTIFY_CLIENT_ID /
+  // SPOTIFY_CLIENT_SECRET / SPOTIFY_REFRESH_TOKEN and nothing injecting any of
+  // them, so playlists worked locally and were silently dead deployed — the exact
+  // shape of the gap Google had. Connecting from the deployed panel cannot close
+  // it either: both containers are readonlyRootFilesystem, so persistEnv's write
+  // fails with EROFS and is only logged.
+  const SPOTIFY_VARS = ['SPOTIFY_CLIENT_ID', 'SPOTIFY_CLIENT_SECRET', 'SPOTIFY_REFRESH_TOKEN'];
+
+  it('creates a Spotify secret separate from the Google one', () => {
+    // Separate, because put-secret-value is a whole-document write: sharing one
+    // secret would mean rewriting Google's refresh token to rotate Spotify's.
+    computeTemplate.hasResourceProperties('AWS::SecretsManager::Secret', {
+      Name: `valentin/${config.env}/spotify-oauth`,
+    });
+  });
+
+  it('keeps the Spotify secret out of the janitor’s reach', () => {
+    computeTemplate.hasResourceProperties('AWS::SecretsManager::Secret', {
+      Name: `valentin/${config.env}/spotify-oauth`,
+      Tags: Match.arrayWith([{ Key: 'auto-delete', Value: 'no' }]),
+    });
+  });
+
+  it('does not seed SPOTIFY_REFRESH_TOKEN with a generated value', () => {
+    // Readiness is Boolean(spotifyRefreshToken) and outcome() in spotify/tools.ts
+    // reads the same field to choose between saving a playlist and handing over
+    // links. A *generated* token is present but invalid, so the app would claim a
+    // connected account and promise a save it cannot perform. Empty is honest.
+    const secret = Object.values(
+      computeTemplate.findResources('AWS::SecretsManager::Secret', {
+        Properties: { Name: `valentin/${config.env}/spotify-oauth` },
+      }),
+    )[0] as { Properties: { GenerateSecretString: Record<string, string> } };
+
+    const generate = secret.Properties.GenerateSecretString;
+    expect(generate.GenerateStringKey).not.toBe('SPOTIFY_REFRESH_TOKEN');
+    // Present but empty: ECS resolves each key by name, so an absent key kills the
+    // task at launch just as a missing IAM grant does.
+    expect(JSON.parse(generate.SecretStringTemplate)).toMatchObject({
+      SPOTIFY_REFRESH_TOKEN: '',
+    });
+  });
+
+  for (const engine of ['valentin', 'agentcore'] as const) {
+    it(`injects all three Spotify variables into engine ${engine}`, () => {
+      const secrets = containerSecrets(engine);
+      for (const name of SPOTIFY_VARS) {
+        expect(secrets[name], `${name} on ${engine}`).toBeDefined();
+      }
+    });
+
+    it(`passes the Spotify secret as a secret, not plain env, on ${engine}`, () => {
+      expect(Object.keys(containerEnv(engine))).not.toContain('SPOTIFY_CLIENT_SECRET');
+      expect(Object.keys(containerEnv(engine))).not.toContain('SPOTIFY_REFRESH_TOKEN');
+    });
+  }
+
+  it('never puts a Spotify credential in the template', () => {
+    const json = JSON.stringify(computeTemplate.toJSON());
+    // Spotify ids and secrets are both 32-char lowercase hex.
+    expect(json).not.toMatch(/"SPOTIFY_CLIENT_ID"\s*:\s*"[0-9a-f]{32}"/);
+    expect(json).not.toMatch(/"SPOTIFY_CLIENT_SECRET"\s*:\s*"[0-9a-f]{32}"/);
+  });
+
   // The first attempt to deploy the secret failed for a reason no unit test
   // covered: CloudFormation updated the execution role's grant and the ECS
   // service concurrently. The service update began 11 seconds before the two

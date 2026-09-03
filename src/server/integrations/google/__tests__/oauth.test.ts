@@ -49,7 +49,17 @@ describe('the consent URL', () => {
     expect(url.searchParams.get('scope')).toBe(GOOGLE_SCOPES.join(' '));
     // Read the calendar, send mail. Never read the inbox — Valentin has no
     // reason to, so it must not be able to.
-    expect(url.searchParams.get('scope')).not.toMatch(/readonly|gmail\.modify/);
+    //
+    // Spelled out per-scope rather than as a blanket /readonly/ match. That match
+    // was a proxy for "nothing that reads", and it outlawed
+    // `calendar.readonly` — which the fan-out across shared calendars requires and
+    // which grants nothing whatsoever on Gmail. The real invariant is about the
+    // inbox, so it is asserted about the inbox: `gmail.send` is the only Gmail
+    // scope, and any future addition there has to fail this line deliberately.
+    const scopes = url.searchParams.get('scope')!.split(' ');
+    expect(scopes.filter((scope) => scope.includes('gmail'))).toEqual([
+      'https://www.googleapis.com/auth/gmail.send',
+    ]);
   });
 
   it('refuses to build one before an OAuth client is saved', () => {

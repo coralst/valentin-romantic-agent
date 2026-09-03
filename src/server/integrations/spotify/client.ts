@@ -62,6 +62,19 @@ export const SPOTIFY_PROPOSAL_TTL_MS = 30 * 60 * 1000;
 const MAX_TRACKS_PER_REQUEST = 100;
 
 /**
+ * The most `/v1/search` will return before it refuses the request outright.
+ *
+ * Ten, measured against the live API — `limit=11` answers `400 Invalid limit`,
+ * with or without `market`. The reference page for the endpoint says 50, and this
+ * clamped to 50 until a conversation asked for twelve tracks and got nothing.
+ *
+ * Clamped here as well as in `tools.ts` on purpose: the tool's schema is advice to
+ * a model, which is free to ignore it, whereas this is the last point before the
+ * wire. A caller asking for more now gets ten tracks instead of an error.
+ */
+const SEARCH_LIMIT_CEILING = 10;
+
+/**
  * The scopes a refresh token for this build should carry.
  *
  * Recorded rather than sent — a refresh token already carries its grant. This
@@ -119,6 +132,22 @@ interface TokenCache {
 let appToken: TokenCache | null = null;
 let userToken: TokenCache | null = null;
 
+/**
+ * Spotify's own words about a refusal, for the log line — never for the user.
+ *
+ * Defensive to the point of paranoia because this only ever runs on a path that
+ * is *already* failing, and a diagnostic that throws turns a handled `null` into
+ * an unhandled rejection. `text()` is missing on a hand-rolled test double and
+ * throws on a body that was already consumed, so both are swallowed.
+ */
+async function refusalDetail(response: Response): Promise<string> {
+  try {
+    return (await response.text()).replace(/\s+/g, ' ').slice(0, 200);
+  } catch {
+    return '(no body)';
+  }
+}
+
 /** Drop both cached tokens. Called on connect/disconnect, and by tests. */
 export function resetSpotifyTokenCache(): void {
   appToken = null;
@@ -155,12 +184,19 @@ async function mintToken(
       body: new URLSearchParams(body).toString(),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
-  } catch {
+  } catch (err) {
+    console.error('[spotify] token fetch threw:', err instanceof Error ? err.message : err);
     return null;
   }
   // `400 invalid_grant` lands here for a revoked refresh token, and no amount of
   // retrying will help — a human has to mint a new one.
-  if (!response.ok) return null;
+  if (!response.ok) {
+    console.error(
+      `[spotify] ${kind} token refused: ${response.status}`,
+      await refusalDetail(response),
+    );
+    return null;
+  }
 
   const parsed = (await response.json()) as { access_token?: unknown; expires_in?: unknown };
   if (typeof parsed.access_token !== 'string') return null;
@@ -216,10 +252,14 @@ async function call(
       body: init?.body === undefined ? undefined : JSON.stringify(init.body),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
-  } catch {
+  } catch (err) {
+    console.error(`[spotify] ${path} threw:`, err instanceof Error ? err.message : err);
     return null;
   }
-  if (!response.ok) return null;
+  if (!response.ok) {
+    console.error(`[spotify] ${path} → ${response.status}`, await refusalDetail(response));
+    return null;
+  }
 
   // `POST /playlists/{id}/tracks` answers 201 with a body, but a 204 with no body
   // is legal elsewhere in this API and `json()` throws on it.
@@ -278,7 +318,7 @@ function readTrack(raw: unknown): SpotifyTrack | null {
  * rows is worse than a shorter playlist.
  */
 export async function searchTracks(query: string, limit = 10): Promise<SpotifyTrack[] | null> {
-  const wanted = Math.max(1, Math.min(Math.round(limit), 50));
+  const wanted = Math.max(1, Math.min(Math.round(limit), SEARCH_LIMIT_CEILING));
   if (spotifyFixtureMode()) return fixtureSearch(query, wanted);
 
   const token = await appAccessToken();

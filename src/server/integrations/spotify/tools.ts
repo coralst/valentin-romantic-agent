@@ -45,6 +45,21 @@ const MAX_LENGTH = 30;
 /** How many search results `find_music` hands back by default. */
 const DEFAULT_SEARCH_LIMIT = 8;
 
+/**
+ * The most `/v1/search` will actually return — **ten**, not the fifty its
+ * reference page documents.
+ *
+ * Measured, not read: `limit=11` and above answer `400 {"message":"Invalid
+ * limit"}` for this app, with or without `market`. The documented ceiling of 50
+ * applies to other endpoints, and trusting it here is what made `find_music`
+ * fail in conversation while every hand-run probe passed — the probes used small
+ * limits, and the model, reading a description that promised 50, asked for 12.
+ *
+ * Kept as a named constant so the number the schema advertises and the number the
+ * request clamps to cannot drift apart again.
+ */
+const MAX_SEARCH_LIMIT = 10;
+
 function readLimit(value: unknown, fallback: number, ceiling: number): number {
   return typeof value === 'number' && value > 0
     ? Math.min(Math.round(value), ceiling)
@@ -113,7 +128,10 @@ export const findMusicTool: AgentTool = {
       },
       limit: {
         type: 'number',
-        description: `How many tracks to return. Defaults to ${DEFAULT_SEARCH_LIMIT}, max 50.`,
+        description:
+          `How many tracks to return. Defaults to ${DEFAULT_SEARCH_LIMIT}, ` +
+          `max ${MAX_SEARCH_LIMIT} — Spotify rejects anything higher outright. ` +
+          `Ask twice with different wording rather than once for more.`,
       },
     },
     required: ['query'],
@@ -129,7 +147,10 @@ export const findMusicTool: AgentTool = {
       };
     }
 
-    const tracks = await searchTracks(query, readLimit(input.limit, DEFAULT_SEARCH_LIMIT, 50));
+    const tracks = await searchTracks(
+      query,
+      readLimit(input.limit, DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT),
+    );
     if (!tracks) return unavailable(`music for "${query}"`);
 
     if (tracks.length === 0) {

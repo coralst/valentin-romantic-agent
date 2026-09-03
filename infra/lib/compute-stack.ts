@@ -355,22 +355,36 @@ export class ComputeStack extends cdk.Stack {
      * key. Its initial random value is meaningless and is overwritten by the
      * real token; until then Google rejects it and `integrationReadiness()`
      * reports Gmail and Calendar as not connected, which is the truth.
+     *
+     * If `config.adoptedSecretArns.googleOAuth` is set the secret already exists
+     * and is adopted instead — see that field's comment. Adoption emits no
+     * resource, so none of the create-time reasoning below applies to it; the
+     * value in the account is whatever was last put there and is left alone.
      */
-    const googleSecret = new secretsmanager.Secret(this, 'GoogleOAuthSecret', {
-      secretName: `valentin/${env}/google-oauth`,
-      description:
-        'Google OAuth client id/secret and refresh token for the Gmail-send and ' +
-        'Calendar-write tools. Populate with `aws secretsmanager put-secret-value`.',
-      generateSecretString: {
-        secretStringTemplate: JSON.stringify({
-          GOOGLE_CLIENT_ID: '',
-          GOOGLE_CLIENT_SECRET: '',
-        }),
-        generateStringKey: 'GOOGLE_REFRESH_TOKEN',
-      },
-      removalPolicy: cdk.RemovalPolicy.RETAIN,
-    });
-    cdk.Tags.of(googleSecret).add('auto-delete', 'no');
+    const adopted = config.adoptedSecretArns;
+    const googleSecret: secretsmanager.ISecret = adopted?.googleOAuth
+      ? secretsmanager.Secret.fromSecretCompleteArn(
+          this,
+          'GoogleOAuthSecret',
+          adopted.googleOAuth,
+        )
+      : new secretsmanager.Secret(this, 'GoogleOAuthSecret', {
+          secretName: `valentin/${env}/google-oauth`,
+          description:
+            'Google OAuth client id/secret and refresh token for the Gmail-send and ' +
+            'Calendar-write tools. Populate with `aws secretsmanager put-secret-value`.',
+          generateSecretString: {
+            secretStringTemplate: JSON.stringify({
+              GOOGLE_CLIENT_ID: '',
+              GOOGLE_CLIENT_SECRET: '',
+            }),
+            generateStringKey: 'GOOGLE_REFRESH_TOKEN',
+          },
+          removalPolicy: cdk.RemovalPolicy.RETAIN,
+        });
+    // Tagging an adopted secret would be a silent no-op — it is not this stack's
+    // resource — and the existing one already carries `auto-delete=no`.
+    if (!adopted?.googleOAuth) cdk.Tags.of(googleSecret).add('auto-delete', 'no');
 
     /**
      * Spotify credentials for `find_music` and `propose_playlist`.
@@ -405,6 +419,12 @@ export class ComputeStack extends cdk.Stack {
      * time — and editing `generateSecretString` on a live secret is not a no-op,
      * CloudFormation regenerates the value and would clobber real credentials.
      */
+    /*
+     * Not adoptable, and deliberately not listed in `adoptedSecretArns`: this
+     * secret has never been created, so there is no orphan to adopt. It must go
+     * through a normal create. Adding it to that list would break the first deploy
+     * in the opposite direction — a complete ARN for a secret that does not exist.
+     */
     const spotifySecret = new secretsmanager.Secret(this, 'SpotifyOAuthSecret', {
       secretName: `valentin/${env}/spotify-oauth`,
       description:
@@ -421,6 +441,33 @@ export class ComputeStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
     cdk.Tags.of(spotifySecret).add('auto-delete', 'no');
+
+    /**
+     * HMAC key for the signed share links.
+     *
+     * Adopted on dev for the same reason Google's is: a rolled-back deploy left it
+     * in Secrets Manager but out of the stack's resource set.
+     */
+    const shareSecret: secretsmanager.ISecret = adopted?.shareToken
+      ? secretsmanager.Secret.fromSecretCompleteArn(
+          this,
+          'ShareTokenSecret',
+          adopted.shareToken,
+        )
+      : new secretsmanager.Secret(this, 'ShareTokenSecret', {
+          secretName: `valentin/${env}/share-token`,
+          description:
+            'HMAC key for the signed share links that let a guest read one conversation. ' +
+            'Generated; never populated by hand. Replacing it invalidates every live link.',
+          generateSecretString: {
+            passwordLength: 64,
+            // Not for a human to read or retype — but a plain alphanumeric key cannot
+            // be mangled by anything that quotes an environment variable badly.
+            excludePunctuation: true,
+          },
+          removalPolicy: cdk.RemovalPolicy.RETAIN,
+        });
+    if (!adopted?.shareToken) cdk.Tags.of(shareSecret).add('auto-delete', 'no');
 
     /**
      * Injected by the ECS agent at task start, so the values reach the process

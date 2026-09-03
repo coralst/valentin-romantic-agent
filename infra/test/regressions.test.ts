@@ -813,10 +813,31 @@ describe('Google credentials reach the deployed task', () => {
 
   const GOOGLE_VARS = ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_REFRESH_TOKEN'];
 
-  it('creates the secret the credentials live in', () => {
-    computeTemplate.hasResourceProperties('AWS::SecretsManager::Secret', {
-      Name: `valentin/${config.env}/google-oauth`,
-    });
+  /**
+   * dev adopts its secrets instead of creating them, because a rolled-back deploy
+   * left them behind (they are RETAIN) and CloudFormation then failed every
+   * subsequent deploy with `AlreadyExists`. So the assertions here have to hold
+   * either way — see `adoptedSecretArns` in config/environments.ts.
+   */
+  const adoptedGoogleArn = config.adoptedSecretArns?.googleOAuth;
+
+  it('gets the credentials from the right secret, whether created or adopted', () => {
+    if (!adoptedGoogleArn) {
+      computeTemplate.hasResourceProperties('AWS::SecretsManager::Secret', {
+        Name: `valentin/${config.env}/google-oauth`,
+      });
+      return;
+    }
+    // Adoption emits no resource, so the only evidence in the template is the ARN
+    // the container is told to read. It must be a *complete* ARN: ECS cannot pull
+    // a secret from a partial one, and that failure appears at task start, never
+    // at synth — so this assertion is the only place it can be caught early.
+    expect(adoptedGoogleArn).toMatch(
+      new RegExp(`:secret:valentin/${config.env}/google-oauth-[A-Za-z0-9]{6}$`),
+    );
+    expect(JSON.stringify(containerSecrets().GOOGLE_CLIENT_ID)).toContain(
+      adoptedGoogleArn,
+    );
   });
 
   it('never puts a Google credential in the template', () => {
@@ -829,9 +850,25 @@ describe('Google credentials reach the deployed task', () => {
   });
 
   it('survives the account janitor, which ignores retain policies', () => {
-    computeTemplate.hasResourceProperties('AWS::SecretsManager::Secret', {
-      Tags: Match.arrayWith([{ Key: 'auto-delete', Value: 'no' }]),
-    });
+    if (!adoptedGoogleArn) {
+      computeTemplate.hasResourceProperties('AWS::SecretsManager::Secret', {
+        Tags: Match.arrayWith([{ Key: 'auto-delete', Value: 'no' }]),
+      });
+      return;
+    }
+    // An adopted secret is not this stack's resource, so there is no template tag
+    // to assert — the live one already carries `auto-delete=no` from the deploy
+    // that created it. What this file can still hold onto is that adoption is a
+    // dev-only repair: every other environment takes the create-and-tag path, and
+    // if that ever stops being true this assertion is where it is noticed.
+    for (const name of ['staging', 'prod']) {
+      // The siteUrl argument is required only because neither env has a
+      // CloudFront domain yet; it has nothing to do with what is asserted.
+      expect(
+        getConfig(name, 'https://example.invalid/').adoptedSecretArns,
+        name,
+      ).toBeUndefined();
+    }
   });
 
   for (const engine of ['valentin', 'agentcore'] as const) {

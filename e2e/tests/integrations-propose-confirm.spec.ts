@@ -164,11 +164,19 @@ test.describe('Integrations — propose and confirm', () => {
 
     /*
      * And the honest half, which no longer has a subject: every row now reaches a
-     * real service, so nothing on this page may say "not built yet". The rides row
+     * real service, so no *badge* on this page may say "not built yet". The rides row
      * was deleted rather than kept as a dark promise, and Spotify was the last row
      * to stop being a drawing.
+     *
+     * Scoped to the readiness badges rather than the whole panel, which is what an
+     * earlier version of this line did and why it failed: `getByText` matches
+     * substrings, and the desktop footer explains the three readiness states in
+     * prose that necessarily names all three. Asserting over the panel made the
+     * explainer indistinguishable from a badge on a row.
      */
-    await expect(panel.getByText('not built yet')).toHaveCount(0);
+    await expect(
+      panel.locator('[data-testid^="integration-readiness-"]', { hasText: 'not built yet' }),
+    ).toHaveCount(0);
   });
 
   test('the hub is named Valentin, not AgentCore', async ({ page }) => {

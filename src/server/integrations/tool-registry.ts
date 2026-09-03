@@ -77,6 +77,31 @@ export interface ToolResult {
   data?: unknown;
   /** Set when the tool wants a human yes before anything happens. */
   proposal?: ActionProposal;
+  /**
+   * Facts about a place he has now actually been committed to.
+   *
+   * Set by a `confirm` that ended with a real venue and date — whether the
+   * provider completed the last step or handed the reader a live checkout link —
+   * and read only by `recordOuting`, which turns it into a row on her file. A
+   * failed confirm and every non-booking tool leave it undefined.
+   *
+   * It is here rather than read out of `payload` because `payload` is documented
+   * opaque to everything but the owning tool — a reader that reached into it
+   * would be coupled to Ontopo's field names, and `ActionProposal` carries no
+   * `tool` or `args` to dispatch on. This is the one narrow, named channel by
+   * which the loop learns *where* it just sent him.
+   */
+  booking?: BookingRecord;
+}
+
+/** What a confirmed booking tells us about the place. */
+export interface BookingRecord {
+  /** The provider's own identifier, when there is one to match against later. */
+  venueSlug?: string | null;
+  venueName: string;
+  city?: string | null;
+  /** ISO date the outing happens on, `YYYY-MM-DD`. */
+  occursOn?: string | null;
 }
 
 /** Everything a tool may need about the turn it is running inside. */

@@ -474,6 +474,25 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
     ),
   );
 
+  // Where he has taken her. The POST is both "record this" and "here is how it
+  // went" — the survey resends the whole row with a rating on it.
+  app.get(
+    '/api/session/:id/outings',
+    scoped(deps, (routes, req) => routes.getSessionOutings(pathParam(req, 'id'))),
+  );
+
+  app.post(
+    '/api/session/:id/outings',
+    scoped(deps, (routes, req) => routes.saveOuting(pathParam(req, 'id'), req.body)),
+  );
+
+  app.delete(
+    '/api/session/:id/outings/:outingId',
+    scoped(deps, (routes, req) =>
+      routes.deleteOuting(pathParam(req, 'id'), pathParam(req, 'outingId')),
+    ),
+  );
+
   app.get(
     '/api/session/:id/manual',
     scoped(deps, (routes, req) => routes.getManualValues(pathParam(req, 'id'))),

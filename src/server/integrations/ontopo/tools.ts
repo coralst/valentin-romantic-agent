@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import type { ActionProposal, AgentTool, ToolResult } from '../tool-registry';
+import type {
+  ActionProposal,
+  AgentTool,
+  BookingRecord,
+  ToolResult,
+} from '../tool-registry';
 import {
   CHECKOUT_TTL_MS,
   createCheckout,
@@ -15,6 +20,7 @@ import {
   findVenues,
   isRestaurantStyle,
   resolveVenueName,
+  venueBySlug,
   type CuratedVenue,
 } from './venues';
 import { isGeoPoint, type GeoPoint } from '../../../shared/constants/geo';
@@ -86,6 +92,16 @@ function parseDate(value: unknown): { ontopo: string; readable: string } | null 
       month: 'long',
     }),
   };
+}
+
+/**
+ * Ontopo's compact `YYYYMMDD` back to the ISO `YYYY-MM-DD` the rest of the app
+ * speaks. Returns null for anything that is not eight digits, so a malformed
+ * payload records an outing with no date rather than an invented one.
+ */
+function toIsoDate(compact: string): string | null {
+  if (!/^\d{8}$/.test(compact)) return null;
+  return `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6)}`;
 }
 
 function parseSize(value: unknown): number {
@@ -660,6 +676,28 @@ export const proposeReservationTool: AgentTool = {
     const when = `${readableDate ? ` on ${readableDate}` : ''} at ${formatSlotTime(time)}`;
 
     /*
+     * What her file will remember about this place.
+     *
+     * Built once, before the three ways this can end, because all three of them
+     * are the same fact: the user pressed Confirm on this venue on this date and
+     * a live checkout exists for it. Whether Ontopo's form was finished here or
+     * is finished by the reader in the next minute changes the wording of the
+     * reply, not where he is taking her — and a history that only recorded the
+     * auto-completed path would be empty in every deployment without a configured
+     * guest identity, which is all of them today.
+     *
+     * The city comes from our own curated row rather than from the payload: the
+     * proposal carries Ontopo's `area` (a seating area — "Bar", "Indoor"), which
+     * is not a place name and would read as nonsense in the dossier.
+     */
+    const booking: BookingRecord = {
+      venueSlug: slug,
+      venueName,
+      city: venueBySlug(slug)?.city ?? null,
+      occursOn: toIsoDate(date),
+    };
+
+    /*
      * Finish the form ourselves when we can, and hand over the link when we cannot.
      *
      * `guestForCheckout` returns null unless a full identity is configured, so the
@@ -685,6 +723,7 @@ export const proposeReservationTool: AgentTool = {
             guestName: outcome.guestName,
             url: checkout.url,
           },
+          booking,
         };
       }
 
@@ -707,6 +746,7 @@ export const proposeReservationTool: AgentTool = {
           url: checkout.url,
           fellBackBecause: outcome.reason,
         },
+        booking,
       };
     }
 
@@ -716,6 +756,7 @@ export const proposeReservationTool: AgentTool = {
         `Ontopo's booking page is open for ${venueName}${when} for ${size}. Give them the ` +
         `link and be clear that the table is theirs once they finish the form there.`,
       data: { booked: false, url: checkout.url, venue: venueName, time: formatSlotTime(time) },
+      booking,
     };
   },
 };

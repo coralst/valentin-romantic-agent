@@ -19,6 +19,8 @@ import { DEFAULT_GENERATION, isPersonGeneration } from '../../shared/interfaces/
 import type { Person, PersonGeneration } from '../../shared/interfaces/person';
 import type { SessionData } from '../../shared/interfaces/session';
 import type { Task } from '../../shared/interfaces/task';
+import { isOutingVerdict } from '../../shared/interfaces/outing';
+import type { Outing } from '../../shared/interfaces/outing';
 import type {
   PreferenceInput,
   PreferenceRef,
@@ -34,6 +36,8 @@ import {
   PERSON_PREFIX,
   PREF_PREFIX,
   TASK_PREFIX,
+  OUTING_PREFIX,
+  outingSk,
   manualSk,
   msgSk,
   personSk,
@@ -564,6 +568,63 @@ export class DynamoDBStore implements StorageInterface {
     );
   }
 
+  // --- Where he has taken her ---
+
+  async saveOuting(sessionId: string, outing: Outing): Promise<Outing> {
+    const [saved] = await this.saveOutingsBatch(sessionId, [outing]);
+    return saved;
+  }
+
+  async saveOutingsBatch(sessionId: string, outings: readonly Outing[]): Promise<Outing[]> {
+    if (outings.length === 0) return [];
+
+    const pk = sessionPk(this.userId, sessionId);
+    const now = new Date().toISOString();
+
+    for (const batch of chunk(outings, BATCH_WRITE_LIMIT)) {
+      await this.batchWrite(
+        batch.map((record) => ({
+          PutRequest: {
+            Item: this.withTtl({
+              pk,
+              sk: outingSk(record.id),
+              sessionId,
+              ...record,
+              entityType: 'Outing',
+            }),
+          },
+        })),
+      );
+    }
+
+    await this.updateSessionIfExists(sessionId, 'SET lastActivity = :now', { ':now': now });
+    // The rows as given, not as re-stamped: unlike a task, neither timestamp on an
+    // outing is "when we last touched it".
+    return [...outings];
+  }
+
+  async getOutingsBySession(sessionId: string): Promise<Outing[]> {
+    const items = await this.queryAll({
+      TableName: this.tableName,
+      KeyConditionExpression: 'pk = :pk AND begins_with(sk, :prefix)',
+      ExpressionAttributeValues: {
+        ':pk': sessionPk(this.userId, sessionId),
+        ':prefix': OUTING_PREFIX,
+      },
+    });
+
+    return items.map(toOuting);
+  }
+
+  async deleteOuting(sessionId: string, outingId: string): Promise<void> {
+    await this.docClient.send(
+      new DeleteCommand({
+        TableName: this.tableName,
+        Key: { pk: sessionPk(this.userId, sessionId), sk: outingSk(outingId) },
+      }),
+    );
+  }
+
   // --- Corrections the user made by hand ---
 
   async setManualValue(sessionId: string, fieldId: string, value: string): Promise<void> {
@@ -678,7 +739,7 @@ export class DynamoDBStore implements StorageInterface {
    */
   private async collectOwnedItemKeys(sessionId: string): Promise<ItemKey[]> {
     const keys: ItemKey[] = [];
-    for (const prefix of [PERSON_PREFIX, TASK_PREFIX, MANUAL_PREFIX]) {
+    for (const prefix of [PERSON_PREFIX, TASK_PREFIX, OUTING_PREFIX, MANUAL_PREFIX]) {
       keys.push(...(await this.collectItemKeys(sessionId, prefix)));
     }
     return keys;
@@ -813,6 +874,24 @@ function toTask(item: Record<string, unknown>): Task {
     source: item.source === 'discovered' ? 'discovered' : 'manual',
     createdAt: item.createdAt as string,
     updatedAt: item.updatedAt as string,
+  };
+}
+
+function toOuting(item: Record<string, unknown>): Outing {
+  const rating = item.rating;
+  return {
+    id: item.id as string,
+    venueSlug: (item.venueSlug as string | null | undefined) ?? null,
+    venueName: item.venueName as string,
+    city: (item.city as string | null | undefined) ?? null,
+    occursOn: (item.occursOn as string | null | undefined) ?? null,
+    confirmedAt: item.confirmedAt as string,
+    // Only a real number survives. A stored string or a zero would both read as
+    // "rated" downstream and suppress the survey for a row nobody has answered.
+    rating: typeof rating === 'number' && rating >= 1 && rating <= 5 ? rating : null,
+    verdict: isOutingVerdict(item.verdict) ? item.verdict : null,
+    note: (item.note as string | null | undefined) ?? null,
+    ratedAt: (item.ratedAt as string | null | undefined) ?? null,
   };
 }
 

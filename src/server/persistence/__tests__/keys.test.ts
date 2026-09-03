@@ -5,7 +5,9 @@ import {
   MSG_PREFIX,
   PREF_PREFIX,
   msgSk,
+  outingSk,
   prefSk,
+  OUTING_PREFIX,
   userGsi1pk,
   sessionGsi1sk,
 } from '../keys';
@@ -136,6 +138,22 @@ describe('keys', () => {
       const a = sessionGsi1sk('2026-08-21T10:00:00.000Z', SESSION);
       const b = sessionGsi1sk('2026-08-21T10:00:00.000Z', SESSION);
       expect(a).toBe(b);
+    });
+  });
+  describe('outingSk', () => {
+    it('pins the literal', () => {
+      expect(outingSk('out-1')).toBe('OUTING#out-1');
+      expect(OUTING_PREFIX).toBe('OUTING#');
+    });
+
+    it('does not collide with a task carrying the same id', () => {
+      // Both are keyed by a uuid in the same partition, so a shared prefix would
+      // have one entity overwrite the other.
+      expect(outingSk('shared-id').startsWith('TASK#')).toBe(false);
+    });
+
+    it('rejects an empty id', () => {
+      expect(() => outingSk('')).toThrow(/non-empty string/);
     });
   });
 });

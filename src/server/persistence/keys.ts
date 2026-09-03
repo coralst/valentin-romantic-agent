@@ -32,6 +32,7 @@ import type { PreferenceCategory } from '../../shared/interfaces/preference';
  * | Person  | `USER#<sub>#SESSION#<sid>`| `PERSON#<personId>`   | —           | —                       |
  * | Task    | `USER#<sub>#SESSION#<sid>`| `TASK#<taskId>`       | —           | —                       |
  * | Manual  | `USER#<sub>#SESSION#<sid>`| `MANUAL#<fieldId>`    | —           | —                       |
+ * | Outing  | `USER#<sub>#SESSION#<sid>`| `OUTING#<outingId>`   | —           | —                       |
  *
  * Only session-meta items carry `gsi1pk`, so GSI1 is **sparse**: listing a
  * user's sessions is one query returning one row per session, with no filter.
@@ -141,6 +142,9 @@ export const TASK_PREFIX = 'TASK#';
 /** Sort-key prefix shared by every manually-entered field value in a session */
 export const MANUAL_PREFIX = 'MANUAL#';
 
+/** Sort-key prefix shared by every recorded outing in a session */
+export const OUTING_PREFIX = 'OUTING#';
+
 /**
  * Sort key of a person.
  *
@@ -158,6 +162,19 @@ export function personSk(personId: string): string {
 export function taskSk(taskId: string): string {
   assertComponent('taskId', taskId);
   return withinLimit(`${TASK_PREFIX}${taskId}`, 'taskId', taskId);
+}
+
+/**
+ * Sort key of an outing. Keyed by id, like a task.
+ *
+ * Not keyed by venue slug, even though that would make "have we been here?" a
+ * GetItem: going back to the same restaurant is the *point* of a place rated 5/5,
+ * and a slug-keyed row would overwrite the first visit with the second and lose
+ * the rating that earned the return.
+ */
+export function outingSk(outingId: string): string {
+  assertComponent('outingId', outingId);
+  return withinLimit(`${OUTING_PREFIX}${outingId}`, 'outingId', outingId);
 }
 
 /**

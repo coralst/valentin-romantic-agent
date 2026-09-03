@@ -11,6 +11,8 @@ import { isPartnerNamePreference } from '../extraction/partner-name';
 import { DEFAULT_GENERATION, isPersonGeneration } from '../../shared/interfaces/person';
 import type { Person } from '../../shared/interfaces/person';
 import type { Task } from '../../shared/interfaces/task';
+import { OUTING_VERDICTS, isOutingVerdict } from '../../shared/interfaces/outing';
+import type { Outing } from '../../shared/interfaces/outing';
 import { isProfileFieldId } from '../../shared/constants/profile-fields';
 import { buildToolRegistry, integrationReadiness } from '../integrations';
 import { readAccountPreferences } from '../agent/partner-profile';
@@ -217,6 +219,67 @@ function parseTask(body: unknown): { task: Task } | { error: string } {
   };
 }
 
+/**
+ * Build an Outing from an untrusted body, or return why it cannot be built.
+ *
+ * This is also the survey endpoint's parser: answering the survey is the client
+ * resending the whole row with `rating`, `verdict` and `note` filled in, exactly
+ * as ticking a task resends the task. That is why there is no `/rating` route —
+ * a second endpoint writing part of a row would need its own read-modify-write
+ * and could disagree with this one about what the row says.
+ *
+ * `rating` is accepted only as an integer 1-5 and `verdict` only from the closed
+ * set, because both are read back by code, not just shown: `placesToAvoid`
+ * compares the rating numerically and the prompt block quotes the verdict. A
+ * "4/5" string or a "meh" verdict would sail through and then quietly fail to
+ * match anything.
+ */
+function parseOuting(body: unknown): { outing: Outing } | { error: string } {
+  const input = (body ?? {}) as Record<string, unknown>;
+
+  const venueName = optionalText(input.venueName);
+  if (!venueName) {
+    return { error: 'A venueName is required' };
+  }
+
+  const rating = input.rating;
+  const rated =
+    typeof rating === 'number' && Number.isInteger(rating) && rating >= 1 && rating <= 5
+      ? rating
+      : null;
+  if (rating !== undefined && rating !== null && rated === null) {
+    return { error: 'A rating must be a whole number from 1 to 5' };
+  }
+
+  const verdict = input.verdict;
+  if (verdict !== undefined && verdict !== null && !isOutingVerdict(verdict)) {
+    return { error: `A verdict must be one of: ${OUTING_VERDICTS.join(', ')}` };
+  }
+
+  const now = new Date().toISOString();
+  const hasVerdict = isOutingVerdict(verdict) ? verdict : null;
+
+  return {
+    outing: {
+      id: typeof input.id === 'string' && input.id.length > 0 ? input.id : crypto.randomUUID(),
+      venueSlug: optionalText(input.venueSlug),
+      venueName,
+      city: optionalText(input.city),
+      occursOn: optionalDate(input.occursOn),
+      // Preserved on a round trip: `confirmedAt` is when the booking happened,
+      // and answering the survey days later must not move it to today.
+      confirmedAt: typeof input.confirmedAt === 'string' ? input.confirmedAt : now,
+      rating: rated,
+      verdict: hasVerdict,
+      note: optionalText(input.note),
+      // Stamped here rather than taken from the client, so "when did she say
+      // this" is the server's clock — and cleared again if a rating is withdrawn,
+      // which is what keeps `unratedOutings` and `ratedAt` from disagreeing.
+      ratedAt: rated !== null || hasVerdict !== null ? now : null,
+    },
+  };
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** How far apart two consecutive turns of a seeded transcript are placed */
@@ -405,10 +468,10 @@ export function createHttpRoutes(storage: StorageInterface) {
         return { status: 404, body: { error: 'Session not found' } };
       }
 
-      // All five in one round trip. They share the session's partition, and the
+      // All six in one round trip. They share the session's partition, and the
       // dossier needs every one of them to draw a single frame — fetching them
-      // separately would show the board filling in four visible stages.
-      const [messages, preferences, people, tasks, manualValues] = await Promise.all([
+      // separately would show the board filling in five visible stages.
+      const [messages, preferences, people, tasks, manualValues, outings] = await Promise.all([
         storage.getMessagesBySession(sessionId),
         // Account-wide, not this session's rows alone. The partner belongs to the
         // account, so a new conversation must not redraw her brief as a screen of
@@ -419,11 +482,12 @@ export function createHttpRoutes(storage: StorageInterface) {
         storage.getPeopleBySession(sessionId),
         storage.getTasksBySession(sessionId),
         storage.getManualValues(sessionId),
+        storage.getOutingsBySession(sessionId),
       ]);
 
       return {
         status: 200,
-        body: { session, messages, preferences, people, tasks, manualValues },
+        body: { session, messages, preferences, people, tasks, manualValues, outings },
       };
     },
 
@@ -512,6 +576,44 @@ export function createHttpRoutes(storage: StorageInterface) {
 
       await storage.deleteTask(sessionId, taskId);
       return { status: 200, body: { taskId, deleted: true } };
+    },
+
+    /** GET /session/:id/outings — where he has taken her, and how it went */
+    async getSessionOutings(sessionId: string): Promise<HttpResponse> {
+      if (!(await storage.getSession(sessionId))) {
+        return { status: 404, body: { error: 'Session not found' } };
+      }
+      return { status: 200, body: { outings: await storage.getOutingsBySession(sessionId) } };
+    },
+
+    /**
+     * POST /session/:id/outings — record an outing, or answer its survey.
+     *
+     * One endpoint for both, because they are one idempotent whole-row write:
+     * see `parseOuting`. The agent writes the row on a confirmed booking; the
+     * user writes it again, days later, with a rating on it.
+     */
+    async saveOuting(sessionId: string, body: unknown): Promise<HttpResponse> {
+      if (!(await storage.getSession(sessionId))) {
+        return { status: 404, body: { error: 'Session not found' } };
+      }
+
+      const parsed = parseOuting(body);
+      if ('error' in parsed) {
+        return { status: 400, body: { error: parsed.error } };
+      }
+
+      return { status: 200, body: { outing: await storage.saveOuting(sessionId, parsed.outing) } };
+    },
+
+    /** DELETE /session/:id/outings/:outingId */
+    async deleteOuting(sessionId: string, outingId: string): Promise<HttpResponse> {
+      if (!(await storage.getSession(sessionId))) {
+        return { status: 404, body: { error: 'Session not found' } };
+      }
+
+      await storage.deleteOuting(sessionId, outingId);
+      return { status: 200, body: { outingId, deleted: true } };
     },
 
     /** GET /session/:id/manual — every value the user typed themselves */
@@ -844,6 +946,18 @@ export function createHttpRoutes(storage: StorageInterface) {
       const taskMatch = req.url.match(/^\/session\/([^/]+)\/tasks\/([^/]+)$/);
       if (req.method === 'DELETE' && taskMatch) {
         return this.deleteTask(taskMatch[1], taskMatch[2]);
+      }
+
+      // /session/:id/outings and /session/:id/outings/:outingId
+      const outingsMatch = req.url.match(/^\/session\/([^/]+)\/outings$/);
+      if (outingsMatch) {
+        if (req.method === 'GET') return this.getSessionOutings(outingsMatch[1]);
+        if (req.method === 'POST') return this.saveOuting(outingsMatch[1], req.body);
+      }
+
+      const outingMatch = req.url.match(/^\/session\/([^/]+)\/outings\/([^/]+)$/);
+      if (req.method === 'DELETE' && outingMatch) {
+        return this.deleteOuting(outingMatch[1], outingMatch[2]);
       }
 
       // POST /session/:id/location

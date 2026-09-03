@@ -7,6 +7,7 @@ import type {
 import type { Person } from '../../shared/interfaces/person';
 import type { SessionData } from '../../shared/interfaces/session';
 import type { Task } from '../../shared/interfaces/task';
+import type { Outing } from '../../shared/interfaces/outing';
 
 /** Structured preference data extracted from conversation, before persistence */
 export interface ExtractedPreference {
@@ -110,6 +111,27 @@ export interface StorageInterface {
   saveTasksBatch(sessionId: string, tasks: readonly Task[]): Promise<Task[]>;
   getTasksBySession(sessionId: string): Promise<Task[]>;
   deleteTask(sessionId: string, taskId: string): Promise<void>;
+
+  // --- Where he has taken her ---
+  /**
+   * Write one outing, keyed by its own id, so recording the booking and later
+   * recording her verdict are the same idempotent call.
+   */
+  saveOuting(sessionId: string, outing: Outing): Promise<Outing>;
+
+  /**
+   * Write many at once.
+   *
+   * Exists for the demo seed rather than for the app: the survey and the history
+   * both demo as empty boxes unless the persona arrives with a couple of places
+   * already visited and one of them already rated.
+   */
+  saveOutingsBatch(sessionId: string, outings: readonly Outing[]): Promise<Outing[]>;
+
+  getOutingsBySession(sessionId: string): Promise<Outing[]>;
+
+  /** Remove one outing. A no-op for an id this session does not have. */
+  deleteOuting(sessionId: string, outingId: string): Promise<void>;
 
   // --- Corrections the user made by hand ---
   /**

@@ -9,6 +9,7 @@ import { DEFAULT_GENERATION, isPersonGeneration } from '../../shared/interfaces/
 import type { Person } from '../../shared/interfaces/person';
 import type { SessionData } from '../../shared/interfaces/session';
 import type { Task } from '../../shared/interfaces/task';
+import type { Outing } from '../../shared/interfaces/outing';
 import type {
   PreferenceInput,
   PreferenceRef,
@@ -17,7 +18,7 @@ import type {
   SessionMetaPatch,
   StorageInterface,
 } from './storage-interface';
-import { manualSk, personSk, prefSk, sessionPk, taskSk } from './keys';
+import { manualSk, outingSk, personSk, prefSk, sessionPk, taskSk } from './keys';
 
 /**
  * In-memory storage for tests and local development.
@@ -201,6 +202,38 @@ export class InMemoryStore implements StorageInterface {
     this.shared.tasks.delete(this.itemKey(sessionId, taskSk(taskId)));
   }
 
+  // --- Where he has taken her ---
+
+  async saveOuting(sessionId: string, outing: Outing): Promise<Outing> {
+    const [saved] = await this.saveOutingsBatch(sessionId, [outing]);
+    return saved;
+  }
+
+  async saveOutingsBatch(sessionId: string, outings: readonly Outing[]): Promise<Outing[]> {
+    const now = new Date().toISOString();
+    const records: Outing[] = [];
+
+    for (const outing of outings) {
+      // No `updatedAt` to stamp, unlike a task: an outing's two timestamps are
+      // both facts about events — when it was booked, when it was rated — and
+      // overwriting either from the clock would falsify them.
+      const record: Outing = { ...outing };
+      this.shared.outings.set(this.itemKey(sessionId, outingSk(record.id)), record);
+      records.push(record);
+    }
+
+    this.touchSession(sessionId, now);
+    return records;
+  }
+
+  async getOutingsBySession(sessionId: string): Promise<Outing[]> {
+    return this.itemsUnder(this.shared.outings, sessionId);
+  }
+
+  async deleteOuting(sessionId: string, outingId: string): Promise<void> {
+    this.shared.outings.delete(this.itemKey(sessionId, outingSk(outingId)));
+  }
+
   // --- Corrections the user made by hand ---
 
   async setManualValue(sessionId: string, fieldId: string, value: string): Promise<void> {
@@ -298,7 +331,12 @@ export class InMemoryStore implements StorageInterface {
     // Her family, his to-do list and his corrections are as much "what Valentin
     // knows" as the preferences are — a reset that left them standing would look
     // to the user like it had failed.
-    for (const map of [this.shared.people, this.shared.tasks, this.shared.manualValues]) {
+    for (const map of [
+      this.shared.people,
+      this.shared.tasks,
+      this.shared.outings,
+      this.shared.manualValues,
+    ]) {
       for (const mapKey of [...map.keys()]) {
         if (mapKey.startsWith(prefix)) map.delete(mapKey);
       }
@@ -382,6 +420,7 @@ export interface InMemoryData {
   preferences: Map<string, PreferenceWithHistory>;
   people: Map<string, Person>;
   tasks: Map<string, Task>;
+  outings: Map<string, Outing>;
   manualValues: Map<string, { fieldId: string; value: string }>;
 }
 
@@ -393,6 +432,7 @@ export class InMemoryStoreFactory implements ScopedStorageFactory {
     preferences: new Map(),
     people: new Map(),
     tasks: new Map(),
+    outings: new Map(),
     manualValues: new Map(),
   };
 

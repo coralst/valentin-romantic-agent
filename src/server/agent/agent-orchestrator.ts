@@ -18,6 +18,8 @@ import {
   type KnownFact,
 } from './prompts';
 import { readKnownFacts } from './partner-profile';
+import { recordOuting } from './outing-recorder';
+import type { Outing } from '../../shared/interfaces/outing';
 import { LlmError } from '../../shared/errors/llm-error';
 import { logger } from '../logging';
 
@@ -70,6 +72,15 @@ export interface ToolSupport {
   registry?: ToolRegistry;
   /** Called once per proposal raised, after the agent's reply has been stored. */
   onProposal?: (proposal: ActionProposal) => void;
+  /**
+   * Called once per outing recorded, so the dossier updates without a reload.
+   *
+   * Separate from `onProposal` because the two are opposite halves of the same
+   * exchange: a proposal is a question, an outing is a thing that has happened.
+   * Optional like the rest of this interface — the HTTP path has no socket to
+   * push down, and the row is on her file either way.
+   */
+  onBooking?: (sessionId: string, outing: Outing) => void;
 }
 
 /**
@@ -312,6 +323,17 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
     const result = pending.tool.confirm
       ? await pending.tool.confirm(pending.proposal, { sessionId })
       : await runTool(pending.tool, { confirm: proposalId }, { sessionId });
+
+    // Write down where he has taken her, before the reply goes out.
+    //
+    // Awaited rather than fired and forgotten so the row exists by the time the
+    // client, reading the reply, refetches the session — but `recordOuting`
+    // never throws and never rejects the turn, because the booking already
+    // happened. Gated on `result.ok`: a failed confirm reserved nothing.
+    if (result.ok) {
+      const outing = await recordOuting(this.storage, sessionId, result.booking);
+      if (outing) this.tools.onBooking?.(sessionId, outing);
+    }
 
     return this.say(
       sessionId,

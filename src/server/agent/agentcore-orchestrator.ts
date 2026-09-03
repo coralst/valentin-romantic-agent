@@ -174,6 +174,21 @@ export class AgentCoreOrchestrator implements AgentOrchestratorInterface {
    * still on screen. That is a wiring bug worth seeing in the logs, not something
    * to absorb: the router catches it and the card reports the failure.
    */
+  /**
+   * Nothing to confirm here — and therefore no outing recorded here either.
+   *
+   * Engine A's `confirmAction` calls `recordOuting` on a successful confirm, so
+   * outing history only ever grows on engine A. That asymmetry is stated rather
+   * than fixed because it is not a gap: this engine is constructed with no tool
+   * registry and no `onProposal`, so it raises no proposals and there is no
+   * booking for it to have made.
+   *
+   * What it does need is the *read* side, and it has it: `readVisitedPlaces` in
+   * `partner-profile.ts` puts the history into the system prompt, which both
+   * engines build through the same module. If this engine ever gains tools,
+   * `recordOuting` is a free function and the hook is one line — see
+   * `agent-orchestrator.ts`'s `confirmAction`.
+   */
   async confirmAction(sessionId: string, proposalId: string): Promise<ChatMessage> {
     throw new Error(
       `Engine B has no proposal to confirm (session ${sessionId}, proposal ${proposalId}): ` +

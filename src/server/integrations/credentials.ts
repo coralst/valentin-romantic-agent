@@ -182,6 +182,30 @@ export async function applyIntegrationCredentials(
 
   const clientId = fieldValue(body, 'clientId');
   const clientSecret = fieldValue(body, 'clientSecret');
+
+  /*
+   * An empty body is "keep the client you already have, I only came for consent".
+   * The panel normally skips this route entirely in that case, so reaching here
+   * means a direct caller or a retry — either way, answering with a 400 that names
+   * two values the process is already holding would be a lie, and it would strand a
+   * deployment whose client came from the environment.
+   *
+   * Nothing is written and nothing is logged as saved, because nothing changed.
+   */
+  const clientAlreadyLoaded = Boolean(
+    // Read from config rather than through `googleOAuthClientPresent()` in
+    // `./index`, which pulls in every tool module and would make this file part of
+    // an import cycle for one boolean.
+    config.integrations.googleClientId && config.integrations.googleClientSecret,
+  );
+  if (!clientId && !clientSecret && clientAlreadyLoaded) {
+    return {
+      ok: true,
+      status: 200,
+      message: 'OAuth client already loaded. Sign in with Google to finish connecting.',
+    };
+  }
+
   if (!clientId || !clientSecret) {
     return badRequest('Google needs an OAuth client id and client secret (a "Web application" client).');
   }

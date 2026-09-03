@@ -32,12 +32,28 @@ export type { ToolRegistry, AgentTool, ActionProposal, IntegrationId } from './t
  * it is impossible, and reporting it as ready would have the model confidently
  * offer something that cannot run.
  */
+/**
+ * Whether this process knows which Google app it is, consent aside.
+ *
+ * The client id and secret reach a process the same way in both environments —
+ * as `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`, from `.env` locally and from
+ * Secrets Manager when `compute-stack.ts` injects them — so one predicate serves
+ * localhost and the deployed task with no branch.
+ *
+ * Separate from readiness because it answers a different question. Readiness asks
+ * "can Valentin call Google?", which needs the refresh token too. This asks "do I
+ * need to be told who this app is?", and the panel needs that answer to decide
+ * between showing two inputs and showing a single sign-in button.
+ */
+export function googleOAuthClientPresent(): boolean {
+  const { integrations } = config;
+  return Boolean(integrations.googleClientId && integrations.googleClientSecret);
+}
+
 export function integrationReadiness(): Record<IntegrationId, boolean> {
   const { integrations } = config;
   const google = Boolean(
-    integrations.googleClientId &&
-      integrations.googleClientSecret &&
-      integrations.googleRefreshToken,
+    googleOAuthClientPresent() && integrations.googleRefreshToken,
   );
   const browser = browserReadyCached();
 

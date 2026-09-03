@@ -199,6 +199,27 @@ function missingConnectFlows(
   return [...seen];
 }
 
+/**
+ * Whether the server already holds this flow's OAuth client, sign-in aside.
+ *
+ * Folded over the backing ids because a flow can stand for more than one — `google`
+ * covers Calendar and Gmail, which share a single OAuth client and so report the
+ * same answer. `some` rather than `every` for that reason: they cannot disagree, and
+ * if a future provider ever split them, offering the sign-in is the better failure
+ * than demanding credentials that are half-loaded.
+ */
+function oauthClientPresentFor(
+  flow: ConnectableId,
+  service: IntegrationService,
+  readiness: IntegrationReadiness | undefined,
+): boolean {
+  const present = readiness?.oauthClientPresent;
+  if (!present) return false;
+  return (service.backing ?? []).some(
+    (id) => connectableFor(id) === flow && present[id] === true,
+  );
+}
+
 /** The connect flows behind this capability that *are* configured. */
 function connectedFlows(
   service: IntegrationService,
@@ -328,6 +349,7 @@ export function IntegrationConsentSheet({
             key={flow}
             id={flow}
             status={connectStatus ?? { phase: 'idle' }}
+            clientPresent={oauthClientPresentFor(flow, service, readiness)}
             onSubmit={(fields) => onConnectCredentials?.(flow, fields)}
           />
         ))}

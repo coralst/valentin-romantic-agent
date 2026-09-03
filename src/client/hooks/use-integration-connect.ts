@@ -138,18 +138,33 @@ export function useIntegrationConnect(onChanged: () => void): UseIntegrationConn
     async (id: ConnectableId, fields: Record<string, string>): Promise<boolean> => {
       setStatus({ phase: 'working', id });
       try {
-        const { message } = await apiPostJsonExplained<{ message: string }>(
-          `/api/integrations/${id}/connect`,
-          fields,
-        );
+        /*
+         * No fields means "you already have the client, just get me consent" — the
+         * state of a deployment whose id and secret came from the environment. The
+         * save is skipped rather than sent empty, because `applyIntegrationCredentials`
+         * rightly rejects a Google connect with no client id, and a rejection here
+         * would stop the visitor short of the one leg that was actually missing.
+         *
+         * Only meaningful for Google. Every other provider is a single POST and has
+         * nothing to do once it is skipped, so an empty submission there stays an
+         * error from the server, which is the correct answer.
+         */
+        const consentOnly = id === 'google' && Object.keys(fields).length === 0;
 
-        if (id !== 'google') {
-          onChanged();
-          if (mounted.current) setStatus({ phase: 'done', id, message });
-          return true;
+        if (!consentOnly) {
+          const { message } = await apiPostJsonExplained<{ message: string }>(
+            `/api/integrations/${id}/connect`,
+            fields,
+          );
+          if (id !== 'google') {
+            onChanged();
+            if (mounted.current) setStatus({ phase: 'done', id, message });
+            return true;
+          }
         }
 
-        // Google: the POST only saved the client. The grant is still to come.
+        // Google: the POST only saved the client (or there was nothing to save).
+        // The grant is still to come.
         if (mounted.current) setStatus({ phase: 'consenting', id });
         const consent = await runConsent();
         onChanged();

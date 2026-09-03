@@ -337,11 +337,79 @@ export class ComputeStack extends cdk.Stack {
     taskDefinition.addVolume({ name: 'tmp' });
 
     /**
+     * Google OAuth credentials for the Gmail-send and Calendar-write tools.
+     *
+     * Created empty on purpose. `generateSecretString` only runs at *create*
+     * time, so a later `put-secret-value` with the real credentials survives
+     * every subsequent `cdk deploy` — the template's SecretString never changes,
+     * so CloudFormation never touches the value again. Nothing secret is ever in
+     * this repo or in the synthesised template.
+     *
+     * The refresh token is the one that matters: it grants send-mail-as and
+     * calendar-write on a real personal Google account, and it does not expire.
+     * Hence RETAIN, and hence `auto-delete=no` — the Isengard janitor deletes
+     * untagged resources regardless of CloudFormation retain policies.
+     *
+     * `GOOGLE_REFRESH_TOKEN` is the generated key rather than a third empty
+     * template field because Secrets Manager requires exactly one generated
+     * key. Its initial random value is meaningless and is overwritten by the
+     * real token; until then Google rejects it and `integrationReadiness()`
+     * reports Gmail and Calendar as not connected, which is the truth.
+     */
+    const googleSecret = new secretsmanager.Secret(this, 'GoogleOAuthSecret', {
+      secretName: `valentin/${env}/google-oauth`,
+      description:
+        'Google OAuth client id/secret and refresh token for the Gmail-send and ' +
+        'Calendar-write tools. Populate with `aws secretsmanager put-secret-value`.',
+      generateSecretString: {
+        secretStringTemplate: JSON.stringify({
+          GOOGLE_CLIENT_ID: '',
+          GOOGLE_CLIENT_SECRET: '',
+        }),
+        generateStringKey: 'GOOGLE_REFRESH_TOKEN',
+      },
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+    cdk.Tags.of(googleSecret).add('auto-delete', 'no');
+
+    /**
+     * Injected by the ECS agent at task start, so the values reach the process
+     * as ordinary environment variables and never appear in the task definition,
+     * the console, or `describe-tasks` output.
+     *
+     * This — not the integrations panel — is how the deployed app gets its Google
+     * credentials. The panel's connect flow writes `.env`, and both containers run
+     * `readonlyRootFilesystem: true`, so that path cannot persist anything here.
+     */
+    const sharedSecrets: Record<string, ecs.Secret> = {
+      GOOGLE_CLIENT_ID: ecs.Secret.fromSecretsManager(googleSecret, 'GOOGLE_CLIENT_ID'),
+      GOOGLE_CLIENT_SECRET: ecs.Secret.fromSecretsManager(googleSecret, 'GOOGLE_CLIENT_SECRET'),
+      GOOGLE_REFRESH_TOKEN: ecs.Secret.fromSecretsManager(googleSecret, 'GOOGLE_REFRESH_TOKEN'),
+    };
+
+    /**
+     * Origin the Google OAuth callback URL is built from — see
+     * `redirectUri()` in src/server/integrations/google/oauth.ts, which
+     * otherwise defaults to `http://localhost:5173` and would send a deployed
+     * user to their own machine.
+     *
+     * Derived from the Cognito callback list rather than restated, so the origin
+     * Google redirects to and the origin Cognito redirects to cannot drift
+     * apart. localhost is filtered out because it is only ever an *additional*
+     * dev origin, never the one a deployed task should advertise.
+     */
+    const publicOrigin = (
+      config.appUrls.callback.find((url) => !url.includes('localhost')) ??
+      config.appUrls.callback[0]
+    ).replace(/\/$/, '');
+
+    /**
      * Environment shared verbatim by both engines. Anything engine-specific goes
      * in the per-container spread below, so a reader can see at a glance that the
      * two services differ by exactly four variables and nothing else.
      */
     const sharedEnvironment: Record<string, string> = {
+      PUBLIC_ORIGIN: publicOrigin,
       DYNAMO_TABLE_NAME: props.table.tableName,
       // Opt in to durable storage. Without this the server falls back to
       // InMemoryStore and the deployed app silently forgets everything on
@@ -383,6 +451,7 @@ export class ComputeStack extends cdk.Stack {
         // baseline service runs.
         AGENT_ENGINE: 'valentin',
       },
+      secrets: sharedSecrets,
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: `valentin-${env}`,
         logGroup,
@@ -431,6 +500,7 @@ export class ComputeStack extends cdk.Stack {
         AGENTCORE_MEMORY_ID: props.agentCoreMemoryId,
         AGENTCORE_GATEWAY_URL: props.agentCoreGatewayUrl,
       },
+      secrets: sharedSecrets,
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: `valentin-ac-${env}`,
         logGroup: proxyLogGroup,

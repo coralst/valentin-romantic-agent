@@ -864,4 +864,37 @@ describe('Google credentials reach the deployed task', () => {
     const origin = containerEnv().PUBLIC_ORIGIN as string;
     expect(config.appUrls.callback).toContain(`${origin}/`);
   });
+
+  // The first attempt to deploy the secret failed for a reason no unit test
+  // covered: CloudFormation updated the execution role's grant and the ECS
+  // service concurrently. The service update began 11 seconds before the two
+  // IAM policies reached UPDATE_COMPLETE, every task launched in that window
+  // died with `ResourceInitializationError ... AccessDeniedException` on
+  // secretsmanager:GetSecretValue, and the circuit breaker rolled the whole
+  // stack back — reverting the grant, so the next attempt failed identically.
+  //
+  // Both services must therefore declare a DependsOn covering their own
+  // execution-role policy. Asserted on the synthesized template rather than on
+  // the construct tree, because DependsOn is the only thing CloudFormation
+  // actually reads.
+  for (const [service, role] of [
+    ['ServiceD69D759B', 'TaskDefExecutionRole'],
+    ['ProxyServiceE575189E', 'ProxyTaskDefExecutionRole'],
+  ] as const) {
+    it(`orders the ${role} grant before its ECS service`, () => {
+      const resources = computeTemplate.toJSON().Resources as Record<
+        string,
+        { Type: string; DependsOn?: string | string[] }
+      >;
+
+      const policyId = Object.keys(resources).find(
+        (id) => resources[id].Type === 'AWS::IAM::Policy' && id.startsWith(`${role}DefaultPolicy`),
+      );
+      expect(policyId, `no DefaultPolicy found for ${role}`).toBeDefined();
+
+      const dependsOn = resources[service]?.DependsOn ?? [];
+      const deps = Array.isArray(dependsOn) ? dependsOn : [dependsOn];
+      expect(deps).toContain(policyId);
+    });
+  }
 });

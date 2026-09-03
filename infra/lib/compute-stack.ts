@@ -658,6 +658,21 @@ export class ComputeStack extends cdk.Stack {
 
     this.proxyService.attachToApplicationTargetGroup(this.proxyTargetGroup);
 
+    // CloudFormation updates the execution role's DefaultPolicy and the ECS
+    // service in parallel, because nothing in the template connects them. When a
+    // new ECS secret is added, that race is lost by default: on 2026-09-03 the
+    // service update began at 20:21:54 and the two policies only reached
+    // UPDATE_COMPLETE at 20:22:05, so every task launched in those 11 seconds
+    // failed with `ResourceInitializationError ... AccessDeniedException` on
+    // secretsmanager:GetSecretValue. The circuit breaker counts those launches,
+    // trips, and rolls the whole stack back — which reverts the grant too, so
+    // the evidence disappears and the next attempt fails identically.
+    //
+    // Making each service depend on its own execution role forces the grant to
+    // land first. This matters on every future secret addition, not just Google.
+    forceExecutionRolePolicyFirst(this.service, taskDefinition);
+    forceExecutionRolePolicyFirst(this.proxyService, proxyTaskDefinition);
+
     // --- Auto Scaling ---
     const scaling = this.service.autoScaleTaskCount({
       minCapacity: config.desiredCount,
@@ -718,4 +733,37 @@ export class ComputeStack extends cdk.Stack {
       description: 'Engine-B log group — per-engine telemetry lives here',
     });
   }
+}
+
+/**
+ * Make an ECS service wait for its task execution role's inline policy.
+ *
+ * CDK grants `secretsmanager:GetSecretValue` on the execution role when a task
+ * definition references an ECS secret, but it adds no dependency between that
+ * policy and the service that launches the tasks. CloudFormation therefore
+ * updates them concurrently, and a task that starts before the grant exists dies
+ * with `ResourceInitializationError ... AccessDeniedException`.
+ *
+ * The grant lives on the role's auto-generated `DefaultPolicy` child, so the
+ * lookup is by that construct id. If a future CDK version renames it the
+ * dependency would silently stop being added, so a missing child throws rather
+ * than passing quietly.
+ */
+function forceExecutionRolePolicyFirst(
+  service: ecs.FargateService,
+  taskDefinition: ecs.FargateTaskDefinition,
+): void {
+  const executionRole = taskDefinition.executionRole;
+  if (!executionRole) return;
+
+  const defaultPolicy = executionRole.node.tryFindChild('DefaultPolicy');
+  if (!defaultPolicy) {
+    throw new Error(
+      'Execution role has no DefaultPolicy child — the CDK construct id changed, ' +
+        'so the secret grant is no longer ordered before the ECS service. ' +
+        'See forceExecutionRolePolicyFirst in compute-stack.ts.',
+    );
+  }
+
+  service.node.addDependency(defaultPolicy);
 }

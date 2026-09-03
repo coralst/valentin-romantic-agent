@@ -180,19 +180,44 @@ export function useIntegrationConnect(onChanged: () => void): UseIntegrationConn
     async (id: ConnectableId, fields: Record<string, string>): Promise<boolean> => {
       setStatus({ phase: 'working', id });
       try {
-        const { message } = await apiPostJsonExplained<{ message: string }>(
-          `/api/integrations/${id}/connect`,
-          fields,
-        );
+        /*
+         * No fields means "you already have the client, just get me consent" — the
+         * state of a deployment whose id and secret came from the environment. The
+         * save is skipped rather than sent empty, because `applyIntegrationCredentials`
+         * rightly rejects a Google connect with no client id, and a rejection here
+         * would stop the visitor short of the one leg that was actually missing.
+         *
+         * Google-only, and deliberately not widened to Spotify even though Spotify
+         * now has a consent leg too. The skip is only safe where the server says it
+         * already holds the client, and `GET /api/integrations` sends
+         * `oauthClientPresent` for the Google ids alone — so a Spotify consent-only
+         * submission would ask for a grant against a client that may not exist.
+         * Widening it means teaching the server to report Spotify's client first.
+         */
+        const consentOnly = id === 'google' && Object.keys(fields).length === 0;
 
-        if (!needsConsentLeg(id)) {
-          onChanged();
-          if (mounted.current) setStatus({ phase: 'done', id, message });
-          return true;
+        if (!consentOnly) {
+          const { message } = await apiPostJsonExplained<{ message: string }>(
+            `/api/integrations/${id}/connect`,
+            fields,
+          );
+          /*
+           * `needsConsentLeg(id)` rather than `id !== 'google'`, which is what this
+           * read before Spotify existed. Spotify is the second provider whose POST
+           * cannot finish the job on its own, so the question is no longer "is this
+           * Google" but "does this provider still owe us a browser grant" — and
+           * `CONSENT_PROVIDERS` is the one place that answers it.
+           */
+          if (!needsConsentLeg(id)) {
+            onChanged();
+            if (mounted.current) setStatus({ phase: 'done', id, message });
+            return true;
+          }
         }
 
-        // Google and Spotify: the POST got us as far as it can on its own. The
-        // user grant is still to come, and only a browser can earn it.
+        // Google and Spotify: the POST got us as far as it can on its own (or there
+        // was nothing to save). The user grant is still to come, and only a browser
+        // can earn it.
         if (mounted.current) setStatus({ phase: 'consenting', id });
         const consent = await runConsent(id);
         onChanged();

@@ -114,6 +114,23 @@ export interface IntegrationStatus {
    * from a table compiled into the bundle.
    */
   transport: IntegrationTransport;
+  /**
+   * Whether the server already holds an OAuth *client* for this integration,
+   * independently of whether a human has consented yet.
+   *
+   * Only meaningful for the Google ids, where readiness needs three values and a
+   * deployment routinely has the first two before it has the third: the client id
+   * and secret arrive from the environment — `.env` locally, Secrets Manager
+   * injected by `compute-stack.ts` when deployed — while the refresh token can
+   * only be earned by a browser round trip. Without this flag `configured: false`
+   * is ambiguous between "nobody has told me who this app is" and "I know who
+   * this app is, I just need someone to sign in", and the panel answers the first
+   * question by demanding credentials that are already loaded.
+   *
+   * Still a boolean, so the endpoint's rule holds: never a credential, not even a
+   * masked one. Optional because only Google sets it.
+   */
+  oauthClientPresent?: boolean;
 }
 
 export interface IntegrationStatusResponse {

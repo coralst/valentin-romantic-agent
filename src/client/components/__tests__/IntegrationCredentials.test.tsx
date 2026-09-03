@@ -30,7 +30,15 @@ vi.mock('../../utils/api-client', () => ({
   apiPostJsonExplained: (path: string, body?: unknown) => api.post(path, body),
 }));
 
-function serverReports(configured: Partial<Record<string, boolean>>) {
+/**
+ * @param clientPresent Which ids the server already holds an OAuth client for.
+ *   Only the Google ids can, and in the real endpoint the two always agree, so
+ *   tests pass both together.
+ */
+function serverReports(
+  configured: Partial<Record<string, boolean>>,
+  clientPresent: Partial<Record<string, boolean>> = {},
+) {
   api.get.mockImplementation(async (path: string) => {
     if (path === '/api/integrations') {
       return {
@@ -38,6 +46,9 @@ function serverReports(configured: Partial<Record<string, boolean>>) {
           id,
           label: INTEGRATION_LABELS[id],
           configured: configured[id] ?? false,
+          ...(id === 'google-calendar' || id === 'gmail'
+            ? { oauthClientPresent: clientPresent[id] ?? false }
+            : {}),
         })),
       };
     }
@@ -364,5 +375,112 @@ describe('the Google consent leg', () => {
     expect(screen.getByTestId('integration-connect-submit-google')).toHaveTextContent(
       /waiting for google/i,
     );
+  });
+});
+
+/**
+ * The deployment that already knows which Google app it is.
+ *
+ * This is the ordinary state of both environments Valentin runs in — `.env` locally
+ * and Secrets Manager when deployed both supply `GOOGLE_CLIENT_ID` and
+ * `GOOGLE_CLIENT_SECRET`, and neither can supply the refresh token, which only a
+ * human at a Google consent screen can produce. Readiness is false in that state,
+ * and the panel used to read false as "I have been told nothing" and ask for the two
+ * values it was already holding. Retyping them cannot produce the third, so the form
+ * was a dead end: the visitor's only real action was the one button that was missing.
+ */
+describe('when the server already holds the OAuth client', () => {
+  const clientLoaded = () =>
+    serverReports(
+      { hebcal: true, ontopo: true },
+      { 'google-calendar': true, gmail: true },
+    );
+
+  it('asks for a sign-in instead of the credentials it already has', async () => {
+    clientLoaded();
+    const user = userEvent.setup();
+    await renderPanel();
+    await openSheet(user, 'google-calendar');
+
+    expect(screen.getByTestId('integration-client-loaded-google')).toBeInTheDocument();
+    expect(screen.queryByTestId('integration-field-google-clientId')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('integration-field-google-clientSecret')).not.toBeInTheDocument();
+    expect(screen.getByTestId('integration-connect-submit-google')).toHaveTextContent(
+      /^sign in with google$/i,
+    );
+  });
+
+  it('goes straight to consent without re-saving a client it has', async () => {
+    clientLoaded();
+    vi.spyOn(window, 'open').mockReturnValue({ closed: false } as Window);
+
+    const user = userEvent.setup();
+    await renderPanel();
+    await openSheet(user, 'google-calendar');
+    await user.click(screen.getByTestId('integration-connect-submit-google'));
+    await act(async () => {});
+
+    // The save is skipped, not sent empty: there is nothing to write, and the
+    // route would rightly reject a Google connect carrying no client id.
+    expect(api.post).not.toHaveBeenCalled();
+    expect(window.open).toHaveBeenCalledOnce();
+    expect(screen.getByTestId('integration-connect-submit-google')).toHaveTextContent(
+      /waiting for google/i,
+    );
+  });
+
+  it('flips the capability live once consent lands', async () => {
+    clientLoaded();
+    vi.spyOn(window, 'open').mockReturnValue({ closed: false } as Window);
+
+    const user = userEvent.setup();
+    await renderPanel();
+    await openSheet(user, 'google-calendar');
+    await user.click(screen.getByTestId('integration-connect-submit-google'));
+    await act(async () => {});
+
+    serverReports(
+      { hebcal: true, ontopo: true, 'google-calendar': true, gmail: true },
+      { 'google-calendar': true, gmail: true },
+    );
+    await act(async () => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: { source: 'valentin-google-oauth', ok: true },
+          origin: window.location.origin,
+        }),
+      );
+    });
+    await act(async () => {});
+
+    expect(screen.getByTestId('integration-readiness-google-calendar')).toHaveTextContent('live');
+  });
+
+  it('still lets someone point it at a different Google project', async () => {
+    clientLoaded();
+    const user = userEvent.setup();
+    await renderPanel();
+    await openSheet(user, 'google-calendar');
+
+    // The escape hatch matters: a server can be holding the *wrong* client, and
+    // hiding the inputs entirely would leave no way to correct it.
+    await user.click(screen.getByTestId('integration-replace-client-google'));
+
+    expect(screen.getByTestId('integration-field-google-clientId')).toBeInTheDocument();
+    expect(screen.getByTestId('integration-connect-submit-google')).toHaveTextContent(
+      /save & sign in/i,
+    );
+  });
+
+  it('keeps asking for credentials when the server has none', async () => {
+    // The other half of the contract. Absent flag ⇒ nothing held ⇒ the form must
+    // still collect a client, or a fresh deployment has no way to be configured.
+    serverReports({ hebcal: true, ontopo: true });
+    const user = userEvent.setup();
+    await renderPanel();
+    await openSheet(user, 'google-calendar');
+
+    expect(screen.getByTestId('integration-field-google-clientId')).toBeInTheDocument();
+    expect(screen.queryByTestId('integration-client-loaded-google')).not.toBeInTheDocument();
   });
 });

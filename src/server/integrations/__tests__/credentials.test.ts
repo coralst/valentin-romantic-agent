@@ -150,6 +150,35 @@ describe('applying Google credentials', () => {
     expect(config.integrations.googleRefreshToken).toBeUndefined();
   });
 
+  it('accepts an empty body when it is already holding a client', async () => {
+    // The environment supplied the client — `.env` locally, Secrets Manager when
+    // deployed — so "connect Google" means consent, not credentials.
+    config.integrations.googleClientId = 'from-the-environment';
+    config.integrations.googleClientSecret = 'from-the-environment';
+    writeFileSync(envFile, 'OTHER=keep\n');
+
+    const result = await applyIntegrationCredentials('google', {});
+
+    expect(result.ok).toBe(true);
+    expect(result.message).toMatch(/already loaded/i);
+    // Nothing changed, so nothing is written: the env file must not gain a
+    // GOOGLE_ line echoing values it did not supply.
+    expect(readFileSync(envFile, 'utf8')).toBe('OTHER=keep\n');
+    expect(config.integrations.googleClientId).toBe('from-the-environment');
+  });
+
+  it('still refuses an empty body when it holds no client', async () => {
+    config.integrations.googleClientId = undefined;
+    config.integrations.googleClientSecret = undefined;
+
+    const result = await applyIntegrationCredentials('google', {});
+
+    // A fresh deployment has to be told who it is; answering "already loaded"
+    // here would send the visitor to a consent screen with no client behind it.
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/client id and client secret/i);
+  });
+
   it('is only fully configured once a refresh token arrives', () => {
     config.integrations.googleClientId = 'id';
     config.integrations.googleClientSecret = 'secret';

@@ -1,3 +1,8 @@
+// Must stay the first import, for the same reason as in `dev-server.ts`. The ECS
+// task has no `.env` — every value is injected, secrets from Secrets Manager — so
+// this is a no-op there, and that is the point: one code path for both
+// environments, with real environment variables always winning over a file.
+import './env-first';
 import { createServer as createHttpServer } from 'http';
 import { WebSocket } from 'ws';
 import { createServer } from './index';

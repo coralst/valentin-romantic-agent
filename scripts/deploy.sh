@@ -506,3 +506,14 @@ else
 fi
 rm -f "$TMP_MANIFEST"
 echo ""
+
+# Every deploy can create resources outside the CDK app's tagging reach — a new
+# ECR image, a new task-definition revision, a new auto-scaling alarm. Untagged,
+# SpringClean deletes them on a 7-day clock. Runs last so it sees what this
+# deploy just made, and never fails the deploy: the deploy itself succeeded, and
+# a tagging gap is a next-week problem, not a now problem.
+if [ -x "${ROOT}/scripts/springclean-guard.sh" ]; then
+  AWS_PROFILE="$PROFILE" "${ROOT}/scripts/springclean-guard.sh" "$REGION" \
+    || echo "  WARNING: SpringClean guard failed — re-run scripts/springclean-guard.sh"
+  echo ""
+fi

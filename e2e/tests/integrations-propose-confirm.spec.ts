@@ -121,7 +121,6 @@ test.describe('Integrations — propose and confirm', () => {
     for (const id of [
       'ontopo',
       'google-calendar',
-      'amadeus',
       'gmail',
       'whatsapp',
       'hebcal',

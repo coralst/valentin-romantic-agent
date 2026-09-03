@@ -18,6 +18,7 @@ import {
   INTEGRATION_LABELS,
 } from '../../../shared/interfaces/integrations';
 import { INTEGRATIONS_STORAGE_KEY } from '../../hooks/use-integrations-store';
+import { IntegrationConsentSheet } from '../IntegrationConsentSheet';
 import { MOBILE_STRIP_HEIGHT } from '../AppWindow';
 import { layout } from '../../design-system/tokens';
 
@@ -225,42 +226,71 @@ describe('IntegrationsPanel', () => {
   /*
    * The cap is the difference between "he can act" and "he can spend": it must
    * appear exactly where money can move and nowhere else.
+   *
+   * Nothing in the catalogue can spend any more. Amadeus was the last row that
+   * could, and it was removed because the cap it offered was theatre — a $400 slider
+   * over a *test-sandbox* hold that cannot be placed. So the "no cap" half is now
+   * assertable from any row, and the "offers a cap" half has no row to open at all.
+   *
+   * The sheet is therefore driven directly, with a service shaped the way a genuinely
+   * spendable row would be. That is not a workaround: the sheet is what owns the cap,
+   * and testing the mechanism through whichever catalogue entry happened to have a
+   * `spend` scope is how the assertion ended up pinned to a row that was lying. When
+   * a real spendable provider lands, this is the contract it has to satisfy.
    */
   describe('the spend cap', () => {
-    it('offers a cap on a service that can spend, and shows it on the node', async () => {
-      const user = userEvent.setup();
-      await renderPanel();
+    const spendable: IntegrationService = {
+      id: 'ontopo',
+      name: 'Ontopo',
+      backing: ['ontopo'],
+      capability: 'restaurant tables',
+      mark: 'ontopo',
+      blurb: 'Stands in for a provider that can genuinely move money.',
+      scopes: [{ label: 'hold a booking', detail: 'A hold, with your yes', reach: 'spend' }],
+      defaultCapUsd: 400,
+    };
 
-      /*
-       * Amadeus, not Wolt. The Wolt row used to stand here, back when the catalogue
-       * claimed Valentin could "place an order" for $80 — he never could, because
-       * the Wolt handoff ends at the shop's own page. Amadeus is the real example: a
-       * hold is money moving.
-       */
-      await user.click(screen.getByTestId('integration-node-amadeus'));
-      // The catalogue's default for Amadeus, echoed next to the slider.
+    it('offers a cap on a service that can spend, and grants the cap on screen', async () => {
+      const user = userEvent.setup();
+      const onConfirm = vi.fn();
+      render(
+        <IntegrationConsentSheet
+          service={spendable}
+          mode="connect"
+          onConfirm={onConfirm}
+          onCancel={() => {}}
+        />,
+      );
+
+      // The catalogue's own default, echoed beside the slider.
       expect(screen.getByTestId('integration-cap-slider')).toHaveValue('400');
       expect(screen.getByTestId('integration-cap-value')).toHaveTextContent('$400');
 
+      // And the number on screen is the number granted. A slider whose value the
+      // grant ignores would be the same theatre as a slider on a row that cannot
+      // spend at all.
       await user.click(screen.getByTestId('integration-confirm-button'));
-      expect(screen.getByTestId('integration-node-amadeus')).toHaveTextContent('up to $400');
+      expect(onConfirm).toHaveBeenCalledWith(400);
     });
 
     it('offers no cap on a service that cannot spend', async () => {
       const user = userEvent.setup();
       await renderPanel();
 
+      // True of every row in the catalogue now, so the row chosen here is arbitrary —
+      // which is itself the state the panel is in and worth reading as such.
       await user.click(screen.getByTestId('integration-node-spotify'));
       expect(screen.queryByTestId('integration-cap-slider')).not.toBeInTheDocument();
     });
 
-    it('reads the cap back when the grant is revisited', async () => {
-      const user = userEvent.setup();
+    it('has no row left that claims it can spend', async () => {
       await renderPanel();
-
-      await connect(user, 'amadeus');
-      await user.click(screen.getByTestId('integration-node-amadeus'));
-      expect(screen.getByTestId('integration-cap-value')).toHaveTextContent('$400');
+      // The assertion the Amadeus removal is really about: a money slider must not
+      // reappear behind any row on this page without someone deciding it should.
+      for (const service of INTEGRATION_CATALOGUE) {
+        expect(service.scopes.some((scope) => scope.reach === 'spend')).toBe(false);
+        expect(service.defaultCapUsd).toBeNull();
+      }
     });
   });
 
@@ -384,12 +414,14 @@ describe('IntegrationsPanel', () => {
        * because none of them is. `readinessLabel` covers the aspirational branch
        * directly for the day a genuinely unbuilt row is added.
        */
-      const amadeus = await screen.findByTestId('integration-readiness-amadeus');
-      expect(amadeus).toHaveAttribute('data-readiness', 'unconfigured');
-      expect(amadeus).toHaveTextContent('needs credentials');
-
-      const spotify = screen.getByTestId('integration-readiness-spotify');
+      const spotify = await screen.findByTestId('integration-readiness-spotify');
       expect(spotify).toHaveAttribute('data-readiness', 'unconfigured');
+      expect(spotify).toHaveTextContent('needs credentials');
+
+      // Gmail is the other half of the pair and reaches the same state by a different
+      // route — an OAuth refresh token rather than an app key — so both are named.
+      const gmail = screen.getByTestId('integration-readiness-gmail');
+      expect(gmail).toHaveAttribute('data-readiness', 'unconfigured');
 
       for (const service of INTEGRATION_CATALOGUE) {
         const badge = screen.queryByTestId(`integration-readiness-${service.id}`);

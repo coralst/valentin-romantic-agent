@@ -30,7 +30,14 @@ describe('integration catalogue', () => {
     expect(backed.ontopo).toContain('ontopo');
     expect(backed.hebcal).toContain('hebcal');
     expect(backed['google-calendar']).toContain('google-calendar');
-    expect(backed.amadeus).toContain('amadeus');
+    /*
+     * No `amadeus` here, and it is the one provider whose server tier outlives its
+     * row. The flight and hotel search is real; what it cannot do is honour the row's
+     * $400 spend cap, because the credentials point at the Amadeus *test sandbox*
+     * where a hold is representative rather than bookable. Every other row on this
+     * page had just been corrected away from claims like that.
+     */
+    expect(backed.amadeus).toBeUndefined();
     // Split rows, deliberately: Gmail and WhatsApp have separate readiness and
     // separate credential forms, and the combined row reported "needs credentials"
     // for email that worked.

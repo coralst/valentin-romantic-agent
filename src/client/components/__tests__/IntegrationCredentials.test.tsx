@@ -71,13 +71,27 @@ beforeEach(() => {
 });
 
 describe('offering the form', () => {
-  it('offers Amadeus credentials on the Amadeus card, which needs them', async () => {
+  /*
+   * WhatsApp is this file's worked example, and it used to be Amadeus.
+   *
+   * Not a cosmetic swap: the Amadeus row was removed from the catalogue, so there is
+   * no card left to open. Its server tier and its `CONNECT_RECIPES` entry are both
+   * still in the tree — what it lost was the right to a row, because it was the only
+   * one offering a $400 spend cap against a test sandbox where the hold it capped
+   * cannot be placed.
+   *
+   * WhatsApp is the same shape for these purposes — one public identifier, one
+   * secret — with the incidental benefit that its field names are `phoneNumberId`
+   * and `token` rather than another `clientId`/`clientSecret` pair, so a form that
+   * posts the wrong keys now fails a test instead of blending in.
+   */
+  it('offers WhatsApp credentials on the WhatsApp card, which needs them', async () => {
     const user = userEvent.setup();
     await renderPanel();
-    await openSheet(user, 'amadeus');
+    await openSheet(user, 'whatsapp');
 
-    expect(screen.getByTestId('integration-credentials-amadeus')).toBeInTheDocument();
-    expect(screen.getByTestId('integration-field-amadeus-clientId')).toBeInTheDocument();
+    expect(screen.getByTestId('integration-credentials-whatsapp')).toBeInTheDocument();
+    expect(screen.getByTestId('integration-field-whatsapp-phoneNumberId')).toBeInTheDocument();
   });
 
   /*
@@ -133,17 +147,17 @@ describe('offering the form', () => {
   });
 
   it('hides the inputs for a provider that is already configured', async () => {
-    serverReports({ hebcal: true, ontopo: true, amadeus: true });
+    serverReports({ hebcal: true, ontopo: true, whatsapp: true });
     const user = userEvent.setup();
     await renderPanel();
-    await openSheet(user, 'amadeus');
+    await openSheet(user, 'whatsapp');
 
     // No empty inputs to overwrite a working key with a typo. The server probes
     // before applying, so the typo would be rejected and the old value would
     // survive — leaving an error on screen for a service that is actually fine.
-    expect(screen.queryByTestId('integration-field-amadeus-clientId')).not.toBeInTheDocument();
-    expect(screen.getByTestId('integration-held-amadeus')).toBeInTheDocument();
-    expect(screen.getByTestId('integration-forget-amadeus')).toBeInTheDocument();
+    expect(screen.queryByTestId('integration-field-whatsapp-phoneNumberId')).not.toBeInTheDocument();
+    expect(screen.getByTestId('integration-held-whatsapp')).toBeInTheDocument();
+    expect(screen.getByTestId('integration-forget-whatsapp')).toBeInTheDocument();
   });
 });
 
@@ -151,15 +165,15 @@ describe('the fields themselves', () => {
   it('masks the secret and not the public identifier', async () => {
     const user = userEvent.setup();
     await renderPanel();
-    await openSheet(user, 'amadeus');
+    await openSheet(user, 'whatsapp');
 
     // This panel gets projected. A secret rendered as plain text is disclosed
     // whether or not anyone meant it to be.
-    expect(screen.getByTestId('integration-field-amadeus-clientSecret')).toHaveAttribute(
+    expect(screen.getByTestId('integration-field-whatsapp-token')).toHaveAttribute(
       'type',
       'password',
     );
-    expect(screen.getByTestId('integration-field-amadeus-clientId')).toHaveAttribute(
+    expect(screen.getByTestId('integration-field-whatsapp-phoneNumberId')).toHaveAttribute(
       'type',
       'text',
     );
@@ -168,65 +182,68 @@ describe('the fields themselves', () => {
   it('will not submit until every field has something in it', async () => {
     const user = userEvent.setup();
     await renderPanel();
-    await openSheet(user, 'amadeus');
+    await openSheet(user, 'whatsapp');
 
-    const submit = screen.getByTestId('integration-connect-submit-amadeus');
+    const submit = screen.getByTestId('integration-connect-submit-whatsapp');
     expect(submit).toBeDisabled();
 
-    await user.type(screen.getByTestId('integration-field-amadeus-clientId'), 'key');
+    await user.type(screen.getByTestId('integration-field-whatsapp-phoneNumberId'), 'key');
     expect(submit).toBeDisabled();
 
-    await user.type(screen.getByTestId('integration-field-amadeus-clientSecret'), 'secret');
+    await user.type(screen.getByTestId('integration-field-whatsapp-token'), 'secret');
     expect(submit).toBeEnabled();
   });
 });
 
 describe('submitting', () => {
   it('posts the fields and refetches readiness, so the badge flips', async () => {
-    api.post.mockResolvedValue({ message: 'Amadeus connected.' });
+    api.post.mockResolvedValue({ message: 'WhatsApp connected.' });
     const user = userEvent.setup();
     await renderPanel();
-    await openSheet(user, 'amadeus');
+    await openSheet(user, 'whatsapp');
 
-    await user.type(screen.getByTestId('integration-field-amadeus-clientId'), 'key-1');
-    await user.type(screen.getByTestId('integration-field-amadeus-clientSecret'), 'secret-1');
+    await user.type(screen.getByTestId('integration-field-whatsapp-phoneNumberId'), 'key-1');
+    await user.type(screen.getByTestId('integration-field-whatsapp-token'), 'secret-1');
 
-    // Readiness now reports Amadeus as configured, as the server would after a
+    // Readiness now reports WhatsApp as configured, as the server would after a
     // successful probe.
-    serverReports({ hebcal: true, ontopo: true, amadeus: true });
-    await user.click(screen.getByTestId('integration-connect-submit-amadeus'));
+    serverReports({ hebcal: true, ontopo: true, whatsapp: true });
+    await user.click(screen.getByTestId('integration-connect-submit-whatsapp'));
     await act(async () => {});
 
-    expect(api.post).toHaveBeenCalledWith('/api/integrations/amadeus/connect', {
-      clientId: 'key-1',
-      clientSecret: 'secret-1',
+    // The field *names* are the contract, not just their values: these are the keys
+    // the server reads off the body, and a form that posted `clientId` here would be
+    // rejected by a provider that has never heard of it.
+    expect(api.post).toHaveBeenCalledWith('/api/integrations/whatsapp/connect', {
+      phoneNumberId: 'key-1',
+      token: 'secret-1',
     });
-    expect(screen.getByTestId('integration-done-amadeus')).toBeInTheDocument();
+    expect(screen.getByTestId('integration-done-whatsapp')).toBeInTheDocument();
     // The badge is the visible payoff: the panel re-read the server rather than
     // trusting its own request.
-    expect(screen.getByTestId('integration-readiness-amadeus')).toHaveTextContent('live');
+    expect(screen.getByTestId('integration-readiness-whatsapp')).toHaveTextContent('live');
   });
 
   it('shows the server\'s own reason when a credential is refused', async () => {
     api.post.mockRejectedValue(
-      new Error('Amadeus rejected these credentials. Nothing was changed.'),
+      new Error('WhatsApp rejected these credentials. Nothing was changed.'),
     );
     const user = userEvent.setup();
     await renderPanel();
-    await openSheet(user, 'amadeus');
+    await openSheet(user, 'whatsapp');
 
-    await user.type(screen.getByTestId('integration-field-amadeus-clientId'), 'typo');
-    await user.type(screen.getByTestId('integration-field-amadeus-clientSecret'), 'typo');
-    await user.click(screen.getByTestId('integration-connect-submit-amadeus'));
+    await user.type(screen.getByTestId('integration-field-whatsapp-phoneNumberId'), 'typo');
+    await user.type(screen.getByTestId('integration-field-whatsapp-token'), 'typo');
+    await user.click(screen.getByTestId('integration-connect-submit-whatsapp'));
     await act(async () => {});
 
     // Not "the server responded with 400". Only the server knows whether the key
     // was wrong or the provider was unreachable, and the visitor acts differently
     // on each.
-    expect(screen.getByTestId('integration-error-amadeus')).toHaveTextContent(
+    expect(screen.getByTestId('integration-error-whatsapp')).toHaveTextContent(
       /rejected these credentials/i,
     );
-    expect(screen.getByTestId('integration-readiness-amadeus')).toHaveTextContent(
+    expect(screen.getByTestId('integration-readiness-whatsapp')).toHaveTextContent(
       'needs credentials',
     );
   });

@@ -215,19 +215,24 @@ export const INTEGRATION_CATALOGUE: readonly IntegrationService[] = [
     ],
     defaultCapUsd: null,
   },
-  {
-    id: 'amadeus',
-    name: 'Amadeus',
-    backing: ['amadeus'],
-    capability: 'flights & hotels',
-    mark: 'amadeus',
-    blurb: 'Surprise weekends, priced against the cap you set.',
-    scopes: [
-      { label: 'search flights and rooms', detail: 'Read-only', reach: 'read' },
-      { label: 'hold a booking', detail: 'A hold, never a purchase, and always with your yes', reach: 'spend' },
-    ],
-    defaultCapUsd: 400,
-  },
+  /*
+   * Amadeus is deliberately absent, and it is the only provider this catalogue
+   * leaves out while its server tier stays in the tree.
+   *
+   * `src/server/integrations/amadeus/` is real code and `CONNECT_RECIPES.amadeus`
+   * still describes its key pair — nothing there was deleted, because the flight and
+   * hotel search works. What it cannot do is be honest on this page. Amadeus was the
+   * one row carrying a `spend` scope and a $400 cap, against a *test sandbox* whose
+   * results are representative rather than bookable: the row offered a visitor a
+   * money slider for a hold that cannot be placed. Every other row on this page had
+   * just been corrected in the opposite direction, and leaving one theatrical cap
+   * behind would undo the point of the exercise.
+   *
+   * Removing the row rather than the scope is the smaller lie. A travel row with the
+   * cap stripped out still promises weekends away that this deployment cannot book;
+   * no row promises nothing. If the credentials are ever pointed at production
+   * Amadeus, the row comes back with its cap and means it.
+   */
   {
     /*
      * Gmail and WhatsApp were one "Messages" row, and splitting them is a fix

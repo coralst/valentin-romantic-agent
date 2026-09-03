@@ -410,10 +410,15 @@ describe('GET /api/integrations', () => {
     for (const entry of body.integrations) {
       // `transport` says whether reaching this needs a browser. Sent rather than
       // inferred client-side so the panel's relay layout follows the deployment.
-      expect(Object.keys(entry).sort()).toEqual([
-        'configured', 'id', 'label', 'transport',
-      ]);
+      // The Google ids carry one extra boolean: whether the server already holds
+      // an OAuth client. It survives the regex above because it is a *fact about*
+      // a credential, not a credential — the whole reason it is a boolean.
+      const google = entry.id === 'google-calendar' || entry.id === 'gmail';
+      expect(Object.keys(entry).sort()).toEqual(
+        ['configured', 'id', 'label', 'transport', ...(google ? ['oauthClientPresent'] : [])].sort(),
+      );
       expect(typeof entry.configured).toBe('boolean');
+      if (google) expect(typeof entry.oauthClientPresent).toBe('boolean');
     }
   });
 

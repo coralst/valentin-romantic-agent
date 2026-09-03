@@ -39,6 +39,24 @@ interface IntegrationCredentialsFormProps {
    * visitor sees an error for a service that is actually fine. Quieter to not ask.
    */
   alreadyConnected?: boolean;
+  /**
+   * True when the server already holds the OAuth *client* but nobody has consented.
+   *
+   * The normal state of a deployment whose client id and secret came from the
+   * environment — `.env` locally, Secrets Manager when deployed — and whose refresh
+   * token has not been earned yet. Only the token is missing, and no amount of
+   * retyping the other two can produce it, so asking for them is a dead end: the
+   * visitor fills two inputs, the server learns nothing it did not know, and the
+   * one action that would help is the one the form never offered.
+   *
+   * So this collapses the block to a single sign-in button. The inputs stay
+   * reachable behind "Use different credentials", because a deployment may well be
+   * pointed at the wrong Google project and that is the only way back.
+   *
+   * Ignored when {@link alreadyConnected} — a fully working service has nothing to
+   * sign in to.
+   */
+  clientPresent?: boolean;
 }
 
 const blockStyle: React.CSSProperties = {
@@ -152,27 +170,36 @@ export function IntegrationCredentialsForm({
   onSubmit,
   onDisconnect,
   alreadyConnected = false,
+  clientPresent = false,
 }: IntegrationCredentialsFormProps) {
   const recipe = CONNECT_RECIPES[id];
   const [values, setValues] = useState<Record<string, string>>({});
   const [replacing, setReplacing] = useState(false);
   const formId = useId();
-  const showInputs = !alreadyConnected || replacing;
+  // The one case with no inputs and no Forget: the client is loaded, consent is
+  // not, and the only useful action is to sign in.
+  const consentOnly = clientPresent && !alreadyConnected && !replacing;
+  const showInputs = !consentOnly && (!alreadyConnected || replacing);
 
   // Only this provider's own status is ours to render. The hook is shared across
   // every capability in the panel, so without this check a failed WhatsApp
   // attempt would print its error under the Amadeus form too.
   const mine = status.phase !== 'idle' && status.id === id ? status : null;
   const busy = mine?.phase === 'working' || mine?.phase === 'consenting';
-  const complete = recipe.fields.every((field) => (values[field.name] ?? '').trim() !== '');
+  // Nothing to fill in when we are only collecting consent, so the button is live
+  // immediately rather than waiting on inputs that are not on screen.
+  const complete =
+    consentOnly || recipe.fields.every((field) => (values[field.name] ?? '').trim() !== '');
 
   const label = busy
     ? mine?.phase === 'consenting'
       ? 'Waiting for Google…'
       : 'Checking…'
-    : recipe.needsConsent
-      ? `Save & sign in with ${recipe.provider}`
-      : `Connect ${recipe.provider}`;
+    : consentOnly
+      ? `Sign in with ${recipe.provider}`
+      : recipe.needsConsent
+        ? `Save & sign in with ${recipe.provider}`
+        : `Connect ${recipe.provider}`;
 
   return (
     <div style={blockStyle} data-testid={`integration-credentials-${id}`}>
@@ -182,6 +209,12 @@ export function IntegrationCredentialsForm({
         <p style={whereStyle} data-testid={`integration-held-${id}`}>
           This server holds working {recipe.provider} credentials. They are never shown
           back — not even partly — so replacing them means pasting new ones.
+        </p>
+      ) : consentOnly ? (
+        <p style={whereStyle} data-testid={`integration-client-loaded-${id}`}>
+          This server already has its {recipe.provider} app credentials from its own
+          environment. All that is missing is your sign-in, which is the one thing that
+          cannot be configured for you.
         </p>
       ) : (
         <p style={whereStyle}>
@@ -198,7 +231,11 @@ export function IntegrationCredentialsForm({
         onSubmit={(event) => {
           event.preventDefault();
           if (!complete || busy) return;
-          onSubmit(values);
+          // Empty when we are only collecting consent: the server has the client
+          // already, and sending back blanks it would have to reject is worse than
+          // sending nothing. The connect hook reads `{}` as "skip straight to the
+          // Google round trip".
+          onSubmit(consentOnly ? {} : values);
         }}
       >
         {showInputs &&
@@ -225,7 +262,7 @@ export function IntegrationCredentialsForm({
           ))}
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10 }}>
-          {showInputs && (
+          {(showInputs || consentOnly) && (
             <button
               type="submit"
               disabled={!complete || busy}
@@ -233,6 +270,18 @@ export function IntegrationCredentialsForm({
               data-testid={`integration-connect-submit-${id}`}
             >
               {label}
+            </button>
+          )}
+          {consentOnly && (
+            /* The way out of a server pointed at the wrong Google project. Quiet,
+               because for almost every visitor the loaded client is the right one. */
+            <button
+              type="button"
+              onClick={() => setReplacing(true)}
+              style={ghostButtonStyle}
+              data-testid={`integration-replace-client-${id}`}
+            >
+              Use different credentials
             </button>
           )}
           {alreadyConnected && !replacing && (

@@ -27,6 +27,21 @@ export interface IntegrationReadiness {
   state: ReadinessState;
   /** Empty until loaded. Absent id ⇒ unknown, which is rendered as not ready. */
   configured: Partial<Record<IntegrationId, boolean>>;
+  /**
+   * Which ids the server already holds an OAuth client for, consent aside.
+   *
+   * Only the Google ids ever appear. It exists so the connect form can tell "I was
+   * never told who this app is" from "I know who this app is, someone just has to
+   * sign in" — the second is the normal state of a fresh deployment, where the
+   * client id and secret come from the environment and only the refresh token has
+   * to be earned in a browser. Without it the form asks for credentials the server
+   * is already holding, which is a dead end: retyping them cannot produce the one
+   * value that is actually missing.
+   *
+   * Optional so every existing fixture that builds an `IntegrationReadiness` from
+   * two fields keeps compiling; absent is read as false.
+   */
+  oauthClientPresent?: Partial<Record<IntegrationId, boolean>>;
 }
 
 /** The hook's return: the data, plus the means to ask again. */
@@ -58,10 +73,16 @@ export function useIntegrationReadiness(): IntegrationReadinessHandle {
       .then((body) => {
         if (!live) return;
         const configured: Partial<Record<IntegrationId, boolean>> = {};
+        const oauthClientPresent: Partial<Record<IntegrationId, boolean>> = {};
         for (const entry of body.integrations) {
           configured[entry.id] = entry.configured;
+          // Only recorded where the server sent it, so an id that has no OAuth
+          // client concept stays absent rather than claiming a false.
+          if (entry.oauthClientPresent !== undefined) {
+            oauthClientPresent[entry.id] = entry.oauthClientPresent;
+          }
         }
-        setReadiness({ state: 'loaded', configured });
+        setReadiness({ state: 'loaded', configured, oauthClientPresent });
       })
       .catch(() => {
         /*

@@ -12,7 +12,11 @@ import { DEFAULT_GENERATION, isPersonGeneration } from '../../shared/interfaces/
 import type { Person } from '../../shared/interfaces/person';
 import type { Task } from '../../shared/interfaces/task';
 import { isProfileFieldId } from '../../shared/constants/profile-fields';
-import { buildToolRegistry, integrationReadiness } from '../integrations';
+import {
+  buildToolRegistry,
+  googleOAuthClientPresent,
+  integrationReadiness,
+} from '../integrations';
 import { readAccountPreferences } from '../agent/partner-profile';
 import type { IntegrationStatusResponse } from '../../shared/interfaces/integrations';
 import {
@@ -340,6 +344,9 @@ export function createHttpRoutes(storage: StorageInterface) {
     /** The readiness payload, shared by the list and both connect routes. */
     readinessBody(): IntegrationStatusResponse {
       const ready = integrationReadiness();
+      // Read once rather than per id: it is the same fact for both Google rows,
+      // and they must not be able to disagree.
+      const googleClient = googleOAuthClientPresent();
       return {
         integrations: INTEGRATION_IDS.map((id) => ({
           id,
@@ -348,6 +355,12 @@ export function createHttpRoutes(storage: StorageInterface) {
           // Sent rather than inferred client-side, so the panel's relay layout
           // follows this deployment instead of a table baked into the bundle.
           transport: INTEGRATION_TRANSPORT[id],
+          // Only the Google ids carry this; for everything else "configured" is
+          // the whole story and an always-false flag would invite the panel to
+          // draw a sign-in button for a provider that has no consent step.
+          ...(id === 'google-calendar' || id === 'gmail'
+            ? { oauthClientPresent: googleClient }
+            : {}),
         })),
       };
     },

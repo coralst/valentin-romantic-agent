@@ -34,12 +34,40 @@ describe('integration catalogue', () => {
     expect(backed.calendar).toContain('google-calendar');
     expect(backed.travel).toContain('amadeus');
     expect(backed.messages).toEqual(expect.arrayContaining(['gmail', 'whatsapp']));
+    // Spotify, since `spotifyTools` registers on any deployment holding an app
+    // credential — the same correction the Wolt rows needed, made before the row
+    // could spend a release badged "not built yet" over working code.
+    expect(backed.music).toContain('spotify');
 
-    // Genuinely unbuilt: there is no music or rides integration anywhere in
-    // src/server/integrations, so "not built yet" is the honest badge and these
+    // Genuinely unbuilt: there is no ride-hailing integration anywhere in
+    // src/server/integrations, so "not built yet" is the honest badge and this row
     // must stay unbacked until one exists.
-    expect(backed.music).toHaveLength(0);
     expect(backed.rides).toHaveLength(0);
+  });
+
+  /*
+   * The music row's counterpart to the Wolt spend assertion above, and the same
+   * class of over-claim.
+   *
+   * Whether a playlist is *saved* depends on a user refresh token being present;
+   * with only an app credential, confirming hands over track links. So the row may
+   * not promise a created playlist outright — it has to name the confirm step and
+   * the condition. Pinned because "offer you a playlist to confirm" is exactly the
+   * sort of careful wording a later edit would helpfully shorten to "create
+   * playlists", which is the claim that can be false.
+   */
+  it('does not promise the music row saves a playlist unconditionally', () => {
+    const music = findIntegration('music');
+    expect(music?.backing).toContain('spotify');
+    expect(canSpend(music!)).toBe(false);
+    expect(music?.defaultCapUsd).toBeNull();
+
+    const write = music?.scopes.find((scope) => scope.reach === 'write');
+    expect(write).toBeDefined();
+    // Says what confirming does, and that saving is conditional on an account.
+    expect(write!.label).toMatch(/confirm/i);
+    expect(write!.detail).toMatch(/connected/i);
+    expect(write!.detail).toMatch(/link/i);
   });
 
   it('never names a service id the server does not know', () => {

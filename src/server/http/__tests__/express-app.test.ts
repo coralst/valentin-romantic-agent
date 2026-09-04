@@ -398,6 +398,7 @@ describe('GET /api/integrations', () => {
       // This app handing out a link to one of its own conversations. Always
       // configured — there is no outside service and no credential to be missing.
       'sharing',
+      'reminders',
     ]);
     // Hebcal is arithmetic in-process, so it is configured on every deployment.
     expect(body.integrations.find((i) => i.id === 'hebcal')?.configured).toBe(true);

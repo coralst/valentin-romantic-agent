@@ -1,4 +1,5 @@
 import type { IntegrationId } from '../../shared/interfaces/integrations';
+import type { StorageInterface } from '../persistence/storage-interface';
 import { logger } from '../logging';
 
 /**
@@ -118,6 +119,24 @@ export interface ToolContext {
    * choose one.
    */
   userId: string;
+
+  /**
+   * This user's store, for tools that write to Valentin's own tables.
+   *
+   * Optional, and absent for every third-party integration: those are stateless
+   * modules over an HTTP client, and handing them a store would invite a tool to
+   * persist a side effect the orchestrator knows nothing about. `set_reminder` is
+   * the first tool whose whole job is a row in our table, which is why this exists.
+   *
+   * Already scoped to the caller — `forUser(userId)` — so a tool cannot reach
+   * another user's rows, and both stores overwrite `sessionId`/`userId` on write
+   * from their own scope regardless of what a caller passes.
+   *
+   * A tool that needs it must check for it and fail with a summary rather than
+   * throwing: it is legitimately absent in the confirm path of older callers and in
+   * tests that exercise a tool in isolation.
+   */
+  storage?: StorageInterface;
 }
 
 /**

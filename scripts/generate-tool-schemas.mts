@@ -92,6 +92,25 @@ export interface GatewayToolSchema {
 }
 
 /**
+ * Services engine B does not host, and why.
+ *
+ * `lambda-handler.ts` builds its `ToolContext` as `{sessionId, userId}` — there is
+ * no store in that process, no table name in its environment and no IAM grant to
+ * read one. A tool that writes our own DynamoDB table therefore *registers* there
+ * but can only ever answer "I can't save that right now", and declaring it to the
+ * Gateway would put a tool in the model's instruction set that fails every time it
+ * is called. Not declaring it is the honest failure: engine B simply cannot set
+ * reminders, which is a real difference between the two engines rather than a bug
+ * in one of them.
+ *
+ * Keyed on `service` rather than tool name so a second reminders tool inherits the
+ * decision instead of quietly appearing on the Gateway. Giving engine B reminders
+ * means granting the tools Lambda the table — a deliberate infra change, and the
+ * point at which this line comes back out.
+ */
+const NOT_HOSTED_ON_GATEWAY = new Set(['reminders']);
+
+/**
  * Build the schema list.
  *
  * Exported so the drift test can call it in-process instead of shelling out to
@@ -111,6 +130,7 @@ export async function generateToolSchemas(): Promise<GatewayToolSchema[]> {
   const registry = buildToolRegistry();
 
   return [...registry.values()]
+    .filter((tool) => !NOT_HOSTED_ON_GATEWAY.has(tool.service))
     .map((tool): GatewayToolSchema => {
       const schema = tool.input_schema as {
         properties?: Record<string, unknown>;

@@ -134,8 +134,12 @@ function clampToMonth(year: number, month: number, day: number): number {
  * would drift by an hour across an Israeli DST transition and mail somebody at
  * 08:00 — `parseInZone` exists precisely because that arithmetic is not
  * interchangeable.
+ *
+ * Exported for `set_reminder`, which needs the identical rule for a user-authored
+ * date. A second copy of this is how one of the two paths ends up mailing at 08:00
+ * for half the year.
  */
-function dueInstant(occursOn: string, leadDays: number): Date | null {
+export function dueInstant(occursOn: string, leadDays: number): Date | null {
   const occasionNoon = parseInZone(occursOn, REMINDER_ZONE);
   if (!occasionNoon) return null;
   const shifted = new Date(occasionNoon.getTime() - leadDays * DAY_MS);

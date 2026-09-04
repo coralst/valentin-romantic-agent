@@ -43,6 +43,23 @@ describe('the generated Gateway tool schemas', () => {
     expect(committed).toHaveLength(18);
   });
 
+  /*
+   * The one tool deliberately withheld from engine B.
+   *
+   * `set_reminder` writes our own DynamoDB table, and `lambda-handler.ts` builds its
+   * ToolContext without a store — no table name in its environment, no IAM grant to
+   * read one. Declared to the Gateway it would be a tool that fails every call, so
+   * the generator filters the `reminders` service out. Asserted here because the
+   * count above cannot see the difference between "excluded on purpose" and "never
+   * written": both leave 18.
+   */
+  it('withholds the tools engine B has no store for', async () => {
+    const fresh = await generateToolSchemas();
+
+    expect(fresh.map((t) => t.name)).not.toContain('set_reminder');
+    expect(committed.map((t) => t.name)).not.toContain('set_reminder');
+  });
+
   it('gates exactly the seven tools that spend money or send messages', () => {
     const gated = committed.filter((t) => t.requiresConfirmation).map((t) => t.name);
 

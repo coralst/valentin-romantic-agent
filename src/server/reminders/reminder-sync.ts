@@ -1,5 +1,6 @@
 import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
-import type { ReminderChannelName } from '../../shared/interfaces/reminder';
+import type { Reminder, ReminderChannelName } from '../../shared/interfaces/reminder';
+import { isPlannerKind } from '../../shared/interfaces/reminder';
 import type { StorageInterface } from '../persistence/storage-interface';
 import { config } from '../config';
 import { logger } from '../logging';
@@ -46,8 +47,12 @@ export function touchesReminders(
  * Narrowed the same way `resolveSender` narrows it — unknown falls back to `log`
  * rather than throwing — so the row records the channel that will actually carry
  * it instead of a name nothing can send on.
+ *
+ * Exported for `set_reminder`, which stamps the same field on a row it writes
+ * directly. A second copy would let the two paths disagree about what an unknown
+ * channel name means, and the row's `channel` is what the dispatcher dispatches on.
  */
-function plannedChannel(name: string | undefined): ReminderChannelName {
+export function plannedChannel(name: string | undefined): ReminderChannelName {
   return name === 'gmail' ? 'gmail' : 'log';
 }
 
@@ -123,6 +128,7 @@ export async function syncReminders(
       await storage.saveReminder(sessionId, reminder);
     }
     await reapSuperseded(storage, sessionId, existing, planned.map((r) => r.id));
+    await adoptTarget(storage, sessionId, existing, value('notify_email'));
   } catch (cause) {
     logger.warn('reminder.sync_failed', {
       sessionId,
@@ -146,15 +152,56 @@ export async function syncReminders(
  * idempotency argument rests on `sentAt` being the record that this reminder has
  * gone out: delete it and the next re-plan is free to recreate the identical row
  * and mail the same person about the same birthday twice.
+ *
+ * ## Only the planner's own kinds
+ *
+ * A plan is authoritative about what it derives and about nothing else. `custom`
+ * rows come from `set_reminder` and no profile field produces them, so they are
+ * never in `plannedIds` — reaping on that alone would delete every user-set
+ * reminder the first time a chat turn extracted a birthday or the panel touched
+ * `notify_email`. Silently, too: a successful delete logs nothing.
+ *
+ * So the predicate is "a pending row of a kind this plan is responsible for". That
+ * keeps the moved-occasion case above working, because those kinds are exactly the
+ * ones the planner emits.
  */
 async function reapSuperseded(
   storage: StorageInterface,
   sessionId: string,
-  existing: readonly { id: string; sentAt?: string | null }[],
+  existing: readonly Reminder[],
   plannedIds: readonly string[],
 ): Promise<void> {
   for (const row of existing) {
-    if (row.sentAt || plannedIds.includes(row.id)) continue;
+    if (row.sentAt || !isPlannerKind(row.kind) || plannedIds.includes(row.id)) continue;
     await storage.deleteReminder(sessionId, row.id);
+  }
+}
+
+/**
+ * Point pending `custom` rows at the address reminders now go to.
+ *
+ * The planner rewrites its own rows from the profile on every sync, so a corrected
+ * `notify_email` reaches them for free. A `custom` row is written once by
+ * `set_reminder` and never re-planned, so without this it keeps whatever target it
+ * had at the moment it was created — and the common case is that it had none,
+ * because the user asked for a reminder before ever giving Valentin an address. The
+ * dispatcher skips a null target, so that reminder would be silently undeliverable
+ * for ever.
+ *
+ * `notify_email` is already in {@link REMINDER_SOURCE_FIELDS}, so the hook that
+ * calls this fires exactly when the address changes. Sent rows are left alone: they
+ * are history, and rewriting where a mail *would* have gone is a lie about the past.
+ */
+async function adoptTarget(
+  storage: StorageInterface,
+  sessionId: string,
+  existing: readonly Reminder[],
+  target: string | null,
+): Promise<void> {
+  const wanted = target?.trim() || null;
+  for (const row of existing) {
+    if (row.sentAt || isPlannerKind(row.kind)) continue;
+    if ((row.target ?? null) === wanted) continue;
+    await storage.saveReminder(sessionId, { ...row, target: wanted });
   }
 }

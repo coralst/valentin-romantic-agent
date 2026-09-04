@@ -316,7 +316,11 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
       );
     }
 
-    const ctx = { sessionId, userId: this.tools.userId ?? '' };
+    // `storage` because a confirming tool may need to write our own table, not
+    // just a third party's. Nothing needs it today — `set_reminder` writes
+    // immediately and has no confirm step — but the two ctx sites have to agree,
+    // or a tool that works from chat fails from a card.
+    const ctx = { sessionId, userId: this.tools.userId ?? '', storage: this.storage };
     const result = pending.tool.confirm
       ? await pending.tool.confirm(pending.proposal, ctx)
       : await runTool(pending.tool, { confirm: proposalId }, ctx);
@@ -414,6 +418,7 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
         registry,
         sessionId,
         userId: this.tools.userId ?? '',
+        storage: this.storage,
       });
       return { text: result.text, proposals: result.proposals };
     };

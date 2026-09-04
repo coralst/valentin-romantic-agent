@@ -29,12 +29,28 @@
  */
 
 /** What a reminder is about, which decides how it is worded and how it recurs. */
-export const REMINDER_KINDS = ['birthday', 'anniversary', 'occasion'] as const;
+export const REMINDER_KINDS = ['birthday', 'anniversary', 'occasion', 'custom'] as const;
 
 export type ReminderKind = (typeof REMINDER_KINDS)[number];
 
 export function isReminderKind(value: unknown): value is ReminderKind {
   return typeof value === 'string' && (REMINDER_KINDS as readonly string[]).includes(value);
+}
+
+/**
+ * The kinds the planner derives from the profile, and therefore owns.
+ *
+ * `custom` is deliberately absent: it is authored by the user through
+ * `set_reminder` and exists independently of any profile field. The distinction is
+ * load-bearing in `reapSuperseded`, which deletes every pending row a fresh plan no
+ * longer contains — without this list it would delete every user-set reminder the
+ * first time a birthday was extracted, silently.
+ */
+export const PLANNER_KINDS = ['birthday', 'anniversary', 'occasion'] as const;
+
+/** Whether this row is one the planner derives, and may therefore re-plan away. */
+export function isPlannerKind(kind: ReminderKind): boolean {
+  return (PLANNER_KINDS as readonly string[]).includes(kind);
 }
 
 /** Where a reminder goes out. `log` is a real channel, not a placeholder. */
@@ -77,6 +93,20 @@ export interface Reminder {
 
   /** In the user's words — "her birthday", "our anniversary", "the picnic". */
   occasion: string;
+
+  /**
+   * What the user asked to be reminded *of*, verbatim. Set only by `set_reminder`.
+   *
+   * Separate from `occasion` because the two are read with different grammar.
+   * `occasion` is a possessive noun phrase — the mail says "Her ${occasion} is on
+   * the 4th" (see `buildSubject` in `reminders/email-body.ts`), which is right for
+   * "birthday" and nonsense for a user-authored line: "Her call the florist is a
+   * week away". A `title` is used exactly as written and never inflected.
+   *
+   * Absent on every planner-derived row, so its presence is also how the mail
+   * builder knows which of the two voices to use.
+   */
+  title?: string | null;
 
   channel: ReminderChannelName;
 
@@ -135,6 +165,52 @@ export const REMINDER_ZONE = 'Asia/Jerusalem';
  */
 export function reminderId(kind: ReminderKind, occursOn: string): string {
   return `${kind}-${occursOn}`;
+}
+
+/**
+ * The id of a user-authored reminder.
+ *
+ * {@link reminderId} cannot serve here. It is `${kind}-${occursOn}`, which is
+ * exactly right for the planner — there is only ever one birthday reminder — and
+ * wrong for `custom`, where "book the restaurant" and "buy her the glaze set" can
+ * both be about the 14th. Under the shared id the second `saveReminder` would
+ * overwrite the first and the user would simply never hear about the flowers.
+ *
+ * So the title joins the date in the id. That keeps the property the planner relies
+ * on — the id is derived, so setting the *same* reminder twice overwrites rather
+ * than duplicating, which is what makes a user repeating himself harmless — while
+ * letting two different reminders share a day.
+ *
+ * The title is hashed rather than slugged because it is free text of unbounded
+ * length and the sort key it lands in is byte-capped (`withinLimit` in
+ * `persistence/keys.ts`). A short hash is also opaque, which keeps a reminder's
+ * subject out of a key that shows up in logs and metrics.
+ */
+export function customReminderId(occursOn: string, title: string): string {
+  return `custom-${occursOn}-${shortHash(title)}`;
+}
+
+/**
+ * FNV-1a, 32-bit, hex. Not a security primitive and not required to be one.
+ *
+ * Hand-rolled rather than `node:crypto` so this module stays isomorphic: it is the
+ * shared contract, `pendingReminders` below is written for the client, and a
+ * `node:crypto` import here would break the browser bundle the first time anything
+ * under `src/client` touched this file.
+ *
+ * Case- and whitespace-insensitive, so "Book the restaurant" and "book the
+ * restaurant " are one reminder rather than two.
+ */
+function shortHash(text: string): string {
+  const normalised = text.trim().toLowerCase().replace(/\s+/g, ' ');
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < normalised.length; index += 1) {
+    hash ^= normalised.charCodeAt(index);
+    // The FNV prime, via shifts: Math.imul keeps this in 32-bit space, which a
+    // plain `*` would not — it would silently go through a double and lose bits.
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
 /**

@@ -2,7 +2,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { syncReminders, touchesReminders } from '../reminder-sync';
 import { InMemoryStoreFactory } from '../../persistence/in-memory-store';
 import type { StorageInterface } from '../../persistence/storage-interface';
-import { pendingReminders, reminderId, REMINDER_ZONE } from '../../../shared/interfaces/reminder';
+import {
+  customReminderId,
+  pendingReminders,
+  reminderId,
+  REMINDER_ZONE,
+} from '../../../shared/interfaces/reminder';
 import type { Reminder } from '../../../shared/interfaces/reminder';
 import { logger } from '../../logging';
 
@@ -143,6 +148,71 @@ describe('syncReminders', () => {
       [reminderId('occasion', '2026-03-12'), reminderId('occasion', '2026-03-20')].sort(),
     );
     expect(pendingReminders(rows)).toHaveLength(1);
+  });
+
+  /*
+   * The data-loss regression, and it was one turn of conversation away: reaping ran
+   * over every unsent row, and a `custom` reminder is pending and never in
+   * `plannedIds` — so extracting a birthday, or editing `notify_email` in the panel,
+   * silently deleted every reminder the user had set by hand.
+   */
+  it('leaves a reminder the user set by hand alone', async () => {
+    const his: Reminder = {
+      id: customReminderId('2026-03-20', 'Call the florist'),
+      sessionId,
+      userId: 'user-under-test',
+      kind: 'custom',
+      occursOn: '2026-03-20',
+      dueAt: '2026-03-20T07:00:00.000Z',
+      leadDays: 0,
+      title: 'Call the florist',
+      occasion: 'Call the florist',
+      channel: 'log',
+      target: 'him@example.com',
+      sentAt: null,
+      attempts: 0,
+      lastError: null,
+      createdAt: '2026-03-01T08:00:00.000Z',
+    };
+    await store.saveReminder(sessionId, his);
+
+    await extracted('birthday', '1988-06-12');
+    await syncReminders(store, sessionId, new Date('2026-03-01T08:00:00Z'));
+
+    const rows = await store.getRemindersBySession(sessionId);
+    expect(rows.map((row) => row.id)).toContain(his.id);
+    expect(pendingReminders(rows)).toHaveLength(2);
+  });
+
+  /*
+   * The other half of the "saved without an address" design: `set_reminder` writes
+   * the row with `target: null` when it has nowhere to send, and this is what makes
+   * that reminder deliverable once he gives the address rather than dead.
+   */
+  it('points a hand-set reminder at the address once notify_email lands', async () => {
+    await store.saveReminder(sessionId, {
+      id: customReminderId('2026-04-02', 'Collect the ring'),
+      sessionId,
+      userId: 'user-under-test',
+      kind: 'custom',
+      occursOn: '2026-04-02',
+      dueAt: '2026-04-02T06:00:00.000Z',
+      leadDays: 0,
+      title: 'Collect the ring',
+      occasion: 'Collect the ring',
+      channel: 'log',
+      target: null,
+      sentAt: null,
+      attempts: 0,
+      lastError: null,
+      createdAt: '2026-03-01T08:00:00.000Z',
+    });
+
+    await extracted('notify_email', 'him@example.com');
+    await syncReminders(store, sessionId, new Date('2026-03-01T08:00:00Z'));
+
+    const [row] = await store.getRemindersBySession(sessionId);
+    expect(row.target).toBe('him@example.com');
   });
 
   it('plans on the hand-corrected birthday, not the inferred one', async () => {

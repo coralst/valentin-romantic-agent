@@ -103,8 +103,12 @@ export interface ShabbatWindow {
  *
  * Done with `Intl` rather than by adding an offset, because Israel observes DST
  * and the offset therefore depends on the date being formatted.
+ *
+ * Exported for `nowBlock` in `agent/prompts.ts`, which tells the model what day it
+ * is. That is the same question this already answers for candle lighting, and the
+ * server's own timezone must not be the answer to it — the container runs UTC.
  */
-function inZone(at: Date, timeZone: string): { localDate: string; localTime: string } {
+export function inZone(at: Date, timeZone: string): { localDate: string; localTime: string } {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone,
     year: 'numeric',

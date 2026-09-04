@@ -4,6 +4,8 @@ import {
   PROFILE_FIELD_IDS,
 } from '../../shared/constants/profile-fields';
 import type { Outing } from '../../shared/interfaces/outing';
+import { REMINDER_ZONE } from '../../shared/interfaces/reminder';
+import { hebrewDateOf, inZone } from '../integrations/hebcal/client';
 
 /**
  * Valentin's persona and the two goals he serves, in that order of permanence.
@@ -59,7 +61,15 @@ Remember: you're helping someone become a more thoughtful, attentive partner. Ev
  * - **Never claim a write happened.** A tool that writes returns a proposal, and
  *   the user has to accept it. "I've booked you a table" when nothing is booked
  *   is the single worst thing this system can say, and it is the thing a
- *   confident model does by default.
+ *   confident model does by default. The one carve-out is `set_reminder`, which
+ *   writes on the spot — stated explicitly and narrowly, because a blanket rule the
+ *   model can see is contradicted by a tool it just used successfully is a rule it
+ *   starts reasoning around.
+ * - **Offer a reminder once.** The offer is worth having and is also the most
+ *   obvious thing to overdo: a model told to be helpful about reminders will append
+ *   "shall I remind you?" to every turn, which is the kind of tic that makes an
+ *   assistant feel automated. Hence "ask once, then let it go", next to the existing
+ *   instruction to vary his rhythm.
  * - **Shabbat is not a preference.** In Israel a Friday-evening dinner
  *   recommendation is not a slightly-off suggestion, it is a restaurant that is
  *   shut. Hebrew-date anniversaries drift against the Gregorian calendar by up to
@@ -90,12 +100,66 @@ them to confirm it. Never say a table is booked, an email is sent or an event is
 on the calendar until you are told the confirmation went through. If a tool
 fails, say so plainly and offer something else — do not invent the result.
 
+Setting a reminder is the one exception, because it is his own note to himself
+and nobody else is affected by it: set_reminder writes it immediately and tells
+you whether it worked. So you may say a reminder is set — but only after the tool
+came back successful, and never before you have called it.
+
+YOU CAN REMIND HIM OF THINGS. Call set_reminder with the thing in his own words
+and an absolute date, and he gets an email that morning at 9am with a link back
+to this conversation. Use it whenever he asks to be reminded, or says yes when
+you offer.
+
+Offer one when the conversation lands on something real and dated that nothing is
+covering yet — a table he means to book, her sister's birthday, the appointment he
+has to make on the 12th. Say when the mail would reach him, so he knows what he is
+agreeing to: "want me to drop you a note on the Thursday morning?" Ask once. If he
+says no, or says nothing about it, let it go and do not raise it again — a
+concierge who asks twice is a nag, and this must never become a tic you attach to
+every message. Her birthday, your anniversary and the occasion you are currently
+planning are already handled from her profile; do not offer to remind him of those.
+
 YOU CAN HAND OUT A LINK TO THIS CONVERSATION. If the user asks for a link to the
 chat, asks you to email or send them one, or wants to show it to somebody, call
 create_conversation_link and give them the URL it returns, exactly as written. To
 mail it, call that first and put the URL in the body of propose_email. Do not say
 you cannot make a link, and never write a link yourself — they are signed, and one
 you compose will not open.`;
+
+/**
+ * What day it is, for a model that would otherwise guess.
+ *
+ * ## Why this is not optional
+ *
+ * Several things this product does take an *absolute* date the model authored.
+ * `next_occasion` is stored as `YYYY-MM-DD@what it is`, `check_shabbat` takes a
+ * datetime, and `set_reminder` takes a day. With no date in the prompt, "the 4th"
+ * and "next Tuesday" could only be resolved against the model's training cutoff —
+ * so it invented a year, and the failure was silent and confident: a Shabbat window
+ * computed for the right weekday of the wrong year still reads like an answer, and
+ * a reminder filed for 2024 is simply never sent.
+ *
+ * ## Why the zone is Israel and not the server's
+ *
+ * The container runs UTC. Between midnight and 03:00 Israel time, UTC is still
+ * yesterday — so a user saying "tomorrow" at one in the morning would have been
+ * booked for the day he was already in. {@link inZone} is the same helper candle
+ * lighting uses, for the same reason.
+ *
+ * The Hebrew date is included because it is Valentin's idiom, not decoration: he is
+ * expected to know that an anniversary falls in Iyyar without being asked to
+ * compute it, and it costs one line.
+ */
+export function nowBlock(now: Date): string {
+  const { localDate, localTime } = inZone(now, REMINDER_ZONE);
+  const weekday = new Intl.DateTimeFormat('en-GB', {
+    timeZone: REMINDER_ZONE,
+    weekday: 'long',
+  }).format(now);
+
+  return `RIGHT NOW: it is ${weekday} ${localDate}, ${localTime} in Israel (${REMINDER_ZONE}). The Hebrew date is ${hebrewDateOf(now)}.
+Work out every relative date the user says — "tomorrow", "next Tuesday", "the 4th", "in two weeks" — against that date, and pass tools the absolute YYYY-MM-DD you arrived at. Never guess a year. If a date he gives is ambiguous or already past, ask him rather than picking one.`;
+}
 
 /** The smallest thing the prompt builder needs to know about a stored fact */
 export interface KnownFact {
@@ -133,23 +197,32 @@ export function partnerNameFrom(facts: readonly KnownFact[]): string | null {
  * The unknown-field list is deliberately included in the ongoing mode too. It is
  * what lets him fill a gap when a conversation happens to wander past one,
  * instead of either interrogating or never asking again.
+ *
+ * `now` is a parameter with a default rather than a read of the clock inside,
+ * matching `shabbatWindow(from, city)` and `planReminders(input, now)`: it is what
+ * makes the date line assertable in a test without touching global time, and every
+ * existing caller keeps today's behaviour by omitting it.
  */
 export function buildSystemPrompt(
   facts: readonly KnownFact[],
   hasTools = false,
   visited: readonly Outing[] = [],
+  now: Date = new Date(),
 ): string {
   // Appended, not interleaved, so the persona and the profile read the same
   // whether or not this deployment has any credentials.
   const tools = hasTools ? `\n${TOOL_GUIDANCE}` : '';
   const history = visitedBlock(visited);
+  // Ahead of the state and the facts, because it is the frame they are read in: a
+  // birthday "next month" means nothing until the model knows which month this is.
+  const today = `\n\n${nowBlock(now)}`;
 
   if (facts.length === 0) {
     // No history block here even if there somehow is one: an account with no
     // facts at all and a booked restaurant is a state that only arises from a
     // half-finished seed, and the opening turn should introduce him rather than
     // recite a venue.
-    return `${VALENTIN_SYSTEM_PROMPT}
+    return `${VALENTIN_SYSTEM_PROMPT}${today}
 
 CURRENT STATE: You know nothing about her yet. GOAL 1 is live. Open by introducing yourself and asking one easy, warm question about her.${tools}`;
   }
@@ -171,7 +244,7 @@ CURRENT STATE: You know nothing about her yet. GOAL 1 is live. Open by introduci
       ? `\nStill unknown: ${missing.join(', ')}. Do not interrogate him for these. Ask about one only when the conversation naturally arrives there.`
       : `\nYou know every field on her profile. Stop collecting and start using it.`;
 
-  return `${VALENTIN_SYSTEM_PROMPT}
+  return `${VALENTIN_SYSTEM_PROMPT}${today}
 
 CURRENT STATE: You already know ${her}. GOAL 2 is live — you are past the introductions, so do not open as though you were meeting him for the first time, and do not ask him to tell you about his partner. Use what you know below, by name and in specifics.
 

@@ -518,7 +518,10 @@ describe('AgentOrchestrator', () => {
 
       expect(tool.confirm).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'prop-1' }),
-        { sessionId: 'sess-1', userId: 'user-1' },
+        // `objectContaining` because the ctx also carries `storage`, and asserting
+        // the exact object would make every future first-party tool dependency a
+        // failing test here rather than in the tool that needed it.
+        expect.objectContaining({ sessionId: 'sess-1', userId: 'user-1' }),
       );
       expect(reply.content).toBe('Booked — 21:00 on Saturday.');
       expect(reply.sender).toBe('agent');

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { PROFILE_FIELD_IDS } from '../../../shared/constants/profile-fields';
 import {
   buildSystemPrompt,
+  nowBlock,
   partnerNameFrom,
   EXTRACT_PREFERENCES_TOOL,
   VALENTIN_SYSTEM_PROMPT,
@@ -25,6 +26,40 @@ describe('VALENTIN_SYSTEM_PROMPT', () => {
     // The old prompt said "Start by asking for the partner's name, then
     // age/birthday, then gender", which is what made him interrogate.
     expect(VALENTIN_SYSTEM_PROMPT).not.toMatch(/Start by asking for the partner's name/);
+  });
+});
+
+/*
+ * A fixed instant, passed as an argument — the repo's convention (`shabbatWindow`,
+ * `planReminders`) and the reason none of this needs `vi.setSystemTime`. 22:30 UTC is
+ * chosen deliberately: it is already the next day in Israel, which is the case that
+ * was silently wrong when the block was built from the server's own clock.
+ */
+const lateOnTheThird = new Date('2026-09-03T22:30:00Z');
+
+describe('nowBlock', () => {
+  it('states the date in Israel, not the container timezone', () => {
+    const block = nowBlock(lateOnTheThird);
+    // 01:30 on the 4th in Jerusalem, while UTC is still the 3rd. A model told "the
+    // 3rd" here would book "tomorrow" for the day he is already in.
+    expect(block).toContain('2026-09-04');
+    expect(block).toContain('Friday');
+    expect(block).toContain('01:30');
+  });
+
+  it('gives the Hebrew date, because that is the idiom he answers in', () => {
+    expect(nowBlock(lateOnTheThird)).toMatch(/Hebrew date is .+57\d\d/);
+  });
+
+  /*
+   * The instruction, not just the fact. `next_occasion` is stored as a literal
+   * `YYYY-MM-DD`, so a model that knows the date but was not told to resolve against
+   * it still had licence to invent a year.
+   */
+  it('tells the model to resolve relative dates against it, absolutely', () => {
+    const block = nowBlock(lateOnTheThird);
+    expect(block).toContain('YYYY-MM-DD');
+    expect(block).toMatch(/[Nn]ever guess a year/);
   });
 });
 
@@ -57,6 +92,30 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toMatch(/You know nothing about her yet/);
     expect(prompt).toMatch(/GOAL 1 is live/);
     expect(prompt).not.toMatch(/WHAT YOU KNOW ABOUT/);
+  });
+
+  it('tells him what day it is, whether or not there is a profile', () => {
+    expect(buildSystemPrompt([], false, [], lateOnTheThird)).toContain('2026-09-04');
+    expect(buildSystemPrompt(samantha, false, [], lateOnTheThird)).toContain('2026-09-04');
+  });
+
+  /*
+   * The reminder rules live in `TOOL_GUIDANCE`, so a deployment with no credentials
+   * must not be told it can remind anyone — there is no `set_reminder` registered to
+   * call, and a model told otherwise offers something that cannot happen.
+   */
+  it('only offers to set reminders when it has tools to do it with', () => {
+    expect(buildSystemPrompt(samantha, true, [], lateOnTheThird)).toContain('set_reminder');
+    expect(buildSystemPrompt(samantha, false, [], lateOnTheThird)).not.toContain('set_reminder');
+  });
+
+  it('permits claiming a reminder is set, while still forbidding it of a booking', () => {
+    const prompt = buildSystemPrompt(samantha, true, [], lateOnTheThird);
+    expect(prompt).toMatch(/NOTHING YOU WRITE, SEND OR BOOK HAPPENS ON YOUR WORD ALONE/);
+    // The carve-out has to be explicit and narrow: a blanket rule the model can see
+    // contradicted by a tool it just used successfully is a rule it reasons around.
+    expect(prompt).toMatch(/exception/i);
+    expect(prompt).toMatch(/Ask once/);
   });
 
   it('puts goal 2 live once there is a profile', () => {

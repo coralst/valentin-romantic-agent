@@ -645,6 +645,16 @@ export class ComputeStack extends cdk.Stack {
       // every task replacement.
       STORAGE_BACKEND: 'dynamodb',
       S3_PHOTO_BUCKET: props.photoBucket.bucketName,
+      /*
+       * Send reminders as real mail rather than logging them.
+       *
+       * Safe to set unconditionally: `resolveSender` checks Gmail readiness at send
+       * time and falls back to the log channel when there is no refresh token, so a
+       * deployment without Google credentials behaves exactly as it does today. The
+       * default is `log`, which meant a deployed reminder came due, was marked sent,
+       * and only ever appeared in CloudWatch.
+       */
+      REMINDER_CHANNEL: 'gmail',
       BEDROCK_GUARDRAIL_ID: props.guardrailId,
       BEDROCK_GUARDRAIL_VERSION: props.guardrailVersion,
       BEDROCK_MODEL_ID: config.bedrockModelId,

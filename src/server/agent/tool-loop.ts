@@ -11,6 +11,7 @@ import {
   type ToolContext,
   type ToolRegistry,
 } from '../integrations/tool-registry';
+import type { StorageInterface } from '../persistence/storage-interface';
 import { logger } from '../logging';
 
 /**
@@ -45,6 +46,13 @@ export interface ToolLoopOptions {
   sessionId: string;
   /** Passed straight through to every tool as `ToolContext.userId`. */
   userId: string;
+  /**
+   * This user's store, for first-party tools that write our own rows.
+   *
+   * Optional so every existing caller and test compiles unchanged; a tool that
+   * needs it refuses politely when it is absent. See `ToolContext.storage`.
+   */
+  storage?: StorageInterface;
 }
 
 /** What the user sees if the cap is hit before the model has written anything. */
@@ -86,6 +94,7 @@ export async function runToolLoop({
   registry,
   sessionId,
   userId,
+  storage,
 }: ToolLoopOptions): Promise<ToolLoopResult> {
   const tools: ToolSchema[] = [...registry.values()].map((tool) => ({
     name: tool.name,
@@ -119,7 +128,7 @@ export async function runToolLoop({
       role: 'user',
       content: await Promise.all(
         turn.toolUses.map((request) =>
-          resolveToolUse(request, registry, { sessionId, userId }, proposals),
+          resolveToolUse(request, registry, { sessionId, userId, storage }, proposals),
         ),
       ),
     });

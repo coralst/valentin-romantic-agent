@@ -112,6 +112,9 @@ function daysUntil(occursOn: string, now: Date): number {
 function bodyFor(reminder: Reminder, now: Date, origin: string) {
   return buildReminderEmail({
     occasion: reminder.occasion,
+    // Set only on a reminder the user asked for by name, and then it is the whole
+    // subject — see `ReminderEmailInput.title` for why it cannot just be `occasion`.
+    title: reminder.title,
     occasionDate: occasionDateOf(reminder.occursOn),
     daysUntil: daysUntil(reminder.occursOn, now),
     /*

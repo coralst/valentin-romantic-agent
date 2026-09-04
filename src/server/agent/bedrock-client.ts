@@ -14,6 +14,7 @@ import { LlmError } from '../../shared/errors/llm-error';
 import { config } from '../config';
 import { logger } from '../logging';
 import { recordModelCall } from '../telemetry/turn-metrics';
+import { nowBlock } from './prompts';
 
 /** Schema definition for a Bedrock tool-use call */
 export interface ToolSchema {
@@ -618,8 +619,13 @@ export class AwsBedrockClient implements BedrockClient {
 
       const tool = toBedrockTool(toolSchema);
 
+      // The date matters here as much as it does in the chat prompt, and it was
+      // missing for longer: `next_occasion` must be extracted as a literal
+      // `YYYY-MM-DD@what it is`, so "dinner on the 4th" gave this call no way to
+      // produce a correct value — it had to invent a month and a year, and a
+      // reminder planned from the wrong year is never sent and never complains.
       const system: SystemContentBlock[] = [{
-        text: `Analyze the latest message in the conversation and extract any spouse/partner preferences using the ${toolSchema.name} tool. Only extract preferences that are clearly stated or strongly implied.`,
+        text: `${nowBlock(new Date())}\n\nAnalyze the latest message in the conversation and extract any spouse/partner preferences using the ${toolSchema.name} tool. Only extract preferences that are clearly stated or strongly implied.`,
       }];
 
       const command = new ConverseCommand({

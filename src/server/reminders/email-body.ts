@@ -74,6 +74,19 @@ export interface ReminderEmailInput {
   /** Her name, when known. Omitted rather than guessed. */
   partnerName?: string | null;
   /**
+   * The user's own words for a reminder he set himself, used verbatim.
+   *
+   * The two fields are two different grammars, which is why this is not just another
+   * `occasion`. `occasion` names something *of hers* — "birthday", "anniversary" —
+   * and is rendered possessively: "Maya's birthday is a week away". A title comes
+   * from `set_reminder` and is already a whole phrase in his voice, so the same
+   * treatment produces "Her call the florist is a week away".
+   *
+   * Present ⇒ used as written, with no name and no inflection. Absent ⇒ the
+   * possessive path below, unchanged.
+   */
+  title?: string | null;
+  /**
    * The criteria the suggestions were chosen against, restated in the mail.
    *
    * Included so the message is auditable: if a suggestion looks wrong, the reason
@@ -188,12 +201,29 @@ function renderSuggestion(suggestion: ReminderSuggestion, index: number): string
  * birthday is a week away — three ideas" says both what is happening and that
  * there is something to act on.
  */
-function buildSubject(input: ReminderEmailInput): string {
+/**
+ * The thing this reminder is about, as a phrase that can take "is a week away".
+ *
+ * One function for the subject and the body, because they were computing it twice
+ * with two slightly different expressions — and the second one is the only reason a
+ * user-authored title would have read correctly in the body and wrongly in the
+ * subject, or the reverse.
+ */
+function headline(input: ReminderEmailInput): string {
+  // His own phrasing wins outright: no name, no possessive, no stripping. He wrote
+  // "Call the florist" and that is what he should read on his lock screen.
+  const title = input.title?.trim();
+  if (title) return title;
+
   const who = input.partnerName ? `${input.partnerName}'s` : 'Her';
   const occasion = input.occasion.trim() || 'the date you are planning';
-  const subject = occasion.toLowerCase().startsWith(who.toLowerCase())
+  return occasion.toLowerCase().startsWith(who.toLowerCase())
     ? occasion
     : `${who} ${occasion.replace(/^her\s+/i, '')}`;
+}
+
+function buildSubject(input: ReminderEmailInput): string {
+  const subject = headline(input);
 
   const count = Math.min(input.suggestions.length, MAX_SUGGESTIONS);
   const ideas = count === 0 ? '' : count === 1 ? ' — one idea' : ` — ${numberWord(count)} ideas`;
@@ -211,9 +241,7 @@ function capitalise(value: string): string {
 /** Build the reminder. Pure: no clock, no network, no model. */
 export function buildReminderEmail(input: ReminderEmailInput): ReminderEmail {
   const suggestions = input.suggestions.slice(0, MAX_SUGGESTIONS);
-  const who = input.partnerName ?? 'Her';
-  const occasion = input.occasion.trim() || 'the date you are planning';
-  const subjectOf = input.partnerName ? `${who}'s ${occasion.replace(/^her\s+/i, '')}` : occasion;
+  const subjectOf = headline(input);
 
   const parts: string[] = ['Hi,', ''];
 
@@ -223,7 +251,20 @@ export function buildReminderEmail(input: ReminderEmailInput): ReminderEmail {
   );
   parts.push('');
 
-  if (suggestions.length === 0) {
+  const hisOwnReminder = Boolean(input.title?.trim());
+
+  if (hisOwnReminder && suggestions.length === 0) {
+    /*
+     * A reminder he wrote himself is not a suggestion problem.
+     *
+     * The paragraph below apologises for having found no restaurants, which is the
+     * right thing to say about a birthday and nonsense about "Call the florist" — he
+     * did not ask for ideas, he asked to be reminded. So the mail says the thing and
+     * stops. The link still follows, because reopening the conversation is the one
+     * useful action either kind of reminder can offer.
+     */
+    parts.push("That's all — you asked me to remind you.");
+  } else if (suggestions.length === 0) {
     /*
      * Sent anyway, with nothing to offer.
      *
@@ -249,7 +290,12 @@ export function buildReminderEmail(input: ReminderEmailInput): ReminderEmail {
   }
 
   parts.push('');
-  parts.push('Pick one, or tell me what you would rather:');
+  // "Pick one" only makes sense when something was offered.
+  parts.push(
+    hisOwnReminder && suggestions.length === 0
+      ? 'Pick up where we left off:'
+      : 'Pick one, or tell me what you would rather:',
+  );
   parts.push(resumeLink(input.origin, input.sessionId));
   parts.push('');
   parts.push('— Valentin');

@@ -251,6 +251,15 @@ export class BedrockAgentCoreRuntime implements AgentCoreRuntime {
         runtimeSessionId: response.runtimeSessionId,
         toolsUsed: parsed.toolsUsed.length,
         ok: !failed,
+        /*
+         * The X-Ray id, carried through to the drawer rather than dropped.
+         *
+         * With the Gateway in engine B's real path there are two hops the proxy
+         * cannot see inside — the Runtime and the tool Lambda — and this id is the
+         * only thing that stitches this log line to theirs. It is an identifier,
+         * not data: nothing about the conversation is in it.
+         */
+        ...(response.traceId ? { traceId: response.traceId } : {}),
         // Truncated: a Python traceback can be long, and the type plus message is
         // what names the fault.
         ...(parsed.error ? { runtimeError: parsed.error.slice(0, 500) } : {}),

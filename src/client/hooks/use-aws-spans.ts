@@ -162,6 +162,9 @@ function toSpanEntry(observed: ObservedWsEvent, id: number): AwsSpanEntry | unde
     durationMs,
     ok: payload.ok !== false,
     detail: typeof payload.detail === 'string' ? payload.detail : undefined,
+    // Checked like every other field rather than trusted: only engine B's Runtime
+    // sends one, and a span from an older task carries none.
+    traceId: typeof payload.traceId === 'string' ? payload.traceId : undefined,
     timestamp: observed.event.timestamp ?? new Date().toISOString(),
     nodeId: awsNodeIdForResource(resourceId),
   };

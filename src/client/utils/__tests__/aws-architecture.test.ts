@@ -18,6 +18,7 @@ import {
 } from '../aws-architecture';
 import type { ServerEvent } from '../../../shared/interfaces/ws-events';
 import type { PreferenceWithHistory } from '../../../shared/interfaces/preference';
+import integrationToolSchemas from '../../../../infra/lib/generated/integration-tool-schemas.json';
 
 const ALL_EVENT_TYPES = [
   'session_init',
@@ -426,18 +427,17 @@ describe('engine membership', () => {
       }
     }
 
-    // Three nodes genuinely have nothing to translate to, in both directions.
-    // Engine A does its own memory and calls its tools in-process, so Memory and
-    // the Gateway have no counterpart there; the external APIs are the mirror of
-    // that — engine A dials them itself, while engine B reaches the same jobs
-    // through the Gateway, so there is no engine-B resource to map them onto.
-    // All three are returned unchanged and the view shades them, which is honest,
-    // rather than being mapped onto a resource the other engine does not have.
-    expect(stranded).toEqual([
-      'ac-memory/valentin',
-      'ac-gateway/valentin',
-      'integrations/agentcore',
-    ]);
+    // Two nodes genuinely have nothing to translate to, in both directions: engine
+    // A does its own memory and calls its tools in-process, so Memory and the
+    // Gateway have no counterpart there. Both are returned unchanged and the view
+    // shades them, which is honest, rather than being mapped onto a resource the
+    // other engine does not have.
+    //
+    // The external APIs used to be a third. They no longer are: engine B reaches
+    // the same partners through the Gateway, so `integrations` has a real
+    // counterpart in `ac-integrations` and translates in both directions like
+    // Fargate and DynamoDB do.
+    expect(stranded).toEqual(['ac-memory/valentin', 'ac-gateway/valentin']);
   });
 
   it('routes an engine-B event down engine B, without touching engine A', () => {
@@ -461,5 +461,35 @@ describe('engine membership', () => {
     expect(awsNodeIdForResource('agentcore-runtime', 'agentcore')).toBe('ac-runtime');
     expect(awsNodeIdForResource('agentcore-memory', 'agentcore')).toBe('ac-memory');
     expect(awsNodeIdForResource('agentcore-gateway', 'agentcore')).toBe('ac-gateway');
+  });
+
+  it('sends a Gateway tool call to engine B’s own External APIs card', () => {
+    // Not `integrations`: that node is engine A's, and routing there would light the
+    // shaded half of the diagram while the toggle says AgentCore.
+    expect(awsNodeIdForResource('agentcore-integrations', 'agentcore')).toBe('ac-integrations');
+  });
+});
+
+/*
+ * The Gateway's caption is a claim about the stack, and the stack is generated.
+ *
+ * `'MCP · 2 Lambda targets · 27 tools'` is the line a room reads as the Gateway's
+ * benefit, so it is worth more than a comment: the number is recomputed here from
+ * the same JSON `agentcore-stack.ts` spreads into `inlinePayload`, and a tool added
+ * to the registry fails this test instead of quietly making the caption a lie.
+ */
+describe('the Gateway caption’s tool count', () => {
+  it('matches the schemas the stack actually declares', () => {
+    // Mirrors `agentcore-stack.ts`: one generated tool is withheld from engine B
+    // because its signing key does not reach the tool Lambda, and every gated tool
+    // gains a paired `confirm_*` the proxy calls.
+    const WITHHELD = new Set(['create_conversation_link']);
+    const PROFILE_TOOLS = 3;
+
+    const offered = integrationToolSchemas.filter((tool) => !WITHHELD.has(tool.name));
+    const confirms = offered.filter((tool) => tool.requiresConfirmation).length;
+    const total = offered.length + confirms + PROFILE_TOOLS;
+
+    expect(awsNode('ac-gateway').caption).toBe(`MCP · 2 Lambda targets · ${total} tools`);
   });
 });

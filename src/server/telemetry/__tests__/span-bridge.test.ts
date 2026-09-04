@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { logRecordToSpan, startSpanBridge } from '../span-bridge';
+import { GATEWAY_TOOL_SERVICES, logRecordToSpan, startSpanBridge } from '../span-bridge';
+import integrationToolSchemas from '../../../../infra/lib/generated/integration-tool-schemas.json';
 import { logger, resetServerLogSubscribers, withUserScope } from '../../logging';
 import { resolveBroadcastSessionId } from '../../index';
 import type { AwsSpan, ServerEvent } from '../../../shared/interfaces/ws-events';
@@ -280,6 +281,25 @@ describe('logRecordToSpan', () => {
       );
       expect(span).toMatchObject({ ok: false, durationMs: 3002 });
     });
+
+    it('carries the X-Ray trace id through, since it is the only thread across the hops', () => {
+      // With the Gateway in engine B's real path the Runtime and the tool Lambda are
+      // two processes the proxy cannot see inside; this id is what stitches the three
+      // log groups together.
+      expect(
+        logRecordToSpan(
+          record('agentcore.invoke', {
+            sessionId: 's-3',
+            durationMs: 9,
+            traceId: 'Root=1-6612ab00-1f2e3d4c5b6a7980',
+          }),
+        )?.traceId,
+      ).toBe('Root=1-6612ab00-1f2e3d4c5b6a7980');
+    });
+
+    it('leaves the trace id off when the service returned none', () => {
+      expect(logRecordToSpan(invoked)?.traceId).toBeUndefined();
+    });
   });
 
   describe('agentcore.memory → AgentCore Memory', () => {
@@ -354,6 +374,131 @@ describe('logRecordToSpan', () => {
 
     it('ignores a Gateway record with no tool name', () => {
       expect(logRecordToSpan(record('agentcore.gateway', { sessionId: 's-5' }))).toBeUndefined();
+    });
+
+    /*
+     * Gateway tool names arrive `<target>___<tool>` — that is what
+     * `agent.py`'s `_tools_used()` reports, and the prefix is the target's name, so
+     * it changes when a target is renamed. Splitting rather than matching whole
+     * names is what keeps a rename from silently dropping every span.
+     */
+    it('splits the target off the tool name', () => {
+      expect(
+        logRecordToSpan(
+          record('agentcore.gateway', {
+            sessionId: 's-5',
+            tool: 'valentin-profile___get_partner_profile',
+          }),
+        ),
+      ).toMatchObject({
+        resourceId: 'agentcore-gateway',
+        operation: 'get_partner_profile',
+        detail: 'via valentin-profile-tools',
+      });
+    });
+
+    it('sends an integration tool to engine B’s External APIs card, named for the partner', () => {
+      // The point of the whole branch: the room sees "Ontopo" on engine B exactly
+      // as it does on engine A, reached the other way.
+      expect(
+        logRecordToSpan(
+          record('agentcore.gateway', {
+            sessionId: 's-5',
+            tool: 'valentin-integrations___find_restaurants',
+          }),
+        ),
+      ).toMatchObject({
+        resourceId: 'agentcore-integrations',
+        service: 'External APIs',
+        resourceName: 'Ontopo',
+        operation: 'find_restaurants',
+        detail: 'via valentin-integration-tools',
+      });
+    });
+
+    it('still has no duration for an integration tool, for the same reason', () => {
+      const span = logRecordToSpan(
+        record('agentcore.gateway', {
+          sessionId: 's-5',
+          tool: 'valentin-integrations___search_hotels',
+        }),
+      );
+      expect(span?.durationMs).toBeUndefined();
+    });
+
+    it('falls back to the Gateway card for a tool it does not recognise', () => {
+      // A tool shipped in the Lambda ahead of this table. Better a Gateway span
+      // with the right name than no beat at all.
+      expect(
+        logRecordToSpan(
+          record('agentcore.gateway', {
+            sessionId: 's-5',
+            tool: 'valentin-integrations___book_a_hot_air_balloon',
+          }),
+        ),
+      ).toMatchObject({
+        resourceId: 'agentcore-gateway',
+        operation: 'book_a_hot_air_balloon',
+      });
+    });
+
+    it('names a partner for every tool the stack declares', () => {
+      /*
+       * The drift guard. `GATEWAY_TOOL_SERVICES` is hand-written — the proxy cannot
+       * ask the registry, because a credential missing on *this* container would
+       * drop a tool that ran perfectly well in the Lambda — so the coupling is
+       * enforced here instead: add a tool to the registry and this fails.
+       */
+      const missing = integrationToolSchemas
+        .map((tool) => tool.name)
+        .filter((name) => !(name in GATEWAY_TOOL_SERVICES));
+      expect(missing).toEqual([]);
+    });
+  });
+
+  describe('agentcore.gateway.confirm → the proxy’s own Gateway call', () => {
+    const confirm = {
+      sessionId: 's-6',
+      tool: 'valentin-integrations___confirm_reservation',
+      durationMs: 812,
+      ok: true,
+    };
+
+    it('carries a real duration, unlike the read path', () => {
+      /*
+       * The asymmetry is the truthful part: this call was made by the proxy, so it
+       * has a measured number, while a tool the agent called inside the Runtime does
+       * not. Asserted rather than commented, so nobody "fixes" one to match the other.
+       */
+      expect(logRecordToSpan(record('agentcore.gateway.confirm', confirm))).toMatchObject({
+        sessionId: 's-6',
+        resourceId: 'agentcore-gateway',
+        service: 'AgentCore Gateway',
+        operation: 'confirm_reservation',
+        durationMs: 812,
+        ok: true,
+      });
+    });
+
+    it('stays on the Gateway card even though the tool is an integration one', () => {
+      // Deliberate: the story here is the endpoint, not the partner — the same MCP
+      // route the agent uses, called by the application, with the booking authority
+      // kept out of the model's hands.
+      const span = logRecordToSpan(record('agentcore.gateway.confirm', confirm));
+      expect(span?.resourceId).not.toBe('agentcore-integrations');
+    });
+
+    it('reports a refused booking as a failed span', () => {
+      const span = logRecordToSpan(
+        record('agentcore.gateway.confirm', { ...confirm, ok: false }),
+      );
+      expect(span?.ok).toBe(false);
+    });
+
+    it('drops a confirm record with no duration rather than inventing one', () => {
+      expect(
+        logRecordToSpan(record('agentcore.gateway.confirm', { sessionId: 's-6', tool: 'x' })),
+      ).toBeUndefined();
     });
   });
 

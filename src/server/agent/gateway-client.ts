@@ -140,6 +140,12 @@ export class GatewayToolClient {
       // which the proxy only ever learns about as names. `span-bridge.ts` turns
       // this into the confirm span in the drawer.
       logger.info('agentcore.gateway.confirm', {
+        // From the arguments rather than a parameter: every Gateway tool takes
+        // `session_id`, and a span with no session is dropped by
+        // `resolveBroadcastSessionId` — so reading it from the one place it is
+        // guaranteed to be keeps the drawer beat from depending on a call site
+        // remembering to pass it twice.
+        sessionId: typeof args.session_id === 'string' ? args.session_id : undefined,
         tool: name,
         durationMs: Date.now() - started,
         ok: !result.isError,

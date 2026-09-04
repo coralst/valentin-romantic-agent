@@ -46,7 +46,8 @@ export type AwsNodeId =
   | 'ac-runtime'
   | 'ac-memory'
   | 'ac-gateway'
-  | 'ac-dynamodb';
+  | 'ac-dynamodb'
+  | 'ac-integrations';
 
 /**
  * Which engine a resource belongs to.
@@ -191,7 +192,11 @@ export const AWS_NODES: readonly AwsNode[] = [
     id: 'ac-gateway',
     service: 'AgentCore Gateway',
     resourceName: 'valentin-gateway-dev',
-    caption: 'MCP · Lambda target · 3 tools',
+    // Two targets now, and the count is what the Gateway's benefit looks like
+    // from the outside: 27 tool schemas declared once, in the stack, reached over
+    // one MCP endpoint with the JWT handled for the agent. Engine A describes the
+    // same jobs to Bedrock itself, in its own loop, on every turn.
+    caption: 'MCP · 2 Lambda targets · 27 tools',
     tier: 'data',
     engine: 'agentcore',
     inAgentCore: true,
@@ -207,6 +212,21 @@ export const AWS_NODES: readonly AwsNode[] = [
     // belongs anyway — it is the hop, not the table.
     caption: 'same table · via the Gateway',
     tier: 'data',
+    engine: 'agentcore',
+  },
+  {
+    id: 'ac-integrations',
+    service: 'External APIs',
+    // The Lambda behind the second target, named here rather than on the
+    // connector because on this path it is the thing holding the credentials:
+    // engine A's task calls Ontopo itself, engine B's does not and cannot.
+    resourceName: 'valentin-integration-tools-dev',
+    caption: 'same tools · via the Gateway',
+    tier: 'data',
+    // Engine B's copy of `integrations`, the same duplication as `ac-dynamodb`
+    // and for the same reason: one real set of providers, two routes to it. This
+    // is the node that makes the Gateway branch visible, and it is visible only
+    // with the toggle on because of this one field.
     engine: 'agentcore',
   },
   /*
@@ -269,6 +289,7 @@ const AGENTCORE_COUNTERPART: Readonly<Partial<Record<AwsNodeId, AwsNodeId>>> = {
   fargate: 'ac-proxy',
   bedrock: 'ac-runtime',
   dynamodb: 'ac-dynamodb',
+  integrations: 'ac-integrations',
 };
 
 /**
@@ -328,6 +349,7 @@ const PARENT: Readonly<Partial<Record<AwsNodeId, AwsNodeId>>> = {
   'ac-memory': 'ac-runtime',
   'ac-gateway': 'ac-runtime',
   'ac-dynamodb': 'ac-gateway',
+  'ac-integrations': 'ac-gateway',
 };
 
 /**
@@ -346,7 +368,8 @@ export type AwsSegmentId =
   | 'ac-proxy-ac-runtime'
   | 'ac-runtime-ac-memory'
   | 'ac-runtime-ac-gateway'
-  | 'ac-gateway-ac-dynamodb';
+  | 'ac-gateway-ac-dynamodb'
+  | 'ac-gateway-ac-integrations';
 
 /** A connector in the diagram, always oriented parent → child. */
 export interface AwsSegment {
@@ -397,6 +420,16 @@ export const AWS_SEGMENTS: readonly AwsSegment[] = [
     from: 'ac-gateway',
     to: 'ac-dynamodb',
     label: 'Lambda target',
+  },
+  {
+    id: 'ac-gateway-ac-integrations',
+    from: 'ac-gateway',
+    to: 'ac-integrations',
+    // Named for the target rather than the transport, which is the difference
+    // this connector exists to show: engine A's equivalent hop is labelled
+    // 'NAT · public internet' from the task, because on that path the task itself
+    // holds the credentials and makes the call.
+    label: 'valentin-integrations target',
   },
 ] as const;
 
@@ -601,6 +634,10 @@ const AGENTCORE_RESOURCE_IDS: Readonly<Record<string, AwsNodeId>> = {
   'agentcore-runtime': 'ac-runtime',
   'agentcore-memory': 'ac-memory',
   'agentcore-gateway': 'ac-gateway',
+  // A tool call the Gateway routed to the integration Lambda. Its own id rather
+  // than `integrations`, because that one is engine A's node and `nodeForEngine`
+  // would translate it back the wrong way on a mislabelled view.
+  'agentcore-integrations': 'ac-integrations',
 };
 
 /**

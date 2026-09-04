@@ -140,6 +140,9 @@ const computeStack = new ComputeStack(app, `Valentin-Compute-${env}`, {
   agentCoreRuntimeArn: agentCoreStack.runtimeArn,
   agentCoreMemoryId: agentCoreStack.memoryId,
   agentCoreGatewayUrl: agentCoreStack.gatewayUrl,
+  gatewayClientId: agentCoreStack.proxyGatewayClientId,
+  gatewayTokenUrl: agentCoreStack.gatewayTokenUrl,
+  gatewayScope: agentCoreStack.gatewayScope,
   env: stackEnv,
   description: `Valentin ECS Fargate compute (${env})`,
 });

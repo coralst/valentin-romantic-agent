@@ -263,6 +263,44 @@ describe('engine B can actually invoke its Runtime', () => {
       },
     });
   });
+
+  it('lets the proxy read its Gateway client secret at runtime', () => {
+    // Without this the confirm path fails at the first token exchange, and the
+    // failure looks like a Gateway problem rather than a missing grant. The secret
+    // is deliberately *not* in the template — see the ClientSecret test — so
+    // DescribeUserPoolClient is the only way the proxy can obtain it.
+    computeTemplate.hasResourceProperties('AWS::IAM::Policy', {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({ Action: 'cognito-idp:DescribeUserPoolClient' }),
+        ]),
+      },
+    });
+  });
+
+  it('gives the Gateway credentials to the engine-B container only', () => {
+    /*
+     * Engine A confirms in-process and has no business holding a credential that
+     * can call the Gateway. This is checked by container rather than by task
+     * definition because both containers share `sharedEnvironment`, and the easy
+     * mistake is adding these three there.
+     */
+    const containers = Object.values(
+      computeTemplate.findResources('AWS::ECS::TaskDefinition'),
+    ).flatMap((def) => (def as any).Properties.ContainerDefinitions as any[]);
+
+    const withGatewayCreds = containers.filter((c) =>
+      (c.Environment as any[]).some((e) => e.Name === 'GATEWAY_CLIENT_ID'),
+    );
+    expect(withGatewayCreds).toHaveLength(1);
+
+    const names = (withGatewayCreds[0].Environment as any[]).map((e) => e.Name);
+    expect(names).toContain('GATEWAY_TOKEN_URL');
+    expect(names).toContain('GATEWAY_SCOPE');
+    // The one that identifies this as the engine-B container, so the assertion
+    // above cannot pass by landing on the wrong one.
+    expect(names).toContain('AGENTCORE_RUNTIME_ARN');
+  });
 });
 
 describe('the account janitor cannot take the table again', () => {
@@ -746,14 +784,29 @@ describe('agentcore engine B', () => {
     expect(name).not.toContain('_');
   });
 
-  it('scopes the Gateway JWT authorizer to the machine client only', () => {
+  it('scopes the Gateway JWT authorizer to the two machine clients only', () => {
     // Without allowedClients, any token this pool issues would open the gateway —
     // including a signed-in visitor's, which would let a browser call the tools.
+    //
+    // Two, not one: the agent's client and the proxy's. The count is asserted
+    // rather than left open because a third entry is how a *user*-facing client
+    // would get in, and that is the one mistake this property exists to prevent.
     const gateways = agentCoreTemplate.findResources('AWS::BedrockAgentCore::Gateway');
     const authorizer = (Object.values(gateways)[0] as any).Properties.AuthorizerConfiguration
       .CustomJWTAuthorizer;
-    expect(authorizer.AllowedClients).toHaveLength(1);
+    expect(authorizer.AllowedClients).toHaveLength(2);
     expect(authorizer.DiscoveryUrl).toBeDefined();
+  });
+
+  it('gives the proxy its own Gateway client rather than sharing the agent’s', () => {
+    // Two callers with different lifetimes: revoking the agent's credential must
+    // not silently stop every Confirm button, and the Gateway access log has to be
+    // able to answer "was this the model or the application?".
+    const clients = Object.values(
+      agentCoreTemplate.findResources('AWS::Cognito::UserPoolClient'),
+    ).map((r) => (r as any).Properties.ClientName as string);
+    expect(clients).toContainEqual(expect.stringContaining('valentin-gateway-'));
+    expect(clients).toContainEqual(expect.stringContaining('valentin-proxy-gateway-'));
   });
 
   it('never puts the gateway client secret in the template', () => {
@@ -953,10 +1006,14 @@ describe('the integration-tools Lambda', () => {
 
 describe('the integrations Gateway target', () => {
   /*
-   * The read-only tools are exposed; the seven that spend money or send messages
-   * are not. Each of those needs a paired `confirm_*` the *proxy* calls — a
-   * language model must never be the thing that confirms its own proposal — so
-   * they arrive with that machinery, not before it.
+   * The ten read-only tools, which the model may call freely.
+   *
+   * The other fourteen are the seven `propose_*` tools and their paired
+   * `confirm_*`. The pairing is what the tests below are actually about: a
+   * `propose_*` exposed without its confirm is a card whose button cannot work,
+   * and a `confirm_*` the *model* can see is a language model authorising its own
+   * spending — which is the one thing propose-then-confirm exists to prevent, and
+   * is prevented in `agentcore/agent.py`, not here.
    */
   const READ_ONLY = [
     'check_availability',
@@ -971,8 +1028,18 @@ describe('the integrations Gateway target', () => {
     'search_hotels',
   ];
 
-  it('exposes exactly the ten read-only tools it can actually honour', () => {
-    expect(gatewayToolNames('valentin-integrations')).toEqual(READ_ONLY);
+  it('exposes the ten read-only tools, unchanged by the confirm machinery', () => {
+    const names = gatewayToolNames('valentin-integrations');
+    expect(names.filter((n) => !/^(propose|confirm)_/.test(n))).toEqual(READ_ONLY);
+  });
+
+  it('exposes exactly 24 tools: 10 read-only, 7 proposals, 7 confirms', () => {
+    // The total is asserted so an accidental addition is visible, and the split is
+    // asserted because the interesting failure is not the count but the balance.
+    const names = gatewayToolNames('valentin-integrations');
+    expect(names).toHaveLength(24);
+    expect(names.filter((n) => n.startsWith('propose_'))).toHaveLength(7);
+    expect(names.filter((n) => n.startsWith('confirm_'))).toHaveLength(7);
   });
 
   it('withholds the share-link tool, which this Lambda cannot sign', () => {
@@ -995,10 +1062,44 @@ describe('the integrations Gateway target', () => {
     expect(committedToolNames()).toContain('create_conversation_link');
   });
 
-  it('exposes no tool that acts without confirmation', () => {
-    for (const name of gatewayToolNames('valentin-integrations')) {
-      expect(name.startsWith('propose_')).toBe(false);
-      expect(name.startsWith('confirm_')).toBe(false);
+  it('pairs every proposal with a confirm, and every confirm with a proposal', () => {
+    /*
+     * The failure this catches is asymmetric and silent either way. A `propose_*`
+     * with no `confirm_*` gives the user a card whose button returns "tool not
+     * found" *after* they have agreed to spend money. A `confirm_*` with no
+     * `propose_*` is a Gateway tool that can never have a stored proposal to act
+     * on — dead surface area on an endpoint whose whole claim is that its tools are
+     * declared once.
+     */
+    const names = gatewayToolNames('valentin-integrations');
+    const proposals = names.filter((n) => n.startsWith('propose_')).map((n) => n.slice(8));
+    const confirms = names.filter((n) => n.startsWith('confirm_')).map((n) => n.slice(8));
+    expect(confirms.sort()).toEqual(proposals.sort());
+  });
+
+  it('asks a confirm for nothing but the proposal it is confirming', () => {
+    /*
+     * `{user_id, session_id, proposal_id}` and no more. A confirm that accepted,
+     * say, a party size would be a second chance to change the booking after the
+     * user had agreed to the first one — the proposal row is the record of what
+     * was agreed, and it is the only thing the Lambda is allowed to read back.
+     */
+    const tools = gatewayTarget('valentin-integrations').Properties.TargetConfiguration.Mcp
+      .Lambda.ToolSchema.InlinePayload as any[];
+
+    const confirms = tools.filter((t) => (t.Name as string).startsWith('confirm_'));
+    expect(confirms).toHaveLength(7);
+    for (const tool of confirms) {
+      expect(Object.keys(tool.InputSchema.Properties).sort()).toEqual([
+        'proposal_id',
+        'session_id',
+        'user_id',
+      ]);
+      expect([...(tool.InputSchema.Required as string[])].sort()).toEqual([
+        'proposal_id',
+        'session_id',
+        'user_id',
+      ]);
     }
   });
 

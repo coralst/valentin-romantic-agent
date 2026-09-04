@@ -90,8 +90,18 @@ export class AgentCoreStack extends cdk.Stack {
   public readonly runtimeArn: string;
   /** Passed to the proxy service so it can read and write conversation events. */
   public readonly memoryId: string;
-  /** MCP endpoint the Strands agent calls for the three profile tools. */
+  /** MCP endpoint both the Strands agent and the proxy call. */
   public readonly gatewayUrl: string;
+  /**
+   * The proxy's own machine client, distinct from the agent's — see
+   * `ProxyGatewayClient`. The proxy reads its secret at runtime with
+   * `DescribeUserPoolClient`, so only the id crosses the stack boundary.
+   */
+  public readonly proxyGatewayClientId: string;
+  /** Cognito's token endpoint, so the proxy needs no domain construction of its own. */
+  public readonly gatewayTokenUrl: string;
+  /** The single scope both machine clients hold. */
+  public readonly gatewayScope = 'valentin-tools/invoke';
   /** Role the proxy must be allowed to reach; exported for the compute stack's policy. */
   public readonly runtimeRole: iam.Role;
   public readonly logGroup: logs.LogGroup;
@@ -270,6 +280,21 @@ export class AgentCoreStack extends cdk.Stack {
       }),
     );
 
+    /*
+     * The table, for one row shape only: `PROPOSAL#<id>`.
+     *
+     * A proposal is raised in one invocation and confirmed in another, and the
+     * opaque `payload` — Ontopo's area id, the prose of a proposed email — has to
+     * survive between them without passing through the model or the browser. The
+     * row lives at `USER#<sub>#SESSION#<sid>`, so confirming someone else's
+     * proposal is a GetItem that *misses* rather than a check that could be
+     * forgotten. See `src/server/integrations/proposal-store.ts`.
+     *
+     * `grantReadWriteData` is wider than those two operations, matching
+     * `profileTools` above; the narrowing that matters is the key, not the verb.
+     */
+    table.grantReadWriteData(integrationTools);
+
     // Belt and braces on top of the app-scope call in `bin/app.ts`: this is the
     // one new resource holding a state nobody can recreate from the repo in under
     // a minute, and SpringClean calls service APIs directly — `RemovalPolicy` is
@@ -318,6 +343,37 @@ export class AgentCoreStack extends cdk.Stack {
     const gatewayClient = new cognito.UserPoolClient(this, 'GatewayClient', {
       userPool,
       userPoolClientName: `valentin-gateway-${env}`,
+      generateSecret: true,
+      oAuth: {
+        flows: { clientCredentials: true },
+        scopes: [cognito.OAuthScope.resourceServer(resourceServer, invokeScope)],
+      },
+      accessTokenValidity: cdk.Duration.hours(1),
+      enableTokenRevocation: true,
+    });
+
+    /*
+     * A *second* machine client, for the proxy rather than the agent.
+     *
+     * The application makes one Gateway call of its own: the confirm. It is not the
+     * agent making it — the `confirm_*` tools are hidden from the model on purpose
+     * (see `HIDDEN_TOOL_PREFIXES` in `agentcore/agent.py`) because a language model
+     * deciding when to spend someone's money is what propose-then-confirm exists to
+     * prevent.
+     *
+     * Sharing `GatewayClient` would have worked and is the obvious shortcut. It gets
+     * its own instead because these are two callers with different lifetimes and
+     * different blast radii: revoking or rotating the agent's credential should not
+     * silently stop every Confirm button, and a Gateway access log that cannot tell
+     * the agent's calls from the application's cannot answer "did the model do
+     * this?" — which is the one question this design exists to be able to answer.
+     *
+     * Same scope, same resource server, and both are in the Gateway's
+     * `allowedClients` below.
+     */
+    const proxyGatewayClient = new cognito.UserPoolClient(this, 'ProxyGatewayClient', {
+      userPool,
+      userPoolClientName: `valentin-proxy-gateway-${env}`,
       generateSecret: true,
       oAuth: {
         flows: { clientCredentials: true },
@@ -428,9 +484,13 @@ export class AgentCoreStack extends cdk.Stack {
       authorizerConfiguration: {
         customJwtAuthorizer: {
           discoveryUrl,
-          // Scoped to the one machine client. Without this any token the pool
-          // issues — including a signed-in visitor's — would open the gateway.
-          allowedClients: [gatewayClient.userPoolClientId],
+          // Scoped to the two machine clients — the agent's and the proxy's, and
+          // nothing else. Without this any token the pool issues, including a
+          // signed-in visitor's, would open the gateway.
+          allowedClients: [
+            gatewayClient.userPoolClientId,
+            proxyGatewayClient.userPoolClientId,
+          ],
         },
       },
       // DEBUG returns the underlying tool error to the agent instead of a generic
@@ -537,17 +597,23 @@ export class AgentCoreStack extends cdk.Stack {
      * tool schemas are declared once and whose access is JWT-scoped to a single
      * machine client. Two targets, one gateway, no second tool loop.
      *
-     * Read-only tools only, for now. The seven `propose_*` tools each need a paired
-     * `confirm_*` that the *proxy* calls — putting a language model in the
-     * authority path for spending money is the exact thing propose/confirm exists
-     * to prevent — and that needs proposal state in DynamoDB plus a second Cognito
-     * client. None of it is required to prove the Gateway is in the path, so it
-     * ships separately and this target grows then.
+     * Three kinds of tool on this target, and the difference matters:
      *
-     * Filtered on the tool's own `requiresConfirmation` flag rather than the
-     * `propose_` name prefix. The two agree today and a unit test asserts it, but a
-     * naming convention is a weaker thing to key tool exposure on than the flag the
-     * tool declares.
+     *  - **read-only** — offered to the model, run on the spot;
+     *  - **`propose_*`** — offered to the model, but they only *ask*; the tool
+     *    writes a `PROPOSAL#` row and returns a card;
+     *  - **`confirm_*`** — declared here so the Gateway will route them, and
+     *    deliberately **filtered out of the list the model sees** by
+     *    `agentcore/agent.py`. They are called by the proxy, after a human clicks
+     *    Confirm. A language model in the authority path for spending money is the
+     *    exact thing propose→confirm exists to prevent, and the Gateway being the
+     *    transport for both halves is the point: one MCP endpoint, JWT-scoped,
+     *    reached by the agent and by the application.
+     *
+     * Read-only is filtered on the tool's own `requiresConfirmation` flag rather
+     * than the `propose_` name prefix. The two agree today and a unit test asserts
+     * it, but a naming convention is a weaker thing to key tool exposure on than
+     * the flag the tool declares.
      */
     /*
      * Read-only, and still not exposed.
@@ -567,16 +633,22 @@ export class AgentCoreStack extends cdk.Stack {
      */
     const WITHHELD = new Set(['create_conversation_link']);
 
-    const readOnlyToolSchemas = integrationToolSchemas
-      .filter((tool) => !tool.requiresConfirmation && !WITHHELD.has(tool.name))
-      // `requiresConfirmation` is ours, not the Gateway's: `inlinePayload` takes
-      // schema fields only, and an unknown property fails at CreateStack — ten
-      // minutes into a deploy — rather than at synth.
-      .map(
-        ({ name, description, inputSchema }): agentcore.CfnGatewayTarget.ToolDefinitionProperty => ({
-          name,
-          description,
-          /*
+    /**
+     * Strip our own bookkeeping off a generated schema.
+     *
+     * `requiresConfirmation` is ours, not the Gateway's: `inlinePayload` takes
+     * schema fields only, and an unknown property fails at CreateStack — ten
+     * minutes into a deploy — rather than at synth.
+     */
+    const asToolDefinition = ({
+      name,
+      description,
+      inputSchema,
+    }: (typeof integrationToolSchemas)[number]): agentcore.CfnGatewayTarget.ToolDefinitionProperty =>
+      ({
+        name,
+        description,
+        /*
            * The one cast in this file, and it is about JSON, not about CDK.
            *
            * TypeScript infers the imported array as a union of sixteen literal
@@ -587,9 +659,48 @@ export class AgentCoreStack extends cdk.Stack {
            * that regenerates this file from the tools and asserts each `inputSchema`
            * is an object with the identity args required.
            */
-          inputSchema: inputSchema as unknown as agentcore.CfnGatewayTarget.SchemaDefinitionProperty,
-        }),
-      );
+        inputSchema: inputSchema as unknown as agentcore.CfnGatewayTarget.SchemaDefinitionProperty,
+      });
+
+    const offered = integrationToolSchemas.filter((tool) => !WITHHELD.has(tool.name));
+
+    /*
+     * The confirm half of every gated tool, schema'd to three arguments.
+     *
+     * Derived from the `propose_*` list rather than written out, so a new gated
+     * integration cannot arrive with a propose and no way to confirm it. The
+     * schema is `{user_id, session_id, proposal_id}` and nothing else: the
+     * proposal itself is already in DynamoDB, and re-sending its fields here would
+     * be a second, forgeable copy of what was agreed.
+     */
+    const confirmToolSchemas: agentcore.CfnGatewayTarget.ToolDefinitionProperty[] = offered
+      .filter((tool) => tool.requiresConfirmation)
+      .map((tool) => {
+        const action = tool.name.replace(/^propose_/, '');
+        return {
+          name: `confirm_${action}`,
+          description:
+            `Carry out the ${action.replace(/_/g, ' ')} the user has already accepted. ` +
+            'Called by the application after a human clicks Confirm, never by the agent — ' +
+            'proposing and confirming are deliberately two different authorities.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              ...GATEWAY_IDENTITY_ARGS,
+              proposal_id: {
+                type: 'string',
+                description: 'The id of the proposal being confirmed',
+              },
+            },
+            required: ['user_id', 'session_id', 'proposal_id'],
+          } as unknown as agentcore.CfnGatewayTarget.SchemaDefinitionProperty,
+        };
+      });
+
+    const integrationToolDefinitions = [
+      ...offered.map(asToolDefinition),
+      ...confirmToolSchemas,
+    ];
 
     const integrationsTarget = new agentcore.CfnGatewayTarget(this, 'IntegrationToolsTarget', {
       name: 'valentin-integrations',
@@ -600,7 +711,7 @@ export class AgentCoreStack extends cdk.Stack {
         mcp: {
           lambda: {
             lambdaArn: integrationTools.functionArn,
-            toolSchema: { inlinePayload: readOnlyToolSchemas },
+            toolSchema: { inlinePayload: integrationToolDefinitions },
           },
         },
       },
@@ -810,6 +921,8 @@ export class AgentCoreStack extends cdk.Stack {
     this.runtimeArn = runtime.attrAgentRuntimeArn;
     this.memoryId = memory.attrMemoryId;
     this.gatewayUrl = gateway.attrGatewayUrl;
+    this.proxyGatewayClientId = proxyGatewayClient.userPoolClientId;
+    this.gatewayTokenUrl = tokenUrl;
 
     // ---------------------------------------------------------------------
     // Outputs

@@ -71,8 +71,19 @@ export interface ComputeStackProps extends cdk.StackProps {
   agentCoreRuntimeArn: string;
   /** AgentCore Memory the proxy reads and writes conversation events on. */
   agentCoreMemoryId: string;
-  /** Gateway MCP endpoint, passed through for the drawer to display. */
+  /** Gateway MCP endpoint — displayed in the drawer, and called for a confirm. */
   agentCoreGatewayUrl: string;
+  /**
+   * The proxy's own Cognito machine client for the Gateway.
+   *
+   * Only the id: the secret is fetched at runtime with `DescribeUserPoolClient`
+   * so it never lands in this template, which a regression test asserts.
+   */
+  gatewayClientId: string;
+  /** Cognito's `oauth2/token` endpoint for the client-credentials exchange. */
+  gatewayTokenUrl: string;
+  /** The scope that client holds, e.g. `valentin-tools/invoke`. */
+  gatewayScope: string;
 }
 
 /**
@@ -351,6 +362,29 @@ export class ComputeStack extends cdk.Stack {
             resourceName: `${props.agentCoreMemoryId}/*`,
           }),
         ],
+      }),
+    );
+
+    /*
+     * Read the proxy's own Gateway client secret, and nothing else about the pool.
+     *
+     * `DescribeUserPoolClient` is what keeps the secret out of the CloudFormation
+     * template — the same trade the Strands agent makes for the same reason, one
+     * API call at start-up instead of a secret in an artefact anyone with
+     * `DescribeStacks` can read.
+     *
+     * Scoped to the pool rather than the client, because that is the finest grain
+     * `DescribeUserPoolClient`'s resource model offers: its only ARN form is the
+     * user-pool ARN. So this does let the task describe the *SPA* client too —
+     * which is public and has no secret — and the demo client, whose secret is
+     * already in the demo-login flow. Worth stating rather than implying, because
+     * a reader checking least privilege here should not have to rediscover that
+     * the tighter grant does not exist.
+     */
+    proxyTaskRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ['cognito-idp:DescribeUserPoolClient'],
+        resources: [props.userPoolArn],
       }),
     );
 
@@ -703,6 +737,13 @@ export class ComputeStack extends cdk.Stack {
         AGENTCORE_RUNTIME_ARN: props.agentCoreRuntimeArn,
         AGENTCORE_MEMORY_ID: props.agentCoreMemoryId,
         AGENTCORE_GATEWAY_URL: props.agentCoreGatewayUrl,
+        // On the proxy container only, and deliberately not on `sharedEnvironment`:
+        // engine A confirms in-process and has no business holding a Gateway
+        // credential. A task that cannot serve engine B cannot call the Gateway
+        // either.
+        GATEWAY_CLIENT_ID: props.gatewayClientId,
+        GATEWAY_TOKEN_URL: props.gatewayTokenUrl,
+        GATEWAY_SCOPE: props.gatewayScope,
       },
       secrets: sharedSecrets,
       logging: ecs.LogDrivers.awsLogs({

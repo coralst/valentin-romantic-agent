@@ -29,7 +29,32 @@ vi.mock('../credential-store', () => ({
   loadRemoteCredentials: () => loadRemoteCredentials(),
 }));
 
+/*
+ * The proposal store is mocked, unlike `runTool`.
+ *
+ * It is the one collaborator that is pure I/O — a DynamoDB round trip against a
+ * table this test has no reason to stand up — and what matters here is *that* a
+ * proposal is written before the card goes back and *what* is written, both of
+ * which a spy shows better than a table would. `proposal-store.test.ts` covers
+ * the conditional delete itself.
+ */
+const putProposal = vi.fn(() => Promise.resolve());
+const takeProposal = vi.fn();
+
+vi.mock('../proposal-store', async () => {
+  // The error class is real: `confirmProposal` does not catch it, so the handler's
+  // outer catch is what turns it into `{ok:false}` — and that only happens for a
+  // genuine Error.
+  const actual = await import('../proposal-store');
+  return {
+    ProposalUnavailable: actual.ProposalUnavailable,
+    putProposal: (...args: unknown[]) => putProposal(...(args as [])),
+    takeProposal: (...args: unknown[]) => takeProposal(...(args as [])),
+  };
+});
+
 const { handler, resetHandlerCacheForTests } = await import('../lambda-handler');
+const { ProposalUnavailable } = await import('../proposal-store');
 
 /** Gateway hands the tool name in the client context, prefixed by its target. */
 function ctx(toolName: string) {
@@ -39,11 +64,15 @@ function ctx(toolName: string) {
 interface FakeToolOptions {
   readonly result?: ToolResult;
   readonly throws?: Error;
+  /** Give the tool a `confirm`; omit it to model a tool that cannot be confirmed. */
+  readonly confirmResult?: ToolResult;
+  readonly confirmThrows?: Error;
 }
 
 /** A tool that records what it was called with. */
 function fakeTool(name: string, options: FakeToolOptions = {}) {
   const calls: { input: Record<string, unknown>; sessionId: string }[] = [];
+  const confirmCalls: { proposal: ActionProposal; sessionId: string }[] = [];
   const tool: AgentTool = {
     name,
     description: `fake ${name}`,
@@ -55,8 +84,17 @@ function fakeTool(name: string, options: FakeToolOptions = {}) {
       if (options.throws) throw options.throws;
       return options.result ?? { ok: true, summary: 'done' };
     },
+    ...(options.confirmResult || options.confirmThrows
+      ? {
+          confirm: async (proposal: ActionProposal, toolCtx: { sessionId: string }) => {
+            confirmCalls.push({ proposal, sessionId: toolCtx.sessionId });
+            if (options.confirmThrows) throw options.confirmThrows;
+            return options.confirmResult as ToolResult;
+          },
+        }
+      : {}),
   };
-  return { tool, calls };
+  return { tool, calls, confirmCalls };
 }
 
 /** Install a registry for this invocation and forget the container cache. */
@@ -86,6 +124,9 @@ describe('the Gateway tool host', () => {
     buildToolRegistry.mockReset();
     loadRemoteCredentials.mockClear();
     loadRemoteCredentials.mockImplementation(() => Promise.resolve());
+    putProposal.mockReset();
+    putProposal.mockImplementation(() => Promise.resolve());
+    takeProposal.mockReset();
     resetHandlerCacheForTests();
   });
 
@@ -287,11 +328,63 @@ describe('the Gateway tool host', () => {
         summary: 'Table for two, 21:00',
         url: 'https://ontopo.example/checkout/abc',
         expiresAt: '2026-09-05T18:00:00.000Z',
+        confirm: 'confirm_reservation',
       });
       // The whole response, not just the proposal — a payload field surfacing
       // anywhere in the envelope is the failure being guarded against.
       expect(JSON.stringify(response)).not.toContain('AREA-7');
       expect(JSON.stringify(response)).not.toContain('window table');
+    });
+
+    it('writes the payload down before handing back the card', async () => {
+      /*
+       * Order matters and is the reason this is awaited in the handler: the proxy
+       * may call `confirm_*` the instant the user clicks, and a row still being
+       * written would read as a proposal nobody remembers. The *whole* proposal
+       * goes to the store, payload included — that is the point of the store.
+       */
+      const { tool } = fakeTool('propose_reservation', {
+        result: { ok: true, summary: 'Shall I book it?', proposal },
+      });
+      registryOf(tool);
+
+      await handler({ ...IDS }, ctx('t___propose_reservation'));
+
+      expect(putProposal).toHaveBeenCalledWith(
+        IDS.user_id,
+        proposal,
+        'propose_reservation',
+      );
+    });
+
+    it('returns no card when the payload could not be stored', async () => {
+      // A card whose Confirm button cannot work is worse than no card: the user
+      // agrees to something and nothing happens. `putProposal` is inside the
+      // handler's try, so a failed write becomes an honest `{ok:false}`.
+      putProposal.mockImplementation(() => Promise.reject(new Error('table gone')));
+      const { tool } = fakeTool('propose_reservation', {
+        result: { ok: true, summary: 'Shall I book it?', proposal },
+      });
+      registryOf(tool);
+
+      const response = await handler({ ...IDS }, ctx('t___propose_reservation'));
+
+      expect(response.ok).toBe(false);
+      expect(response.proposal).toBeUndefined();
+    });
+
+    it('names the confirm tool the proxy should call', async () => {
+      // Carried rather than derived on the far side: a `service → action` table in
+      // the proxy would be a second copy of a pairing this file already has, and
+      // its wrong entry would confirm the wrong action.
+      const { tool } = fakeTool('propose_email', {
+        result: { ok: true, summary: 'Send it?', proposal },
+      });
+      registryOf(tool);
+
+      const response = await handler({ ...IDS }, ctx('t___propose_email'));
+
+      expect(response.proposal?.confirm).toBe('confirm_email');
     });
 
     it('omits url when the proposal has none', async () => {
@@ -318,6 +411,152 @@ describe('the Gateway tool host', () => {
       const invoked = records.find((r) => r.event === 'gateway.tool-invoked');
       expect(invoked?.data?.proposed).toBe(true);
       expect(JSON.stringify(records)).not.toContain('prop-1');
+    });
+  });
+
+  /*
+   * The confirm half.
+   *
+   * These are the invocations that spend money, and the only ones the model is not
+   * allowed to make — `agent.py` filters `confirm_*` out of the list it shows
+   * Bedrock and the proxy calls them directly. So what is asserted here is mostly
+   * about refusing: a proposal that is gone, a name that disagrees with the stored
+   * row, a tool whose credential has since been disconnected.
+   */
+  describe('confirming', () => {
+    const stored: ActionProposal = {
+      id: 'prop-1',
+      sessionId: 'sess-1',
+      service: 'ontopo',
+      title: 'Dinner at Ouzeria, Sat 21:00',
+      summary: 'Table for two, 21:00',
+      expiresAt: '2026-09-05T18:00:00.000Z',
+      payload: { areaId: 'AREA-7' },
+    };
+    const CONFIRM = { ...IDS, proposal_id: 'prop-1' };
+
+    it('runs the tool the stored row names, not the one the caller implies', async () => {
+      const { tool, confirmCalls } = fakeTool('propose_reservation', {
+        confirmResult: { ok: true, summary: 'Booked for 21:00' },
+      });
+      registryOf(tool);
+      takeProposal.mockResolvedValue({ proposal: stored, tool: 'propose_reservation' });
+
+      const response = await handler(CONFIRM, ctx('t___confirm_reservation'));
+
+      expect(response.ok).toBe(true);
+      expect(response.summary).toBe('Booked for 21:00');
+      // The payload the model never saw is what reaches `confirm`.
+      expect(confirmCalls[0]?.proposal.payload).toEqual({ areaId: 'AREA-7' });
+      expect(confirmCalls[0]?.sessionId).toBe('sess-1');
+    });
+
+    it('reads the row under the caller-supplied user, so ownership is the key', async () => {
+      // Not a check that could be forgotten: `takeProposal` builds
+      // `USER#<user>#SESSION#<session>`, so another user's proposal simply misses.
+      registryOf(fakeTool('propose_reservation', { confirmResult: { ok: true, summary: 'Booked' } }).tool);
+      takeProposal.mockResolvedValue({ proposal: stored, tool: 'propose_reservation' });
+
+      await handler(CONFIRM, ctx('t___confirm_reservation'));
+
+      expect(takeProposal).toHaveBeenCalledWith(IDS.user_id, IDS.session_id, 'prop-1');
+    });
+
+    it('passes the booking back so the proxy can record the outing', async () => {
+      const booking = { venueName: 'Ouzeria', city: 'Tel Aviv', occursOn: '2026-09-05' };
+      registryOf(
+        fakeTool('propose_reservation', {
+          confirmResult: { ok: true, summary: 'Booked', booking },
+        }).tool,
+      );
+      takeProposal.mockResolvedValue({ proposal: stored, tool: 'propose_reservation' });
+
+      const response = await handler(CONFIRM, ctx('t___confirm_reservation'));
+
+      expect(response.booking).toEqual(booking);
+    });
+
+    it('carries nothing out when the name disagrees with the stored row', async () => {
+      /*
+       * The row is authoritative about which tool runs, and this is the case where
+       * two proposals have been confused. Doing nothing loses a proposal; guessing
+       * books the wrong thing.
+       */
+      const records = captureLogs();
+      const { tool, confirmCalls } = fakeTool('propose_reservation', {
+        confirmResult: { ok: true, summary: 'Booked' },
+      });
+      registryOf(tool);
+      takeProposal.mockResolvedValue({ proposal: stored, tool: 'propose_reservation' });
+
+      const response = await handler(CONFIRM, ctx('t___confirm_email'));
+
+      expect(response.ok).toBe(false);
+      expect(confirmCalls).toHaveLength(0);
+      expect(records.some((r) => r.event === 'gateway.confirm-mismatch')).toBe(true);
+    });
+
+    it('says so plainly when the integration was disconnected in between', async () => {
+      // `buildToolRegistry` gates on credentials, so a rotation or a disconnect
+      // between the propose and the confirm leaves the row with no tool to run.
+      captureLogs();
+      registryOf(fakeTool('find_restaurants').tool);
+      takeProposal.mockResolvedValue({ proposal: stored, tool: 'propose_reservation' });
+
+      const response = await handler(CONFIRM, ctx('t___confirm_reservation'));
+
+      expect(response.ok).toBe(false);
+      expect(response.error).toContain('propose_reservation');
+    });
+
+    it('turns an unavailable proposal into ok:false rather than a Gateway 500', async () => {
+      captureLogs();
+      registryOf(fakeTool('propose_reservation', { confirmResult: { ok: true, summary: 'Booked' } }).tool);
+      takeProposal.mockRejectedValue(
+        new ProposalUnavailable('expired', 'That offer has expired.'),
+      );
+
+      const response = await handler(CONFIRM, ctx('t___confirm_reservation'));
+
+      expect(response.ok).toBe(false);
+      expect(response.error).toContain('expired');
+    });
+
+    it('rejects a confirm with no proposal_id before reading anything', async () => {
+      registryOf(fakeTool('propose_reservation', { confirmResult: { ok: true, summary: 'Booked' } }).tool);
+
+      const response = await handler({ ...IDS }, ctx('t___confirm_reservation'));
+
+      expect(response.ok).toBe(false);
+      expect(response.error).toContain('proposal_id');
+      expect(takeProposal).not.toHaveBeenCalled();
+    });
+
+    it('reports a refused booking as ok:false with its prose', async () => {
+      registryOf(
+        fakeTool('propose_reservation', {
+          confirmResult: { ok: false, summary: 'That table went while you decided' },
+        }).tool,
+      );
+      takeProposal.mockResolvedValue({ proposal: stored, tool: 'propose_reservation' });
+
+      const response = await handler(CONFIRM, ctx('t___confirm_reservation'));
+
+      expect(response.ok).toBe(false);
+      expect(response.summary).toBe('That table went while you decided');
+    });
+
+    it('never returns the payload it just confirmed with', async () => {
+      registryOf(
+        fakeTool('propose_reservation', {
+          confirmResult: { ok: true, summary: 'Booked', data: { ref: 'OK-1' } },
+        }).tool,
+      );
+      takeProposal.mockResolvedValue({ proposal: stored, tool: 'propose_reservation' });
+
+      const response = await handler(CONFIRM, ctx('t___confirm_reservation'));
+
+      expect(JSON.stringify(response)).not.toContain('AREA-7');
     });
   });
 

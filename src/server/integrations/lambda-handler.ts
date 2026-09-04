@@ -3,10 +3,13 @@ import { loadRemoteCredentials } from './credential-store';
 import { primePlacesKey } from './google-places/client';
 import {
   runTool,
+  runToolConfirm,
   type ActionProposal,
+  type BookingRecord,
   type IntegrationId,
   type ToolRegistry,
 } from './tool-registry';
+import { putProposal, takeProposal } from './proposal-store';
 import { logger } from '../logging';
 
 /**
@@ -71,6 +74,17 @@ interface ProposalView {
   summary: string;
   url?: string;
   expiresAt: string;
+  /**
+   * The Gateway tool that carries this out, e.g. `confirm_reservation`.
+   *
+   * Named here rather than worked out by the proxy, because the alternative is a
+   * `service → action` table on the other side of the wire that duplicates a
+   * pairing this file already has in hand — and whose wrong entry would confirm
+   * the wrong action. Safe to publish: it is a tool name, already declared in the
+   * Gateway's own schema, and confirming still requires the proposal id and a row
+   * under the user's own partition.
+   */
+  confirm: string;
 }
 
 /** What every invocation answers with. Never carries a credential or a payload. */
@@ -79,6 +93,8 @@ export interface GatewayToolResponse {
   summary?: string;
   data?: unknown;
   proposal?: ProposalView;
+  /** Set only by a successful confirm, so the proxy can record the outing. */
+  booking?: BookingRecord;
   error?: string;
 }
 
@@ -166,7 +182,7 @@ function requireIdentity(input: Record<string, unknown>, name: string): string {
  * day someone adds one. The model must not see it either, since the model is not
  * the thing that confirms.
  */
-function proposalView(proposal: ActionProposal): ProposalView {
+function proposalView(proposal: ActionProposal, proposeName: string): ProposalView {
   return {
     id: proposal.id,
     service: proposal.service,
@@ -174,6 +190,103 @@ function proposalView(proposal: ActionProposal): ProposalView {
     summary: proposal.summary,
     ...(proposal.url ? { url: proposal.url } : {}),
     expiresAt: proposal.expiresAt,
+    confirm: confirmNameFor(proposeName),
+  };
+}
+
+/**
+ * The prefix that marks an invocation as "carry out what was already agreed".
+ *
+ * `confirm_reservation` is paired with `propose_reservation` by name rather than
+ * by a table, so adding a gated integration adds both halves at once and cannot
+ * add a propose with no way to confirm it. The pairing is asserted in
+ * `src/server/integrations/__tests__/tool-schemas.test.ts`.
+ */
+const CONFIRM_PREFIX = 'confirm_';
+const PROPOSE_PREFIX = 'propose_';
+
+/** The `propose_*` tool a `confirm_*` name refers to. */
+export function proposeNameFor(confirmName: string): string {
+  return `${PROPOSE_PREFIX}${confirmName.slice(CONFIRM_PREFIX.length)}`;
+}
+
+/** The `confirm_*` Gateway tool paired with a `propose_*` tool. */
+export function confirmNameFor(proposeName: string): string {
+  return `${CONFIRM_PREFIX}${proposeName.slice(PROPOSE_PREFIX.length)}`;
+}
+
+/**
+ * Carry out a proposal the user has accepted.
+ *
+ * Called by the **proxy**, never by the model: the confirm tools are filtered out
+ * of the list `agent.py` shows Bedrock, because a language model deciding when to
+ * spend someone's money is the exact thing propose→confirm exists to prevent. The
+ * Gateway is still the transport, so the demo line holds — one MCP endpoint,
+ * reached by both the agent and the application.
+ *
+ * The stored row is authoritative about *which* tool runs. The caller's
+ * `confirm_x` name only has to agree with it; if it does not, something has
+ * confused two proposals and the safe answer is to do nothing. Note the row is
+ * already deleted by then — a mismatch means a proposal is lost, which is the
+ * better of the two failures.
+ */
+async function confirmProposal(
+  name: string,
+  input: Record<string, unknown>,
+  ctx: { sessionId: string; userId: string },
+  registered: ToolRegistry,
+): Promise<GatewayToolResponse> {
+  const proposalId = requireIdentity(input, 'proposal_id');
+  const { proposal, tool: toolName } = await takeProposal(
+    ctx.userId,
+    ctx.sessionId,
+    proposalId,
+  );
+
+  const expected = proposeNameFor(name);
+  if (toolName !== expected) {
+    logger.warn('gateway.confirm-mismatch', {
+      sessionId: ctx.sessionId,
+      tool: name,
+      // Both are tool names, not user data.
+      stored: toolName,
+    });
+    return {
+      ok: false,
+      error: `That proposal was raised by ${toolName}, not ${expected}. Nothing was carried out.`,
+    };
+  }
+
+  const tool = registered.get(toolName);
+  if (!tool) {
+    // The credential went away between the propose and the confirm — a rotation,
+    // or a disconnect in the panel. Said plainly rather than thrown, because
+    // "I can't reach Ontopo any more" is something Valentin can pass on.
+    return {
+      ok: false,
+      error: `${toolName} is no longer available in this deployment, so nothing was carried out.`,
+    };
+  }
+
+  const result = await runToolConfirm(tool, proposal, ctx, name);
+
+  logger.info('gateway.tool-invoked', {
+    sessionId: ctx.sessionId,
+    tool: name,
+    integration: tool.service,
+    ok: result.ok,
+    confirmed: true,
+    userIdLength: ctx.userId.length,
+  });
+
+  return {
+    ok: result.ok,
+    summary: result.summary,
+    ...(result.data === undefined ? {} : { data: result.data }),
+    // Deliberately passed through: `recordOuting` on the proxy turns it into a
+    // row on her file, and it holds a venue name and a date rather than anything
+    // opaque. `proposal.payload` still never leaves this process.
+    ...(result.booking ? { booking: result.booking } : {}),
   };
 }
 
@@ -194,7 +307,16 @@ export async function handler(
     const sessionId = requireIdentity(input, 'session_id');
     for (const key of IDENTITY_ARGS) delete input[key];
 
-    const tool = (await registry()).get(name);
+    const registered = await registry();
+
+    // Before the registry lookup, because there is no `confirm_reservation` tool
+    // to find — the confirm names exist only on the Gateway target, and the tool
+    // they run is named by the stored proposal.
+    if (name.startsWith(CONFIRM_PREFIX)) {
+      return await confirmProposal(name, input, { sessionId, userId }, registered);
+    }
+
+    const tool = registered.get(name);
     if (!tool) {
       /*
        * Two very different causes, one answer.
@@ -206,7 +328,7 @@ export async function handler(
        * the reason this is not a thrown error: "I can't book tables yet" is a
        * sentence Valentin can say, where a Gateway 500 is one he can only retry.
        */
-      const known = [...(await registry()).keys()].sort().join(', ');
+      const known = [...registered.keys()].sort().join(', ');
       logger.warn('gateway.tool-unknown', { tool: name, registered: known.length });
       return {
         ok: false,
@@ -226,6 +348,15 @@ export async function handler(
     // the model cannot substitute another one.
     const result = await runTool(tool, input, { sessionId, userId });
 
+    // Written before the reply goes back, and awaited: the proxy may call
+    // `confirm_*` as soon as the user clicks, and a row that was still being
+    // written would read as a proposal nobody remembers. A failed write must not
+    // return a card either — that is a card whose Confirm button cannot work — so
+    // this is deliberately inside the `try` that turns a throw into `{ok:false}`.
+    if (result.proposal) {
+      await putProposal(userId, result.proposal, tool.name);
+    }
+
     logger.info('gateway.tool-invoked', {
       sessionId,
       tool: name,
@@ -244,7 +375,7 @@ export async function handler(
       ok: result.ok,
       summary: result.summary,
       ...(result.data === undefined ? {} : { data: result.data }),
-      ...(result.proposal ? { proposal: proposalView(result.proposal) } : {}),
+      ...(result.proposal ? { proposal: proposalView(result.proposal, tool.name) } : {}),
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

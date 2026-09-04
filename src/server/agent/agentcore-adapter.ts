@@ -81,6 +81,19 @@ export interface AgentCoreReply {
   traceId?: string;
   /** Names of the Gateway tools the agent called, in order, if it reported them. */
   toolsUsed: string[];
+  /**
+   * Proposals raised inside the Runtime, awaiting a human yes.
+   *
+   * Carried on the reply because there is no out-of-band channel: the proposal is
+   * produced inside a tool call the proxy never observes, so the only way it can
+   * learn about one is for `agent.py` to report it alongside the answer.
+   *
+   * Optional on the *interface* though `parseRuntimeReply` always fills it: an
+   * adapter is anything that can answer a turn — the stub, a future one — and
+   * requiring the field would make "raises no proposals" something every
+   * implementation has to say out loud.
+   */
+  proposals?: GatewayProposal[];
 }
 
 /**
@@ -456,22 +469,23 @@ async function collectBody(body: unknown): Promise<string> {
 export function parseRuntimeReply(body: string): {
   content: string;
   toolsUsed: string[];
+  proposals: GatewayProposal[];
   /** The Runtime's own diagnosis when it failed inside the container. */
   error?: string;
 } {
   const trimmed = body.trim();
-  if (!trimmed) return { content: '', toolsUsed: [] };
+  if (!trimmed) return { content: '', toolsUsed: [], proposals: [] };
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(trimmed);
   } catch {
-    return { content: trimmed, toolsUsed: [] };
+    return { content: trimmed, toolsUsed: [], proposals: [] };
   }
 
-  if (typeof parsed === 'string') return { content: parsed, toolsUsed: [] };
+  if (typeof parsed === 'string') return { content: parsed, toolsUsed: [], proposals: [] };
   if (typeof parsed !== 'object' || parsed === null) {
-    return { content: trimmed, toolsUsed: [] };
+    return { content: trimmed, toolsUsed: [], proposals: [] };
   }
 
   const record = parsed as Record<string, unknown>;
@@ -501,7 +515,78 @@ export function parseRuntimeReply(body: string): {
    */
   const error = typeof record.error === 'string' && record.error.trim() ? record.error : undefined;
 
-  return { content, toolsUsed, error };
+  return { content, toolsUsed, proposals: readProposals(record.proposals), error };
+}
+
+/**
+ * A proposal engine B raised, as it arrives from the Runtime.
+ *
+ * The safe projection and nothing more — `ActionProposal.payload` stays in the
+ * Lambda's DynamoDB row and never crosses this boundary, which is why this is its
+ * own interface rather than `ActionProposal`. No `sessionId` either: the proxy
+ * knows which conversation it asked about, and trusting the reply for that would
+ * let a malformed answer address a card at another session.
+ */
+export interface GatewayProposal {
+  id: string;
+  service: string;
+  title: string;
+  summary: string;
+  url?: string;
+  expiresAt: string;
+  /**
+   * The `confirm_*` Gateway tool that carries this out, named by the Lambda that
+   * raised it. Absent from an older tool Lambda, and the orchestrator treats that
+   * as "cannot confirm" rather than guessing from `service`.
+   */
+  confirm?: string;
+}
+
+/**
+ * Read the proposals out of a reply, discarding anything malformed.
+ *
+ * As tolerant as `tools_used` above and for the same reason: the two images
+ * deploy on separate tags, so a rolling deploy always has one side newer. A
+ * shape this cannot read costs a card — the user sees the agent's prose saying
+ * he has found a table and simply has to ask again — where a throw would cost
+ * the whole answer and read as an AgentCore outage.
+ *
+ * Every field is checked individually rather than the object cast, because a
+ * proposal missing `expiresAt` would otherwise become a card that can never
+ * expire, and one missing `id` a card whose Confirm button silently does
+ * nothing.
+ */
+function readProposals(raw: unknown): GatewayProposal[] {
+  if (!Array.isArray(raw)) return [];
+
+  const proposals: GatewayProposal[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const p = entry as Record<string, unknown>;
+    const str = (key: string): string | undefined =>
+      typeof p[key] === 'string' && (p[key] as string).length > 0 ? (p[key] as string) : undefined;
+
+    const id = str('id');
+    const service = str('service');
+    const title = str('title');
+    const summary = str('summary');
+    const expiresAt = str('expiresAt') ?? str('expires_at');
+    if (!id || !service || !title || !summary || !expiresAt) continue;
+
+    proposals.push({
+      id,
+      service,
+      title,
+      summary,
+      ...(str('url') ? { url: str('url') as string } : {}),
+      expiresAt,
+      // Only accepted in the shape the Lambda emits: a `confirm` that is not a
+      // `confirm_*` name is a wire the proxy should not follow, and dropping it
+      // costs a card rather than calling something unintended.
+      ...(str('confirm')?.startsWith('confirm_') ? { confirm: str('confirm') as string } : {}),
+    });
+  }
+  return proposals;
 }
 
 /**

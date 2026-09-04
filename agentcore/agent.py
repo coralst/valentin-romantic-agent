@@ -272,6 +272,47 @@ def _tools_used(agent: Agent) -> list[str]:
     return used
 
 
+def _proposals(agent: Agent) -> list[dict[str, Any]]:
+    """The proposals this turn's tools raised, for the proxy to render as cards.
+
+    There is no out-of-band channel for these. A `propose_*` tool returns its
+    proposal inside a tool result the model reads and then paraphrases, and the
+    paraphrase is all that would otherwise reach the proxy — so the card, its id
+    and its expiry would exist nowhere the application could act on. Hence this
+    walk over the raw tool results: `toolResult.content[].text` is the Lambda's own
+    JSON, before the model touched it.
+
+    What travels is only what the Lambda chose to put in `proposal` — the safe
+    projection. `ActionProposal.payload` stayed in DynamoDB and is not here to
+    leak.
+
+    Defensive in the same way and for the same reason as `_tools_used`: a shape
+    this cannot read costs a card, and the user simply asks again. A raise here
+    would cost the whole answer and read as an AgentCore outage.
+    """
+    found: list[dict[str, Any]] = []
+    try:
+        for message in getattr(agent, "messages", []):
+            for block in message.get("content", []) or []:
+                for part in ((block or {}).get("toolResult") or {}).get("content", []) or []:
+                    text = (part or {}).get("text")
+                    if not isinstance(text, str):
+                        continue
+                    try:
+                        parsed = json.loads(text)
+                    except (ValueError, TypeError):
+                        # A tool that answered prose rather than JSON. Every
+                        # `propose_*` tool goes through the same handler and does
+                        # not, so this is not a case worth logging per turn.
+                        continue
+                    proposal = parsed.get("proposal") if isinstance(parsed, dict) else None
+                    if isinstance(proposal, dict) and proposal.get("id"):
+                        found.append(proposal)
+    except Exception:  # noqa: BLE001 - a card is not worth an answer
+        log.warning("could not read proposals off the agent")
+    return found
+
+
 @app.entrypoint
 def invoke(payload: dict[str, Any]) -> dict[str, Any]:
     """One turn.
@@ -331,6 +372,7 @@ def invoke(payload: dict[str, Any]) -> dict[str, Any]:
 
             content = str(result)
             used = _tools_used(agent)
+            proposals = _proposals(agent)
 
             log.info(
                 json.dumps(
@@ -339,11 +381,14 @@ def invoke(payload: dict[str, Any]) -> dict[str, Any]:
                         "sessionId": session_id,
                         "durationMs": int((time.time() - started) * 1000),
                         "toolsUsed": used,
+                        # A count, not the proposals: they carry a venue name and a
+                        # title, and this line goes to CloudWatch.
+                        "proposals": len(proposals),
                         "historyTurns": len(history),
                     }
                 )
             )
-            return {"content": content, "tools_used": used}
+            return {"content": content, "tools_used": used, "proposals": proposals}
 
     except Exception as err:  # noqa: BLE001
         # Returned as an error field rather than raised, so the proxy sees a 200
@@ -355,6 +400,7 @@ def invoke(payload: dict[str, Any]) -> dict[str, Any]:
         return {
             "content": "",
             "tools_used": [],
+            "proposals": [],
             "error": f"{type(err).__name__}: {err}",
         }
 

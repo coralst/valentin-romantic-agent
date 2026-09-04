@@ -15,12 +15,18 @@ import {
   type AgentOrchestratorInterface,
 } from './agent/agent-orchestrator';
 import { AgentCoreOrchestrator } from './agent/agentcore-orchestrator';
+import {
+  GatewayToolClient,
+  gatewayClientConfigFromEnv,
+} from './agent/gateway-client';
 import { DEFAULT_ENGINE, resolveEngine, type AgentEngine } from './agent/engine';
 import { PreferenceExtractor } from './extraction/preference-extractor';
 import { EventRouter } from './api/event-router';
 import { WsGateway } from './api/ws-gateway';
 import { createHttpRoutes } from './api/http-routes';
 import { buildToolRegistry } from './integrations';
+import type { ActionProposal } from './integrations/tool-registry';
+import type { Outing } from '../shared/interfaces/outing';
 import { loadRemoteCredentials } from './integrations/credential-store';
 import { probeBrowserReadiness } from './integrations/browser/session';
 import { primePlacesKey } from './integrations/google-places/client';
@@ -252,6 +258,28 @@ export function createServer(deps: ServerDeps = {}) {
     }
   }
 
+  /*
+   * Engine B's way back into the Gateway, built once for the process.
+   *
+   * Shared across users on purpose, unlike everything inside `forUser`: what it
+   * caches is a machine client's token and secret, which belong to the task and
+   * not to any caller. It carries no user state — the ids travel as arguments on
+   * each call — so one instance is right, and a per-user one would mean a Cognito
+   * token exchange per visitor.
+   *
+   * Null when the wiring is absent, which is the normal state locally and in
+   * tests: `confirmAction` then says it cannot complete the booking instead of
+   * failing at boot, because reading and proposing still work without it.
+   */
+  const gatewayConfig = engine === 'agentcore' ? gatewayClientConfigFromEnv() : null;
+  const gatewayToolClient = gatewayConfig ? new GatewayToolClient(gatewayConfig) : null;
+  if (engine === 'agentcore' && !gatewayToolClient) {
+    logger.warn('agent.gateway.unwired', {
+      reason:
+        'GATEWAY_CLIENT_ID / GATEWAY_TOKEN_URL / AGENTCORE_GATEWAY_URL / COGNITO_USER_POOL_ID incomplete',
+    });
+  }
+
   logger.info('agent.engine', { requested: process.env.AGENT_ENGINE ?? null, resolved: engine });
 
   console.log(`[server] AWS Bedrock (region: ${process.env.AWS_REGION ?? 'us-east-1'}, model: ${process.env.BEDROCK_MODEL_ID ?? 'claude-3-haiku'})`);
@@ -297,18 +325,64 @@ export function createServer(deps: ServerDeps = {}) {
       },
     });
 
+    /*
+     * Both engines emit the same two events, so both get the same two callbacks.
+     *
+     * Declared once above the branch rather than twice inside it: these are the
+     * client's only notice that a card should appear and that a booking landed,
+     * and a copy per engine is how one of them ends up a field behind the other.
+     * Note the field-by-field mapping in `onProposal` — never a spread.
+     * `ActionProposal.payload` is opaque and occasionally sensitive, and on
+     * engine B it never even reached this process; listing the fields is what
+     * keeps a later addition to the type from silently going to the browser.
+     *
+     * The late-closed edge on `eventRouter` is the same one the extractor's
+     * callbacks use above, and for the same reason: the router is built from the
+     * orchestrator that is built from these.
+     */
+    const onProposal = (proposal: ActionProposal): void => {
+      eventRouter?.emitActionProposal({
+        sessionId: proposal.sessionId,
+        proposalId: proposal.id,
+        service: proposal.service,
+        title: proposal.title,
+        summary: proposal.summary,
+        url: proposal.url,
+        expiresAt: proposal.expiresAt,
+      });
+    };
+
+    // The counterpart to `onProposal`: a proposal is the question, this is the
+    // answer having happened. It fires after the confirm succeeded and the row is
+    // written, so the history on screen gains the place he just booked without
+    // waiting for a reload.
+    const onBooking = (sessionId: string, outing: Outing): void => {
+      eventRouter?.emitOutingUpdate(sessionId, outing);
+    };
+
     // The one place the two engines diverge. Everything either side of this —
     // the store, the conversation memory, the event router, the HTTP routes and
     // the socket — is shared, so a difference in behaviour has exactly one
     // possible source.
     //
-    // Engine A carries the integration tool registry; engine B reaches the same
-    // tools through the AgentCore Gateway instead, so the registry and the
-    // proposal callback belong on this side of the branch only.
+    // Engine A carries the integration tool registry in-process; engine B reaches
+    // the same tools through the AgentCore Gateway, so what it carries instead is
+    // a client for the one call the application makes itself — the confirm.
     const orchestrator: AgentOrchestratorInterface = agentCoreRuntime
-      ? new AgentCoreOrchestrator(store, memory, agentCoreRuntime, userId, (pref, isNew) => {
-          eventRouter?.emitPreferenceUpdate(pref, isNew);
-        })
+      ? new AgentCoreOrchestrator(
+          store,
+          memory,
+          agentCoreRuntime,
+          userId,
+          (pref, isNew) => {
+            eventRouter?.emitPreferenceUpdate(pref, isNew);
+          },
+          {
+            onProposal,
+            onBooking,
+            ...(gatewayToolClient ? { gateway: gatewayToolClient } : {}),
+          },
+        )
       : new AgentOrchestrator(
           store,
           memory,
@@ -321,26 +395,8 @@ export function createServer(deps: ServerDeps = {}) {
             // needs it because a share token names the owner as well as the
             // session; nothing else reads it, and no tool can change it.
             userId,
-            // The same late-closed edge as the extractor's callback above, and
-            // for the same reason: the router is built from the orchestrator.
-            onProposal: (proposal) => {
-              eventRouter?.emitActionProposal({
-                sessionId: proposal.sessionId,
-                proposalId: proposal.id,
-                service: proposal.service,
-                title: proposal.title,
-                summary: proposal.summary,
-                url: proposal.url,
-                expiresAt: proposal.expiresAt,
-              });
-            },
-            // Sits next to `onProposal` and is its counterpart: a proposal is the
-            // question, this is the answer having happened. It fires after the
-            // confirm succeeded and the row is written, so the history on screen
-            // gains the place he just booked without waiting for a reload.
-            onBooking: (sessionId, outing) => {
-              eventRouter?.emitOutingUpdate(sessionId, outing);
-            },
+            onProposal,
+            onBooking,
           },
         );
 

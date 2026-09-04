@@ -122,6 +122,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # The root install is not redundant. Synthesising the AgentCore stack now
+      # bundles `src/server/integrations/lambda-handler.ts` through
+      # `NodejsFunction`, which is declared with `projectRoot: '..'` — so CDK runs
+      # `npx --no-install esbuild` with the *repo root* as its working directory,
+      # not `infra/`. With only `infra/` installed there is no esbuild to find
+      # there, CDK falls back to `npx esbuild@<pinned>`, and a runner has no
+      # interactive YES to give it:
+      #
+      #     npm error npx canceled due to missing packages and no YES option
+      #
+      # That surfaced as all 118 assertions reported *skipped* and the job red
+      # without a single test having run, and it reproduced only in CI — a laptop
+      # already has the root tree installed from `npm test`.
+      - run: npm ci
       - run: npm --prefix infra ci
       - run: npm --prefix infra test
 

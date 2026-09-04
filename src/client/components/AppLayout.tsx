@@ -167,6 +167,24 @@ function AppLayoutContent() {
   const [isIntegrationsOpen, setIntegrationsOpen] = useState(false);
   const toggleIntegrations = () => setIntegrationsOpen((open) => !open);
 
+  /**
+   * Every other way out of the panel, and the reason this function exists.
+   *
+   * The panel is an opaque overlay across every column except the rail, so while it
+   * is up the rail is the only thing you can click — and none of the rail's
+   * navigation closed it. Pressing ◆ ("Conversation") switched the surface
+   * *underneath* the overlay, pressing the crest went home underneath it, and
+   * toggling the conversation list resized a column nobody could see. Three buttons
+   * that looked live and did nothing visible, so the panel read as a trap: the only
+   * exits were the 32px × in its far corner and a keyboard Escape.
+   *
+   * So anything that means "take me somewhere" now also means "put the fan away".
+   * That is what a visitor pressing ◆ is asking for, whether or not they have
+   * noticed the overlay is a separate layer — and it is what makes the rail's
+   * buttons honest while it is open.
+   */
+  const leaveIntegrations = () => setIntegrationsOpen(false);
+
   // Read here rather than inside the drawer: the *layout* is what has to give up
   // the space, and only the layout owns the regions whose height it takes from.
   const { isOpen: isDrawerOpen, height: drawerHeight } = useArchitectureDrawer();
@@ -245,6 +263,7 @@ function AppLayoutContent() {
    */
   const changePanel = (panel: 'chat' | 'profile') => {
     setActivePanel(panel);
+    leaveIntegrations();
     // `closeDossier` rather than `setSurface('chat')`, so the history entry the
     // dossier pushed is dropped on this route out too — otherwise the browser's
     // Back button would have a spent entry to consume before it did anything.
@@ -263,6 +282,7 @@ function AppLayoutContent() {
    * more now that her portrait is the door.
    */
   const changeDesktopView = (panel: 'chat' | 'profile') => {
+    leaveIntegrations();
     if (panel === 'chat') view.returnToChat();
     else view.openDossier();
   };
@@ -276,6 +296,10 @@ function AppLayoutContent() {
    * focus to her portrait in the brief for no reason.
    */
   const goHome = () => {
+    // Not a no-op on desktop chat any more: with the fan up, "home" has somewhere to
+    // go, and the crest is the mark people click when they want out of whatever they
+    // opened.
+    leaveIntegrations();
     if (isDossier) view.closeDossier();
   };
 
@@ -297,7 +321,10 @@ function AppLayoutContent() {
                 activeView={activePanel}
                 onViewChange={changePanel}
                 onGoHome={() => changePanel('chat')}
-                onOpenSessions={() => setSidebarOpen(true)}
+                onOpenSessions={() => {
+                  leaveIntegrations();
+                  setSidebarOpen(true);
+                }}
                 onOpenIntegrations={toggleIntegrations}
                 isIntegrationsOpen={isIntegrationsOpen}
               />
@@ -371,8 +398,16 @@ function AppLayoutContent() {
               // same thing it does on mobile.
               onOpenSessions={
                 isNarrowDesktop
-                  ? () => setSidebarOpen(true)
-                  : () => setListOpen((open) => !open)
+                  ? () => {
+                      leaveIntegrations();
+                      setSidebarOpen(true);
+                    }
+                  : () => {
+                      // The column this toggles is behind the fan, so toggling it
+                      // without closing the fan changed a width nobody could see.
+                      leaveIntegrations();
+                      setListOpen((open) => !open);
+                    }
               }
               isSessionsOpen={hasListColumn}
               onOpenIntegrations={toggleIntegrations}

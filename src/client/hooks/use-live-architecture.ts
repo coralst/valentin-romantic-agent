@@ -46,6 +46,14 @@ export interface LiveBeat extends FlowBeat {
   ok?: boolean;
   actor: string;
   action: string;
+  /**
+   * X-Ray id, when the span carried one — only engine B's Runtime does.
+   *
+   * Kept out of `detail` deliberately: `detail` is prose the feed truncates, and
+   * this is a value someone copies into the console to follow the turn through the
+   * two hops the proxy cannot see inside.
+   */
+  traceId?: string;
 }
 
 export const LIVE_BEAT_LIMIT = 60;
@@ -122,6 +130,7 @@ const SPAN_CATEGORY: Readonly<Record<string, AwsCategory>> = {
   'ac-memory': 'ml',
   'ac-gateway': 'ml',
   'ac-dynamodb': 'database',
+  'ac-integrations': 'external',
 };
 
 /**
@@ -142,6 +151,9 @@ const SPAN_ACTION: Readonly<Record<string, string>> = {
   integrations: 'asks the outside world',
   'ac-memory': 'learns something new',
   'ac-dynamodb': 'learns something new',
+  // Same words as `integrations`, because it is the same beat: a call out, with
+  // nothing booked yet. The route differs, the story does not.
+  'ac-integrations': 'asks the outside world',
 };
 
 /** Short names for the feed. `Amazon DynamoDB` does not fit 70px. */
@@ -241,6 +253,7 @@ function beatFromSpan(
     ok: span.ok,
     actor: 'Valentin',
     action: SPAN_ACTION[node] ?? 'thinks',
+    traceId: span.traceId,
   };
 }
 
@@ -279,6 +292,8 @@ function nodeServiceName(id: AwsNodeId): string {
       return 'Gateway';
     case 'ac-dynamodb':
       return 'DynamoDB';
+    case 'ac-integrations':
+      return 'External APIs';
   }
 }
 

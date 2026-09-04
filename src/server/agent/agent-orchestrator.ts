@@ -19,6 +19,10 @@ import {
 } from './prompts';
 import { readKnownFacts, readVisitedPlaces } from './partner-profile';
 import { recordOuting } from './outing-recorder';
+import {
+  PendingProposalStore,
+  ProposalUnavailableError,
+} from './pending-proposals';
 import type { Outing } from '../../shared/interfaces/outing';
 import { LlmError } from '../../shared/errors/llm-error';
 import { logger } from '../logging';
@@ -94,19 +98,6 @@ export interface ToolSupport {
 }
 
 /**
- * A proposal awaiting a human yes, with the tool that would carry it out.
- *
- * Held in memory rather than persisted, deliberately. The longest-lived thing
- * here is an Ontopo checkout link, valid for about fifteen minutes, so
- * durability across a restart buys nothing a user would notice — and it would
- * cost an addition to `StorageInterface`, both implementations and their tests.
- */
-interface PendingProposal {
-  proposal: ActionProposal;
-  tool: AgentTool;
-}
-
-/**
  * Valentin's opening turn.
  *
  * One function, so every route into a new conversation greets with the same
@@ -159,12 +150,11 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
   /**
    * Proposals this conversation has raised and nobody has answered yet.
    *
-   * Keyed by proposal id alone, not by session, because the id is a uuid and the
-   * store is already per-user — an orchestrator instance is built per connection.
-   * {@link confirmAction} still checks the session matches, so a stray id from
-   * another of this user's conversations cannot fire here.
+   * The store, its ownership check and its expiry rule are shared with engine B
+   * — see {@link PendingProposalStore} — so a proposal is refused in the same
+   * words whichever engine raised it.
    */
-  private readonly pendingProposals = new Map<string, PendingProposal>();
+  private readonly pendingProposals = new PendingProposalStore();
 
   async initSession(): Promise<InitSessionResult> {
     const sessionId = await this.storage.createSession();
@@ -298,39 +288,38 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
     sessionId: string,
     proposalId: string,
   ): Promise<ChatMessage> {
-    const pending = this.pendingProposals.get(proposalId);
+    let pending;
+    try {
+      pending = this.pendingProposals.take(sessionId, proposalId);
+    } catch (error) {
+      if (!(error instanceof ProposalUnavailableError)) throw error;
 
-    // The session check is not paranoia about a hostile client so much as about
-    // a confused one: proposal ids are process-global, so a stale tab holding a
-    // card from another conversation could otherwise spend the wrong person's
-    // evening. It deliberately gives the same answer as an unknown id, so a
-    // guessed id cannot be distinguished from a wrong one.
-    if (!pending || pending.proposal.sessionId !== sessionId) {
+      if (error.reason === 'expired') {
+        logger.warn('agent.proposal_expired', {
+          sessionId,
+          // `integration`, not `service`: formatLog already writes
+          // service: 'valentin-backend' into every record, and reusing the key
+          // overwrites it.
+          integration: error.service,
+        });
+      }
+      return this.say(sessionId, error.message);
+    }
+
+    // Engine A always stores a tool alongside the proposal — `announce` skips
+    // any proposal it cannot find one for — so this is a type narrowing, not a
+    // case that happens. Engine B is the reason the field is optional at all.
+    if (!pending.tool) {
       return this.say(
         sessionId,
         "I've lost track of that one, I'm afraid — it may have already been dealt with. Shall I look again?",
       );
     }
 
-    // One-shot: taken out of the map before the attempt, so a double click
-    // cannot book two tables. A failed attempt therefore has to be re-proposed
-    // rather than retried, which is the safer of the two wrong answers.
-    this.pendingProposals.delete(proposalId);
-
-    if (Date.parse(pending.proposal.expiresAt) <= Date.now()) {
-      logger.warn('agent.proposal_expired', {
-        sessionId,
-        // `integration`, not `service`: formatLog already writes
-        // service: 'valentin-backend' into every record, and reusing the key
-        // overwrites it.
-        integration: pending.proposal.service,
-      });
-      return this.say(
-        sessionId,
-        `That ${pending.proposal.service} hold has expired — they only keep them for a few minutes. Say the word and I'll find it again.`,
-      );
-    }
-
+    // `storage` because a confirming tool may need to write our own table, not
+    // just a third party's. Nothing needs it today — `set_reminder` writes
+    // immediately and has no confirm step — but the two ctx sites have to agree,
+    // or a tool that works from chat fails from a card.
     const ctx = { sessionId, userId: this.tools.userId ?? '', storage: this.storage };
     const result = pending.tool.confirm
       ? await pending.tool.confirm(pending.proposal, ctx)
@@ -361,7 +350,7 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
       const tool = this.toolFor(proposal);
       if (!tool) continue;
 
-      this.pendingProposals.set(proposal.id, { proposal, tool });
+      this.pendingProposals.remember(proposal, { tool });
       this.tools.onProposal?.(proposal);
     }
   }

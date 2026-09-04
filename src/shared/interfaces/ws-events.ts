@@ -140,6 +140,20 @@ export interface AwsSpan {
    * unattributable span rather than guessing.
    */
   engine?: EngineId;
+  /**
+   * The AWS X-Ray trace id for this call, when the service returned one.
+   *
+   * Only engine B's `InvokeAgentRuntime` does today. It is here because with the
+   * Gateway in engine B's real path there are two hops the proxy cannot see inside
+   * — the Runtime and the tool Lambda — and this id is the only thing that stitches
+   * the proxy's log line to theirs. Surfaced in the drawer as a copyable string
+   * rather than a link: the console URL differs by region and account, and a link
+   * that 404s in a demo is worse than a value someone can paste.
+   *
+   * Safe to project. It is an identifier the service minted, and carries nothing
+   * about the conversation.
+   */
+  traceId?: string;
 }
 
 /** What one model call cost, as the provider reported it. */

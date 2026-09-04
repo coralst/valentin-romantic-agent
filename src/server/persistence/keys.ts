@@ -34,6 +34,7 @@ import type { PreferenceCategory } from '../../shared/interfaces/preference';
  * | Manual  | `USER#<sub>#SESSION#<sid>`| `MANUAL#<fieldId>`    | —           | —                       |
  * | Outing  | `USER#<sub>#SESSION#<sid>`| `OUTING#<outingId>`   | —           | —                       |
  * | Reminder| `USER#<sub>#SESSION#<sid>`| `REMINDER#<id>`       | `DUE#<date>`| `T<HH:mm:ss>#<id>`      |
+ * | Proposal| `USER#<sub>#SESSION#<sid>`| `PROPOSAL#<id>`       | —           | —                       |
  *
  * ## GSI1 carries two disjoint kinds of row, and that is deliberate
  *
@@ -171,6 +172,21 @@ export const OUTING_PREFIX = 'OUTING#';
 export const REMINDER_PREFIX = 'REMINDER#';
 
 /**
+ * Sort-key prefix shared by every unanswered proposal in a session.
+ *
+ * Written only by the Gateway tool Lambda (`integrations/proposal-store.ts`).
+ * Engine A holds its pending proposals in memory, because the process that
+ * raises one is the process that confirms it; the Lambda is stateless and the
+ * confirm arrives as a separate invocation, so engine B needs somewhere durable
+ * to keep the opaque `payload` between the two.
+ *
+ * The row carries **no `gsi1pk`**, so it can never surface in the sidebar — see
+ * the two rules above. It also carries `ttl`, so an unanswered proposal
+ * disappears without anyone sweeping for it.
+ */
+export const PROPOSAL_PREFIX = 'PROPOSAL#';
+
+/**
  * Sort key of a person.
  *
  * Keyed by the record's own id rather than by name, because a rename is the most
@@ -224,6 +240,18 @@ export function manualSk(fieldId: string): string {
 export function reminderSk(reminderId: string): string {
   assertComponent('reminderId', reminderId);
   return withinLimit(`${REMINDER_PREFIX}${reminderId}`, 'reminderId', reminderId);
+}
+
+/**
+ * Sort key of an unanswered proposal. Keyed by the proposal's own id.
+ *
+ * Idempotent by construction: a proposal id is a uuid minted once by the tool
+ * that raised it, so re-writing the row cannot produce two holds on the same
+ * table, and the confirm deletes it so it cannot fire twice.
+ */
+export function proposalSk(proposalId: string): string {
+  assertComponent('proposalId', proposalId);
+  return withinLimit(`${PROPOSAL_PREFIX}${proposalId}`, 'proposalId', proposalId);
 }
 
 /**

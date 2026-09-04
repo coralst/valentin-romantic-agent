@@ -782,6 +782,9 @@ export function LiveArchitectureDrawer() {
     actor: entry.beat.actor,
     action: entry.beat.action,
     isCurrent: entry.key === currentRowKey,
+    // Absent on every demo step and on engine A: only a real `InvokeAgentRuntime`
+    // reports one, which is exactly when it is worth showing.
+    traceId: entry.beat.traceId,
   }));
 
   /**

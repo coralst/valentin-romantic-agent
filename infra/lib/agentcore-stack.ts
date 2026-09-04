@@ -5,9 +5,23 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import { NodejsFunction, OutputFormat } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
 import { EnvironmentConfig } from '../config/environments';
+import { GATEWAY_IDENTITY_ARGS } from './gateway-identity-args';
+/*
+ * The agent's instruction set for the integration tools, generated from the tools
+ * themselves by `npm run generate:tool-schemas`.
+ *
+ * `infra/tsconfig.json` has `rootDir: '.'`, so the CDK app cannot import
+ * `src/server/integrations`. The alternative to this committed file is describing
+ * sixteen tools a second time here, where a stale copy would not fail — it would
+ * make the model call the right tool with arguments it no longer accepts. A unit
+ * test (`src/server/integrations/__tests__/tool-schemas.test.ts`) fails on drift.
+ */
+import integrationToolSchemas from './generated/integration-tool-schemas.json';
+import { applySpringCleanExemption } from './springclean-exemption';
 
 export interface AgentCoreStackProps extends cdk.StackProps {
   config: EnvironmentConfig;
@@ -22,6 +36,15 @@ export interface AgentCoreStackProps extends cdk.StackProps {
   cognitoDomainPrefix: string;
   /** Tag of the ARM64 agent image in `valentin-agentcore-<env>`. */
   imageTag: string;
+  /**
+   * Where the integration credentials live — `valentin/<env>/integrations`.
+   *
+   * A plain string rather than four `ISecret`s, matching how the compute stack
+   * receives it: the tool Lambda needs read access to a prefix, not references to
+   * individual secrets, and every `ISecret` passed across a stack boundary is one
+   * more CloudFormation export to hold open.
+   */
+  integrationSecretsPrefix: string;
 }
 
 /**
@@ -67,8 +90,18 @@ export class AgentCoreStack extends cdk.Stack {
   public readonly runtimeArn: string;
   /** Passed to the proxy service so it can read and write conversation events. */
   public readonly memoryId: string;
-  /** MCP endpoint the Strands agent calls for the three profile tools. */
+  /** MCP endpoint both the Strands agent and the proxy call. */
   public readonly gatewayUrl: string;
+  /**
+   * The proxy's own machine client, distinct from the agent's — see
+   * `ProxyGatewayClient`. The proxy reads its secret at runtime with
+   * `DescribeUserPoolClient`, so only the id crosses the stack boundary.
+   */
+  public readonly proxyGatewayClientId: string;
+  /** Cognito's token endpoint, so the proxy needs no domain construction of its own. */
+  public readonly gatewayTokenUrl: string;
+  /** The single scope both machine clients hold. */
+  public readonly gatewayScope = 'valentin-tools/invoke';
   /** Role the proxy must be allowed to reach; exported for the compute stack's policy. */
   public readonly runtimeRole: iam.Role;
   public readonly logGroup: logs.LogGroup;
@@ -140,6 +173,142 @@ export class AgentCoreStack extends cdk.Stack {
     table.grantReadWriteData(profileTools);
 
     // ---------------------------------------------------------------------
+    // Integration tools: the real fourteen, bundled from the server's own code
+    // ---------------------------------------------------------------------
+
+    /*
+     * The same tools engine A runs, hosted for the Gateway.
+     *
+     * `NodejsFunction`, not `Code.fromAsset`, and the entry point is in `src/`
+     * rather than `infra/lambda/`. Both follow from one decision: engine B must
+     * run the *same* tool code as engine A, or a measured difference between the
+     * engines stops being about AgentCore. `profile-tools/index.mjs` gets away
+     * with re-implementing the key layout because it is forty lines of DynamoDB;
+     * re-implementing fourteen integrations would mean a second Ontopo client and
+     * a second Amadeus token cache, and the first one to drift would make engine
+     * B answer differently for a reason nobody could attribute.
+     *
+     * The cost is that synth now bundles TypeScript, so `npm run test:infra`
+     * needs esbuild — pinned in `infra/devDependencies` deliberately, because
+     * without a local esbuild CDK silently falls back to bundling in Docker,
+     * which in CI is a slow failure rather than a fast one.
+     */
+    const integrationTools = new NodejsFunction(this, 'IntegrationTools', {
+      functionName: `valentin-integration-tools-${env}`,
+      description: 'The integration tools AgentCore Gateway exposes to engine B',
+      runtime: lambda.Runtime.NODEJS_22_X,
+      // Matching `profileTools` and the agent image. Everything bundled here is
+      // pure JS (`@hebcal/core` included), so the build is architecture-neutral —
+      // but a future native binding would compile for x86 here and fail at invoke.
+      architecture: lambda.Architecture.ARM_64,
+      entry: '../src/server/integrations/lambda-handler.ts',
+      handler: 'handler',
+      // The repo root, so esbuild resolves `src/shared/**` and node_modules the
+      // same way `tsc` does.
+      projectRoot: '..',
+      depsLockFilePath: '../package-lock.json',
+      bundling: {
+        /*
+         * CJS, even though the source is ESM — and this was measured, not assumed.
+         *
+         * The obvious choice is `OutputFormat.ESM`, since the root package is
+         * `"type": "module"`. Building it that way produces a bundle that throws
+         * on *import*, before any handler code runs:
+         *
+         *   Error: Dynamic require of "node:https" is not supported
+         *     at @smithy/node-http-handler/dist-cjs/index.js
+         *     at @aws-sdk/client-secrets-manager/dist-cjs/index.js
+         *
+         * The AWS SDK v3 resolves to its CJS build, and esbuild's ESM output
+         * shims `require` with a function that throws. The failure is total — the
+         * module never loads, so *every* tool call becomes a Gateway error — and
+         * it cannot be reproduced by any unit test, because unit tests import the
+         * TypeScript, not the bundle. Found by loading the synthesised asset with
+         * `node` before deploying; do that again if this line is ever changed.
+         *
+         * esbuild converts ESM sources to CJS reliably, so this direction has no
+         * equivalent hazard. The asset ships no `package.json`, so Lambda reads
+         * the emitted `index.js` as CommonJS regardless of the repo's setting.
+         */
+        format: OutputFormat.CJS,
+        /*
+         * Playwright is imported through a *variable* specifier in
+         * `browser/session.ts`, so esbuild leaves it alone — but naming it here
+         * makes that intentional rather than incidental. The browser probe simply
+         * reports false in Lambda, which is the same graceful degradation a
+         * Fargate task without Chromium already gets.
+         */
+        externalModules: ['playwright', 'playwright-core'],
+        minify: false,
+        sourceMap: false,
+      },
+      environment: {
+        VALENTIN_TABLE_NAME: table.tableName,
+        // Switches `credential-store.ts` on. Unset — locally, and in `npm test` —
+        // the whole remote-credential path is a no-op.
+        INTEGRATION_SECRETS_PREFIX: props.integrationSecretsPrefix,
+      },
+      // Ontopo and Amadeus are third-party HTTP calls behind a token exchange, so
+      // 10s (what the profile tools get for a DynamoDB read) is too tight.
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 512,
+      logGroup: new logs.LogGroup(this, 'IntegrationToolsLogs', {
+        logGroupName: `/aws/lambda/valentin-integration-tools-${env}`,
+        retention: config.logRetention,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }),
+    });
+
+    /*
+     * Read-only on the integration secrets, and nothing wider.
+     *
+     * This function serves a model's tool calls; the panel that *writes* these
+     * secrets runs in the compute stack and holds the only `PutSecretValue`
+     * grant. Scoped to `integrations/*` rather than `valentin/<env>/*` so the
+     * demo-user password — which `POST /api/demo/login` exchanges for Cognito
+     * tokens — is not reachable from here at all.
+     *
+     * The `/*` suffix already absorbs Secrets Manager's six-character name
+     * suffix; no extra wildcard is needed.
+     */
+    integrationTools.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['secretsmanager:GetSecretValue', 'secretsmanager:DescribeSecret'],
+        resources: [
+          `arn:aws:secretsmanager:*:*:secret:${props.integrationSecretsPrefix}/*`,
+        ],
+      }),
+    );
+
+    /*
+     * The table, for one row shape only: `PROPOSAL#<id>`.
+     *
+     * A proposal is raised in one invocation and confirmed in another, and the
+     * opaque `payload` — Ontopo's area id, the prose of a proposed email — has to
+     * survive between them without passing through the model or the browser. The
+     * row lives at `USER#<sub>#SESSION#<sid>`, so confirming someone else's
+     * proposal is a GetItem that *misses* rather than a check that could be
+     * forgotten. See `src/server/integrations/proposal-store.ts`.
+     *
+     * `grantReadWriteData` is wider than those two operations, matching
+     * `profileTools` above; the narrowing that matters is the key, not the verb.
+     */
+    table.grantReadWriteData(integrationTools);
+
+    // Belt and braces on top of the app-scope call in `bin/app.ts`: this is the
+    // one new resource holding a state nobody can recreate from the repo in under
+    // a minute, and SpringClean calls service APIs directly — `RemovalPolicy` is
+    // not a defence against it. See `springclean-exemption.ts`.
+    applySpringCleanExemption(integrationTools);
+
+    // The Gateway target that exposes this function lives further down, beside the
+    // profile one, because it needs the `gateway` construct. It arrived in its own
+    // deploy *after* this function existed: a target naming a Lambda that is not
+    // there yet fails at stack update, and since `CfnRuntime` depends on its
+    // targets the rollback can leave the Runtime a version behind a new proxy —
+    // which surfaces as engine B apologising and reads like AgentCore latency.
+
+    // ---------------------------------------------------------------------
     // Gateway auth: a machine client, not a user
     // ---------------------------------------------------------------------
 
@@ -174,6 +343,37 @@ export class AgentCoreStack extends cdk.Stack {
     const gatewayClient = new cognito.UserPoolClient(this, 'GatewayClient', {
       userPool,
       userPoolClientName: `valentin-gateway-${env}`,
+      generateSecret: true,
+      oAuth: {
+        flows: { clientCredentials: true },
+        scopes: [cognito.OAuthScope.resourceServer(resourceServer, invokeScope)],
+      },
+      accessTokenValidity: cdk.Duration.hours(1),
+      enableTokenRevocation: true,
+    });
+
+    /*
+     * A *second* machine client, for the proxy rather than the agent.
+     *
+     * The application makes one Gateway call of its own: the confirm. It is not the
+     * agent making it — the `confirm_*` tools are hidden from the model on purpose
+     * (see `HIDDEN_TOOL_PREFIXES` in `agentcore/agent.py`) because a language model
+     * deciding when to spend someone's money is what propose-then-confirm exists to
+     * prevent.
+     *
+     * Sharing `GatewayClient` would have worked and is the obvious shortcut. It gets
+     * its own instead because these are two callers with different lifetimes and
+     * different blast radii: revoking or rotating the agent's credential should not
+     * silently stop every Confirm button, and a Gateway access log that cannot tell
+     * the agent's calls from the application's cannot answer "did the model do
+     * this?" — which is the one question this design exists to be able to answer.
+     *
+     * Same scope, same resource server, and both are in the Gateway's
+     * `allowedClients` below.
+     */
+    const proxyGatewayClient = new cognito.UserPoolClient(this, 'ProxyGatewayClient', {
+      userPool,
+      userPoolClientName: `valentin-proxy-gateway-${env}`,
       generateSecret: true,
       oAuth: {
         flows: { clientCredentials: true },
@@ -266,22 +466,31 @@ export class AgentCoreStack extends cdk.Stack {
     const gatewayRole = new iam.Role(this, 'GatewayRole', {
       roleName: `valentin-agentcore-gateway-${env}`,
       assumedBy: new iam.ServicePrincipal('bedrock-agentcore.amazonaws.com'),
-      description: 'Lets AgentCore Gateway invoke the profile-tools Lambda',
+      description: 'Lets AgentCore Gateway invoke the tool Lambdas behind it',
     });
     profileTools.grantInvoke(gatewayRole);
+    // A target added without its grant is the most likely deploy-time failure here:
+    // the stack updates cleanly and every tool call then fails AccessDenied at
+    // invoke, which the agent reports as the integration being broken. Asserted in
+    // `infra/test/regressions.test.ts`.
+    integrationTools.grantInvoke(gatewayRole);
 
     const gateway = new agentcore.CfnGateway(this, 'Gateway', {
       name: gatewayName,
-      description: `MCP gateway over Valentin's profile tools (${env})`,
+      description: `MCP gateway over Valentin's profile and integration tools (${env})`,
       roleArn: gatewayRole.roleArn,
       protocolType: 'MCP',
       authorizerType: 'CUSTOM_JWT',
       authorizerConfiguration: {
         customJwtAuthorizer: {
           discoveryUrl,
-          // Scoped to the one machine client. Without this any token the pool
-          // issues — including a signed-in visitor's — would open the gateway.
-          allowedClients: [gatewayClient.userPoolClientId],
+          // Scoped to the two machine clients — the agent's and the proxy's, and
+          // nothing else. Without this any token the pool issues, including a
+          // signed-in visitor's, would open the gateway.
+          allowedClients: [
+            gatewayClient.userPoolClientId,
+            proxyGatewayClient.userPoolClientId,
+          ],
         },
       },
       // DEBUG returns the underlying tool error to the agent instead of a generic
@@ -291,14 +500,14 @@ export class AgentCoreStack extends cdk.Stack {
     });
     gateway.node.addDependency(gatewayRole);
 
-    /** Shared shape: every tool is called with the user and session it acts on. */
-    const identityArgs = {
-      user_id: {
-        type: 'string',
-        description: 'Storage id of the signed-in user, supplied by the proxy service',
-      },
-      session_id: { type: 'string', description: 'The conversation session id' },
-    };
+    /**
+     * Shared shape: every tool is called with the user and session it acts on.
+     *
+     * Imported rather than declared here, so the integration target's generated
+     * schemas and these hand-written ones cannot drift apart. See the module for
+     * why identity is an argument and not a claim.
+     */
+    const identityArgs = GATEWAY_IDENTITY_ARGS;
 
     const categoryArg = {
       type: 'string',
@@ -378,6 +587,152 @@ export class AgentCoreStack extends cdk.Stack {
       },
     });
     gatewayTarget.node.addDependency(gateway);
+
+    /*
+     * The second target: the real integration tools, behind the same endpoint.
+     *
+     * This is the point of the whole exercise. Engine A reaches Ontopo, Amadeus,
+     * Hebcal, Wolt and Spotify through a hand-written tool loop in the Express
+     * process; engine B reaches the *same* registry through one MCP endpoint whose
+     * tool schemas are declared once and whose access is JWT-scoped to a single
+     * machine client. Two targets, one gateway, no second tool loop.
+     *
+     * Three kinds of tool on this target, and the difference matters:
+     *
+     *  - **read-only** — offered to the model, run on the spot;
+     *  - **`propose_*`** — offered to the model, but they only *ask*; the tool
+     *    writes a `PROPOSAL#` row and returns a card;
+     *  - **`confirm_*`** — declared here so the Gateway will route them, and
+     *    deliberately **filtered out of the list the model sees** by
+     *    `agentcore/agent.py`. They are called by the proxy, after a human clicks
+     *    Confirm. A language model in the authority path for spending money is the
+     *    exact thing propose→confirm exists to prevent, and the Gateway being the
+     *    transport for both halves is the point: one MCP endpoint, JWT-scoped,
+     *    reached by the agent and by the application.
+     *
+     * Read-only is filtered on the tool's own `requiresConfirmation` flag rather
+     * than the `propose_` name prefix. The two agree today and a unit test asserts
+     * it, but a naming convention is a weaker thing to key tool exposure on than
+     * the flag the tool declares.
+     */
+    /*
+     * Read-only, and still not exposed.
+     *
+     * `create_conversation_link` mints a signed share token. `SHARE_TOKEN_SECRET`
+     * reaches the proxy as an `ecs.Secret` and reaches this Lambda not at all, so
+     * `share-token.ts` falls back to a per-process random key — a link minted here
+     * would be signed with a key the process that serves the guest view does not
+     * have, and would fail verification every time. The origin is wrong too: with
+     * no base URL in this environment the link points at `localhost:5173`.
+     *
+     * A tool the agent does not have is a sentence Valentin can say. A link he
+     * hands over that silently does not open is worse, and it would look like the
+     * sharing feature being broken rather than engine B lacking a wiring. So it is
+     * withheld until the signing key and the base URL are shared with this
+     * function, and engine A keeps it exactly as it is.
+     */
+    const WITHHELD = new Set(['create_conversation_link']);
+
+    /**
+     * Strip our own bookkeeping off a generated schema.
+     *
+     * `requiresConfirmation` is ours, not the Gateway's: `inlinePayload` takes
+     * schema fields only, and an unknown property fails at CreateStack — ten
+     * minutes into a deploy — rather than at synth.
+     */
+    const asToolDefinition = ({
+      name,
+      description,
+      inputSchema,
+    }: (typeof integrationToolSchemas)[number]): agentcore.CfnGatewayTarget.ToolDefinitionProperty =>
+      ({
+        name,
+        description,
+        /*
+           * The one cast in this file, and it is about JSON, not about CDK.
+           *
+           * TypeScript infers the imported array as a union of sixteen literal
+           * types, so every property one tool declares becomes `city?: undefined`
+           * on the fifteen that do not — which no `Record<string, …>` accepts, and
+           * which is why it needs the `unknown` hop rather than a direct assertion.
+           * The shape itself is right; it is checked where it can be, by the test
+           * that regenerates this file from the tools and asserts each `inputSchema`
+           * is an object with the identity args required.
+           */
+        inputSchema: inputSchema as unknown as agentcore.CfnGatewayTarget.SchemaDefinitionProperty,
+      });
+
+    const offered = integrationToolSchemas.filter((tool) => !WITHHELD.has(tool.name));
+
+    /*
+     * The confirm half of every gated tool, schema'd to three arguments.
+     *
+     * Derived from the `propose_*` list rather than written out, so a new gated
+     * integration cannot arrive with a propose and no way to confirm it. The
+     * schema is `{user_id, session_id, proposal_id}` and nothing else: the
+     * proposal itself is already in DynamoDB, and re-sending its fields here would
+     * be a second, forgeable copy of what was agreed.
+     */
+    const confirmToolSchemas: agentcore.CfnGatewayTarget.ToolDefinitionProperty[] = offered
+      .filter((tool) => tool.requiresConfirmation)
+      .map((tool) => {
+        const action = tool.name.replace(/^propose_/, '');
+        return {
+          name: `confirm_${action}`,
+          description:
+            `Carry out the ${action.replace(/_/g, ' ')} the user has already accepted. ` +
+            'Called by the application after a human clicks Confirm, never by the agent — ' +
+            'proposing and confirming are deliberately two different authorities.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              ...GATEWAY_IDENTITY_ARGS,
+              proposal_id: {
+                type: 'string',
+                description: 'The id of the proposal being confirmed',
+              },
+            },
+            required: ['user_id', 'session_id', 'proposal_id'],
+          } as unknown as agentcore.CfnGatewayTarget.SchemaDefinitionProperty,
+        };
+      });
+
+    const integrationToolDefinitions = [
+      ...offered.map(asToolDefinition),
+      ...confirmToolSchemas,
+    ];
+
+    const integrationsTarget = new agentcore.CfnGatewayTarget(this, 'IntegrationToolsTarget', {
+      name: 'valentin-integrations',
+      description: 'The real integration tools: restaurants, hotels, calendar, dates, delivery',
+      gatewayIdentifier: gateway.attrGatewayIdentifier,
+      credentialProviderConfigurations: [{ credentialProviderType: 'GATEWAY_IAM_ROLE' }],
+      targetConfiguration: {
+        mcp: {
+          lambda: {
+            lambdaArn: integrationTools.functionArn,
+            toolSchema: { inlinePayload: integrationToolDefinitions },
+          },
+        },
+      },
+    });
+    integrationsTarget.node.addDependency(gateway);
+
+    /*
+     * Neither target carries the SpringClean exemption, and neither can.
+     *
+     * `CfnGatewayTarget` implements only `IInspectable` and `IGatewayTargetRef` —
+     * not `ITaggableV2` — and `CfnGatewayTargetProps` has no `tags` field, so
+     * `AWS::BedrockAgentCore::GatewayTarget` is untaggable. Three things make that
+     * tolerable: the parent `CfnGateway` **is** taggable and does carry the
+     * exemption, and a target is its child; a target holds no state, so if one is
+     * deleted `scripts/deploy.sh dev --scope=infra` recreates it in ~2 minutes with
+     * nothing lost, unlike the table SpringClean ate on 2026-09-01; and if the
+     * service later accepts `Tags` it can be applied with `addPropertyOverride`.
+     *
+     * Do **not** add that override speculatively — an unknown property fails at
+     * `CreateStack`, ten minutes into a deploy, rather than at synth.
+     */
 
     // ---------------------------------------------------------------------
     // Runtime
@@ -556,11 +911,18 @@ export class AgentCoreStack extends cdk.Stack {
     });
     runtime.node.addDependency(runtimeRole);
     runtime.node.addDependency(memory);
+    // Both targets, so a cold start never lists a partial tool set: the agent calls
+    // `gateway.list_tools_sync()` once at init, and a Runtime that came up before
+    // the integration target existed would hold three profile tools for the life of
+    // the container and read as "AgentCore lost the integrations".
     runtime.node.addDependency(gatewayTarget);
+    runtime.node.addDependency(integrationsTarget);
 
     this.runtimeArn = runtime.attrAgentRuntimeArn;
     this.memoryId = memory.attrMemoryId;
     this.gatewayUrl = gateway.attrGatewayUrl;
+    this.proxyGatewayClientId = proxyGatewayClient.userPoolClientId;
+    this.gatewayTokenUrl = tokenUrl;
 
     // ---------------------------------------------------------------------
     // Outputs

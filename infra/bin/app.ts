@@ -82,6 +82,9 @@ const agentCoreStack = new AgentCoreStack(app, `Valentin-AgentCore-${env}`, {
   guardrailVersion,
   userPool: authStack.userPool,
   cognitoDomainPrefix: authStack.userPoolDomainPrefix,
+  // Same literal string the compute stack gets, for the same reason: the tool
+  // Lambda grants against a prefix, not against four secret references.
+  integrationSecretsPrefix: dataStack.integrationSecretsPrefix,
   imageTag: agentImageTag,
   env: stackEnv,
   description: `Valentin AgentCore Runtime, Memory and Gateway (${env})`,
@@ -96,6 +99,10 @@ const computeStack = new ComputeStack(app, `Valentin-Compute-${env}`, {
   table: dataStack.table,
   photoBucket: dataStack.photoBucket,
   accessLogBucket: dataStack.accessLogBucket,
+  // A literal-valued string, so this crosses the stack boundary as a plain
+  // property and not as a CloudFormation export. Compute already holds enough
+  // exports open that changing one is a two-deploy dance.
+  integrationSecretsPrefix: dataStack.integrationSecretsPrefix,
   guardrailId: safetyStack.guardrailId,
   /*
    * Deliberately not `safetyStack.guardrailVersion`.
@@ -133,6 +140,9 @@ const computeStack = new ComputeStack(app, `Valentin-Compute-${env}`, {
   agentCoreRuntimeArn: agentCoreStack.runtimeArn,
   agentCoreMemoryId: agentCoreStack.memoryId,
   agentCoreGatewayUrl: agentCoreStack.gatewayUrl,
+  gatewayClientId: agentCoreStack.proxyGatewayClientId,
+  gatewayTokenUrl: agentCoreStack.gatewayTokenUrl,
+  gatewayScope: agentCoreStack.gatewayScope,
   env: stackEnv,
   description: `Valentin ECS Fargate compute (${env})`,
 });

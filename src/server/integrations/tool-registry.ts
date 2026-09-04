@@ -213,13 +213,53 @@ export async function runTool(
   input: Record<string, unknown>,
   ctx: ToolContext,
 ): Promise<ToolResult> {
+  return observed(tool, tool.name, ctx, () => tool.execute(input, ctx));
+}
+
+/**
+ * Carry out a proposal, with the same two guarantees {@link runTool} gives.
+ *
+ * Exists for the Gateway tool Lambda, where a confirm arrives as its own
+ * invocation and so is its own span — engine A's confirm happens inside a turn it
+ * is already timing. `operation` is the *confirm* name rather than the tool's own
+ * name, so the drawer can tell the two halves of a propose→confirm pair apart.
+ */
+export async function runToolConfirm(
+  tool: AgentTool,
+  proposal: ActionProposal,
+  ctx: ToolContext,
+  operation = `confirm_${tool.name.replace(/^propose_/, '')}`,
+): Promise<ToolResult> {
+  if (!tool.confirm) {
+    return {
+      ok: false,
+      summary: `${tool.name} has nothing to confirm. Tell the user plainly — do not pretend it worked.`,
+    };
+  }
+  const confirm = tool.confirm.bind(tool);
+  return observed(tool, operation, ctx, () => confirm(proposal, ctx));
+}
+
+/**
+ * Run one integration call, timing it and swallowing whatever it does.
+ *
+ * The body of both wrappers above. Shared rather than copied because the log
+ * line's exact shape is a contract with `span-bridge.ts`, and a second copy is
+ * how one of them ends up spelling a key differently.
+ */
+async function observed(
+  tool: AgentTool,
+  operation: string,
+  ctx: ToolContext,
+  run: () => Promise<ToolResult>,
+): Promise<ToolResult> {
   const startedAt = Date.now();
   try {
-    const result = await tool.execute(input, ctx);
+    const result = await run();
     logger.info(`integration.${tool.service}`, {
       sessionId: ctx.sessionId,
       integration: tool.service,
-      operation: tool.name,
+      operation,
       durationMs: Date.now() - startedAt,
       ok: result.ok,
     });
@@ -228,19 +268,19 @@ export async function runTool(
     logger.info(`integration.${tool.service}`, {
       sessionId: ctx.sessionId,
       integration: tool.service,
-      operation: tool.name,
+      operation,
       durationMs: Date.now() - startedAt,
       ok: false,
     });
     logger.warn('integration.failed', {
       sessionId: ctx.sessionId,
       integration: tool.service,
-      operation: tool.name,
+      operation,
       cause: err instanceof Error ? err.message : String(err),
     });
     return {
       ok: false,
-      summary: `${tool.name} could not be completed: ${
+      summary: `${operation} could not be completed: ${
         err instanceof Error ? err.message : 'unknown error'
       }. Tell the user plainly and offer an alternative — do not pretend it worked.`,
     };

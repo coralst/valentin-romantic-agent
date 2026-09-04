@@ -46,6 +46,7 @@ beforeAll(() => {
     guardrailVersion: 'DRAFT',
     userPool: auth.userPool,
     cognitoDomainPrefix: auth.userPoolDomainPrefix,
+    integrationSecretsPrefix: data.integrationSecretsPrefix,
     imageTag: 'test-sha',
     env: stackEnv,
   });
@@ -56,6 +57,7 @@ beforeAll(() => {
     table: data.table,
     photoBucket: data.photoBucket,
     accessLogBucket: data.accessLogBucket,
+    integrationSecretsPrefix: data.integrationSecretsPrefix,
     guardrailId: safety.guardrailId,
     guardrailVersion: safety.guardrailVersion,
     imageTag: 'test-sha',
@@ -128,6 +130,30 @@ function containerEnv(engine: 'valentin' | 'agentcore' = 'valentin'): Record<str
     Value: unknown;
   }>;
   return Object.fromEntries(entries.map((e) => [e.Name, e.Value]));
+}
+
+/** One Gateway target, found by its `Name` rather than its position. */
+function gatewayTarget(name: string): any {
+  const targets = agentCoreTemplate.findResources('AWS::BedrockAgentCore::GatewayTarget');
+  const found = Object.values<any>(targets).filter((t) => t.Properties.Name === name);
+  if (found.length !== 1) throw new Error(`expected one gateway target named ${name}`);
+  return found[0];
+}
+
+/** Every tool the shared registry declares, from the generated file. */
+function committedToolNames(): string[] {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const schemas = require('../lib/generated/integration-tool-schemas.json') as Array<{
+    name: string;
+  }>;
+  return schemas.map((s) => s.name);
+}
+
+/** The tool names one target declares, sorted. */
+function gatewayToolNames(target: string): string[] {
+  const tools = gatewayTarget(target).Properties.TargetConfiguration.Mcp.Lambda.ToolSchema
+    .InlinePayload as Array<{ Name: string }>;
+  return tools.map((t) => t.Name).sort();
 }
 
 describe('table name wiring', () => {
@@ -236,6 +262,44 @@ describe('engine B can actually invoke its Runtime', () => {
         ]),
       },
     });
+  });
+
+  it('lets the proxy read its Gateway client secret at runtime', () => {
+    // Without this the confirm path fails at the first token exchange, and the
+    // failure looks like a Gateway problem rather than a missing grant. The secret
+    // is deliberately *not* in the template — see the ClientSecret test — so
+    // DescribeUserPoolClient is the only way the proxy can obtain it.
+    computeTemplate.hasResourceProperties('AWS::IAM::Policy', {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({ Action: 'cognito-idp:DescribeUserPoolClient' }),
+        ]),
+      },
+    });
+  });
+
+  it('gives the Gateway credentials to the engine-B container only', () => {
+    /*
+     * Engine A confirms in-process and has no business holding a credential that
+     * can call the Gateway. This is checked by container rather than by task
+     * definition because both containers share `sharedEnvironment`, and the easy
+     * mistake is adding these three there.
+     */
+    const containers = Object.values(
+      computeTemplate.findResources('AWS::ECS::TaskDefinition'),
+    ).flatMap((def) => (def as any).Properties.ContainerDefinitions as any[]);
+
+    const withGatewayCreds = containers.filter((c) =>
+      (c.Environment as any[]).some((e) => e.Name === 'GATEWAY_CLIENT_ID'),
+    );
+    expect(withGatewayCreds).toHaveLength(1);
+
+    const names = (withGatewayCreds[0].Environment as any[]).map((e) => e.Name);
+    expect(names).toContain('GATEWAY_TOKEN_URL');
+    expect(names).toContain('GATEWAY_SCOPE');
+    // The one that identifies this as the engine-B container, so the assertion
+    // above cannot pass by landing on the wrong one.
+    expect(names).toContain('AGENTCORE_RUNTIME_ARN');
   });
 });
 
@@ -723,14 +787,29 @@ describe('agentcore engine B', () => {
     expect(name).not.toContain('_');
   });
 
-  it('scopes the Gateway JWT authorizer to the machine client only', () => {
+  it('scopes the Gateway JWT authorizer to the two machine clients only', () => {
     // Without allowedClients, any token this pool issues would open the gateway —
     // including a signed-in visitor's, which would let a browser call the tools.
+    //
+    // Two, not one: the agent's client and the proxy's. The count is asserted
+    // rather than left open because a third entry is how a *user*-facing client
+    // would get in, and that is the one mistake this property exists to prevent.
     const gateways = agentCoreTemplate.findResources('AWS::BedrockAgentCore::Gateway');
     const authorizer = (Object.values(gateways)[0] as any).Properties.AuthorizerConfiguration
       .CustomJWTAuthorizer;
-    expect(authorizer.AllowedClients).toHaveLength(1);
+    expect(authorizer.AllowedClients).toHaveLength(2);
     expect(authorizer.DiscoveryUrl).toBeDefined();
+  });
+
+  it('gives the proxy its own Gateway client rather than sharing the agent’s', () => {
+    // Two callers with different lifetimes: revoking the agent's credential must
+    // not silently stop every Confirm button, and the Gateway access log has to be
+    // able to answer "was this the model or the application?".
+    const clients = Object.values(
+      agentCoreTemplate.findResources('AWS::Cognito::UserPoolClient'),
+    ).map((r) => (r as any).Properties.ClientName as string);
+    expect(clients).toContainEqual(expect.stringContaining('valentin-gateway-'));
+    expect(clients).toContainEqual(expect.stringContaining('valentin-proxy-gateway-'));
   });
 
   it('never puts the gateway client secret in the template', () => {
@@ -773,21 +852,315 @@ describe('agentcore engine B', () => {
   });
 
   it('exposes exactly the three profile tools', () => {
-    const targets = agentCoreTemplate.findResources('AWS::BedrockAgentCore::GatewayTarget');
-    const tools = (Object.values(targets)[0] as any).Properties.TargetConfiguration.Mcp.Lambda
-      .ToolSchema.InlinePayload;
-    expect(tools.map((t: any) => t.Name).sort()).toEqual([
+    // Selected by target name, not by position: there are two targets behind this
+    // gateway now, and indexing into `findResources` would silently start asserting
+    // about whichever one CloudFormation happened to order first.
+    expect(gatewayToolNames('valentin-profile')).toEqual([
       'get_partner_profile',
       'list_preferences',
       'save_preference',
     ]);
   });
 
-  it('bounds log retention on both new log groups', () => {
-    agentCoreTemplate.resourceCountIs('AWS::Logs::LogGroup', 2);
+  it('bounds log retention on every log group this stack creates', () => {
+    // Three: the AgentCore telemetry group, the profile-tools group and the
+    // integration-tools group. An exact count rather than "at least" because the
+    // failure this guards against is a Lambda created without an explicit
+    // `logGroup`, which silently gets a never-expiring one from the service.
+    agentCoreTemplate.resourceCountIs('AWS::Logs::LogGroup', 3);
     const groups = agentCoreTemplate.findResources('AWS::Logs::LogGroup');
     for (const group of Object.values(groups)) {
       expect((group as any).Properties.RetentionInDays).toBe(config.logRetention);
+    }
+  });
+});
+
+describe('the integration-tools Lambda', () => {
+  /** The one function whose name says integrations. */
+  function integrationTools(): any {
+    const fns = agentCoreTemplate.findResources('AWS::Lambda::Function');
+    const found = Object.values<any>(fns).filter(
+      (f) => f.Properties.FunctionName === `valentin-integration-tools-${config.env}`,
+    );
+    expect(found).toHaveLength(1);
+    return found[0];
+  }
+
+  /** Every policy statement attached to that function's role. */
+  function statements(): any[] {
+    const fn = integrationTools();
+    // The role's logical id, matched verbatim — an earlier version of this helper
+    // trimmed it and silently matched nothing, which made the two negative
+    // assertions below pass without reading a single statement.
+    const roleRef: string = fn.Properties.Role['Fn::GetAtt'][0];
+    const policies = agentCoreTemplate.findResources('AWS::IAM::Policy');
+    const matched = Object.values<any>(policies).filter((p) =>
+      JSON.stringify(p.Properties.Roles ?? []).includes(roleRef),
+    );
+    expect(matched.length).toBeGreaterThan(0);
+    return matched.flatMap((p) => p.Properties.PolicyDocument.Statement);
+  }
+
+  it('runs the same runtime and architecture as the agent image', () => {
+    // ARM64 matters beyond consistency: a bundle built for the wrong
+    // architecture fails at invoke, not at deploy, so it would surface as engine
+    // B's tools all being broken.
+    const props = integrationTools().Properties;
+    expect(props.Runtime).toBe('nodejs22.x');
+    expect(props.Architectures).toEqual(['arm64']);
+  });
+
+  it('gets long enough to make a third-party HTTP call', () => {
+    // Ontopo and Amadeus both sit behind a token exchange; the 10s the profile
+    // tools get would time out mid-booking-search.
+    expect(integrationTools().Properties.Timeout).toBe(30);
+  });
+
+  it('is told where the credentials live', () => {
+    expect(integrationTools().Properties.Environment.Variables).toMatchObject({
+      INTEGRATION_SECRETS_PREFIX: `valentin/${config.env}/integrations`,
+    });
+  });
+
+  it('is exempt from the account janitor', () => {
+    const tags = integrationTools().Properties.Tags ?? [];
+    expect(tags).toEqual(
+      expect.arrayContaining([
+        { Key: 'auto-delete', Value: 'no' },
+        { Key: 'springclean', Value: 'exempt' },
+      ]),
+    );
+  });
+
+  it('can read the integration secrets', () => {
+    const reads = statements().filter((s) =>
+      JSON.stringify(s.Action).includes('secretsmanager:GetSecretValue'),
+    );
+    expect(reads.length).toBeGreaterThan(0);
+  });
+
+  it('cannot write any secret, anywhere', () => {
+    // This function serves a model's tool calls. The panel that writes these
+    // secrets runs in the compute stack and holds the only PutSecretValue grant;
+    // a write grant here would put a language model one bug away from
+    // overwriting a credential.
+    expect(JSON.stringify(statements())).not.toContain('secretsmanager:PutSecretValue');
+    expect(JSON.stringify(statements())).not.toContain('secretsmanager:CreateSecret');
+  });
+
+  it('cannot reach a secret outside integrations/', () => {
+    // The wider valentin/<env>/* read grant covers demo-user, whose password
+    // POST /api/demo/login exchanges for Cognito tokens.
+    for (const statement of statements()) {
+      if (!JSON.stringify(statement.Action).includes('secretsmanager')) continue;
+      for (const resource of [statement.Resource].flat()) {
+        expect(JSON.stringify(resource)).toContain(
+          `valentin/${config.env}/integrations/`,
+        );
+      }
+    }
+  });
+
+  it('is the Lambda behind the integrations Gateway target', () => {
+    const arn = gatewayTarget('valentin-integrations').Properties.TargetConfiguration.Mcp.Lambda
+      .LambdaArn;
+    const fnLogicalId = Object.entries(
+      agentCoreTemplate.findResources('AWS::Lambda::Function'),
+    ).find(
+      ([, f]: [string, any]) =>
+        f.Properties.FunctionName === `valentin-integration-tools-${config.env}`,
+    )?.[0];
+
+    expect(JSON.stringify(arn)).toContain(fnLogicalId);
+  });
+
+  it('can be invoked by the gateway role', () => {
+    /*
+     * The most likely deploy-time failure of this whole feature.
+     *
+     * A target added without its `grantInvoke` updates the stack cleanly and then
+     * fails AccessDenied on every tool call, which the agent reports as the
+     * integration being broken rather than as a permissions gap.
+     */
+    const roles = agentCoreTemplate.findResources('AWS::IAM::Role');
+    const gatewayRoleId = Object.entries(roles).find(
+      ([, r]: [string, any]) =>
+        r.Properties.RoleName === `valentin-agentcore-gateway-${config.env}`,
+    )?.[0];
+    expect(gatewayRoleId).toBeDefined();
+
+    const policies = agentCoreTemplate.findResources('AWS::IAM::Policy');
+    const onGatewayRole = Object.values<any>(policies).filter((p) =>
+      JSON.stringify(p.Properties.Roles ?? []).includes(gatewayRoleId as string),
+    );
+    expect(onGatewayRole.length).toBeGreaterThan(0);
+
+    const invokesIntegrations = onGatewayRole
+      .flatMap((p) => p.Properties.PolicyDocument.Statement)
+      .filter(
+        (s: any) =>
+          JSON.stringify(s.Action).includes('lambda:InvokeFunction') &&
+          JSON.stringify(s.Resource).includes('IntegrationTools'),
+      );
+
+    expect(invokesIntegrations.length).toBeGreaterThan(0);
+  });
+});
+
+describe('the integrations Gateway target', () => {
+  /*
+   * The ten read-only tools, which the model may call freely.
+   *
+   * The other fourteen are the seven `propose_*` tools and their paired
+   * `confirm_*`. The pairing is what the tests below are actually about: a
+   * `propose_*` exposed without its confirm is a card whose button cannot work,
+   * and a `confirm_*` the *model* can see is a language model authorising its own
+   * spending — which is the one thing propose-then-confirm exists to prevent, and
+   * is prevented in `agentcore/agent.py`, not here.
+   */
+  const READ_ONLY = [
+    'check_availability',
+    'check_shabbat',
+    'find_gift_delivery',
+    'find_music',
+    'find_occasions',
+    'find_places_nearby',
+    'find_restaurants',
+    'get_hebrew_occasions',
+    'search_activities',
+    'search_hotels',
+  ];
+
+  it('exposes the ten read-only tools, unchanged by the confirm machinery', () => {
+    const names = gatewayToolNames('valentin-integrations');
+    expect(names.filter((n) => !/^(propose|confirm)_/.test(n))).toEqual(READ_ONLY);
+  });
+
+  it('exposes exactly 24 tools: 10 read-only, 7 proposals, 7 confirms', () => {
+    // The total is asserted so an accidental addition is visible, and the split is
+    // asserted because the interesting failure is not the count but the balance.
+    const names = gatewayToolNames('valentin-integrations');
+    expect(names).toHaveLength(24);
+    expect(names.filter((n) => n.startsWith('propose_'))).toHaveLength(7);
+    expect(names.filter((n) => n.startsWith('confirm_'))).toHaveLength(7);
+  });
+
+  it('withholds the share-link tool, which this Lambda cannot sign', () => {
+    /*
+     * `create_conversation_link` is read-only and still withheld.
+     * `SHARE_TOKEN_SECRET` is an `ecs.Secret` on the proxy and absent here, so
+     * `share-token.ts` signs with a per-process random key — the process serving
+     * the guest view could never verify it — and the link's origin falls back to
+     * localhost. A link handed over that silently does not open reads as sharing
+     * being broken, where a missing tool is a sentence Valentin can say.
+     *
+     * Delete this test in the commit that gives the function the signing key and
+     * the base URL, not before.
+     */
+    expect(gatewayToolNames('valentin-integrations')).not.toContain(
+      'create_conversation_link',
+    );
+    // Engine A still has it: this is a Gateway exposure decision, not a change to
+    // the registry both engines share.
+    expect(committedToolNames()).toContain('create_conversation_link');
+  });
+
+  it('pairs every proposal with a confirm, and every confirm with a proposal', () => {
+    /*
+     * The failure this catches is asymmetric and silent either way. A `propose_*`
+     * with no `confirm_*` gives the user a card whose button returns "tool not
+     * found" *after* they have agreed to spend money. A `confirm_*` with no
+     * `propose_*` is a Gateway tool that can never have a stored proposal to act
+     * on — dead surface area on an endpoint whose whole claim is that its tools are
+     * declared once.
+     */
+    const names = gatewayToolNames('valentin-integrations');
+    const proposals = names.filter((n) => n.startsWith('propose_')).map((n) => n.slice(8));
+    const confirms = names.filter((n) => n.startsWith('confirm_')).map((n) => n.slice(8));
+    expect(confirms.sort()).toEqual(proposals.sort());
+  });
+
+  it('asks a confirm for nothing but the proposal it is confirming', () => {
+    /*
+     * `{user_id, session_id, proposal_id}` and no more. A confirm that accepted,
+     * say, a party size would be a second chance to change the booking after the
+     * user had agreed to the first one — the proposal row is the record of what
+     * was agreed, and it is the only thing the Lambda is allowed to read back.
+     */
+    const tools = gatewayTarget('valentin-integrations').Properties.TargetConfiguration.Mcp
+      .Lambda.ToolSchema.InlinePayload as any[];
+
+    const confirms = tools.filter((t) => (t.Name as string).startsWith('confirm_'));
+    expect(confirms).toHaveLength(7);
+    for (const tool of confirms) {
+      expect(Object.keys(tool.InputSchema.Properties).sort()).toEqual([
+        'proposal_id',
+        'session_id',
+        'user_id',
+      ]);
+      expect([...(tool.InputSchema.Required as string[])].sort()).toEqual([
+        'proposal_id',
+        'session_id',
+        'user_id',
+      ]);
+    }
+  });
+
+  it('asks every tool for the user and session it acts on', () => {
+    // A tool the proxy cannot attribute to a user would still run, which is the
+    // problem. The two targets share one definition of these args
+    // (`gateway-identity-args.ts`) so they cannot disagree about the spelling —
+    // if one asked for `userId`, the agent would call both alike and one would
+    // fail every time, presenting as a broken integration.
+    const tools = gatewayTarget('valentin-integrations').Properties.TargetConfiguration.Mcp
+      .Lambda.ToolSchema.InlinePayload as any[];
+
+    for (const tool of tools) {
+      expect(tool.InputSchema.Required).toContain('user_id');
+      expect(tool.InputSchema.Required).toContain('session_id');
+      expect(tool.InputSchema.Properties).toHaveProperty('user_id');
+      expect(tool.InputSchema.Properties).toHaveProperty('session_id');
+      expect(tool.Description.length).toBeGreaterThan(20);
+    }
+  });
+
+  it('carries no field the Gateway schema does not accept', () => {
+    // `requiresConfirmation` is ours: it selects the list above. Leaving it in the
+    // payload would fail at CreateStack, ten minutes into a deploy, rather than at
+    // synth.
+    const json = JSON.stringify(gatewayTarget('valentin-integrations'));
+    expect(json).not.toContain('requiresConfirmation');
+    expect(json).not.toContain('RequiresConfirmation');
+  });
+
+  it('is one of exactly two targets behind one gateway', () => {
+    // One MCP endpoint, JWT-scoped, reached by the agent for both the profile and
+    // the integrations — that single endpoint is the thing being demonstrated. A
+    // third target appearing here is a deliberate change to engine B's surface.
+    agentCoreTemplate.resourceCountIs('AWS::BedrockAgentCore::GatewayTarget', 2);
+    agentCoreTemplate.resourceCountIs('AWS::BedrockAgentCore::Gateway', 1);
+  });
+
+  it('is a dependency of the Runtime, so a cold start never lists half the tools', () => {
+    const runtimes = agentCoreTemplate.findResources('AWS::BedrockAgentCore::Runtime');
+    const dependsOn = JSON.stringify((Object.values(runtimes)[0] as any).DependsOn ?? []);
+
+    expect(dependsOn).toContain('IntegrationToolsTarget');
+    expect(dependsOn).toContain('ProfileToolsTarget');
+  });
+
+  it('cannot be tagged, and that gap is known rather than forgotten', () => {
+    /*
+     * `CfnGatewayTarget` implements neither `ITaggableV2` nor a `tags` prop, so
+     * `AWS::BedrockAgentCore::GatewayTarget` is untaggable and SpringClean's
+     * exemption cannot be applied to it. Tolerable because the parent gateway does
+     * carry the exemption and a target holds no state — `--scope=infra` recreates
+     * one in ~2 minutes. The day the service accepts `Tags`, this test fails and
+     * prompts an `addPropertyOverride`; adding one speculatively today would fail
+     * at CreateStack instead of at synth.
+     */
+    for (const name of ['valentin-profile', 'valentin-integrations']) {
+      expect(gatewayTarget(name).Properties.Tags).toBeUndefined();
     }
   });
 });
@@ -1094,4 +1467,145 @@ describe('Google credentials reach the deployed task', () => {
       expect(deps).toContain(policyId);
     });
   }
+});
+
+describe('integration credentials survive a task replacement', () => {
+  // The panel's connect flow writes `config.integrations` and `.env`. Both
+  // containers run `readonlyRootFilesystem: true`, and a Fargate task is replaced
+  // on every deploy, so before these secrets existed a credential pasted into the
+  // deployed app lived exactly as long as the task did — and was invisible to any
+  // second process, which is what the Gateway's tool Lambda is about to be.
+  const SERVICES = ['amadeus', 'google', 'spotify', 'whatsapp'] as const;
+
+  /** Every SecretsManager secret in the Data stack, keyed by its `Name`. */
+  function dataSecrets(): Record<string, any> {
+    const found = dataTemplate.findResources('AWS::SecretsManager::Secret');
+    return Object.fromEntries(
+      Object.values<any>(found).map((res) => [res.Properties.Name, res]),
+    );
+  }
+
+  it('declares one secret per connectable service', () => {
+    // The literal list rather than an import: `infra/tsconfig.json` has
+    // `rootDir: '.'`, so nothing here can import `src/`. The runtime half of the
+    // same list is asserted by the `integrationSecretNames` tests in
+    // `src/server/integrations/__tests__/credential-store.test.ts` — if the two
+    // ever disagree, the tool Lambda reads a secret nobody writes.
+    expect(Object.keys(dataSecrets()).sort()).toEqual(
+      SERVICES.map((s) => `valentin/${config.env}/integrations/${s}`).sort(),
+    );
+  });
+
+  it('declares them in the Data stack, not the stack that rolls back', () => {
+    // Compute carries the ECS rolling deploy, so a create there is the one most
+    // likely to be caught in a rollback — and a RETAIN'd secret created by a
+    // rolling-back deploy logs DELETE_SKIPPED, leaves the stack's resource set,
+    // and deadlocks every later deploy with AlreadyExists. That is exactly how
+    // `valentin/<env>/google-oauth` got stuck. Data is a ~16s near-no-op.
+    const computeSecrets = Object.values<any>(
+      computeTemplate.findResources('AWS::SecretsManager::Secret'),
+    ).map((res) => res.Properties.Name);
+    for (const service of SERVICES) {
+      expect(computeSecrets).not.toContain(`valentin/${config.env}/integrations/${service}`);
+    }
+  });
+
+  for (const service of SERVICES) {
+    it(`exempts ${service} from the account janitor`, () => {
+      // SpringClean calls DeleteSecret directly and never reads a stack policy,
+      // so the tag is the only thing standing between these and a seven-day fuse.
+      // It took ValentinTable-dev on 2026-09-01 this way.
+      expect(
+        dataSecrets()[`valentin/${config.env}/integrations/${service}`].Properties.Tags,
+      ).toEqual(
+        // `expect.arrayContaining`, not CDK's `Match.arrayWith` — the latter only
+        // works inside `hasResourceProperties`, and against `toEqual` it silently
+        // compares the matcher object itself.
+        expect.arrayContaining([
+          { Key: 'auto-delete', Value: 'no' },
+          { Key: 'springclean', Value: 'exempt' },
+        ]),
+      );
+    });
+  }
+
+  // RETAIN is not a free "protect the data" choice — it buys the DELETE_SKIPPED
+  // deadlock above. So it is spent only where the value cannot be recovered.
+  for (const [service, policy] of [
+    // Refresh tokens minted by a browser consent popup, which cannot be run
+    // against a Fargate task.
+    ['google', 'Retain'],
+    ['spotify', 'Retain'],
+    // Values a human pastes into the connect form, recoverable in seconds.
+    ['amadeus', 'Delete'],
+    ['whatsapp', 'Delete'],
+  ] as const) {
+    it(`sets ${service} to ${policy}, because of how the value is obtained`, () => {
+      const secret = dataSecrets()[`valentin/${config.env}/integrations/${service}`];
+      expect(secret.DeletionPolicy).toBe(policy);
+      expect(secret.UpdateReplacePolicy).toBe(policy);
+    });
+  }
+
+  it('creates them empty, so a deploy never overwrites a live credential', () => {
+    // `SecretString` is written at create time only, so a later PutSecretValue
+    // survives every subsequent `cdk deploy`. `{}` rather than a generated random
+    // key: `credential-store.ts` reads this as JSON and treats a missing field as
+    // "not connected", which is the honest starting state — a generated value
+    // would read like a real credential to whoever opens the console.
+    for (const secret of Object.values<any>(dataSecrets())) {
+      expect(secret.Properties.SecretString).toBe('{}');
+      expect(secret.Properties.GenerateSecretString).toBeUndefined();
+    }
+  });
+
+  for (const engine of ['valentin', 'agentcore'] as const) {
+    it(`switches the remote store on for engine ${engine}`, () => {
+      // Both engines, not just B: the panel that writes these secrets is served
+      // by whichever task the visitor happens to be talking to. Unset, the whole
+      // module is a no-op and `.env` is the only source.
+      expect(containerEnv(engine).INTEGRATION_SECRETS_PREFIX).toBe(
+        `valentin/${config.env}/integrations`,
+      );
+    });
+  }
+
+  /** Every statement across every Compute IAM policy. */
+  function computeStatements(): Array<any> {
+    return Object.values<any>(computeTemplate.findResources('AWS::IAM::Policy')).flatMap(
+      (res) => res.Properties.PolicyDocument.Statement as Array<any>,
+    );
+  }
+
+  it('can write the integration secrets', () => {
+    const writes = computeStatements().filter((stmt) =>
+      ([] as string[]).concat(stmt.Action ?? []).includes('secretsmanager:PutSecretValue'),
+    );
+    expect(writes.length).toBeGreaterThan(0);
+  });
+
+  it('cannot write any secret outside integrations/', () => {
+    // The read grant is `valentin/<env>/*`, which includes the demo-user secret
+    // holding the password POST /api/demo/login exchanges for Cognito tokens. A
+    // write grant that wide would let a credential pasted into the panel lock
+    // every visitor out of the deployed app. Scoped by prefix so no code path can
+    // reach it, rather than trusting nobody to pass the wrong secret id.
+    for (const stmt of computeStatements()) {
+      const actions = ([] as string[]).concat(stmt.Action ?? []);
+      if (!actions.includes('secretsmanager:PutSecretValue')) continue;
+      for (const resource of ([] as unknown[]).concat(stmt.Resource ?? [])) {
+        expect(String(resource)).toContain(`valentin/${config.env}/integrations/`);
+      }
+    }
+  });
+
+  it('never grants CreateSecret, which would produce an untagged secret', () => {
+    // A secret created at runtime carries none of the exemption tags above, so
+    // the janitor would delete it weeks later with no diff to blame it on. Hence
+    // `putRemoteCredentials` uses PutSecretValue only and treats
+    // ResourceNotFoundException as "the Data stack isn't deployed yet".
+    expect(JSON.stringify(computeTemplate.toJSON())).not.toContain(
+      'secretsmanager:CreateSecret',
+    );
+  });
 });

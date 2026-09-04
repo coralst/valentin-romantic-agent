@@ -32,6 +32,16 @@ export interface ComputeStackProps extends cdk.StackProps {
   imageTag: string;
   /** Bucket for ALB access logs. */
   accessLogBucket: s3.IBucket;
+  /**
+   * Prefix of the per-service integration secrets DataStack declares, with no
+   * trailing slash.
+   *
+   * A string rather than four `ISecret`s on purpose: this stack needs only
+   * something to grant against and to hand the container, and four more
+   * cross-stack exports would thicken the Data→Compute edge that
+   * `scripts/deploy.sh` already has to order by hand.
+   */
+  integrationSecretsPrefix: string;
   /** Cognito User Pool the backend verifies access tokens against */
   userPoolId: string;
   userPoolArn: string;
@@ -61,8 +71,19 @@ export interface ComputeStackProps extends cdk.StackProps {
   agentCoreRuntimeArn: string;
   /** AgentCore Memory the proxy reads and writes conversation events on. */
   agentCoreMemoryId: string;
-  /** Gateway MCP endpoint, passed through for the drawer to display. */
+  /** Gateway MCP endpoint — displayed in the drawer, and called for a confirm. */
   agentCoreGatewayUrl: string;
+  /**
+   * The proxy's own Cognito machine client for the Gateway.
+   *
+   * Only the id: the secret is fetched at runtime with `DescribeUserPoolClient`
+   * so it never lands in this template, which a regression test asserts.
+   */
+  gatewayClientId: string;
+  /** Cognito's `oauth2/token` endpoint for the client-credentials exchange. */
+  gatewayTokenUrl: string;
+  /** The scope that client holds, e.g. `valentin-tools/invoke`. */
+  gatewayScope: string;
 }
 
 /**
@@ -200,6 +221,36 @@ export class ComputeStack extends cdk.Stack {
         }),
       );
 
+      /*
+       * Write, for the integrations panel's connect flow only.
+       *
+       * Deliberately far narrower than the read grant above: `integrations/*`
+       * rather than `valentin/<env>/*`. A credential pasted into the panel must
+       * never be able to overwrite `valentin/<env>/demo-user` — that secret holds
+       * the password `POST /api/demo/login` exchanges for real Cognito tokens, so
+       * a write there would lock every visitor out of the deployed app. Scoping
+       * this by prefix means no code path in the server can reach it, rather than
+       * relying on nobody ever passing the wrong secret id.
+       *
+       * `CreateSecret` is absent, and that is the load-bearing omission: a secret
+       * created at runtime would carry none of the SpringClean exemption tags, and
+       * the Isengard janitor deletes untagged resources. So the four secrets are
+       * declared in DataStack and `putRemoteCredentials` uses PutSecretValue only,
+       * treating ResourceNotFoundException as "the Data stack isn't deployed yet".
+       *
+       * The trailing `*` also absorbs the six random characters Secrets Manager
+       * appends to every secret ARN — a resource ending at the plain name matches
+       * nothing.
+       */
+      role.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          actions: ['secretsmanager:PutSecretValue', 'secretsmanager:DescribeSecret'],
+          resources: [
+            `arn:aws:secretsmanager:*:*:secret:${props.integrationSecretsPrefix}/*`,
+          ],
+        }),
+      );
+
       // Cognito: only what the demo sign-in needs, scoped to this one pool.
       // AdminInitiateAuth is how POST /api/demo/login exchanges the stored demo
       // password for real Cognito tokens. Notably absent: AdminCreateUser and
@@ -311,6 +362,29 @@ export class ComputeStack extends cdk.Stack {
             resourceName: `${props.agentCoreMemoryId}/*`,
           }),
         ],
+      }),
+    );
+
+    /*
+     * Read the proxy's own Gateway client secret, and nothing else about the pool.
+     *
+     * `DescribeUserPoolClient` is what keeps the secret out of the CloudFormation
+     * template — the same trade the Strands agent makes for the same reason, one
+     * API call at start-up instead of a secret in an artefact anyone with
+     * `DescribeStacks` can read.
+     *
+     * Scoped to the pool rather than the client, because that is the finest grain
+     * `DescribeUserPoolClient`'s resource model offers: its only ARN form is the
+     * user-pool ARN. So this does let the task describe the *SPA* client too —
+     * which is public and has no secret — and the demo client, whose secret is
+     * already in the demo-login flow. Worth stating rather than implying, because
+     * a reader checking least privilege here should not have to rediscover that
+     * the tighter grant does not exist.
+     */
+    proxyTaskRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ['cognito-idp:DescribeUserPoolClient'],
+        resources: [props.userPoolArn],
       }),
     );
 
@@ -592,6 +666,15 @@ export class ComputeStack extends cdk.Stack {
       COGNITO_SPA_CLIENT_ID: props.spaClientId,
       COGNITO_DEMO_CLIENT_ID: props.demoClientId,
       DEMO_SECRET_ARN: props.demoSecret.secretArn,
+      /*
+       * Switches `credential-store.ts` on. Unset — as it is locally and in
+       * `npm test` — the whole remote-credential path is a no-op and `.env` is the
+       * only source, which is what keeps a clone with no AWS account working.
+       *
+       * Set on *both* engines, not just engine B: the panel that writes these
+       * secrets is served by whichever task the visitor is talking to.
+       */
+      INTEGRATION_SECRETS_PREFIX: props.integrationSecretsPrefix,
       COGNITO_DOMAIN: `https://${props.cognitoDomainPrefix}.auth.${cdk.Stack.of(this).region}.amazoncognito.com`,
     };
 
@@ -664,6 +747,13 @@ export class ComputeStack extends cdk.Stack {
         AGENTCORE_RUNTIME_ARN: props.agentCoreRuntimeArn,
         AGENTCORE_MEMORY_ID: props.agentCoreMemoryId,
         AGENTCORE_GATEWAY_URL: props.agentCoreGatewayUrl,
+        // On the proxy container only, and deliberately not on `sharedEnvironment`:
+        // engine A confirms in-process and has no business holding a Gateway
+        // credential. A task that cannot serve engine B cannot call the Gateway
+        // either.
+        GATEWAY_CLIENT_ID: props.gatewayClientId,
+        GATEWAY_TOKEN_URL: props.gatewayTokenUrl,
+        GATEWAY_SCOPE: props.gatewayScope,
       },
       secrets: sharedSecrets,
       logging: ecs.LogDrivers.awsLogs({

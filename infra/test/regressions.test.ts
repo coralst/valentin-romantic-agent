@@ -132,6 +132,21 @@ function containerEnv(engine: 'valentin' | 'agentcore' = 'valentin'): Record<str
   return Object.fromEntries(entries.map((e) => [e.Name, e.Value]));
 }
 
+/** One Gateway target, found by its `Name` rather than its position. */
+function gatewayTarget(name: string): any {
+  const targets = agentCoreTemplate.findResources('AWS::BedrockAgentCore::GatewayTarget');
+  const found = Object.values<any>(targets).filter((t) => t.Properties.Name === name);
+  if (found.length !== 1) throw new Error(`expected one gateway target named ${name}`);
+  return found[0];
+}
+
+/** The tool names one target declares, sorted. */
+function gatewayToolNames(target: string): string[] {
+  const tools = gatewayTarget(target).Properties.TargetConfiguration.Mcp.Lambda.ToolSchema
+    .InlinePayload as Array<{ Name: string }>;
+  return tools.map((t) => t.Name).sort();
+}
+
 describe('table name wiring', () => {
   // The container was given DYNAMO_TABLE_NAME=valentin-sessions-dev while the
   // table was actually named ValentinTable-dev, so every read and write failed.
@@ -742,10 +757,10 @@ describe('agentcore engine B', () => {
   });
 
   it('exposes exactly the three profile tools', () => {
-    const targets = agentCoreTemplate.findResources('AWS::BedrockAgentCore::GatewayTarget');
-    const tools = (Object.values(targets)[0] as any).Properties.TargetConfiguration.Mcp.Lambda
-      .ToolSchema.InlinePayload;
-    expect(tools.map((t: any) => t.Name).sort()).toEqual([
+    // Selected by target name, not by position: there are two targets behind this
+    // gateway now, and indexing into `findResources` would silently start asserting
+    // about whichever one CloudFormation happened to order first.
+    expect(gatewayToolNames('valentin-profile')).toEqual([
       'get_partner_profile',
       'list_preferences',
       'save_preference',
@@ -851,22 +866,138 @@ describe('the integration-tools Lambda', () => {
     }
   });
 
-  it('is not yet wired to a Gateway target', () => {
+  it('is the Lambda behind the integrations Gateway target', () => {
+    const arn = gatewayTarget('valentin-integrations').Properties.TargetConfiguration.Mcp.Lambda
+      .LambdaArn;
+    const fnLogicalId = Object.entries(
+      agentCoreTemplate.findResources('AWS::Lambda::Function'),
+    ).find(
+      ([, f]: [string, any]) =>
+        f.Properties.FunctionName === `valentin-integration-tools-${config.env}`,
+    )?.[0];
+
+    expect(JSON.stringify(arn)).toContain(fnLogicalId);
+  });
+
+  it('can be invoked by the gateway role', () => {
     /*
-     * Step ordering, asserted rather than remembered.
+     * The most likely deploy-time failure of this whole feature.
      *
-     * A target naming a Lambda that does not exist yet fails at stack update,
-     * and because the Runtime depends on its targets, the rollback can leave the
-     * Runtime a version behind a proxy that is already new — engine B then
-     * answers with the fallback apology and it reads as AgentCore being slow.
-     * So the function deploys alone first. When the target lands, this test
-     * should be deleted in the same commit, not weakened.
+     * A target added without its `grantInvoke` updates the stack cleanly and then
+     * fails AccessDenied on every tool call, which the agent reports as the
+     * integration being broken rather than as a permissions gap.
      */
-    const targets = agentCoreTemplate.findResources(
-      'AWS::BedrockAgentCore::GatewayTarget',
+    const roles = agentCoreTemplate.findResources('AWS::IAM::Role');
+    const gatewayRoleId = Object.entries(roles).find(
+      ([, r]: [string, any]) =>
+        r.Properties.RoleName === `valentin-agentcore-gateway-${config.env}`,
+    )?.[0];
+    expect(gatewayRoleId).toBeDefined();
+
+    const policies = agentCoreTemplate.findResources('AWS::IAM::Policy');
+    const onGatewayRole = Object.values<any>(policies).filter((p) =>
+      JSON.stringify(p.Properties.Roles ?? []).includes(gatewayRoleId as string),
     );
-    expect(Object.keys(targets)).toHaveLength(1);
-    expect(JSON.stringify(targets)).not.toContain('integration-tools');
+    expect(onGatewayRole.length).toBeGreaterThan(0);
+
+    const invokesIntegrations = onGatewayRole
+      .flatMap((p) => p.Properties.PolicyDocument.Statement)
+      .filter(
+        (s: any) =>
+          JSON.stringify(s.Action).includes('lambda:InvokeFunction') &&
+          JSON.stringify(s.Resource).includes('IntegrationTools'),
+      );
+
+    expect(invokesIntegrations.length).toBeGreaterThan(0);
+  });
+});
+
+describe('the integrations Gateway target', () => {
+  /*
+   * The read-only tools are exposed; the seven that spend money or send messages
+   * are not. Each of those needs a paired `confirm_*` the *proxy* calls — a
+   * language model must never be the thing that confirms its own proposal — so
+   * they arrive with that machinery, not before it.
+   */
+  const READ_ONLY = [
+    'check_availability',
+    'check_shabbat',
+    'find_gift_delivery',
+    'find_music',
+    'find_occasions',
+    'find_restaurants',
+    'get_hebrew_occasions',
+    'search_activities',
+    'search_hotels',
+  ];
+
+  it('exposes exactly the nine read-only tools', () => {
+    expect(gatewayToolNames('valentin-integrations')).toEqual(READ_ONLY);
+  });
+
+  it('exposes no tool that acts without confirmation', () => {
+    for (const name of gatewayToolNames('valentin-integrations')) {
+      expect(name.startsWith('propose_')).toBe(false);
+      expect(name.startsWith('confirm_')).toBe(false);
+    }
+  });
+
+  it('asks every tool for the user and session it acts on', () => {
+    // A tool the proxy cannot attribute to a user would still run, which is the
+    // problem. The two targets share one definition of these args
+    // (`gateway-identity-args.ts`) so they cannot disagree about the spelling —
+    // if one asked for `userId`, the agent would call both alike and one would
+    // fail every time, presenting as a broken integration.
+    const tools = gatewayTarget('valentin-integrations').Properties.TargetConfiguration.Mcp
+      .Lambda.ToolSchema.InlinePayload as any[];
+
+    for (const tool of tools) {
+      expect(tool.InputSchema.Required).toContain('user_id');
+      expect(tool.InputSchema.Required).toContain('session_id');
+      expect(tool.InputSchema.Properties).toHaveProperty('user_id');
+      expect(tool.InputSchema.Properties).toHaveProperty('session_id');
+      expect(tool.Description.length).toBeGreaterThan(20);
+    }
+  });
+
+  it('carries no field the Gateway schema does not accept', () => {
+    // `requiresConfirmation` is ours: it selects the list above. Leaving it in the
+    // payload would fail at CreateStack, ten minutes into a deploy, rather than at
+    // synth.
+    const json = JSON.stringify(gatewayTarget('valentin-integrations'));
+    expect(json).not.toContain('requiresConfirmation');
+    expect(json).not.toContain('RequiresConfirmation');
+  });
+
+  it('is one of exactly two targets behind one gateway', () => {
+    // One MCP endpoint, JWT-scoped, reached by the agent for both the profile and
+    // the integrations — that single endpoint is the thing being demonstrated. A
+    // third target appearing here is a deliberate change to engine B's surface.
+    agentCoreTemplate.resourceCountIs('AWS::BedrockAgentCore::GatewayTarget', 2);
+    agentCoreTemplate.resourceCountIs('AWS::BedrockAgentCore::Gateway', 1);
+  });
+
+  it('is a dependency of the Runtime, so a cold start never lists half the tools', () => {
+    const runtimes = agentCoreTemplate.findResources('AWS::BedrockAgentCore::Runtime');
+    const dependsOn = JSON.stringify((Object.values(runtimes)[0] as any).DependsOn ?? []);
+
+    expect(dependsOn).toContain('IntegrationToolsTarget');
+    expect(dependsOn).toContain('ProfileToolsTarget');
+  });
+
+  it('cannot be tagged, and that gap is known rather than forgotten', () => {
+    /*
+     * `CfnGatewayTarget` implements neither `ITaggableV2` nor a `tags` prop, so
+     * `AWS::BedrockAgentCore::GatewayTarget` is untaggable and SpringClean's
+     * exemption cannot be applied to it. Tolerable because the parent gateway does
+     * carry the exemption and a target holds no state — `--scope=infra` recreates
+     * one in ~2 minutes. The day the service accepts `Tags`, this test fails and
+     * prompts an `addPropertyOverride`; adding one speculatively today would fail
+     * at CreateStack instead of at synth.
+     */
+    for (const name of ['valentin-profile', 'valentin-integrations']) {
+      expect(gatewayTarget(name).Properties.Tags).toBeUndefined();
+    }
   });
 });
 

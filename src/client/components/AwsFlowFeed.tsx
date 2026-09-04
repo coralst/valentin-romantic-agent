@@ -26,6 +26,14 @@ export interface FeedRow {
   action: string;
   /** True for the step currently on the diagram. */
   isCurrent?: boolean;
+  /**
+   * X-Ray trace id, when the call reported one — only engine B's Runtime does.
+   *
+   * Rendered as selectable monospace text rather than a console link: the URL
+   * differs by region and account, and a link that 404s on stage is worse than a
+   * value someone can copy. On its own line so it never squeezes the detail column.
+   */
+  traceId?: string;
 }
 
 export interface AwsFlowFeedProps {
@@ -300,53 +308,81 @@ export function AwsFlowFeed({
 
               {!isCollapsed &&
                 [...group.rows].reverse().map((row) => (
-                  <div
-                    key={row.key}
-                    data-testid="aws-feed-row"
-                    data-current={row.isCurrent ? 'true' : 'false'}
-                    style={{
-                      ...rowStyle,
-                      background: row.isCurrent
-                        ? 'linear-gradient(90deg, rgba(242,212,216,0.5), transparent)'
-                        : undefined,
-                      borderRadius: row.isCurrent ? 4 : undefined,
-                    }}
-                  >
-                    <span
-                      aria-hidden="true"
+                  // Wrapped so the trace id can sit under the row without becoming a
+                  // fifth grid column — at 48px it would have squeezed the duration.
+                  <div key={row.key}>
+                    <div
+                      data-testid="aws-feed-row"
+                      data-current={row.isCurrent ? 'true' : 'false'}
                       style={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: 2,
-                        justifySelf: 'center',
-                        background: AWS_CATEGORY_COLORS[row.category],
-                      }}
-                    />
-                    <span style={{ fontWeight: 700, color: '#2A2226', fontSize: 10 }}>
-                      {row.service}
-                    </span>
-                    <span
-                      style={{
-                        color: '#756A70',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
+                        ...rowStyle,
+                        background: row.isCurrent
+                          ? 'linear-gradient(90deg, rgba(242,212,216,0.5), transparent)'
+                          : undefined,
+                        borderRadius: row.isCurrent ? 4 : undefined,
                       }}
                     >
-                      <b style={{ color: '#2A2226', fontWeight: 600 }}>{row.operation}</b>{' '}
-                      {row.detail}
-                    </span>
-                    <span
-                      style={{
-                        textAlign: 'right',
-                        fontWeight: 700,
-                        fontSize: 10,
-                        color: '#2A2226',
-                        fontVariantNumeric: 'tabular-nums',
-                      }}
-                    >
-                      {row.durationLabel}
-                    </span>
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: 2,
+                          justifySelf: 'center',
+                          background: AWS_CATEGORY_COLORS[row.category],
+                        }}
+                      />
+                      <span style={{ fontWeight: 700, color: '#2A2226', fontSize: 10 }}>
+                        {row.service}
+                      </span>
+                      <span
+                        style={{
+                          color: '#756A70',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        <b style={{ color: '#2A2226', fontWeight: 600 }}>{row.operation}</b>{' '}
+                        {row.detail}
+                      </span>
+                      <span
+                        style={{
+                          textAlign: 'right',
+                          fontWeight: 700,
+                          fontSize: 10,
+                          color: '#2A2226',
+                          fontVariantNumeric: 'tabular-nums',
+                        }}
+                      >
+                        {row.durationLabel}
+                      </span>
+                    </div>
+                    {row.traceId && (
+                      <div
+                        data-testid="aws-feed-trace-id"
+                        title={`X-Ray trace ${row.traceId}`}
+                        style={{
+                          // Indented under the service column, so it reads as
+                          // belonging to the row above rather than as a step of its own.
+                          paddingLeft: 24,
+                          // Monospace spelled out rather than taken from a token:
+                          // there is no mono face in the design system, because this is
+                          // the only string in the app that is an identifier to be
+                          // copied rather than words to be read.
+                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                          fontSize: typography.px.micro,
+                          color: '#A3959C',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          // Selectable in one gesture, because copying it is the point.
+                          userSelect: 'all',
+                        }}
+                      >
+                        {row.traceId}
+                      </div>
+                    )}
                   </div>
                 ))}
             </div>

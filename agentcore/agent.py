@@ -139,6 +139,120 @@ def _history_messages(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return messages
 
 
+#: Arguments every Gateway tool needs and the model is never allowed to choose.
+#:
+#: Mirrors `identityArgs` in `infra/lib/gateway-identity-args.ts`, which is what
+#: puts them in the schemas the Gateway advertises. They are required there
+#: because the JWT on a Gateway call belongs to a *machine* client and carries no
+#: end-user identity, so the caller has to name the user — see the trust-boundary
+#: note at the top of `infra/lambda/profile-tools/index.mjs`.
+IDENTITY_ARGS = ("user_id", "session_id")
+
+#: Tools the proxy calls directly and the model must never see.
+#:
+#: A `confirm_*` tool carries out a proposal the user accepted. Leaving them in
+#: the list the model reads would put a language model in the authority path for
+#: spending someone's money, which is the exact thing propose-then-confirm exists
+#: to prevent. The proxy calls them over the same Gateway (see
+#: `src/server/agent/gateway-client.ts`), so nothing is lost by hiding them.
+HIDDEN_TOOL_PREFIXES = ("confirm_",)
+
+
+def _tool_suffix(name: str) -> str:
+    """The bare tool name, with Gateway's `<target>___` prefix removed."""
+    return name.rsplit("___", 1)[-1]
+
+
+def _inject_identity(original: Any, identity: dict[str, str]) -> Any:
+    """Wrap one tool entry point so the identity args are ours, not the model's.
+
+    The model's value for `user_id` is *dropped* before ours is merged in, rather
+    than merged over: `dict.update` would already win, but popping first states
+    the rule explicitly — a model must not be able to name a different user, and
+    that must be true no matter what it put in the arguments.
+
+    Returns whatever the wrapped method returns without touching it, so this
+    works for a coroutine, an async generator and a plain value alike. Strands
+    has moved tool invocation between `invoke` and `stream` across versions, and
+    this file cannot import the version it will run against.
+    """
+
+    def wrapper(tool_use: Any, *args: Any, **kwargs: Any) -> Any:
+        if isinstance(tool_use, dict):
+            merged = dict(tool_use.get("input") or {})
+            for key in identity:
+                merged.pop(key, None)
+            merged.update(identity)
+            tool_use = {**tool_use, "input": merged}
+        return original(tool_use, *args, **kwargs)
+
+    return wrapper
+
+
+def _bind_identity(tools: list[Any], identity: dict[str, str]) -> list[Any]:
+    """Bind this turn's user and session onto the Gateway's tools.
+
+    Two halves, both necessary:
+
+    1. **Strip the identity args from the schema the model sees.** A required
+       argument the model cannot know is one it will hallucinate, and a
+       hallucinated `user_id` reads a partition that does not exist — an empty
+       profile rather than an error, which is the hardest kind of bug to see.
+    2. **Inject them at call time.** Deterministically, in code, not as a line in
+       the system prompt: a prompt instruction is a request, and the thing being
+       requested here is the boundary between two users' data.
+
+    Mutating the underlying MCP tool's `inputSchema` rather than overriding
+    `tool_spec` is deliberate — `tool_spec` is derived from it in every Strands
+    version, so this survives the derivation moving.
+
+    Best-effort per tool, and loud about a failure: a tool this cannot bind is
+    dropped rather than exposed unbound, because an unbound tool is one the model
+    would be invited to fill in identity for.
+    """
+    bound: list[Any] = []
+    for tool in tools:
+        name = getattr(tool, "tool_name", "") or ""
+        if _tool_suffix(name).startswith(HIDDEN_TOOL_PREFIXES):
+            continue
+
+        try:
+            schema = getattr(getattr(tool, "mcp_tool", None), "inputSchema", None)
+            if not isinstance(schema, dict):
+                raise TypeError(f"no dict inputSchema on {name!r}")
+
+            properties = schema.get("properties")
+            if isinstance(properties, dict):
+                for key in IDENTITY_ARGS:
+                    properties.pop(key, None)
+            required = schema.get("required")
+            if isinstance(required, list):
+                schema["required"] = [key for key in required if key not in IDENTITY_ARGS]
+
+            wrapped = False
+            for method_name in ("stream", "invoke"):
+                original = getattr(tool, method_name, None)
+                if callable(original):
+                    setattr(tool, method_name, _inject_identity(original, identity))
+                    wrapped = True
+            if not wrapped:
+                raise AttributeError(f"no stream/invoke to wrap on {name!r}")
+
+            bound.append(tool)
+        except Exception as err:  # noqa: BLE001 - one tool must not cost the turn
+            log.warning(
+                json.dumps(
+                    {
+                        "event": "tool.identity_bind_failed",
+                        "tool": name,
+                        "reason": f"{type(err).__name__}: {err}",
+                    }
+                )
+            )
+
+    return bound
+
+
 def _tools_used(agent: Agent) -> list[str]:
     """Which Gateway tools the agent called, in order.
 
@@ -158,6 +272,47 @@ def _tools_used(agent: Agent) -> list[str]:
     return used
 
 
+def _proposals(agent: Agent) -> list[dict[str, Any]]:
+    """The proposals this turn's tools raised, for the proxy to render as cards.
+
+    There is no out-of-band channel for these. A `propose_*` tool returns its
+    proposal inside a tool result the model reads and then paraphrases, and the
+    paraphrase is all that would otherwise reach the proxy — so the card, its id
+    and its expiry would exist nowhere the application could act on. Hence this
+    walk over the raw tool results: `toolResult.content[].text` is the Lambda's own
+    JSON, before the model touched it.
+
+    What travels is only what the Lambda chose to put in `proposal` — the safe
+    projection. `ActionProposal.payload` stayed in DynamoDB and is not here to
+    leak.
+
+    Defensive in the same way and for the same reason as `_tools_used`: a shape
+    this cannot read costs a card, and the user simply asks again. A raise here
+    would cost the whole answer and read as an AgentCore outage.
+    """
+    found: list[dict[str, Any]] = []
+    try:
+        for message in getattr(agent, "messages", []):
+            for block in message.get("content", []) or []:
+                for part in ((block or {}).get("toolResult") or {}).get("content", []) or []:
+                    text = (part or {}).get("text")
+                    if not isinstance(text, str):
+                        continue
+                    try:
+                        parsed = json.loads(text)
+                    except (ValueError, TypeError):
+                        # A tool that answered prose rather than JSON. Every
+                        # `propose_*` tool goes through the same handler and does
+                        # not, so this is not a case worth logging per turn.
+                        continue
+                    proposal = parsed.get("proposal") if isinstance(parsed, dict) else None
+                    if isinstance(proposal, dict) and proposal.get("id"):
+                        found.append(proposal)
+    except Exception:  # noqa: BLE001 - a card is not worth an answer
+        log.warning("could not read proposals off the agent")
+    return found
+
+
 @app.entrypoint
 def invoke(payload: dict[str, Any]) -> dict[str, Any]:
     """One turn.
@@ -173,6 +328,22 @@ def invoke(payload: dict[str, Any]) -> dict[str, Any]:
     session_id = payload.get("session_id") or "unknown"
     history = payload.get("history") or []
 
+    # `user_id`, not `actor_id`. Both name the same person, but `actor_id` has been
+    # sanitised for AgentCore Memory (which rejects '#') and the Gateway's tools
+    # key DynamoDB, where a demo visitor's id really is `<sub>#<visitorId>`. Using
+    # the sanitised form here would read a partition engine A never writes. See
+    # `AgentCoreTurn.userId` in `src/server/agent/agentcore-adapter.ts`.
+    user_id = payload.get("user_id") or ""
+    if not user_id:
+        # Reachable during a rolling deploy, when a proxy older than this image
+        # invokes it. Logged rather than raised: every Gateway tool call will then
+        # fail its own `user_id` validation with a message the model can relay,
+        # and a turn that answers without touching the profile is better than a
+        # turn that does not answer.
+        log.warning(
+            json.dumps({"event": "turn.no_user_id", "sessionId": session_id})
+        )
+
     started = time.time()
     model = _build_model()
 
@@ -187,7 +358,10 @@ def invoke(payload: dict[str, Any]) -> dict[str, Any]:
 
     try:
         with gateway:
-            tools = gateway.list_tools_sync()
+            tools = _bind_identity(
+                gateway.list_tools_sync(),
+                {"user_id": user_id, "session_id": session_id},
+            )
             agent = Agent(
                 model=model,
                 system_prompt=system_prompt,
@@ -198,6 +372,7 @@ def invoke(payload: dict[str, Any]) -> dict[str, Any]:
 
             content = str(result)
             used = _tools_used(agent)
+            proposals = _proposals(agent)
 
             log.info(
                 json.dumps(
@@ -206,11 +381,14 @@ def invoke(payload: dict[str, Any]) -> dict[str, Any]:
                         "sessionId": session_id,
                         "durationMs": int((time.time() - started) * 1000),
                         "toolsUsed": used,
+                        # A count, not the proposals: they carry a venue name and a
+                        # title, and this line goes to CloudWatch.
+                        "proposals": len(proposals),
                         "historyTurns": len(history),
                     }
                 )
             )
-            return {"content": content, "tools_used": used}
+            return {"content": content, "tools_used": used, "proposals": proposals}
 
     except Exception as err:  # noqa: BLE001
         # Returned as an error field rather than raised, so the proxy sees a 200
@@ -222,6 +400,7 @@ def invoke(payload: dict[str, Any]) -> dict[str, Any]:
         return {
             "content": "",
             "tools_used": [],
+            "proposals": [],
             "error": f"{type(err).__name__}: {err}",
         }
 

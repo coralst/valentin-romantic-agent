@@ -532,6 +532,14 @@ export interface FlowBeat {
   ok?: boolean;
   actor: string;
   action: string;
+  /**
+   * X-Ray trace id, for a beat that came from a real call that reported one.
+   *
+   * Always absent on a scripted step, and that is deliberate rather than a gap: a
+   * made-up trace id would be the one value in the demo a viewer could paste into
+   * the console and find nothing behind.
+   */
+  traceId?: string;
 }
 
 /** How many beats a step is animated over: box, arrow, box, arrow, box. */

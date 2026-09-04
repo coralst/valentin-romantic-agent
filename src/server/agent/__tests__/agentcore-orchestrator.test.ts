@@ -24,6 +24,10 @@ function createMockStorage(): StorageInterface {
     ),
     getPreferencesBySession: vi.fn().mockResolvedValue([]),
     findPreference: vi.fn().mockResolvedValue(null),
+    // Reached only by a confirmed booking, and it answers with the row it was
+    // handed: `recordOuting` returns whatever the store returns, and that value is
+    // what the client is told about.
+    saveOuting: vi.fn().mockImplementation((_sessionId, outing) => Promise.resolve(outing)),
   } as unknown as StorageInterface;
 }
 
@@ -260,6 +264,206 @@ describe('AgentCoreOrchestrator', () => {
       const saved = (storage.savePreference as ReturnType<typeof vi.fn>).mock.calls[0][0];
       expect(saved.sourceMessageId).toBe(userMessage.id);
       expect(saved.sourceMessageId).not.toBe(reply.id);
+    });
+  });
+
+  /*
+   * Propose → confirm on engine B.
+   *
+   * The thing being protected is the authority boundary: the model raises a
+   * proposal and the *application* carries it out, over the Gateway, naming only an
+   * id. So these tests are mostly about what does **not** reach the Gateway — a
+   * proposal from another session, an expired one, one confirmed twice — and about
+   * the three outcomes being distinguishable in words the user can act on.
+   */
+  describe('propose → confirm', () => {
+    const raised = {
+      id: 'prop-1',
+      service: 'ontopo',
+      title: 'Dinner at Ouzeria, Sat 21:00',
+      summary: 'Table for two',
+      expiresAt: new Date(Date.now() + 600_000).toISOString(),
+      confirm: 'confirm_reservation',
+    };
+
+    let callTool: ReturnType<typeof vi.fn>;
+    let onProposal: ReturnType<typeof vi.fn>;
+    let onBooking: ReturnType<typeof vi.fn>;
+
+    /** Build an orchestrator wired to a fake Gateway, with `proposals` on the reply. */
+    function wired(proposals: unknown[] = [raised]) {
+      runtime.invoke = vi.fn().mockResolvedValue({
+        content: 'I found a table — shall I take it?',
+        toolsUsed: ['valentin-integrations___propose_reservation'],
+        proposals,
+      });
+      return new AgentCoreOrchestrator(storage, memory, runtime, 'user-abc', onPreferenceUpdate, {
+        onProposal,
+        onBooking,
+        gateway: { callTool } as never,
+      });
+    }
+
+    beforeEach(() => {
+      callTool = vi.fn().mockResolvedValue({ ok: true, summary: 'Booked for 21:00' });
+      onProposal = vi.fn();
+      onBooking = vi.fn();
+    });
+
+    it('hands each raised proposal to the client, after the agent’s words', async () => {
+      // Order matters and matches engine A: the card is attached to a message that
+      // is already in the transcript, so it never appears above its own prose.
+      const engine = wired();
+
+      await engine.handleMessage('sess-1', 'somewhere for Saturday?');
+
+      expect(onProposal).toHaveBeenCalledTimes(1);
+      const emitted = onProposal.mock.calls[0][0];
+      expect(emitted.id).toBe('prop-1');
+      expect(emitted.sessionId).toBe('sess-1');
+      // Never the reply's idea of the session — a malformed answer must not be able
+      // to address a card at another conversation.
+      expect(emitted).not.toHaveProperty('payload');
+    });
+
+    it('calls the confirm tool the proposal named, prefixed for the target', async () => {
+      const engine = wired();
+      await engine.handleMessage('sess-1', 'somewhere for Saturday?');
+
+      const reply = await engine.confirmAction('sess-1', 'prop-1');
+
+      expect(callTool).toHaveBeenCalledWith('valentin-integrations___confirm_reservation', {
+        user_id: 'user-abc',
+        session_id: 'sess-1',
+        proposal_id: 'prop-1',
+      });
+      expect(reply.content).toBe('Booked for 21:00');
+    });
+
+    it('records the outing when the booking came back with one', async () => {
+      callTool.mockResolvedValue({
+        ok: true,
+        summary: 'Booked',
+        booking: { venueName: 'Ouzeria', city: 'Tel Aviv', occursOn: '2026-09-05' },
+      });
+      const engine = wired();
+      await engine.handleMessage('sess-1', 'somewhere for Saturday?');
+
+      await engine.confirmAction('sess-1', 'prop-1');
+
+      expect(onBooking).toHaveBeenCalledTimes(1);
+      expect(onBooking.mock.calls[0][1].venueName).toBe('Ouzeria');
+    });
+
+    it('never reaches the Gateway for a proposal from another session', async () => {
+      // The store is keyed by session, so this fails before any network call. It is
+      // the assertion that matters most: a confirm is the call that spends money.
+      const engine = wired();
+      await engine.handleMessage('sess-1', 'somewhere for Saturday?');
+
+      const reply = await engine.confirmAction('sess-2', 'prop-1');
+
+      expect(callTool).not.toHaveBeenCalled();
+      expect(reply.sender).toBe('agent');
+    });
+
+    it('refuses an unknown id rather than calling something', async () => {
+      const engine = wired();
+
+      const reply = await engine.confirmAction('sess-1', 'prop-nope');
+
+      expect(callTool).not.toHaveBeenCalled();
+      expect(reply.content.length).toBeGreaterThan(0);
+    });
+
+    it('cannot confirm the same proposal twice', async () => {
+      const engine = wired();
+      await engine.handleMessage('sess-1', 'somewhere for Saturday?');
+
+      await engine.confirmAction('sess-1', 'prop-1');
+      await engine.confirmAction('sess-1', 'prop-1');
+
+      expect(callTool).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses an expired proposal without calling the Gateway', async () => {
+      const engine = wired([{ ...raised, expiresAt: new Date(Date.now() - 1000).toISOString() }]);
+      await engine.handleMessage('sess-1', 'somewhere for Saturday?');
+
+      await engine.confirmAction('sess-1', 'prop-1');
+
+      expect(callTool).not.toHaveBeenCalled();
+    });
+
+    it('says it cannot complete anything when there is no Gateway wired', async () => {
+      // Local dev and any deployment where the Cognito machine client is absent.
+      // Answered rather than thrown: the card is on screen and a throw would leave
+      // it spinning with nothing in the transcript to explain it.
+      runtime.invoke = vi
+        .fn()
+        .mockResolvedValue({ content: 'Shall I?', toolsUsed: [], proposals: [raised] });
+      const engine = new AgentCoreOrchestrator(
+        storage,
+        memory,
+        runtime,
+        'user-abc',
+        onPreferenceUpdate,
+        { onProposal },
+      );
+      await engine.handleMessage('sess-1', 'somewhere for Saturday?');
+
+      const reply = await engine.confirmAction('sess-1', 'prop-1');
+
+      expect(reply.content).toContain('no route to my booking tools');
+    });
+
+    it('does not claim a booking failed when the Gateway was unreachable', async () => {
+      /*
+       * The one outcome that must not be reported as "no": the call may have gone
+       * through and only the answer been lost, so telling her it did not happen
+       * could double-book a table.
+       */
+      callTool.mockRejectedValue(new Error('ETIMEDOUT'));
+      const engine = wired();
+      await engine.handleMessage('sess-1', 'somewhere for Saturday?');
+
+      const reply = await engine.confirmAction('sess-1', 'prop-1');
+
+      expect(reply.content).toContain("can't tell you whether that went through");
+      expect(onBooking).not.toHaveBeenCalled();
+    });
+
+    it('passes on a refusal from the service in its own words', async () => {
+      callTool.mockResolvedValue({ ok: false, summary: 'That table went while you decided.' });
+      const engine = wired();
+      await engine.handleMessage('sess-1', 'somewhere for Saturday?');
+
+      const reply = await engine.confirmAction('sess-1', 'prop-1');
+
+      expect(reply.content).toContain('That table went while you decided.');
+      expect(onBooking).not.toHaveBeenCalled();
+    });
+
+    it('will not confirm a proposal that arrived without naming its tool', async () => {
+      // What an older tool Lambda looks like mid-rolling-deploy. Guessing the
+      // confirm name from the service is the mistake this avoids.
+      const { confirm: _c, ...noConfirm } = raised;
+      const engine = wired([noConfirm]);
+      await engine.handleMessage('sess-1', 'somewhere for Saturday?');
+
+      const reply = await engine.confirmAction('sess-1', 'prop-1');
+
+      expect(callTool).not.toHaveBeenCalled();
+      expect(reply.content).toContain('no route to my booking tools');
+    });
+
+    it('still answers when the reply carried no proposals at all', async () => {
+      const engine = wired([]);
+
+      const reply = await engine.handleMessage('sess-1', 'hello');
+
+      expect(reply.content).toBe('I found a table — shall I take it?');
+      expect(onProposal).not.toHaveBeenCalled();
     });
   });
 });

@@ -23,6 +23,69 @@ import {
 const INTEGRATION_EVENT_PREFIX = 'integration.';
 
 /**
+ * The separator AgentCore Gateway puts between a target name and a tool name.
+ *
+ * Three underscores, and tool names are snake_case, so splitting on the *first*
+ * occurrence and keeping the last segment is safe: no tool name can contain it.
+ */
+const GATEWAY_NAME_SEPARATOR = '___';
+
+/**
+ * Which Lambda each Gateway target is backed by, for the span's `detail`.
+ *
+ * Replaces a hardcoded `'via valentin-profile-tools-dev'` that was true when
+ * there was one target and quietly wrong the moment there were two. Written
+ * without the `-<env>` suffix the deployed functions carry: the proxy is given no
+ * environment name, and deriving one from a table name to decorate a projected
+ * caption would be a guess in the one place a wrong guess is unnoticeable.
+ */
+const GATEWAY_TARGET_LAMBDAS: Readonly<Record<string, string>> = {
+  'valentin-profile': 'valentin-profile-tools',
+  'valentin-integrations': 'valentin-integration-tools',
+};
+
+/**
+ * Which partner each Gateway integration tool reaches.
+ *
+ * Hand-written rather than generated because this process cannot ask: the tools
+ * ran in the Lambda, and the proxy's own `buildToolRegistry()` would omit any
+ * whose credentials are not on *this* container — so a Gmail call would lose its
+ * label for a reason that has nothing to do with the call. Drift is caught
+ * instead by a unit test that reads the generated schema list and asserts every
+ * tool name appears here, which is the same guarantee without the coupling.
+ *
+ * `confirm_*` is deliberately absent: those are proxy-made calls and get their
+ * own span from `agentcore.gateway.confirm`, which knows its own duration.
+ */
+export const GATEWAY_TOOL_SERVICES: Readonly<Record<string, IntegrationId>> = {
+  check_availability: 'ontopo',
+  check_shabbat: 'hebcal',
+  create_conversation_link: 'sharing',
+  find_gift_delivery: 'wolt',
+  find_music: 'spotify',
+  find_occasions: 'events',
+  find_places_nearby: 'google-places',
+  find_restaurants: 'ontopo',
+  get_hebrew_occasions: 'hebcal',
+  propose_calendar_event: 'google-calendar',
+  propose_email: 'gmail',
+  propose_gift: 'wolt',
+  propose_hotel_booking: 'amadeus',
+  propose_playlist: 'spotify',
+  propose_reservation: 'ontopo',
+  propose_whatsapp_nudge: 'whatsapp',
+  search_activities: 'amadeus',
+  search_hotels: 'amadeus',
+};
+
+/** Split `valentin-integrations___find_restaurants` into its two halves. */
+function splitGatewayToolName(name: string): { target?: string; tool: string } {
+  const at = name.indexOf(GATEWAY_NAME_SEPARATOR);
+  if (at === -1) return { tool: name };
+  return { target: name.slice(0, at), tool: name.slice(at + GATEWAY_NAME_SEPARATOR.length) };
+}
+
+/**
  * Emits a server event to one user's clients. Same shape as `index.ts`'s
  * `emitFor`, curried the other way round.
  *
@@ -238,6 +301,8 @@ export function logRecordToSpan(record: ServerLogRecord): AwsSpan | undefined {
         // the Runtime container and redeploying it.
         usage: tokenUsage(data),
         engine: spanEngine(),
+        // The one span that has one. See `AwsSpan.traceId`.
+        traceId: str(data, 'traceId'),
       };
     }
 
@@ -264,8 +329,38 @@ export function logRecordToSpan(record: ServerLogRecord): AwsSpan | undefined {
 
     case 'agentcore.gateway': {
       const sessionId = str(data, 'sessionId');
-      const tool = str(data, 'tool');
-      if (!sessionId || !tool) return undefined;
+      const name = str(data, 'tool');
+      if (!sessionId || !name) return undefined;
+
+      const { target, tool } = splitGatewayToolName(name);
+      const partner = GATEWAY_TOOL_SERVICES[tool];
+      const detail = target ? `via ${GATEWAY_TARGET_LAMBDAS[target] ?? target}` : undefined;
+
+      /*
+       * An integration tool lights engine B's External APIs card rather than the
+       * Gateway one, and says which partner it reached — the same beat engine A
+       * draws from its own `integration.<service>` line, so the two routes tell
+       * the same story about the same Ontopo.
+       *
+       * `durationMs` is absent on both branches and that asymmetry with
+       * `agentcore.gateway.confirm` below is deliberate, not an oversight: this
+       * call happened inside the Runtime and reaches the proxy only as a name in
+       * the reply, so there is nothing measured to report. Reporting the turn's
+       * duration instead would credit a whole model call to a tool lookup. The
+       * confirm *is* made by the proxy, so it has a real number. See
+       * `AwsSpan.durationMs`.
+       */
+      if (partner) {
+        return {
+          sessionId,
+          resourceId: 'agentcore-integrations',
+          service: 'External APIs',
+          resourceName: INTEGRATION_LABELS[partner],
+          operation: tool,
+          ok: record.level !== 'error',
+          detail,
+        };
+      }
 
       return {
         sessionId,
@@ -273,12 +368,32 @@ export function logRecordToSpan(record: ServerLogRecord): AwsSpan | undefined {
         service: 'AgentCore Gateway',
         resourceName: agentCoreGatewayName(),
         // The tool name is the operation, because that is what the Gateway was
-        // asked for. `durationMs` is deliberately absent: this call happened
-        // inside the Runtime and the proxy only learns of it from the reply, so
-        // there is no measurement to report. See `AwsSpan.durationMs`.
+        // asked for.
         operation: tool,
         ok: record.level !== 'error',
-        detail: 'via valentin-profile-tools-dev',
+        detail,
+      };
+    }
+
+    case 'agentcore.gateway.confirm': {
+      const sessionId = str(data, 'sessionId');
+      const name = str(data, 'tool');
+      const durationMs = num(data, 'durationMs');
+      if (!sessionId || !name || durationMs === undefined) return undefined;
+
+      const { target, tool } = splitGatewayToolName(name);
+      // The Gateway card, not External APIs: this is the demo line — the same MCP
+      // endpoint the agent uses, called by the *application*, with the booking
+      // authority kept out of the model's hands.
+      return {
+        sessionId,
+        resourceId: 'agentcore-gateway',
+        service: 'AgentCore Gateway',
+        resourceName: agentCoreGatewayName(),
+        operation: tool,
+        durationMs,
+        ok: data?.ok !== false && record.level !== 'error',
+        detail: target ? `via ${GATEWAY_TARGET_LAMBDAS[target] ?? target}` : undefined,
       };
     }
 

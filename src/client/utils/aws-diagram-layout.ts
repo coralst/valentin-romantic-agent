@@ -133,6 +133,13 @@ export const AWS_NODE_BOXES: Readonly<Record<AwsNodeId, AwsNodeBox>> = {
   'ac-memory': { x: 1050, top: 274 },
   'ac-gateway': { x: 1050, top: 381 },
   'ac-dynamodb': { x: 1260, top: 381 },
+  // The second Lambda target, branching up off engine B's spine in the same column
+  // as the table — the mirror of `ac-memory` branching up in the Gateway's column.
+  // It could not straddle the spine as engine A's AI/Data pair does: 90px below
+  // `ac-dynamodb` is y=523 and the canvas ends at 480. It also sits outside the
+  // AgentCore box (which ends at x=1246), and that is the point — the Gateway is
+  // managed, the Lambda behind it is ours.
+  'ac-integrations': { x: 1260, top: 277 },
   // The external APIs. Engine A only, and outside both dashed boxes on purpose:
   // it is neither in the VPC nor managed by AgentCore. Sits on engine A's spine
   // in the column the Gateway uses on engine B, which is why the column heading
@@ -375,6 +382,17 @@ export const AWS_SEGMENT_GEOMETRY: Readonly<Record<AwsSegmentId, AwsSegmentGeome
     downstreamHead: '1260,426 1251,420 1251,432',
     upstreamHead: '1236,426 1245,420 1245,432',
     elbowed: false,  },
+  'ac-gateway-ac-integrations': {
+    id: 'ac-gateway-ac-integrations',
+    path: 'M1236,426 L1248,426 L1248,322 L1254,322',
+    downstreamHead: '1260,322 1251,316 1251,328',
+    upstreamHead: '1236,426 1245,420 1245,432',
+    elbowed: true,
+    // The tool Lambda sits above engine B's spine, so away-from-the-browser is up
+    // — the same pair as `ac-runtime-ac-memory` one column to the left.
+    midDownstreamHead: '1248,370 1242,379 1254,379',
+    midUpstreamHead: '1248,384 1242,375 1254,375',
+  },
   'fargate-integrations': {
     id: 'fargate-integrations',
     // Straight, and it threads the 14px gap between the Bedrock and DynamoDB
@@ -522,6 +540,14 @@ export const AWS_NODE_VISUALS: Readonly<Record<AwsNodeId, AwsNodeVisual>> = {
     tile: 'linear-gradient(135deg,#7A9DFF,#527FFF)',
     glyph:
       '<ellipse cx="12" cy="5.8" rx="7.4" ry="2.9" /><path d="M4.6 5.8v12.4c0 1.6 3.3 2.9 7.4 2.9s7.4-1.3 7.4-2.9V5.8" /><path d="M4.6 12c0 1.6 3.3 2.9 7.4 2.9s7.4-1.3 7.4-2.9" />',
+  },
+  // Deliberately identical to `integrations`: it is the same Ontopo and the same
+  // Meta, reached the other way. Giving engine B's copy its own colour would say
+  // the partners differ, when the only thing that differs is the route in.
+  'ac-integrations': {
+    tile: 'linear-gradient(135deg,#B8536B,#8C2F45)',
+    glyph:
+      '<path d="M13.5 4.5H6A1.5 1.5 0 0 0 4.5 6v12A1.5 1.5 0 0 0 6 19.5h7.5" /><path d="M10.5 12h10M17 8.2l3.5 3.8-3.5 3.8" />',
   },
 };
 

@@ -23,6 +23,10 @@ describe('parseRuntimeReply', () => {
     expect(parseRuntimeReply('{"content":"Hello","tools_used":["get_partner_profile"]}')).toEqual({
       content: 'Hello',
       toolsUsed: ['get_partner_profile'],
+      // Always present, never absent: `proposals` is the field engine B's
+      // propose→confirm rides on, and a caller that had to check for its
+      // existence would be a caller that forgets to.
+      proposals: [],
     });
   });
 
@@ -41,6 +45,7 @@ describe('parseRuntimeReply', () => {
     expect(parseRuntimeReply('Internal Server Error')).toEqual({
       content: 'Internal Server Error',
       toolsUsed: [],
+      proposals: [],
     });
   });
 
@@ -49,7 +54,90 @@ describe('parseRuntimeReply', () => {
   });
 
   it('treats an empty body as an empty answer, not an exception', () => {
-    expect(parseRuntimeReply('   ')).toEqual({ content: '', toolsUsed: [] });
+    expect(parseRuntimeReply('   ')).toEqual({ content: '', toolsUsed: [], proposals: [] });
+  });
+
+  /*
+   * The proposals engine B raises.
+   *
+   * There is no out-of-band channel for these: the proposal is produced inside a
+   * Gateway tool call the proxy never observes, so it rides back on the reply body
+   * that `agent.py` builds. The two images deploy on separate tags, so every
+   * assertion here is about tolerating a shape from the other side's version —
+   * losing a card is recoverable (the user asks again), losing the answer reads as
+   * an AgentCore outage.
+   */
+  describe('proposals', () => {
+    const raised = {
+      id: 'prop-1',
+      service: 'ontopo',
+      title: 'Dinner at Ouzeria, Sat 21:00',
+      summary: 'Table for two',
+      url: 'https://ontopo.example/x',
+      expiresAt: '2026-09-05T18:00:00.000Z',
+      confirm: 'confirm_reservation',
+    };
+
+    it('reads a proposal the agent raised', () => {
+      const reply = parseRuntimeReply(
+        JSON.stringify({ content: 'Found one.', proposals: [raised] }),
+      );
+
+      expect(reply.proposals).toEqual([raised]);
+    });
+
+    it('tolerates an older agent that sends no proposals at all', () => {
+      // Ship `agent.py` first and this is the state for a few minutes; ship the
+      // proxy first and it is the state for a few minutes the other way.
+      expect(parseRuntimeReply('{"content":"Hi"}').proposals).toEqual([]);
+      expect(parseRuntimeReply('{"content":"Hi","proposals":"nope"}').proposals).toEqual([]);
+    });
+
+    it('drops an entry missing a field the card cannot do without', () => {
+      // No `expiresAt` would become a card that never expires; no `id` a Confirm
+      // button that silently does nothing.
+      const { expiresAt: _e, ...noExpiry } = raised;
+      const { id: _i, ...noId } = raised;
+      const reply = parseRuntimeReply(
+        JSON.stringify({ content: 'x', proposals: [noExpiry, noId, null, 7, raised] }),
+      );
+
+      expect(reply.proposals).toHaveLength(1);
+      expect(reply.proposals[0]?.id).toBe('prop-1');
+    });
+
+    it('accepts snake_case expiry, since the Lambda and the agent could disagree', () => {
+      const { expiresAt, ...rest } = raised;
+      const reply = parseRuntimeReply(
+        JSON.stringify({ content: 'x', proposals: [{ ...rest, expires_at: expiresAt }] }),
+      );
+
+      expect(reply.proposals[0]?.expiresAt).toBe(expiresAt);
+    });
+
+    it('omits url rather than carrying an empty one', () => {
+      const reply = parseRuntimeReply(
+        JSON.stringify({ content: 'x', proposals: [{ ...raised, url: '' }] }),
+      );
+
+      expect(reply.proposals[0]).not.toHaveProperty('url');
+    });
+
+    it('ignores a confirm that is not a confirm tool name', () => {
+      /*
+       * This is the field the proxy turns into a Gateway call, so it is the one
+       * place a malformed reply could make the application invoke something it was
+       * not asked to. Dropping it costs a card; following it could book anything.
+       */
+      const reply = parseRuntimeReply(
+        JSON.stringify({
+          content: 'x',
+          proposals: [{ ...raised, confirm: 'delete_everything' }],
+        }),
+      );
+
+      expect(reply.proposals[0]).not.toHaveProperty('confirm');
+    });
   });
 });
 
@@ -198,6 +286,7 @@ describe('BedrockAgentCoreRuntime wire calls', () => {
     const reply = await runtime.invoke({
       sessionId: '3f2504e0-4f89-11d3-9a0c-0305e82c3301',
       actorId: 'user-abc',
+      userId: 'user-abc',
       prompt: 'She loves jazz',
       systemPrompt: 'You are Valentin',
       history: [
@@ -214,6 +303,7 @@ describe('BedrockAgentCoreRuntime wire calls', () => {
     expect(reply).toEqual({
       content: 'Lovely.',
       toolsUsed: [],
+      proposals: [],
       runtimeSessionId: 'rt-1',
       traceId: 'trace-1',
     });
@@ -231,6 +321,33 @@ describe('BedrockAgentCoreRuntime wire calls', () => {
     expect(payload.history).toEqual([{ role: 'assistant', content: 'Hello!' }]);
   });
 
+  it('sends user_id raw and actor_id sanitised, because they key different stores', async () => {
+    // A demo visitor's storage id. `actor_id` must lose the '#' (AgentCore Memory
+    // rejects it) and `user_id` must keep it (the Gateway's profile tools build
+    // the DynamoDB partition key engine A writes). Sending the sanitised form as
+    // `user_id` would read an empty profile rather than fail — see
+    // `AgentCoreTurn.userId`.
+    const scoped = 'c47804a8-8011-70e8-c93d-4b2aab524be3#dc727a97-282e-436a-ad00-b1c110a75173';
+    send.mockResolvedValue({ response: '{"content":"ok"}' });
+
+    await runtime.invoke({
+      sessionId: 's',
+      actorId: scoped,
+      userId: scoped,
+      prompt: 'p',
+      systemPrompt: 'sp',
+      history: [],
+    });
+
+    const payload = JSON.parse(
+      new TextDecoder().decode(send.mock.calls[0][0].input.payload),
+    );
+    expect(payload.user_id).toBe(scoped);
+    expect(payload.actor_id).toBe(actorIdFor(scoped));
+    expect(payload.actor_id).not.toContain('#');
+    expect(payload.user_id).not.toBe(payload.actor_id);
+  });
+
   it('reads a streaming body through transformToString', async () => {
     send.mockResolvedValue({
       response: { transformToString: () => Promise.resolve('{"content":"streamed"}') },
@@ -238,6 +355,7 @@ describe('BedrockAgentCoreRuntime wire calls', () => {
     const reply = await runtime.invoke({
       sessionId: 's',
       actorId: 'u',
+      userId: 'u',
       prompt: 'p',
       systemPrompt: 'sp',
       history: [],
@@ -280,7 +398,7 @@ describe('BedrockAgentCoreRuntime wire calls', () => {
   it('propagates an invoke failure instead of inventing an answer', async () => {
     send.mockRejectedValue(new Error('AccessDeniedException'));
     await expect(
-      runtime.invoke({ sessionId: 's', actorId: 'u', prompt: 'p', systemPrompt: 'sp', history: [] }),
+      runtime.invoke({ sessionId: 's', actorId: 'u', userId: 'u', prompt: 'p', systemPrompt: 'sp', history: [] }),
     ).rejects.toThrow('AccessDeniedException');
   });
 });

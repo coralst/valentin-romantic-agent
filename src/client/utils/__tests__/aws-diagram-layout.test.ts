@@ -349,8 +349,9 @@ describe('the external APIs column', () => {
 describe('mid-leg chevrons', () => {
   it('marks exactly the links that bend', () => {
     expect([...ELBOWED_SEGMENTS].sort()).toEqual([
-      // Engine B needs two: the drop from the ALB into its own band, and Memory
-      // branching up off its spine.
+      // Engine B needs three: the drop from the ALB into its own band, and both
+      // Memory and the integration tools branching up off its spine.
+      'ac-gateway-ac-integrations',
       'ac-runtime-ac-memory',
       'alb-ac-proxy',
       'cloudfront-s3',

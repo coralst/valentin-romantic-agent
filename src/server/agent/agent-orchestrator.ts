@@ -331,7 +331,7 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
       );
     }
 
-    const ctx = { sessionId, userId: this.tools.userId ?? '' };
+    const ctx = { sessionId, userId: this.tools.userId ?? '', storage: this.storage };
     const result = pending.tool.confirm
       ? await pending.tool.confirm(pending.proposal, ctx)
       : await runTool(pending.tool, { confirm: proposalId }, ctx);
@@ -429,6 +429,7 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
         registry,
         sessionId,
         userId: this.tools.userId ?? '',
+        storage: this.storage,
       });
       return { text: result.text, proposals: result.proposals };
     };

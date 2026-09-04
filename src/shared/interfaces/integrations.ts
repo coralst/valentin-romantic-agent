@@ -56,7 +56,21 @@ export type IntegrationId =
    * outside services a visitor grants or revokes, and there is nothing here to
    * connect — the same reasoning `browser` is left out on.
    */
-  | 'sharing';
+  | 'sharing'
+  /**
+   * Valentin writing a reminder into this app's own table.
+   *
+   * Like `sharing`, not a third party: `set_reminder` writes a row the dispatcher
+   * already sweeps, so it is always ready and there is nothing to connect. It earns
+   * an id for the same reason — `AgentTool.service` is an `IntegrationId` and drives
+   * telemetry, and filing a reminder under `gmail` would both misdescribe it and
+   * make it look unavailable whenever Google credentials were absent, which is
+   * false: the row is written either way, and only its *delivery* depends on Gmail.
+   *
+   * Deliberately **not** a row in `integration-catalogue.ts`, on the same reasoning
+   * as `sharing` and `browser`.
+   */
+  | 'reminders';
 
 /** Every id, for iteration. Same order the tool registry registers them in. */
 export const INTEGRATION_IDS: readonly IntegrationId[] = [
@@ -72,6 +86,7 @@ export const INTEGRATION_IDS: readonly IntegrationId[] = [
   'events',
   'google-places',
   'sharing',
+  'reminders',
 ] as const;
 
 /**
@@ -117,6 +132,10 @@ export const INTEGRATION_TRANSPORT: Record<IntegrationId, IntegrationTransport> 
   // Not a network hop at all — the token is signed in-process and the guest view
   // is served by this same container. `direct` is the honest of the two.
   sharing: 'direct',
+  // Not a network hop either — a write to our own table. `direct` on the same
+  // reasoning as `sharing`: the two transports are HTTP and browser, and of those
+  // this is the one that fails cleanly in milliseconds.
+  reminders: 'direct',
 };
 
 /**
@@ -189,6 +208,7 @@ export const INTEGRATION_LABELS: Record<IntegrationId, string> = {
   browser: 'Headless browser',
   'google-places': 'Google Places',
   sharing: 'Shareable links',
+  reminders: 'Reminders',
 };
 
 /** The ids reached by driving a page, for the panel's relay layout. */

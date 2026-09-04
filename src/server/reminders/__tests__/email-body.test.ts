@@ -62,6 +62,39 @@ describe('buildReminderEmail', () => {
     expect(subject).toContain('Samantha');
   });
 
+  /*
+   * A reminder he set himself is already a phrase in his own voice, so the possessive
+   * treatment `occasion` gets turns "Call the florist" into "Her call the florist is
+   * a week away". The title is used exactly as written, in the subject and the body.
+   */
+  it('uses a hand-set title verbatim, with no name and no possessive', () => {
+    const { subject, body } = build({
+      title: 'Call the florist',
+      occasion: 'Call the florist',
+    });
+
+    expect(subject).toContain('Call the florist is a week away');
+    expect(subject).not.toContain('Samantha');
+    expect(body).toContain('Call the florist is on');
+    expect(body).not.toMatch(/Her call the florist/i);
+  });
+
+  it('does not apologise for finding no restaurants when none were wanted', () => {
+    const { body } = build({ title: 'Call the florist', suggestions: [] });
+    // He asked to be reminded, not for ideas. The empty-search apology is the right
+    // thing to say about a birthday and nonsense about an errand.
+    expect(body).not.toMatch(/worth suggesting/);
+    expect(body).not.toMatch(/Pick one/);
+    expect(body).toContain('you asked me to remind you');
+  });
+
+  it('still points a hand-set reminder back at the conversation', () => {
+    const { body } = build({ title: 'Call the florist', sessionId: 'sess-9' });
+    // The link is the whole reason the mail is worth opening, and it must not depend
+    // on which of the two grammars produced the headline.
+    expect(body).toContain('?s=sess-9');
+  });
+
   it('falls back to "Her" when the name is not known', () => {
     const { subject, body } = build({ partnerName: null });
     expect(subject).not.toContain('null');

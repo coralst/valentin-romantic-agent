@@ -11,6 +11,7 @@ import { woltTools } from './wolt/tools';
 import { placesConfigured } from './google-places/client';
 import { googlePlacesTools } from './google-places/tools';
 import { sharingTools } from '../sharing/tools';
+import { reminderTools } from '../reminders/tools';
 import { spotifyTools } from './spotify/tools';
 import { spotifyFixtureMode } from './spotify/client';
 
@@ -114,6 +115,17 @@ export function integrationReadiness(): Record<IntegrationId, boolean> {
      * a restart but never makes minting one impossible.
      */
     sharing: true,
+    /*
+     * Always true, and deliberately not folded into `gmail`.
+     *
+     * Setting a reminder is a row in our own table, which always succeeds; whether
+     * the *mail* can go out is `gmail`'s business, and the dispatcher already falls
+     * back to the log channel when it cannot. Gating this on the Google token would
+     * take the tool away from a deployment that can still record the reminder
+     * perfectly well — and would silently lose the one thing a user asked for,
+     * where the fallback merely delays it.
+     */
+    reminders: true,
   };
 }
 
@@ -177,6 +189,9 @@ export function buildToolRegistry(): ToolRegistry {
   // `integrationReadiness` gives — and load-bearing for the reminder flow, since
   // "email me the options" is worth little if the mail cannot point back here.
   if (ready.sharing) tools.push(...sharingTools);
+  // Setting a reminder on purpose, rather than as a side effect of extraction. Needs
+  // no credential; it needs `ToolContext.storage`, and refuses politely without it.
+  if (ready.reminders) tools.push(...reminderTools);
   /*
    * The playlist for the drive there. Search needs only an app credential, so this
    * is on for any deployment holding an id and secret — saving to a library is the

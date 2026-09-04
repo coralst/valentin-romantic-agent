@@ -62,6 +62,11 @@ const PLACEHOLDER_ENV = {
   WHATSAPP_TOKEN: 'schema-generation-only',
   SPOTIFY_CLIENT_ID: 'schema-generation-only',
   SPOTIFY_CLIENT_SECRET: 'schema-generation-only',
+  // Read into a module variable at first import of the Places client, which is why
+  // this one must be set before the dynamic import below like all the others —
+  // `primePlacesKey()` is the async path and is deliberately not called here, since
+  // this process makes no network request.
+  GOOGLE_PLACES_API_KEY: 'schema-generation-only',
 } as const;
 
 /** One tool as the Gateway's `inlinePayload` wants it. */

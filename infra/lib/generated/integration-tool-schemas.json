@@ -70,6 +70,28 @@
     }
   },
   {
+    "name": "create_conversation_link",
+    "description": "Create a shareable read-only link to THIS conversation, so someone who is not signed in can read it, or so the user can return to it later from another device. Takes no arguments — it always links to the conversation you are in. Returns an absolute URL that expires. Call this whenever the user asks for a link to the chat, asks you to send or email them a link, or asks how to show this conversation to somebody. Never write such a URL yourself: the link is signed and one you invent will not open. To email it, call this first and put the URL it returns into the body of propose_email.",
+    "requiresConfirmation": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Storage id of the signed-in user, supplied by the proxy service"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "The conversation session id"
+        }
+      },
+      "required": [
+        "user_id",
+        "session_id"
+      ]
+    }
+  },
+  {
     "name": "find_gift_delivery",
     "description": "Find flowers, wine, chocolates or a gift that can be delivered today in an Israeli city, via Wolt. Returns real shops with delivery estimates and whether they are open right now. Use this when the user wants something sent rather than booked. It only looks — use propose_gift once they have chosen.",
     "requiresConfirmation": false,
@@ -170,8 +192,54 @@
     }
   },
   {
+    "name": "find_places_nearby",
+    "description": "Discover real restaurants within a radius of a coordinate or a city, using Google Places. Use this when the user asks what is near them or near a place, or when their own city and radius are known and no bookable venue fits. DISCOVERY ONLY: nothing returned here can be booked through Valentin. Never offer to reserve one of these — say the user would book it themselves, and use find_restaurants for anything you can actually hold a table at.",
+    "requiresConfirmation": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Storage id of the signed-in user, supplied by the proxy service"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "The conversation session id"
+        },
+        "city": {
+          "type": "string",
+          "description": "Where to search from, e.g. \"Ra'anana\". Use the home city you already know unless the user names somewhere else. Omit if passing lat/lon."
+        },
+        "lat": {
+          "type": "number",
+          "description": "Latitude to search from. Only when a precise point is known."
+        },
+        "lon": {
+          "type": "number",
+          "description": "Longitude to search from."
+        },
+        "radius_km": {
+          "type": "number",
+          "description": "How far out to look, in kilometres. Defaults to the radius the user has set, or 10. Their stored value is one of: 1 km, 3 km, 5 km, 10 km, 25 km, 50 km."
+        },
+        "keyword": {
+          "type": "string",
+          "description": "Optional refinement matched against place names — a cuisine or a style like \"italian\" or \"wine\". Omit to see what is simply nearby."
+        },
+        "limit": {
+          "type": "number",
+          "description": "How many to return, up to 5."
+        }
+      },
+      "required": [
+        "user_id",
+        "session_id"
+      ]
+    }
+  },
+  {
     "name": "find_restaurants",
-    "description": "Search the restaurants Valentin can book in Tel Aviv and Jaffa, by mood, cuisine or neighbourhood — \"quiet and romantic\", \"wine bar\", \"Jaffa\", \"Italian\". Returns names with a short note on each. Use this first when the user has not named a specific place, then check_availability on the one they like. Only these venues are bookable; do not offer a restaurant that is not in the result.",
+    "description": "Search the restaurants Valentin can book in Tel Aviv and Jaffa, by mood, cuisine or neighbourhood — \"quiet and romantic\", \"wine bar\", \"Jaffa\", \"Italian\". Pass style and radius_km when the profile records them, so the shortlist matches what they already told you. Returns names with a short note on each. Use this first when the user has not named a specific place, then check_availability on the one they like. Only these venues are bookable; do not offer a restaurant that is not in the result.",
     "requiresConfirmation": false,
     "inputSchema": {
       "type": "object",
@@ -187,6 +255,34 @@
         "query": {
           "type": "string",
           "description": "What they are after: a mood, a cuisine, a neighbourhood, or a name. Omit to see the default shortlist."
+        },
+        "style": {
+          "type": "string",
+          "enum": [
+            "Romantic & quiet",
+            "Lively & buzzy",
+            "Chef's tasting",
+            "Wine bar",
+            "Rooftop or view",
+            "Casual neighbourhood"
+          ],
+          "description": "The stored restaurant_style, passed verbatim. Anything else is ignored."
+        },
+        "near": {
+          "type": "string",
+          "description": "The city to measure the radius from — normally their home_city. Required for radius_km unless you pass lat and lon."
+        },
+        "lat": {
+          "type": "number",
+          "description": "Latitude to measure from, if known."
+        },
+        "lon": {
+          "type": "number",
+          "description": "Longitude to measure from, if known."
+        },
+        "radius_km": {
+          "type": "number",
+          "description": "How far they will travel, from their stored search_radius. Ignored without near or lat/lon."
         },
         "limit": {
           "type": "number",

@@ -549,8 +549,26 @@ export class AgentCoreStack extends cdk.Stack {
      * naming convention is a weaker thing to key tool exposure on than the flag the
      * tool declares.
      */
+    /*
+     * Read-only, and still not exposed.
+     *
+     * `create_conversation_link` mints a signed share token. `SHARE_TOKEN_SECRET`
+     * reaches the proxy as an `ecs.Secret` and reaches this Lambda not at all, so
+     * `share-token.ts` falls back to a per-process random key — a link minted here
+     * would be signed with a key the process that serves the guest view does not
+     * have, and would fail verification every time. The origin is wrong too: with
+     * no base URL in this environment the link points at `localhost:5173`.
+     *
+     * A tool the agent does not have is a sentence Valentin can say. A link he
+     * hands over that silently does not open is worse, and it would look like the
+     * sharing feature being broken rather than engine B lacking a wiring. So it is
+     * withheld until the signing key and the base URL are shared with this
+     * function, and engine A keeps it exactly as it is.
+     */
+    const WITHHELD = new Set(['create_conversation_link']);
+
     const readOnlyToolSchemas = integrationToolSchemas
-      .filter((tool) => !tool.requiresConfirmation)
+      .filter((tool) => !tool.requiresConfirmation && !WITHHELD.has(tool.name))
       // `requiresConfirmation` is ours, not the Gateway's: `inlinePayload` takes
       // schema fields only, and an unknown property fails at CreateStack — ten
       // minutes into a deploy — rather than at synth.

@@ -1,5 +1,6 @@
 import { buildToolRegistry } from './index';
 import { loadRemoteCredentials } from './credential-store';
+import { primePlacesKey } from './google-places/client';
 import {
   runTool,
   type ActionProposal,
@@ -98,7 +99,12 @@ function registry(): Promise<ToolRegistry> {
     // on, so a tool call that ran before its credential arrived would report the
     // service as simply absent — which reads as "not connected" in the panel
     // while the panel says it is.
-    await loadRemoteCredentials();
+    // Two independent reads, run together because neither depends on the other
+    // and a cold start pays for both serially otherwise. The Maps key lives in
+    // its own secret with its own ARN, so it is not something `credential-store`
+    // can pick up; without this line engine B would silently lack place search
+    // while engine A had it, which reads as AgentCore losing a tool.
+    await Promise.all([loadRemoteCredentials(), primePlacesKey()]);
     return buildToolRegistry();
   })().catch((err: unknown) => {
     // Forget a failed build, so the *next* invocation tries again. Caching the
@@ -213,7 +219,12 @@ export async function handler(
     // which is what `span-bridge.ts` turns into a span. Calling `execute`
     // directly would make engine B's tool calls invisible in the Inspector while
     // engine A's were visible — a difference in the instrument, not the subject.
-    const result = await runTool(tool, input, { sessionId });
+    //
+    // `userId` is passed because a tool may need to *name* the owner — a share
+    // link carries both the conversation and whose it is — not to authorise
+    // anything. It is the id the proxy supplied, stripped from `input` above so
+    // the model cannot substitute another one.
+    const result = await runTool(tool, input, { sessionId, userId });
 
     logger.info('gateway.tool-invoked', {
       sessionId,

@@ -140,6 +140,15 @@ function gatewayTarget(name: string): any {
   return found[0];
 }
 
+/** Every tool the shared registry declares, from the generated file. */
+function committedToolNames(): string[] {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const schemas = require('../lib/generated/integration-tool-schemas.json') as Array<{
+    name: string;
+  }>;
+  return schemas.map((s) => s.name);
+}
+
 /** The tool names one target declares, sorted. */
 function gatewayToolNames(target: string): string[] {
   const tools = gatewayTarget(target).Properties.TargetConfiguration.Mcp.Lambda.ToolSchema
@@ -955,14 +964,35 @@ describe('the integrations Gateway target', () => {
     'find_gift_delivery',
     'find_music',
     'find_occasions',
+    'find_places_nearby',
     'find_restaurants',
     'get_hebrew_occasions',
     'search_activities',
     'search_hotels',
   ];
 
-  it('exposes exactly the nine read-only tools', () => {
+  it('exposes exactly the ten read-only tools it can actually honour', () => {
     expect(gatewayToolNames('valentin-integrations')).toEqual(READ_ONLY);
+  });
+
+  it('withholds the share-link tool, which this Lambda cannot sign', () => {
+    /*
+     * `create_conversation_link` is read-only and still withheld.
+     * `SHARE_TOKEN_SECRET` is an `ecs.Secret` on the proxy and absent here, so
+     * `share-token.ts` signs with a per-process random key — the process serving
+     * the guest view could never verify it — and the link's origin falls back to
+     * localhost. A link handed over that silently does not open reads as sharing
+     * being broken, where a missing tool is a sentence Valentin can say.
+     *
+     * Delete this test in the commit that gives the function the signing key and
+     * the base URL, not before.
+     */
+    expect(gatewayToolNames('valentin-integrations')).not.toContain(
+      'create_conversation_link',
+    );
+    // Engine A still has it: this is a Gateway exposure decision, not a change to
+    // the registry both engines share.
+    expect(committedToolNames()).toContain('create_conversation_link');
   });
 
   it('exposes no tool that acts without confirmation', () => {

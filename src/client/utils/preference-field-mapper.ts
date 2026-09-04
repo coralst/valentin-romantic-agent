@@ -177,6 +177,44 @@ const KEY_SYNONYMS: Readonly<Record<string, string | null>> = {
   'surprise preference': 'surprise_preference',
   surprise: 'surprise_preference',
   'like surprise': 'surprise_preference',
+  // --- next_occasion ---
+  'next occasion': 'next_occasion',
+  'upcoming occasion': 'next_occasion',
+  occasion: 'next_occasion',
+  'next date': 'next_occasion',
+  'planning for': 'next_occasion',
+  // --- home_city ---
+  'home city': 'home_city',
+  city: 'home_city',
+  'lives in': 'home_city',
+  'based in': 'home_city',
+  location: 'home_city',
+  // --- restaurant_style ---
+  'restaurant style': 'restaurant_style',
+  'dining style': 'restaurant_style',
+  atmosphere: 'restaurant_style',
+  vibe: 'restaurant_style',
+  // --- reminder_lead_time ---
+  'reminder lead time': 'reminder_lead_time',
+  'lead time': 'reminder_lead_time',
+  notice: 'reminder_lead_time',
+  'reminder timing': 'reminder_lead_time',
+  // --- search_radius ---
+  'search radius': 'search_radius',
+  radius: 'search_radius',
+  'travel distance': 'search_radius',
+  // --- notify_email ---
+  //
+  // Bare `email` is safe here where a bare `name` would not be: nothing else in
+  // the registry holds an address, so there is no second field this could be
+  // filed under by mistake.
+  email: 'notify_email',
+  'email address': 'notify_email',
+  'notify email': 'notify_email',
+  'notification email': 'notify_email',
+  'reminder email': 'notify_email',
+  'my email': 'notify_email',
+  'contact email': 'notify_email',
 
   // --- deliberately NOT profile fields (see `KeepInMind.tsx`) ---
   allergy: null,
@@ -198,10 +236,16 @@ const KEY_SYNONYMS: Readonly<Record<string, string | null>> = {
  * category already tells us where it belongs — a `hobbies` preference is a hobby,
  * whatever the key says.
  *
- * Only categories that map to a single field are listed. `food` is deliberately
- * absent: a `food` preference may be a cuisine OR an allergy, and defaulting an
- * allergy into `favorite_cuisine` would be worse than dropping it. Likewise
- * `gifts`, `personality_traits` and `important_dates` span several fields.
+ * Only categories with one plausible *fallback* field are listed. `food` is
+ * deliberately absent: a `food` preference may be a cuisine OR an allergy, and
+ * defaulting an allergy into `favorite_cuisine` would be worse than dropping it.
+ * Likewise `gifts`, `personality_traits` and `important_dates` span several fields.
+ *
+ * `travel` now spans three fields — destination, home city, search radius — and
+ * still defaults to the destination, because that is the only one of the three a
+ * *model* invents a key for. A home city and a radius arrive through named paths
+ * (the location button, the dossier's own enum) whose keys always match a registry
+ * mapping exactly, so they never reach this fallback.
  */
 const CATEGORY_DEFAULT_FIELD: Partial<Record<PreferenceCategory, string>> = {
   hobbies: 'hobbies',

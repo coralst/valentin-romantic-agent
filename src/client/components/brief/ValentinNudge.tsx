@@ -8,6 +8,14 @@ interface ValentinNudgeProps {
   onAsk?: () => void;
   /** Dismisses this nudge so the next-ranked gap takes the slot. */
   onLater?: () => void;
+  /**
+   * A control that answers this gap in place, for the gaps that do not need a
+   * conversation — today, only the home city.
+   *
+   * Passed in rather than chosen here: the nudge knows how to look like Valentin
+   * talking, and nothing about geolocation, cities or routes.
+   */
+  answerHere?: React.ReactNode;
 }
 
 const nudgeStyle: React.CSSProperties = {
@@ -79,6 +87,11 @@ const reasonStyle: React.CSSProperties = {
   fontWeight: typography.weights.medium,
 };
 
+/** Holds an in-place answer control between the line and the buttons. */
+const answerStyle: React.CSSProperties = {
+  marginTop: 10,
+};
+
 const actionsStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
@@ -121,7 +134,7 @@ const laterButtonStyle: React.CSSProperties = {
  * his crest speaks the line so it reads as Valentin talking rather than as a
  * system banner.
  */
-export function ValentinNudge({ reason, onAsk, onLater }: ValentinNudgeProps) {
+export function ValentinNudge({ reason, onAsk, onLater, answerHere }: ValentinNudgeProps) {
   return (
     <div style={nudgeStyle} data-testid="brief-nudge">
       <div style={ringStyle} aria-hidden="true" />
@@ -132,10 +145,22 @@ export function ValentinNudge({ reason, onAsk, onLater }: ValentinNudgeProps) {
         <div style={eyebrowStyle}>Valentin suggests</div>
       </div>
       <p style={reasonStyle}>{reason}</p>
+      {answerHere ? <div style={answerStyle}>{answerHere}</div> : null}
       <div style={actionsStyle}>
-        <button type="button" style={askButtonStyle} onClick={onAsk} data-testid="brief-nudge-ask">
-          Ask me about it
-        </button>
+        {/* "Ask me about it" only makes sense when the answer has to come back
+            through the conversation. When the gap can be filled right here, that
+            button would send the user to the composer to retype what is already
+            in front of them. */}
+        {answerHere ? null : (
+          <button
+            type="button"
+            style={askButtonStyle}
+            onClick={onAsk}
+            data-testid="brief-nudge-ask"
+          >
+            Ask me about it
+          </button>
+        )}
         <button
           type="button"
           style={laterButtonStyle}

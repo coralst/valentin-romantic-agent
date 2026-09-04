@@ -214,14 +214,30 @@ export class CdnStack extends cdk.Stack {
         },
       },
       defaultRootObject: 'index.html',
-      errorResponses: [
-        {
-          httpStatus: 404,
-          responseHttpStatus: 200,
-          responsePagePath: '/index.html',
-          ttl: cdk.Duration.seconds(0),
-        },
-      ],
+      /*
+       * **No custom error responses, deliberately.**
+       *
+       * There used to be a `404 -> 200 /index.html` entry here, the usual SPA
+       * fallback. It never did that job and actively broke the API, because a
+       * custom error response is **distribution-wide** — CloudFront has no way to
+       * scope one to a behavior, so it applied to `/api/*` too.
+       *
+       * It never did the SPA job because the S3 origin uses OAC, and S3 answers a
+       * request for a missing key with **403**, not 404. So no static miss ever
+       * reached this rule. (Nothing is lost by removing it either: this SPA has no
+       * router, so `/` is the only page there is.)
+       *
+       * It broke the API because every 404 the server returned came back to the
+       * browser as **200 with an HTML body**. `GET /api/share/<expired-token>`
+       * answers 404 by design, and the guest view then tried to parse index.html
+       * as JSON and reported a parse failure instead of "this link has expired".
+       * The same rewrite hit every other honest 404 — an unknown session id, a
+       * deleted outing — turning each into a nonsensical success.
+       *
+       * If a real static fallback is ever needed, it has to key off 403 and
+       * exclude the API some other way (a CloudFront Function on the default
+       * behavior), not by remapping a status the API uses.
+       */
       webAclId: webAcl.attrArn,
       priceClass: config.cloudfrontPriceClass,
       enableLogging: true,

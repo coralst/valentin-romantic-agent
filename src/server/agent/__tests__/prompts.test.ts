@@ -7,6 +7,7 @@ import {
   VALENTIN_SYSTEM_PROMPT,
   type KnownFact,
 } from '../prompts';
+import type { Outing } from '../../../shared/interfaces/outing';
 
 const samantha: KnownFact[] = [
   { key: 'partner_name', fieldId: 'partner_name', value: 'Samantha' },
@@ -105,6 +106,59 @@ describe('buildSystemPrompt', () => {
     const prompt = buildSystemPrompt([{ key: 'hobbies', fieldId: 'hobbies', value: 'pottery' }]);
     expect(prompt).toMatch(/GOAL 2 is live/);
     expect(prompt).toContain('his partner');
+  });
+
+  describe('the outing history block', () => {
+    const visit = (over: Partial<Outing> = {}): Outing => ({
+      id: `out-${Math.random()}`,
+      venueSlug: 'claro',
+      venueName: 'Claro',
+      city: 'Tel Aviv',
+      occursOn: '2026-06-12',
+      confirmedAt: '2026-06-05T09:00:00.000Z',
+      rating: null,
+      verdict: null,
+      note: null,
+      ratedAt: null,
+      ...over,
+    });
+
+    it('is absent when they have not been anywhere', () => {
+      expect(buildSystemPrompt(samantha)).not.toMatch(/WHERE YOU HAVE ALREADY TAKEN HER/);
+    });
+
+    it('names the place, the city and the rating', () => {
+      const prompt = buildSystemPrompt(samantha, false, [visit({ rating: 4, verdict: 'again' })]);
+
+      expect(prompt).toMatch(/WHERE YOU HAVE ALREADY TAKEN HER/);
+      expect(prompt).toContain('Claro, Tel Aviv on 2026-06-12 — she rated it 4/5, "again"');
+    });
+
+    it('says an unrated place is unrated rather than implying it went well', () => {
+      const prompt = buildSystemPrompt(samantha, false, [visit()]);
+      expect(prompt).toContain('not rated yet');
+    });
+
+    it('carries the do-not-re-offer rule, which is what the rating is for', () => {
+      const prompt = buildSystemPrompt(samantha, false, [visit({ rating: 2 })]);
+      expect(prompt).toMatch(/rated 3 or below/);
+      expect(prompt).toMatch(/never present one of these as a new discovery/i);
+    });
+
+    it('caps the list, because this is sent on every single turn', () => {
+      const many = Array.from({ length: 25 }, (_, index) =>
+        visit({ venueName: `Place ${index}` }),
+      );
+
+      const prompt = buildSystemPrompt(samantha, false, many);
+
+      expect(prompt).toContain('Place 0');
+      expect(prompt).not.toContain('Place 20');
+    });
+
+    it('stays out of the opening turn, which should introduce him', () => {
+      expect(buildSystemPrompt([], false, [visit({ rating: 5 })])).not.toContain('Claro');
+    });
   });
 });
 

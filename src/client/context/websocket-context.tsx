@@ -4,6 +4,7 @@ import { useChatContext } from './chat-context';
 import { usePreferencesContext } from './preferences-context';
 import { useOptionalPeopleContext } from './people-context';
 import { useOptionalTasksContext } from './tasks-context';
+import { useOptionalOutingsContext } from './outings-context';
 import { useArchitectureEngineContext } from './architecture-engine-context';
 
 interface WebSocketContextValue {
@@ -20,14 +21,15 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const { state, dispatch: chatDispatch } = useChatContext();
   const { dispatch: preferencesDispatch } = usePreferencesContext();
   /*
-   * Optional on purpose. `PeopleProvider` and `TasksProvider` sit above this one
-   * in `App` so that `person_update` and `task_update` have somewhere to land,
-   * but plenty of tests mount the socket without either — and a connection that
-   * refused to open without a family tree attached would have the dependency
-   * backwards.
+   * Optional on purpose. `PeopleProvider`, `TasksProvider` and `OutingsProvider`
+   * sit above this one in `App` so that `person_update`, `task_update` and
+   * `outing_update` have somewhere to land, but plenty of tests mount the socket
+   * without any of them — and a connection that refused to open without a family
+   * tree attached would have the dependency backwards.
    */
   const people = useOptionalPeopleContext();
   const tasks = useOptionalTasksContext();
+  const outings = useOptionalOutingsContext();
 
   /*
    * The engine switch in the icon rail decides which backend this socket talks to.
@@ -49,6 +51,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     preferencesDispatch,
     peopleDispatch: people?.dispatch,
     tasksDispatch: tasks?.dispatch,
+    outingsDispatch: outings?.dispatch,
     sessionId: state.sessionId,
     engine,
   });

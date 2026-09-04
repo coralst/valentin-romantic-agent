@@ -34,7 +34,7 @@ import { buildToolRegistry, integrationReadiness } from '../..';
  * matters is the second one described as the first.
  */
 
-const CTX = { sessionId: 'spotify-test' };
+const CTX = { sessionId: 'spotify-test', userId: 'user-1' };
 
 const TOKEN_RESPONSE = { access_token: 'app-token', expires_in: 3600 };
 

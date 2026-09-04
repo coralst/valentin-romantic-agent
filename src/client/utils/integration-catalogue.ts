@@ -106,7 +106,42 @@ export const INTEGRATION_CATALOGUE: readonly IntegrationService[] = [
     scopes: [
       { label: 'search restaurants', detail: 'Read-only', reach: 'read' },
       { label: 'offer you a table to confirm', detail: 'The booking only happens once you press Confirm', reach: 'write' },
-      { label: 'cancel a booking he made', detail: 'Never one you made yourself', reach: 'write' },
+      /*
+       * There was a "cancel a booking he made" scope here, and no cancel tool
+       * behind it — Ontopo's integration proposes and books, and that is all.
+       * A scope the visitor grants and nothing can exercise is the same lie as a
+       * cap on a capability that cannot spend; see `defaultCapUsd`.
+       */
+    ],
+    defaultCapUsd: null,
+  },
+  /*
+   * Its own row rather than a second `backing` on Ontopo's.
+   *
+   * The two services do sit behind one user-visible job — "somewhere quiet within
+   * 10 km" needs Places to find it and Ontopo to book it — and the first draft of
+   * this collapsed them into one row for that reason. `integration-catalogue.test.ts`
+   * is right to reject that: a row is titled with its provider's name, and a row
+   * backed by two providers has no honest title. It also hides the thing a visitor
+   * most needs to see, which is that discovery can be dark while booking still
+   * works. Two rows say that by themselves.
+   *
+   * Nothing here is bookable. That is stated in the blurb because it is the one
+   * distinction the whole integration layer turns on.
+   */
+  {
+    id: 'google-places',
+    name: 'Google Places',
+    backing: ['google-places'],
+    capability: 'places near you',
+    mark: 'google-places',
+    blurb: 'Looks for somewhere within reach of you. Nothing here is his to book.',
+    scopes: [
+      {
+        label: 'find places near you',
+        detail: 'Read-only — a city or a coordinate is all it needs, and neither is stored',
+        reach: 'read',
+      },
     ],
     defaultCapUsd: null,
   },
@@ -207,12 +242,22 @@ export const INTEGRATION_CATALOGUE: readonly IntegrationService[] = [
     backing: ['amadeus'],
     capability: 'flights & hotels',
     mark: 'amadeus',
-    blurb: 'Surprise weekends, priced against the cap you set.',
+    // Not "priced against the cap you set" any more: there is no cap, because
+    // there is no purchase — see the re-check scope below.
+    blurb: 'Surprise weekends, priced for real before you commit to one.',
     scopes: [
       { label: 'search flights and rooms', detail: 'Read-only', reach: 'read' },
-      { label: 'hold a booking', detail: 'A hold, never a purchase, and always with your yes', reach: 'spend' },
+      /*
+       * This read "hold a booking", `spend`, against a $400 cap — and Amadeus
+       * holds nothing. `proposeHotelBookingTool.confirm` re-prices the offer and
+       * stops, deliberately: the booking endpoint wants a payment card in the
+       * request body, and Valentin should never hold one. So confirming is a
+       * *read* that tells you the room is still there at that price, and the cap
+       * governed a purchase that cannot happen.
+       */
+      { label: 're-check a room is still available at that price', detail: 'No hold, no payment, no card details — you book with the hotel yourself', reach: 'read' },
     ],
-    defaultCapUsd: 400,
+    defaultCapUsd: null,
   },
   {
     /*

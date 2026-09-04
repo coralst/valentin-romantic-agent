@@ -11,6 +11,7 @@ import { ExtractionError } from '../../shared/errors/extraction-error';
 import { mapCategory } from './category-mapper';
 import { isPartnerNamePreference } from './partner-name';
 import { isProfileFieldId } from '../../shared/constants/profile-fields';
+import { syncReminders, touchesReminders } from '../reminders/reminder-sync';
 
 /** Callback invoked when a preference is persisted */
 export type OnPreferenceUpdate = (
@@ -248,9 +249,17 @@ export class PreferenceExtractor implements PreferenceExtractorInterface {
       return;
     }
 
+    /*
+     * Which fields this turn actually wrote, so the reminder re-plan below can be
+     * gated on them. Collected as the identity the profile is read back by —
+     * `fieldId ?? key` — rather than the raw model output, so the gate and the
+     * lookup in `syncReminders` can never disagree about what "birthday" is.
+     */
+    const writtenFields: (string | null)[] = [];
+
     for (const raw of mergeSplitFacts(rawPreferences)) {
       try {
-        await this.processPreference(raw, message);
+        writtenFields.push(await this.processPreference(raw, message));
       } catch (err) {
         const wrapped = new ExtractionError(
           `Failed to process preference "${raw.key}"`,
@@ -268,6 +277,19 @@ export class PreferenceExtractor implements PreferenceExtractorInterface {
         );
         // Continue processing remaining preferences
       }
+    }
+
+    /*
+     * A date on the profile is only a reminder once a row exists to sweep.
+     *
+     * Here rather than in the store's write path because it is a decision about the
+     * *profile as a whole* — the lead time alone is not a reminder, and the plan
+     * needs the birthday next to it. Guarded, because a re-plan reads the profile
+     * and writes up to three rows and almost no turn changes any of the five values
+     * it depends on.
+     */
+    if (touchesReminders(writtenFields)) {
+      await syncReminders(this.storage, message.sessionId);
     }
 
     // Sequential, and after the preferences, for a reason: both processors read
@@ -319,13 +341,21 @@ export class PreferenceExtractor implements PreferenceExtractorInterface {
     console.error(`[preference-extractor] ${wrapped.message}`, wrapped.context);
   }
 
+  /**
+   * Persist one extracted fact.
+   *
+   * Returns the identity it was filed under — `fieldId ?? key` — or null when the
+   * entry was unusable and nothing was written. The caller needs to know which
+   * fields a turn actually changed; anything derived from the profile has to be
+   * re-derived only when it moved.
+   */
   private async processPreference(
     raw: RawExtractedPreference,
     message: ChatMessage,
-  ): Promise<void> {
+  ): Promise<string | null> {
     // Map and validate category
     const category = mapCategory(raw.category);
-    if (!category) return;
+    if (!category) return null;
 
     // Validate confidence
     const confidence = Math.max(0, Math.min(1, raw.confidence));
@@ -347,7 +377,7 @@ export class PreferenceExtractor implements PreferenceExtractorInterface {
     }
 
     // Validate key/value
-    if (!raw.key?.trim() || !raw.value?.trim()) return;
+    if (!raw.key?.trim() || !raw.value?.trim()) return null;
 
     const validated: ExtractedPreference = {
       category,
@@ -445,6 +475,8 @@ export class PreferenceExtractor implements PreferenceExtractorInterface {
 
     // Notify listeners
     this.listeners?.onPreference?.(result, isNew);
+
+    return validated.fieldId ?? validated.key;
   }
 
   /**

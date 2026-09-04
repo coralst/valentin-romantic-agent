@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import type { ActionProposal, AgentTool, ToolResult } from '../tool-registry';
+import type {
+  ActionProposal,
+  AgentTool,
+  BookingRecord,
+  ToolResult,
+} from '../tool-registry';
 import {
   CHECKOUT_TTL_MS,
   createCheckout,
@@ -11,7 +16,19 @@ import {
   type BookableVenue,
   type OntopoSlot,
 } from './client';
-import { findVenues, resolveVenueName, type CuratedVenue } from './venues';
+import {
+  findVenues,
+  isRestaurantStyle,
+  resolveVenueName,
+  venueBySlug,
+  type CuratedVenue,
+} from './venues';
+import { isGeoPoint, type GeoPoint } from '../../../shared/constants/geo';
+import { RESTAURANT_STYLE_OPTIONS } from '../../../shared/constants/profile-fields';
+// The one cross-integration import in this file, and only at the tool layer: a
+// radius needs a coordinate, and `geocode` is where coordinates come from. `venues.ts`
+// stays pure so the bookable list has no dependency on a Maps key.
+import { geocode } from '../google-places/client';
 import { resolveAnyVenue, venuesInCity, knownCities } from './discovery';
 import { completeCheckout, type CheckoutGuest } from './checkout-form';
 import { config } from '../../config';
@@ -75,6 +92,16 @@ function parseDate(value: unknown): { ontopo: string; readable: string } | null 
       month: 'long',
     }),
   };
+}
+
+/**
+ * Ontopo's compact `YYYYMMDD` back to the ISO `YYYY-MM-DD` the rest of the app
+ * speaks. Returns null for anything that is not eight digits, so a malformed
+ * payload records an outing with no date rather than an invented one.
+ */
+function toIsoDate(compact: string): string | null {
+  if (!/^\d{8}$/.test(compact)) return null;
+  return `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6)}`;
 }
 
 function parseSize(value: unknown): number {
@@ -146,22 +173,58 @@ function describeSlots(slots: readonly OntopoSlot[]): string {
 }
 
 /**
+ * Resolve where "near me" is, without making the radius depend on a Maps key.
+ *
+ * Explicit coordinates win. Otherwise the city goes through `geocode`, which is
+ * cached — and the cache is seeded by `POST /api/session/:id/location` via
+ * `rememberCityCoords`, so a user who shared their position gets a working radius
+ * even on a deployment with no Places key at all. Only a cold cache needs the
+ * network, and a failure there returns `undefined` rather than throwing, so the
+ * search degrades to "no radius applied" instead of to an error.
+ */
+async function resolveNear(input: Record<string, unknown>): Promise<GeoPoint | undefined> {
+  const lat = input.lat;
+  const lon = input.lon;
+  if (typeof lat === 'number' && typeof lon === 'number' && isGeoPoint({ lat, lon })) {
+    return { lat, lon };
+  }
+
+  const near = typeof input.near === 'string' ? input.near.trim() : '';
+  if (!near) return undefined;
+  return (await geocode(near)) ?? undefined;
+}
+
+/** Kilometres in, metres out, or nothing when the model did not ask for a radius. */
+function readRadiusMetres(input: Record<string, unknown>): number | undefined {
+  const km = input.radius_km;
+  if (typeof km !== 'number' || !Number.isFinite(km) || km <= 0) return undefined;
+  // Same ceiling as the stored `search_radius` options top out at.
+  return Math.min(Math.round(km * 1000), 50_000);
+}
+
+/**
  * Narrow the field before checking any dates.
  *
- * Answers from the curated list and makes no network call, which is deliberate:
- * "somewhere romantic in Jaffa" is a question about taste, and asking Ontopo about
- * twenty venues to answer it would be twenty requests to tell the user something
- * the list already knows.
+ * Answers from the curated list and makes no network call unless a radius has to be
+ * resolved from a city name, which is deliberate: "somewhere romantic in Jaffa" is a
+ * question about taste, and asking Ontopo about twenty venues to answer it would be
+ * twenty requests to tell the user something the list already knows.
+ *
+ * `style` and `radius_km` exist because the profile now stores both. Without them
+ * the two answers the user is most likely to want — "the kind of room I said I
+ * liked", "close enough to actually go" — would be facts sitting in the dossier that
+ * no search could use.
  */
 export const findRestaurantsTool: AgentTool = {
   name: 'find_restaurants',
   description:
     'Search the restaurants Valentin can book in Tel Aviv and Jaffa, by mood, ' +
     'cuisine or neighbourhood — "quiet and romantic", "wine bar", "Jaffa", ' +
-    '"Italian". Returns names with a short note on each. Use this first when the ' +
-    'user has not named a specific place, then check_availability on the one they ' +
-    'like. Only these venues are bookable; do not offer a restaurant that is not ' +
-    'in the result.',
+    '"Italian". Pass style and radius_km when the profile records them, so the ' +
+    'shortlist matches what they already told you. Returns names with a short note ' +
+    'on each. Use this first when the user has not named a specific place, then ' +
+    'check_availability on the one they like. Only these venues are bookable; do ' +
+    'not offer a restaurant that is not in the result.',
   input_schema: {
     type: 'object',
     properties: {
@@ -170,6 +233,26 @@ export const findRestaurantsTool: AgentTool = {
         description:
           'What they are after: a mood, a cuisine, a neighbourhood, or a name. ' +
           'Omit to see the default shortlist.',
+      },
+      style: {
+        type: 'string',
+        enum: [...RESTAURANT_STYLE_OPTIONS],
+        description:
+          'The stored restaurant_style, passed verbatim. Anything else is ignored.',
+      },
+      near: {
+        type: 'string',
+        description:
+          'The city to measure the radius from — normally their home_city. ' +
+          'Required for radius_km unless you pass lat and lon.',
+      },
+      lat: { type: 'number', description: 'Latitude to measure from, if known.' },
+      lon: { type: 'number', description: 'Longitude to measure from, if known.' },
+      radius_km: {
+        type: 'number',
+        description:
+          'How far they will travel, from their stored search_radius. Ignored ' +
+          'without near or lat/lon.',
       },
       limit: { type: 'number', description: 'How many to return. Defaults to 5.' },
     },
@@ -183,22 +266,48 @@ export const findRestaurantsTool: AgentTool = {
         ? Math.min(Math.round(input.limit), 10)
         : 5;
     const query = typeof input.query === 'string' ? input.query : undefined;
-    const matches = findVenues(query, limit);
+
+    const rawStyle = typeof input.style === 'string' ? input.style.trim() : '';
+    const style = isRestaurantStyle(rawStyle) ? rawStyle : undefined;
+
+    const radiusMetres = readRadiusMetres(input);
+    const origin = radiusMetres === undefined ? undefined : await resolveNear(input);
+    // Asked for a radius but we could not work out from where. Searching without it
+    // and saying so beats both silently ignoring it and returning nothing.
+    const radiusUnresolved = radiusMetres !== undefined && origin === undefined;
+
+    const matches = findVenues(query, limit, { style, origin, radiusMetres });
+    const criteria = [
+      query ? `"${query}"` : '',
+      style ? `style ${style}` : '',
+      origin && radiusMetres ? `within ${Math.round(radiusMetres / 1000)} km` : '',
+    ]
+      .filter(Boolean)
+      .join(', ');
 
     if (matches.length === 0) {
       return {
         ok: true,
         summary:
-          `Nothing in the bookable list matches "${String(query)}". Say so rather than ` +
-          `inventing a restaurant, and offer to look for something adjacent — the list ` +
-          `covers Tel Aviv and Jaffa only.`,
+          `Nothing in the bookable list matches ${criteria || 'that'}. Say so rather ` +
+          `than inventing a restaurant, and offer to relax whichever part is the ` +
+          `constraint — the list covers Tel Aviv and Jaffa only, so a radius that ` +
+          `excludes both excludes everything.`,
         data: { venues: [] },
       };
     }
 
+    const caveat = radiusUnresolved
+      ? ' Could not work out where to measure from, so the distance limit was not ' +
+        'applied — tell them the list is Tel Aviv and Jaffa rather than implying it ' +
+        'was filtered.'
+      : '';
+
     return {
       ok: true,
-      summary: `${matches.length} option(s): ${matches.map(describeVenue).join(' | ')}`,
+      summary:
+        `${matches.length} option(s)${criteria ? ` for ${criteria}` : ''}: ` +
+        `${matches.map(describeVenue).join(' | ')}.${caveat}`,
       data: {
         venues: matches.map((venue) => ({
           slug: venue.slug,
@@ -208,6 +317,7 @@ export const findRestaurantsTool: AgentTool = {
           cuisine: venue.cuisine,
           vibes: venue.vibes,
         })),
+        radiusApplied: !radiusUnresolved && radiusMetres !== undefined,
       },
     };
   },
@@ -566,6 +676,28 @@ export const proposeReservationTool: AgentTool = {
     const when = `${readableDate ? ` on ${readableDate}` : ''} at ${formatSlotTime(time)}`;
 
     /*
+     * What her file will remember about this place.
+     *
+     * Built once, before the three ways this can end, because all three of them
+     * are the same fact: the user pressed Confirm on this venue on this date and
+     * a live checkout exists for it. Whether Ontopo's form was finished here or
+     * is finished by the reader in the next minute changes the wording of the
+     * reply, not where he is taking her — and a history that only recorded the
+     * auto-completed path would be empty in every deployment without a configured
+     * guest identity, which is all of them today.
+     *
+     * The city comes from our own curated row rather than from the payload: the
+     * proposal carries Ontopo's `area` (a seating area — "Bar", "Indoor"), which
+     * is not a place name and would read as nonsense in the dossier.
+     */
+    const booking: BookingRecord = {
+      venueSlug: slug,
+      venueName,
+      city: venueBySlug(slug)?.city ?? null,
+      occursOn: toIsoDate(date),
+    };
+
+    /*
      * Finish the form ourselves when we can, and hand over the link when we cannot.
      *
      * `guestForCheckout` returns null unless a full identity is configured, so the
@@ -591,6 +723,7 @@ export const proposeReservationTool: AgentTool = {
             guestName: outcome.guestName,
             url: checkout.url,
           },
+          booking,
         };
       }
 
@@ -613,6 +746,7 @@ export const proposeReservationTool: AgentTool = {
           url: checkout.url,
           fellBackBecause: outcome.reason,
         },
+        booking,
       };
     }
 
@@ -622,6 +756,7 @@ export const proposeReservationTool: AgentTool = {
         `Ontopo's booking page is open for ${venueName}${when} for ${size}. Give them the ` +
         `link and be clear that the table is theirs once they finish the form there.`,
       data: { booked: false, url: checkout.url, venue: venueName, time: formatSlotTime(time) },
+      booking,
     };
   },
 };

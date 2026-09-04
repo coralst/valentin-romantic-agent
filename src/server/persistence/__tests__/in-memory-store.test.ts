@@ -7,6 +7,7 @@ import type { Person } from '../../../shared/interfaces/person';
 import type { PreferenceCategory } from '../../../shared/interfaces/preference';
 import type { Task } from '../../../shared/interfaces/task';
 import { PREFERENCE_CATEGORIES } from '../../../shared/constants/categories';
+import { describeStoreConformance } from './store-conformance';
 
 /**
  * A store scoped to one throwaway user.
@@ -18,6 +19,29 @@ import { PREFERENCE_CATEGORIES } from '../../../shared/constants/categories';
 function newStore(userId = 'user-under-test'): StorageInterface {
   return new InMemoryStoreFactory().forUser(userId);
 }
+
+/*
+ * The shared spec, run against this store.
+ *
+ * It is the same call `dynamodb-store.test.ts` makes. Everything below is what is
+ * true of *this* store in particular — the property tests, and the isolation cases
+ * that need two stores from one factory.
+ *
+ * The factory is captured rather than rebuilt for the reader: the index side has to
+ * be the *same* factory's, or every row the store writes is invisible to it and the
+ * due-index half of the spec would pass by seeing nothing at all.
+ */
+const CONFORMANCE_USER = 'user-under-test';
+let conformanceFactory = new InMemoryStoreFactory();
+
+describeStoreConformance(
+  'InMemoryStore',
+  () => {
+    conformanceFactory = new InMemoryStoreFactory();
+    return conformanceFactory.forUser(CONFORMANCE_USER);
+  },
+  { makeReader: () => conformanceFactory, userId: CONFORMANCE_USER },
+);
 
 // --- Generators ---
 

@@ -22,7 +22,7 @@ import { runTool } from '../../tool-registry';
  * passing after the real shape moved.
  */
 
-const CTX = { sessionId: 'wolt-test' };
+const CTX = { sessionId: 'wolt-test', userId: 'user-1' };
 
 /** Real field names, real nesting, three venues across three product lines. */
 const PAGE = {

@@ -8,6 +8,9 @@ import { ontopoTools } from './ontopo/tools';
 import { whatsappTools } from './whatsapp/tools';
 import { browserReadyCached } from './browser/session';
 import { woltTools } from './wolt/tools';
+import { placesConfigured } from './google-places/client';
+import { googlePlacesTools } from './google-places/tools';
+import { sharingTools } from '../sharing/tools';
 import { spotifyTools } from './spotify/tools';
 import { spotifyFixtureMode } from './spotify/client';
 
@@ -96,6 +99,21 @@ export function integrationReadiness(): Record<IntegrationId, boolean> {
      */
     spotify: Boolean(integrations.spotifyClientId && integrations.spotifyClientSecret),
     events: browser,
+    /*
+     * Reads a module variable rather than the env var, because the key may arrive
+     * from Secrets Manager a moment after boot — see `primePlacesKey`. Until it
+     * lands this reports false, so the tool is simply absent rather than present
+     * and failing on the first call.
+     */
+    'google-places': placesConfigured(),
+    /*
+     * Always true. This is not an outside service — the token is signed in this
+     * process and the guest view is served by it, so there is no credential that
+     * could be missing. `share-token.ts` falls back to a per-process random key
+     * when `SHARE_TOKEN_SECRET` is unset, which weakens a link's lifetime across
+     * a restart but never makes minting one impossible.
+     */
+    sharing: true,
   };
 }
 
@@ -151,6 +169,14 @@ export function buildToolRegistry(): ToolRegistry {
   // Flowers, wine and gifts. Needs no credential — Wolt's catalogue endpoint is
   // unauthenticated — so this is on wherever the process can reach the internet.
   if (ready.wolt) tools.push(...woltTools);
+  // Discovery within a radius. Absent without a key, which is why the dining row's
+  // `backing` lists Ontopo as well — the panel then reads "live via Ontopo" rather
+  // than going dark on a capability that still half works.
+  if (ready['google-places']) tools.push(...googlePlacesTools);
+  // A link to the conversation Valentin is already in. Always on, for the reason
+  // `integrationReadiness` gives — and load-bearing for the reminder flow, since
+  // "email me the options" is worth little if the mail cannot point back here.
+  if (ready.sharing) tools.push(...sharingTools);
   /*
    * The playlist for the drive there. Search needs only an app credential, so this
    * is on for any deployment holding an id and secret — saving to a library is the

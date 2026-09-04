@@ -1,6 +1,8 @@
 import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
 import type { StorageInterface } from '../persistence/storage-interface';
 import type { KnownFact } from './prompts';
+import { outingHistory } from '../../shared/interfaces/outing';
+import type { Outing } from '../../shared/interfaces/outing';
 
 /**
  * How many other conversations to gather the partner's profile from.
@@ -90,6 +92,47 @@ export async function readAccountPreferences(
   }
 
   return [...merged.values()];
+}
+
+/**
+ * Every place he has taken her, account-wide, newest first.
+ *
+ * Built on the same `recentSessionIds` as the two functions above, for the same
+ * reason: an outing recorded in last month's conversation is still a place they
+ * have been, and a history scoped to the active session would let Valentin offer
+ * the restaurant she disliked the moment someone starts a new chat.
+ *
+ * Unlike the preference readers there is no merge key — a second dinner at the
+ * same restaurant is a second row, deliberately (see `outingSk`), and both
+ * belong in the history. Sorted here rather than in the store because DynamoDB
+ * returns them in sort-key order, which is uuid order, which is nothing.
+ */
+export async function readVisitedPlaces(
+  storage: StorageInterface,
+  sessionId: string,
+): Promise<Outing[]> {
+  const all: Outing[] = [];
+
+  for (const id of await recentSessionIds(storage, sessionId)) {
+    all.push(...(await outingsIn(storage, id)));
+  }
+
+  return outingHistory(all);
+}
+
+/** Best-effort read of one session's outings */
+async function outingsIn(storage: StorageInterface, sessionId: string): Promise<Outing[]> {
+  try {
+    return await storage.getOutingsBySession(sessionId);
+  } catch (err) {
+    // Same trade as `factsIn`: losing the history costs him one line of the
+    // prompt, where propagating would cost the user their turn.
+    console.warn(
+      '[partner-profile] could not read the outing history for the prompt:',
+      err instanceof Error ? err.message : err,
+    );
+    return [];
+  }
 }
 
 /** Best-effort read of one session's full preference rows */

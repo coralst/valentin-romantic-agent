@@ -8,6 +8,7 @@ import type {
 import {
   runTool,
   type ActionProposal,
+  type ToolContext,
   type ToolRegistry,
 } from '../integrations/tool-registry';
 import { logger } from '../logging';
@@ -42,6 +43,8 @@ export interface ToolLoopOptions {
   systemPrompt: string;
   registry: ToolRegistry;
   sessionId: string;
+  /** Passed straight through to every tool as `ToolContext.userId`. */
+  userId: string;
 }
 
 /** What the user sees if the cap is hit before the model has written anything. */
@@ -82,6 +85,7 @@ export async function runToolLoop({
   systemPrompt,
   registry,
   sessionId,
+  userId,
 }: ToolLoopOptions): Promise<ToolLoopResult> {
   const tools: ToolSchema[] = [...registry.values()].map((tool) => ({
     name: tool.name,
@@ -115,7 +119,7 @@ export async function runToolLoop({
       role: 'user',
       content: await Promise.all(
         turn.toolUses.map((request) =>
-          resolveToolUse(request, registry, sessionId, proposals),
+          resolveToolUse(request, registry, { sessionId, userId }, proposals),
         ),
       ),
     });
@@ -155,13 +159,16 @@ function knownToolNames(registry: ToolRegistry): string {
 async function resolveToolUse(
   request: ToolUseRequest,
   registry: ToolRegistry,
-  sessionId: string,
+  ctx: ToolContext,
   proposals: ActionProposal[],
 ): Promise<LlmContentBlock> {
   const tool = registry.get(request.name);
 
   if (!tool) {
-    logger.warn('agent.unknown_tool', { sessionId, requested: request.name });
+    logger.warn('agent.unknown_tool', {
+      sessionId: ctx.sessionId,
+      requested: request.name,
+    });
     return {
       toolResult: {
         toolUseId: request.toolUseId,
@@ -175,7 +182,7 @@ async function resolveToolUse(
     };
   }
 
-  const result = await runTool(tool, request.input, { sessionId });
+  const result = await runTool(tool, request.input, ctx);
 
   if (result.proposal) {
     proposals.push(result.proposal);

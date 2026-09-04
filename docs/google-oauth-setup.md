@@ -130,6 +130,84 @@ is what creates the secret. Deploy first, populate second, force a new
 deployment third. Every deploy after that leaves the value alone —
 `generateSecretString` only runs at create time.
 
+## Spotify, which works the same way with one difference
+
+`valentin/<env>/spotify-oauth` is a second secret, injected into both engines
+alongside Google's. Separate rather than three more keys in the Google secret,
+because `put-secret-value` is a whole-document write — sharing one would mean
+rewriting Google's refresh token every time Spotify's id rotates.
+
+The difference: **id and secret alone are enough.** Track search and playlist
+assembly use Spotify's client-credentials grant, which needs no user consent, so
+those two make the music row work deployed. `SPOTIFY_REFRESH_TOKEN` is needed
+only to write a playlist into a real library; without it `propose_playlist`
+confirms into a links handoff, which is a correct outcome rather than a failure.
+So unlike Google's all-or-nothing, a half-populated Spotify secret is a
+legitimate steady state.
+
+**Write the key anyway, empty.** `put-secret-value` replaces the whole document,
+and ECS resolves each key by name — so a document that simply omits
+`SPOTIFY_REFRESH_TOKEN` makes every task die at launch with
+`ResourceInitializationError`, which looks exactly like a missing IAM grant and
+sends you diagnosing the wrong thing. An empty *value* is fine: the app reads it
+as falsy and the music row degrades to the links handoff.
+
+```bash
+aws secretsmanager put-secret-value \
+  --secret-id valentin/dev/spotify-oauth \
+  --region us-east-1 \
+  --secret-string "$(python3 -c '
+import json, pathlib
+env = dict(
+    line.split("=", 1)
+    for line in pathlib.Path(".env").read_text().splitlines()
+    if line.strip() and not line.startswith("#") and "=" in line
+)
+keys = ("SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET", "SPOTIFY_REFRESH_TOKEN")
+print(json.dumps({k: env.get(k, "") for k in keys}))
+')"
+```
+
+Then force a new deployment on both services, exactly as above.
+
+One thing not to do: the secret is created with `SPOTIFY_REFRESH_TOKEN` empty on
+purpose, rather than as Secrets Manager's one *generated* key. Readiness is a
+presence check, so a random token would have the app advertise a connected
+Spotify account and promise on the confirmation card that confirming saves a
+playlist to it — then fail against the real API. Do not "tidy" that back; and
+note that editing `generateSecretString` on a live secret is not a no-op,
+CloudFormation regenerates the value and clobbers whatever you populated.
+
+## If a deploy fails with `AlreadyExists` on a secret
+
+A rolled-back deploy logs `DELETE_SKIPPED` for these secrets, because they are
+`RemovalPolicy.RETAIN`. The secret survives in Secrets Manager but is dropped
+from the stack's resource set, so every later update of that stack tries to
+**create** it again and fails:
+
+```
+The operation failed because the secret valentin/dev/google-oauth already exists.
+(HandlerErrorCode: AlreadyExists)
+```
+
+That is self-perpetuating — the failed deploy rolls back, re-orphaning it. Clear
+it before redeploying, and repopulate afterwards:
+
+```bash
+aws secretsmanager delete-secret --secret-id valentin/dev/google-oauth \
+  --force-delete-without-recovery --region us-east-1
+```
+
+`--force-delete-without-recovery` is required: a scheduled deletion holds the
+*name* for the recovery window and the deploy fails identically. Poll
+`describe-secret` until it 404s first — deletion is not instant. Nothing is lost
+as long as `.env` still holds the values, so check that before running it.
+
+`--import-existing-resources` does **not** help: in CDK 2.1134.0 that flag applies
+to stack *sets* only. `cdk import` is also out, because an IMPORT changeset may
+contain nothing but imports while this template also changes task definitions,
+IAM policies and services.
+
 ## Confirming it worked
 
 `GET /api/integrations` returns `configured: true/false` per integration and

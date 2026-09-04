@@ -17,7 +17,9 @@ import {
   partnerNameFrom,
   type KnownFact,
 } from './prompts';
-import { readKnownFacts } from './partner-profile';
+import { readKnownFacts, readVisitedPlaces } from './partner-profile';
+import { recordOuting } from './outing-recorder';
+import type { Outing } from '../../shared/interfaces/outing';
 import { LlmError } from '../../shared/errors/llm-error';
 import { logger } from '../logging';
 
@@ -70,6 +72,25 @@ export interface ToolSupport {
   registry?: ToolRegistry;
   /** Called once per proposal raised, after the agent's reply has been stored. */
   onProposal?: (proposal: ActionProposal) => void;
+  /**
+   * Called once per outing recorded, so the dossier updates without a reload.
+   *
+   * Separate from `onProposal` because the two are opposite halves of the same
+   * exchange: a proposal is a question, an outing is a thing that has happened.
+   * Optional like the rest of this interface — the HTTP path has no socket to
+   * push down, and the row is on her file either way.
+   */
+  onBooking?: (sessionId: string, outing: Outing) => void;
+  /**
+   * Who this orchestrator belongs to, passed to every tool via `ToolContext`.
+   *
+   * An orchestrator is already built per user (`forUser` in `index.ts`), so this
+   * is constructor-time knowledge rather than anything a turn decides. Optional
+   * only so the existing tests that construct one with no tools keep compiling;
+   * a tool that needs it — `create_conversation_link` — fails loudly rather than
+   * minting a link naming the empty string.
+   */
+  userId?: string;
 }
 
 /**
@@ -212,6 +233,7 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
         buildSystemPrompt(
           await this.knownFacts(sessionId),
           (this.tools.registry?.size ?? 0) > 0,
+          await readVisitedPlaces(this.storage, sessionId),
         ),
         sessionId,
       );
@@ -309,9 +331,21 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
       );
     }
 
+    const ctx = { sessionId, userId: this.tools.userId ?? '' };
     const result = pending.tool.confirm
-      ? await pending.tool.confirm(pending.proposal, { sessionId })
-      : await runTool(pending.tool, { confirm: proposalId }, { sessionId });
+      ? await pending.tool.confirm(pending.proposal, ctx)
+      : await runTool(pending.tool, { confirm: proposalId }, ctx);
+
+    // Write down where he has taken her, before the reply goes out.
+    //
+    // Awaited rather than fired and forgotten so the row exists by the time the
+    // client, reading the reply, refetches the session — but `recordOuting`
+    // never throws and never rejects the turn, because the booking already
+    // happened. Gated on `result.ok`: a failed confirm reserved nothing.
+    if (result.ok) {
+      const outing = await recordOuting(this.storage, sessionId, result.booking);
+      if (outing) this.tools.onBooking?.(sessionId, outing);
+    }
 
     return this.say(
       sessionId,
@@ -394,6 +428,7 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
         systemPrompt,
         registry,
         sessionId,
+        userId: this.tools.userId ?? '',
       });
       return { text: result.text, proposals: result.proposals };
     };

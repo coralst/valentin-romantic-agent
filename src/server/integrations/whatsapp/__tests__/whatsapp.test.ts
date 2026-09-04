@@ -47,7 +47,7 @@ function stubOk(): void {
   }));
 }
 
-const ctx = { sessionId: 'session-1' };
+const ctx = { sessionId: 'session-1', userId: 'user-1' };
 const occasionTemplate = templateByName('valentin_occasion_reminder')!;
 
 beforeEach(() => {

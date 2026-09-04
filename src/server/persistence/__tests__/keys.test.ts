@@ -5,7 +5,14 @@ import {
   MSG_PREFIX,
   PREF_PREFIX,
   msgSk,
+  outingSk,
   prefSk,
+  OUTING_PREFIX,
+  REMINDER_PREFIX,
+  DUE_PREFIX,
+  dueGsi1pk,
+  reminderGsi1sk,
+  reminderSk,
   userGsi1pk,
   sessionGsi1sk,
 } from '../keys';
@@ -136,6 +143,97 @@ describe('keys', () => {
       const a = sessionGsi1sk('2026-08-21T10:00:00.000Z', SESSION);
       const b = sessionGsi1sk('2026-08-21T10:00:00.000Z', SESSION);
       expect(a).toBe(b);
+    });
+  });
+  describe('outingSk', () => {
+    it('pins the literal', () => {
+      expect(outingSk('out-1')).toBe('OUTING#out-1');
+      expect(OUTING_PREFIX).toBe('OUTING#');
+    });
+
+    it('does not collide with a task carrying the same id', () => {
+      // Both are keyed by a uuid in the same partition, so a shared prefix would
+      // have one entity overwrite the other.
+      expect(outingSk('shared-id').startsWith('TASK#')).toBe(false);
+    });
+
+    it('rejects an empty id', () => {
+      expect(() => outingSk('')).toThrow(/non-empty string/);
+    });
+  });
+
+  describe('reminderSk', () => {
+    it('pins the literal', () => {
+      expect(reminderSk('birthday-2026-10-04')).toBe('REMINDER#birthday-2026-10-04');
+      expect(REMINDER_PREFIX).toBe('REMINDER#');
+    });
+
+    it('is derived, so re-planning the same occasion overwrites one row', () => {
+      // The id comes from `reminderId(kind, occursOn)`, so a changed lead time
+      // moves this reminder rather than adding a second mail about one birthday.
+      expect(reminderSk('birthday-2026-10-04')).toBe(reminderSk('birthday-2026-10-04'));
+    });
+
+    it('does not collide with an outing carrying the same id', () => {
+      expect(reminderSk('shared-id').startsWith(OUTING_PREFIX)).toBe(false);
+    });
+
+    it('rejects an empty id', () => {
+      expect(() => reminderSk('')).toThrow(/non-empty string/);
+    });
+  });
+
+  describe('dueGsi1pk', () => {
+    it('pins the literal', () => {
+      expect(dueGsi1pk('2026-10-04')).toBe('DUE#2026-10-04');
+      expect(DUE_PREFIX).toBe('DUE#');
+    });
+
+    // The invariant that keeps reminders out of the sidebar: `listSessions` is an
+    // equality match on the user partition, so a row here is not merely filtered
+    // out of it, it is in a partition that query never reads.
+    it('cannot collide with the partition that lists a user’s sessions', () => {
+      expect(dueGsi1pk('2026-10-04')).not.toBe(userGsi1pk(USER));
+      expect(dueGsi1pk(USER).startsWith(DUE_PREFIX)).toBe(true);
+    });
+
+    it('buckets two days apart', () => {
+      expect(dueGsi1pk('2026-10-04')).not.toBe(dueGsi1pk('2026-10-05'));
+    });
+
+    it('rejects an empty day', () => {
+      expect(() => dueGsi1pk('')).toThrow(/non-empty string/);
+    });
+  });
+
+  describe('reminderGsi1sk', () => {
+    it('pins the literal', () => {
+      expect(reminderGsi1sk('06:00:00', 'birthday-2026-10-04')).toBe(
+        'T06:00:00#birthday-2026-10-04',
+      );
+    });
+
+    it('sorts a bucket in chronological order', () => {
+      const early = reminderGsi1sk('06:00:00', 'zzz');
+      const late = reminderGsi1sk('06:00:01', 'aaa');
+      // 'zzz' > 'aaa', so an id-first key would order these backwards and a
+      // bounded sweep would read the wrong end of the day.
+      expect([late, early].sort()).toEqual([early, late]);
+    });
+
+    it('distinguishes two reminders due in the same second', () => {
+      // Routine, not exotic: every reminder in a bucket is pinned to the same
+      // local hour, so ties are the normal case.
+      expect(reminderGsi1sk('06:00:00', 'birthday-2026-10-04')).not.toBe(
+        reminderGsi1sk('06:00:00', 'anniversary-2026-10-04'),
+      );
+    });
+
+    it.each([
+      ['empty time', '', 'birthday-2026-10-04'],
+      ['empty id', '06:00:00', ''],
+    ])('rejects an %s', (_label, time, id) => {
+      expect(() => reminderGsi1sk(time, id)).toThrow(/non-empty string/);
     });
   });
 });

@@ -5,11 +5,23 @@ import {
   DeleteTableCommand,
 } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
-import { DynamoDBStore } from '../dynamodb-store';
+import { DynamoDBStore, DynamoDBStoreFactory } from '../dynamodb-store';
 import type { Person } from '../../../shared/interfaces/person';
 import type { StorageInterface } from '../storage-interface';
+import type { Reminder } from '../../../shared/interfaces/reminder';
 import type { Task } from '../../../shared/interfaces/task';
-import { META_SK, manualSk, personSk, prefSk, sessionPk, taskSk } from '../keys';
+import {
+  META_SK,
+  dueGsi1pk,
+  manualSk,
+  personSk,
+  prefSk,
+  reminderGsi1sk,
+  reminderSk,
+  sessionPk,
+  taskSk,
+} from '../keys';
+import { describeStoreConformance } from './store-conformance';
 
 /**
  * Contract tests for the DynamoDB store, run against **DynamoDB Local**.
@@ -120,6 +132,27 @@ describe.runIf(available)('DynamoDBStore (contract, DynamoDB Local)', () => {
     alice = new DynamoDBStore('alice', docClient, TABLE_NAME);
     bob = new DynamoDBStore('bob', docClient, TABLE_NAME);
   });
+
+  /*
+   * The shared spec, run against the real engine.
+   *
+   * Nested inside this describe so the table teardown/create above still runs
+   * before each of its cases, and so it disappears with the rest of the file when
+   * DynamoDB Local is not listening. Everything below is what is true of *this*
+   * store in particular: TTL attributes, (pk, sk) layout, GSI1 sparseness, rows an
+   * older build wrote, and behaviour that needs two users at once.
+   */
+  describeStoreConformance(
+    'DynamoDBStore',
+    () => new DynamoDBStore('alice', docClient, TABLE_NAME),
+    // The index reader lives on the factory, deliberately — see
+    // `ReminderIndexReader`. Two factory instances over one docClient are
+    // interchangeable here because all of the state is in the table.
+    {
+      makeReader: () => new DynamoDBStoreFactory(docClient, TABLE_NAME),
+      userId: 'alice',
+    },
+  );
 
   // --- Sessions ---
 
@@ -871,6 +904,129 @@ describe.runIf(available)('DynamoDBStore (contract, DynamoDB Local)', () => {
       expect(meta.Item!.gsi1pk).toBe('USER#alice');
       expect(message.Item).toBeDefined();
       expect(message.Item).not.toHaveProperty('gsi1pk');
+    });
+  });
+
+  // --- The due-index, as rows in the table ---
+  //
+  // GSI1 carries two disjoint kinds of row (see `keys.ts`). The conformance suite
+  // proves the *behaviour*; these prove the layout that behaviour rests on, which
+  // is a storage contract: a change here is a migration.
+
+  describe('the due-index layout', () => {
+    function reminder(sessionId: string, overrides: Partial<Reminder> = {}): Reminder {
+      return {
+        id: 'birthday-2026-10-04',
+        sessionId,
+        userId: 'alice',
+        kind: 'birthday',
+        occursOn: '2026-10-04',
+        // 09:00 Asia/Jerusalem on 2026-09-27, which is 06:00 UTC the same day.
+        dueAt: '2026-09-27T06:00:00.000Z',
+        leadDays: 7,
+        occasion: 'her birthday',
+        channel: 'log',
+        target: null,
+        sentAt: null,
+        attempts: 0,
+        lastError: null,
+        createdAt: '2026-09-01T00:00:00.000Z',
+        ...overrides,
+      };
+    }
+
+    async function readRow(sessionId: string): Promise<Record<string, unknown>> {
+      const result = await docClient.send(
+        new GetCommand({
+          TableName: TABLE_NAME,
+          Key: {
+            pk: sessionPk('alice', sessionId),
+            sk: reminderSk('birthday-2026-10-04'),
+          },
+        }),
+      );
+      expect(result.Item).toBeDefined();
+      return result.Item as Record<string, unknown>;
+    }
+
+    it('indexes a pending reminder by the UTC day and time of its dueAt', async () => {
+      const sessionId = await alice.createSession();
+
+      await alice.saveReminder(sessionId, reminder(sessionId));
+
+      const item = await readRow(sessionId);
+      expect(item.entityType).toBe('Reminder');
+      // Not `DUE#2026-09-27` because the local date happens to agree — because the
+      // *instant* does. A key built from local calendar fields would name the wrong
+      // bucket for the three hours Israel is ahead of UTC.
+      expect(item.gsi1pk).toBe(dueGsi1pk('2026-09-27'));
+      expect(item.gsi1sk).toBe(reminderGsi1sk('06:00:00', 'birthday-2026-10-04'));
+    });
+
+    it('keeps a sent reminder out of the index on a plain re-put', async () => {
+      // Not only on the markSent path: re-planning writes the whole row, and a Put
+      // that restored gsi1* would hand an already-sent birthday back to the poller.
+      const sessionId = await alice.createSession();
+
+      await alice.saveReminder(
+        sessionId,
+        reminder(sessionId, { sentAt: '2026-09-27T06:00:01.000Z' }),
+      );
+
+      const item = await readRow(sessionId);
+      expect(item).not.toHaveProperty('gsi1pk');
+      expect(item).not.toHaveProperty('gsi1sk');
+    });
+
+    it('never shows a reminder in the sidebar', async () => {
+      // The invariant behind index overloading: `listSessions` matches
+      // `gsi1pk = USER#alice` exactly, so a `DUE#…` row is not in the partition it
+      // reads — and the entityType filter says so a second time.
+      const sessionId = await alice.createSession();
+      await alice.saveReminder(sessionId, reminder(sessionId));
+
+      const sessions = await alice.listSessions();
+      expect(sessions.map((s) => s.id)).toEqual([sessionId]);
+    });
+
+    it('reads a row an older build wrote with no attempts attribute', async () => {
+      // `attempts + 1` on a string or a missing attribute is the next failure
+      // turning into a ValidationException instead of a retry.
+      const sessionId = await alice.createSession();
+      await docClient.send(
+        new PutCommand({
+          TableName: TABLE_NAME,
+          Item: {
+            pk: sessionPk('alice', sessionId),
+            sk: reminderSk('birthday-2026-10-04'),
+            id: 'birthday-2026-10-04',
+            sessionId,
+            userId: 'alice',
+            kind: 'nameday',
+            occursOn: '2026-10-04',
+            dueAt: '2026-09-27T06:00:00.000Z',
+            leadDays: 7,
+            occasion: 'her birthday',
+            createdAt: '2026-09-01T00:00:00.000Z',
+            entityType: 'Reminder',
+          },
+        }),
+      );
+
+      const [read] = await alice.getRemindersBySession(sessionId);
+      expect(read.attempts).toBe(0);
+      // An unrecognised kind is worded as a generic occasion rather than dropped,
+      // and an unrecognised channel degrades to the one that always works.
+      expect(read.kind).toBe('occasion');
+      expect(read.channel).toBe('log');
+      expect(read.sentAt).toBeNull();
+    });
+
+    it("hides a reminder from another user's scoped read", async () => {
+      const sessionId = await alice.createSession();
+      await alice.saveReminder(sessionId, reminder(sessionId));
+
+      expect(await bob.getRemindersBySession(sessionId)).toEqual([]);
     });
   });
 });

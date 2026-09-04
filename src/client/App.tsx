@@ -6,9 +6,12 @@ import { SessionProvider, useSessionContext } from './context/session-context';
 import { AuthProvider } from './context/auth-context';
 import { PeopleProvider } from './context/people-context';
 import { TasksProvider } from './context/tasks-context';
+import { OutingsProvider } from './context/outings-context';
 import { ArchitectureEngineProvider } from './context/architecture-engine-context';
 import { flattenPreferences, useSessionPersistence } from './hooks/use-session-persistence';
 import { AppLayout } from './components/AppLayout';
+import { SharedConversationView } from './components/SharedConversationView';
+import { takeShareToken } from './auth/share-view';
 import { colors, typography, spacing } from './design-system/tokens';
 
 interface ErrorBoundaryProps {
@@ -243,12 +246,33 @@ function HerRecordsProviders({ children }: { children: React.ReactNode }) {
   const { state } = useChatContext();
   return (
     <PeopleProvider sessionId={state.sessionId}>
-      <TasksProvider sessionId={state.sessionId}>{children}</TasksProvider>
+      <TasksProvider sessionId={state.sessionId}>
+        <OutingsProvider sessionId={state.sessionId}>{children}</OutingsProvider>
+      </TasksProvider>
     </PeopleProvider>
   );
 }
 
 export function App() {
+  /*
+   * A guest on a share link gets a different app, decided before anything else.
+   *
+   * `takeShareToken` read `window.location` at module-eval time, which is the only
+   * moment guaranteed to be before `cognito-oauth.ts` wipes the query string. The
+   * branch has to be *here*, above `AuthProvider`, because that provider renders
+   * `LoginScreen` for anyone not signed in — and a guest never will be. Returning
+   * early also means `SessionProvider` and the socket never mount, so nothing below
+   * fires an authenticated request there is no token for.
+   */
+  const shareToken = takeShareToken();
+  if (shareToken) {
+    return (
+      <ErrorBoundary>
+        <SharedConversationView token={shareToken} />
+      </ErrorBoundary>
+    );
+  }
+
   return (
     <ErrorBoundary>
       {/*

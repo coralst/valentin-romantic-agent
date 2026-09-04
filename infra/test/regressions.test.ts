@@ -400,11 +400,41 @@ describe('guardrail enforcement', () => {
       'CREDIT_DEBIT_CARD_NUMBER',
       'US_SOCIAL_SECURITY_NUMBER',
       'PHONE',
-      'EMAIL',
       'AWS_ACCESS_KEY',
       'AWS_SECRET_KEY',
     ]) {
       expect(actions[type]).toBe('BLOCK');
+    }
+  });
+
+  /*
+   * EMAIL used to be in the list above, and it broke the feature it was guarding.
+   * `propose_email` takes a recipient address as a required input, so "email me
+   * the options" means the visitor has to type one — and with the entity BLOCKing
+   * the prompt they could not. The turn came back `guardrail_intervened`, for
+   * which `bedrock-client.ts` substitutes a canned line, so on screen Valentin
+   * simply declined to discuss it. Reported from the live app 2026-09-03.
+   *
+   * ANONYMIZE is asserted against too, and is the subtler trap: it would let the
+   * turn through while rewriting the address into a placeholder, so the mail would
+   * be addressed to nothing and the failure would move from visible to silent.
+   */
+  it('does not block or anonymise EMAIL — a recipient is an input, not a leak', () => {
+    const actions = Object.fromEntries(
+      sensitiveInfo().PiiEntitiesConfig.map((e: any) => [e.Type, e.Action]),
+    );
+    expect(actions.EMAIL).toBeUndefined();
+  });
+
+  // The three patterns that replaced ADDRESS are address-shaped. If one of them
+  // matched an email the entity's removal would be undone without anyone editing
+  // `piiEntitiesConfig`, which is the sort of thing that only shows up live.
+  it('has no regex that catches an email address', () => {
+    for (const regex of sensitiveInfo().RegexesConfig ?? []) {
+      expect(
+        new RegExp(regex.Pattern).test('send it to koral.example@gmail.com'),
+        regex.Name,
+      ).toBe(false);
     }
   });
 });
@@ -1033,6 +1063,20 @@ describe('CloudFront reaches both engines', () => {
     expect(agentcore.ViewerProtocolPolicy).toEqual(baseline.ViewerProtocolPolicy);
   });
 
+  it('does not rewrite an API 404 into a 200 page', () => {
+    // A CloudFront custom error response is distribution-wide — it cannot be
+    // scoped to a behavior — so a `404 -> 200 /index.html` SPA fallback also
+    // rewrites every 404 the API returns. `GET /api/share/<expired>` answers 404
+    // by design, and the guest view then parses index.html as JSON. See the
+    // comment in cdn-stack.ts for why nothing is lost by having no fallback.
+    const distribution = Object.values(
+      cdnTemplate.findResources('AWS::CloudFront::Distribution'),
+    )[0] as any;
+    const custom =
+      distribution.Properties.DistributionConfig.CustomErrorResponses ?? [];
+    expect(custom.filter((r: any) => r.ErrorCode === 404)).toEqual([]);
+  });
+
   it('needs no extra behavior for engine B HTTP routes', () => {
     // `/api/*` already covers `/api/agentcore/*`, and ALL_VIEWER forwards the
     // `X-Valentin-Engine` header the third listener rule matches on.
@@ -1055,10 +1099,31 @@ describe('Google credentials reach the deployed task', () => {
 
   const GOOGLE_VARS = ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_REFRESH_TOKEN'];
 
-  it('creates the secret the credentials live in', () => {
-    computeTemplate.hasResourceProperties('AWS::SecretsManager::Secret', {
-      Name: `valentin/${config.env}/google-oauth`,
-    });
+  /**
+   * dev adopts its secrets instead of creating them, because a rolled-back deploy
+   * left them behind (they are RETAIN) and CloudFormation then failed every
+   * subsequent deploy with `AlreadyExists`. So the assertions here have to hold
+   * either way — see `adoptedSecretArns` in config/environments.ts.
+   */
+  const adoptedGoogleArn = config.adoptedSecretArns?.googleOAuth;
+
+  it('gets the credentials from the right secret, whether created or adopted', () => {
+    if (!adoptedGoogleArn) {
+      computeTemplate.hasResourceProperties('AWS::SecretsManager::Secret', {
+        Name: `valentin/${config.env}/google-oauth`,
+      });
+      return;
+    }
+    // Adoption emits no resource, so the only evidence in the template is the ARN
+    // the container is told to read. It must be a *complete* ARN: ECS cannot pull
+    // a secret from a partial one, and that failure appears at task start, never
+    // at synth — so this assertion is the only place it can be caught early.
+    expect(adoptedGoogleArn).toMatch(
+      new RegExp(`:secret:valentin/${config.env}/google-oauth-[A-Za-z0-9]{6}$`),
+    );
+    expect(JSON.stringify(containerSecrets().GOOGLE_CLIENT_ID)).toContain(
+      adoptedGoogleArn,
+    );
   });
 
   it('never puts a Google credential in the template', () => {
@@ -1071,9 +1136,25 @@ describe('Google credentials reach the deployed task', () => {
   });
 
   it('survives the account janitor, which ignores retain policies', () => {
-    computeTemplate.hasResourceProperties('AWS::SecretsManager::Secret', {
-      Tags: Match.arrayWith([{ Key: 'auto-delete', Value: 'no' }]),
-    });
+    if (!adoptedGoogleArn) {
+      computeTemplate.hasResourceProperties('AWS::SecretsManager::Secret', {
+        Tags: Match.arrayWith([{ Key: 'auto-delete', Value: 'no' }]),
+      });
+      return;
+    }
+    // An adopted secret is not this stack's resource, so there is no template tag
+    // to assert — the live one already carries `auto-delete=no` from the deploy
+    // that created it. What this file can still hold onto is that adoption is a
+    // dev-only repair: every other environment takes the create-and-tag path, and
+    // if that ever stops being true this assertion is where it is noticed.
+    for (const name of ['staging', 'prod']) {
+      // The siteUrl argument is required only because neither env has a
+      // CloudFront domain yet; it has nothing to do with what is asserted.
+      expect(
+        getConfig(name, 'https://example.invalid/').adoptedSecretArns,
+        name,
+      ).toBeUndefined();
+    }
   });
 
   for (const engine of ['valentin', 'agentcore'] as const) {
@@ -1105,6 +1186,119 @@ describe('Google credentials reach the deployed task', () => {
     // Derived from appUrls rather than restated, so the two cannot drift.
     const origin = containerEnv().PUBLIC_ORIGIN as string;
     expect(config.appUrls.callback).toContain(`${origin}/`);
+  });
+
+  // Spotify shipped (PR #102) with server code reading SPOTIFY_CLIENT_ID /
+  // SPOTIFY_CLIENT_SECRET / SPOTIFY_REFRESH_TOKEN and nothing injecting any of
+  // them, so playlists worked locally and were silently dead deployed — the exact
+  // shape of the gap Google had. Connecting from the deployed panel cannot close
+  // it either: both containers are readonlyRootFilesystem, so persistEnv's write
+  // fails with EROFS and is only logged.
+  const SPOTIFY_VARS = ['SPOTIFY_CLIENT_ID', 'SPOTIFY_CLIENT_SECRET', 'SPOTIFY_REFRESH_TOKEN'];
+
+  /**
+   * Spotify joined `adoptedSecretArns` on 2026-09-03, for the same reason Google
+   * and the share token did: the deploy that introduced the secret created it and
+   * then failed elsewhere in the stack, the rollback logged `DELETE_SKIPPED`, and
+   * every later deploy of this stack died with `AlreadyExists` on a name that was
+   * taken. So — exactly as with Google above — these assertions have to hold on
+   * both paths, because on dev there is no longer a secret resource to inspect.
+   */
+  const adoptedSpotifyArn = config.adoptedSecretArns?.spotifyOAuth;
+
+  it('reads Spotify from its own secret, separate from the Google one', () => {
+    // Separate, because put-secret-value is a whole-document write: sharing one
+    // secret would mean rewriting Google's refresh token to rotate Spotify's.
+    if (!adoptedSpotifyArn) {
+      computeTemplate.hasResourceProperties('AWS::SecretsManager::Secret', {
+        Name: `valentin/${config.env}/spotify-oauth`,
+      });
+      return;
+    }
+    // Complete ARN, for the reason spelled out on the Google case: ECS cannot pull
+    // a secret from a partial ARN, and that failure surfaces at task start rather
+    // than at synth, so this is the only place it can be caught early.
+    expect(adoptedSpotifyArn).toMatch(
+      new RegExp(`:secret:valentin/${config.env}/spotify-oauth-[A-Za-z0-9]{6}$`),
+    );
+    // Still a different secret from Google's — the separation is the invariant, and
+    // it survives adoption.
+    const secrets = containerSecrets();
+    expect(JSON.stringify(secrets.SPOTIFY_CLIENT_ID)).toContain(adoptedSpotifyArn);
+    expect(JSON.stringify(secrets.GOOGLE_CLIENT_ID)).not.toContain(adoptedSpotifyArn);
+  });
+
+  it('keeps the Spotify secret out of the janitor’s reach', () => {
+    if (!adoptedSpotifyArn) {
+      computeTemplate.hasResourceProperties('AWS::SecretsManager::Secret', {
+        Name: `valentin/${config.env}/spotify-oauth`,
+        Tags: Match.arrayWith([{ Key: 'auto-delete', Value: 'no' }]),
+      });
+      return;
+    }
+    // An adopted secret is not this stack's resource, so there is no template tag to
+    // assert; the live one carries `auto-delete=no` from the deploy that created it.
+    // What is still assertable is that adoption stays a dev-only repair.
+    for (const name of ['staging', 'prod']) {
+      expect(
+        getConfig(name, 'https://example.invalid/').adoptedSecretArns,
+        name,
+      ).toBeUndefined();
+    }
+  });
+
+  it('does not seed SPOTIFY_REFRESH_TOKEN with a generated value', () => {
+    // Readiness is Boolean(spotifyRefreshToken) and outcome() in spotify/tools.ts
+    // reads the same field to choose between saving a playlist and handing over
+    // links. A *generated* token is present but invalid, so the app would claim a
+    // connected account and promise a save it cannot perform. Empty is honest.
+    //
+    // This one is genuinely weaker after adoption, and it is worth being explicit
+    // about why rather than deleting it: `generateSecretString` only ever runs at
+    // *create* time, so on dev the shape is already fixed in Secrets Manager and no
+    // template assertion can reach it — the live document has all three keys with
+    // the refresh token empty, which is what this test was defending. The create
+    // path still exists for staging and prod, and this keeps guarding it there.
+    const found = computeTemplate.findResources('AWS::SecretsManager::Secret', {
+      Properties: { Name: `valentin/${config.env}/spotify-oauth` },
+    });
+    if (adoptedSpotifyArn) {
+      expect(Object.keys(found), 'adoption must emit no secret resource').toHaveLength(0);
+      return;
+    }
+
+    const secret = Object.values(found)[0] as {
+      Properties: { GenerateSecretString: Record<string, string> };
+    };
+
+    const generate = secret.Properties.GenerateSecretString;
+    expect(generate.GenerateStringKey).not.toBe('SPOTIFY_REFRESH_TOKEN');
+    // Present but empty: ECS resolves each key by name, so an absent key kills the
+    // task at launch just as a missing IAM grant does.
+    expect(JSON.parse(generate.SecretStringTemplate)).toMatchObject({
+      SPOTIFY_REFRESH_TOKEN: '',
+    });
+  });
+
+  for (const engine of ['valentin', 'agentcore'] as const) {
+    it(`injects all three Spotify variables into engine ${engine}`, () => {
+      const secrets = containerSecrets(engine);
+      for (const name of SPOTIFY_VARS) {
+        expect(secrets[name], `${name} on ${engine}`).toBeDefined();
+      }
+    });
+
+    it(`passes the Spotify secret as a secret, not plain env, on ${engine}`, () => {
+      expect(Object.keys(containerEnv(engine))).not.toContain('SPOTIFY_CLIENT_SECRET');
+      expect(Object.keys(containerEnv(engine))).not.toContain('SPOTIFY_REFRESH_TOKEN');
+    });
+  }
+
+  it('never puts a Spotify credential in the template', () => {
+    const json = JSON.stringify(computeTemplate.toJSON());
+    // Spotify ids and secrets are both 32-char lowercase hex.
+    expect(json).not.toMatch(/"SPOTIFY_CLIENT_ID"\s*:\s*"[0-9a-f]{32}"/);
+    expect(json).not.toMatch(/"SPOTIFY_CLIENT_SECRET"\s*:\s*"[0-9a-f]{32}"/);
   });
 
   // The first attempt to deploy the secret failed for a reason no unit test

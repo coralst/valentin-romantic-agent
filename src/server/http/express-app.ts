@@ -13,6 +13,8 @@ import { consumeState, exchangeCode } from '../integrations/google/oauth';
 import { consumeSpotifyState, exchangeSpotifyCode } from '../integrations/spotify/oauth';
 import { applyGoogleRefreshToken, applySpotifyRefreshToken } from '../integrations/credentials';
 import { buildToolRegistry } from '../integrations';
+import { verifyShareToken } from '../sharing/share-token';
+import { buildSharedConversation } from '../sharing/shared-conversation';
 
 /**
  * Escape text destined for the OAuth callback's HTML page.
@@ -381,6 +383,70 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
     }
   });
 
+  /**
+   * A shared conversation, read by somebody with no account.
+   *
+   * Unauthenticated of necessity, and this is the one route in the app where that
+   * sentence is about a *person* rather than about a machine: the reader was sent a
+   * link by the owner and has never signed in here. `requireAuth` would turn every
+   * shared link into a 401, and there is nothing they could present to fix it.
+   *
+   * **The token is the credential instead.** It is HMAC-signed by this server, it
+   * names the owner as well as the session, and it expires — see
+   * `sharing/share-token.ts` for what that trades away. Because the owner's id comes
+   * out of a payload we signed rather than out of anything the caller said, the read
+   * below still goes through that owner's own scoped store: this route reads
+   * `deps.forUser(payload.userId)` and cannot reach any other partition.
+   *
+   * It also cannot go through `scoped`, and not merely by preference — `scoped`
+   * reads the store out of `res.locals`, which only `requireAuth` populates. A
+   * guest route registered there would dereference an empty context.
+   *
+   * Every failure is **404, never 401**: an expired token, a forged token, a token
+   * for a deleted session and a string of nonsense all get the identical body. An
+   * unauthenticated caller must not be able to tell from the response whether they
+   * are holding something that used to work, which is what a 401-versus-404 split
+   * would tell them.
+   */
+  app.get('/api/share/:token', async (req, res) => {
+    const payload = verifyShareToken(pathParam(req, 'token'));
+    if (!payload) {
+      deps.log('info', 'Rejected a share link', { reason: 'invalid or expired' });
+      res.status(404).json({ error: 'This link has expired or is not valid' });
+      return;
+    }
+
+    try {
+      const { store } = deps.forUser(payload.userId);
+      const session = await store.getSession(payload.sessionId);
+      if (!session) {
+        // The conversation was deleted, or renamed out of existence by a reset. Same
+        // answer as a bad token, for the same reason.
+        res.status(404).json({ error: 'This link has expired or is not valid' });
+        return;
+      }
+
+      const messages = await store.getMessagesBySession(payload.sessionId);
+      // `buildSharedConversation` is the allowlist: title, transcript, expiry. No
+      // session id, no preferences, no people, tasks, outings or manual values.
+      res.status(200).json(
+        buildSharedConversation(session, messages, new Date(payload.exp * 1000).toISOString()),
+      );
+      // Neither the token nor the owner's id is logged — the first is a credential
+      // and the second is a Cognito `sub` this route was handed by a stranger's URL.
+      deps.log('info', 'Served a shared conversation', {
+        sessionId: payload.sessionId,
+        messages: messages.length,
+      });
+    } catch (err) {
+      deps.log('error', 'Failed to serve a shared conversation', {
+        sessionId: payload.sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
   // --- Everything below requires a token ---
 
   app.use('/api', requireAuth(deps));
@@ -543,6 +609,25 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
     ),
   );
 
+  // Where he has taken her. The POST is both "record this" and "here is how it
+  // went" — the survey resends the whole row with a rating on it.
+  app.get(
+    '/api/session/:id/outings',
+    scoped(deps, (routes, req) => routes.getSessionOutings(pathParam(req, 'id'))),
+  );
+
+  app.post(
+    '/api/session/:id/outings',
+    scoped(deps, (routes, req) => routes.saveOuting(pathParam(req, 'id'), req.body)),
+  );
+
+  app.delete(
+    '/api/session/:id/outings/:outingId',
+    scoped(deps, (routes, req) =>
+      routes.deleteOuting(pathParam(req, 'id'), pathParam(req, 'outingId')),
+    ),
+  );
+
   app.get(
     '/api/session/:id/manual',
     scoped(deps, (routes, req) => routes.getManualValues(pathParam(req, 'id'))),
@@ -560,6 +645,44 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
     scoped(deps, (routes, req) =>
       routes.clearManualValue(pathParam(req, 'id'), pathParam(req, 'fieldId')),
     ),
+  );
+
+  // Writes a home city, not a coordinate — see `setLocation` for why.
+  app.post(
+    '/api/session/:id/location',
+    scoped(deps, (routes, req) => routes.setLocation(pathParam(req, 'id'), req.body)),
+  );
+
+  /*
+   * Hand one conversation to somebody else, and post one conversation to yourself.
+   *
+   * Both authenticated: only the owner may mint a share link, and the only address a
+   * conversation is ever mailed to is the owner's own `notify_email`. The guest half
+   * of sharing is `GET /api/share/:token`, up in the open block.
+   *
+   * `sessionId` and the status are logged and the token never is. A share token is a
+   * seven-day bearer credential for a read of that conversation; logging one would
+   * put it in CloudWatch, which is retained longer and read more widely than the
+   * link itself.
+   */
+  app.post(
+    '/api/session/:id/share',
+    scoped(deps, async (routes, req) => {
+      const sessionId = pathParam(req, 'id');
+      const result = await routes.shareSession(sessionId);
+      deps.log('info', 'Share link minted', { sessionId, status: result.status });
+      return result;
+    }),
+  );
+
+  app.post(
+    '/api/session/:id/email',
+    scoped(deps, async (routes, req) => {
+      const sessionId = pathParam(req, 'id');
+      const result = await routes.emailSession(sessionId);
+      deps.log('info', 'Conversation emailed', { sessionId, status: result.status });
+      return result;
+    }),
   );
 
   // Registered last of the /api/session routes, so the more specific patterns

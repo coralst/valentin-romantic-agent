@@ -391,6 +391,13 @@ describe('GET /api/integrations', () => {
       'wolt',
       'spotify',
       'events',
+      // Geocoding and Nearby Search behind one static key, so one id and one
+      // readiness bit — unlike Gmail and Calendar, which a visitor can grant
+      // separately.
+      'google-places',
+      // This app handing out a link to one of its own conversations. Always
+      // configured — there is no outside service and no credential to be missing.
+      'sharing',
     ]);
     // Hebcal is arithmetic in-process, so it is configured on every deployment.
     expect(body.integrations.find((i) => i.id === 'hebcal')?.configured).toBe(true);
@@ -779,6 +786,165 @@ describe('renaming and deleting a conversation', () => {
       200,
     );
     expect((await get(`/api/session/${sessionId}`, 'judy')).status).toBe(404);
+  });
+});
+
+/**
+ * The share flow, end to end over the socket.
+ *
+ * This is a middleware-ordering fact and belongs here rather than in the handler
+ * tests: `GET /api/share/:token` has to sit *above* `app.use('/api', requireAuth)`,
+ * because the person following the link has no account and nothing to present. If it
+ * ever slips below the gate, the first assertion below turns into a 401 and every
+ * shared link in the wild stops opening.
+ */
+describe('GET /api/share/:token', () => {
+  const originalShareSecret = config.shareTokenSecret;
+
+  beforeAll(() => {
+    config.shareTokenSecret = 'test-share-secret';
+  });
+
+  afterAll(() => {
+    config.shareTokenSecret = originalShareSecret;
+  });
+
+  async function mintLinkFor(token: string): Promise<{ sessionId: string; shareToken: string }> {
+    const { sessionId } = (await (await post('/api/session', token)).json()) as {
+      sessionId: string;
+    };
+    const res = await post(`/api/session/${sessionId}/share`, token);
+    expect(res.status).toBe(200);
+    const { url } = (await res.json()) as { url: string; expiresAt: string };
+    const shareToken = decodeURIComponent(
+      new URL(url).searchParams.get('share') ?? '',
+    );
+    return { sessionId, shareToken };
+  }
+
+  it('serves a shared conversation with no Authorization header at all', async () => {
+    const { shareToken } = await mintLinkFor('alice');
+
+    const res = await fetch(`${baseUrl}/api/share/${encodeURIComponent(shareToken)}`);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ title: expect.any(String) });
+  });
+
+  it('returns the transcript the owner can see', async () => {
+    const { sessionId, shareToken } = await mintLinkFor('alice');
+    // Written through the owner's own authenticated surface, so the guest read is
+    // demonstrably reaching the same rows.
+    await fetch(`${baseUrl}/api/session/${sessionId}`, {
+      method: 'PATCH',
+      headers: { authorization: 'Bearer alice', 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'Her birthday' }),
+    });
+
+    const body = (await (
+      await fetch(`${baseUrl}/api/share/${encodeURIComponent(shareToken)}`)
+    ).json()) as { title: string; messages: unknown[]; expiresAt: string };
+
+    expect(body.title).toBe('Her birthday');
+    expect(Array.isArray(body.messages)).toBe(true);
+    expect(Date.parse(body.expiresAt)).toBeGreaterThan(Date.now());
+  });
+
+  it('publishes nothing but the title, the transcript and the expiry', async () => {
+    const { sessionId, shareToken } = await mintLinkFor('alice');
+
+    const body = (await (
+      await fetch(`${baseUrl}/api/share/${encodeURIComponent(shareToken)}`)
+    ).json()) as object;
+
+    expect(Object.keys(body).sort()).toEqual(['expiresAt', 'messages', 'title']);
+    const raw = JSON.stringify(body);
+    for (const dossierKey of [
+      'preferences',
+      'people',
+      'tasks',
+      'outings',
+      'manualValues',
+      'session',
+      'partnerName',
+    ]) {
+      expect(raw).not.toContain(dossierKey);
+    }
+    // Not the session id and not the owner's id either.
+    expect(raw).not.toContain(sessionId);
+    expect(raw).not.toContain('alice');
+  });
+
+  it('404s on garbage, rather than 401ing or 500ing', async () => {
+    // An unauthenticated caller must not learn from the status whether they hold a
+    // forgery or something that used to work.
+    for (const bad of ['nonsense', 'a.b.c', 'x']) {
+      const res = await fetch(`${baseUrl}/api/share/${bad}`);
+      expect(res.status).toBe(404);
+      expect(await res.json()).toMatchObject({
+        error: 'This link has expired or is not valid',
+      });
+    }
+  });
+
+  it('404s once the conversation behind it is gone', async () => {
+    const { sessionId, shareToken } = await mintLinkFor('alice');
+    const deleted = await fetch(`${baseUrl}/api/session/${sessionId}`, {
+      method: 'DELETE',
+      headers: { authorization: 'Bearer alice' },
+    });
+    expect(deleted.status).toBe(200);
+
+    const res = await fetch(`${baseUrl}/api/share/${encodeURIComponent(shareToken)}`);
+
+    expect(res.status).toBe(404);
+  });
+
+  it('will not mint a link for a conversation the caller does not own', async () => {
+    const { sessionId } = (await (await post('/api/session', 'alice')).json()) as {
+      sessionId: string;
+    };
+
+    expect((await post(`/api/session/${sessionId}/share`, 'mallory')).status).toBe(404);
+  });
+
+  it('requires a token to mint one', async () => {
+    // The guest half is open; the minting half is not.
+    const { sessionId } = (await (await post('/api/session', 'alice')).json()) as {
+      sessionId: string;
+    };
+
+    expect((await post(`/api/session/${sessionId}/share`)).status).toBe(401);
+  });
+});
+
+describe('POST /api/session/:id/email', () => {
+  it('409s until an address has been given, and needs a token', async () => {
+    const { sessionId } = (await (await post('/api/session', 'alice')).json()) as {
+      sessionId: string;
+    };
+
+    expect((await post(`/api/session/${sessionId}/email`)).status).toBe(401);
+    // A fixable state, not a fault: the panel has the field.
+    expect((await post(`/api/session/${sessionId}/email`, 'alice')).status).toBe(409);
+  });
+
+  it('sends once the address is on the profile', async () => {
+    const { sessionId } = (await (await post('/api/session', 'alice')).json()) as {
+      sessionId: string;
+    };
+    const put = await fetch(`${baseUrl}/api/session/${sessionId}/manual/notify_email`, {
+      method: 'PUT',
+      headers: { authorization: 'Bearer alice', 'content-type': 'application/json' },
+      body: JSON.stringify({ value: 'him@example.test' }),
+    });
+    expect(put.status).toBe(200);
+
+    const res = await post(`/api/session/${sessionId}/email`, 'alice');
+
+    expect(res.status).toBe(200);
+    // `loggingSender` is the default channel, so this is demonstrable with Gmail dark.
+    expect(await res.json()).toMatchObject({ sent: true, channel: 'log' });
   });
 });
 

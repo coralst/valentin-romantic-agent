@@ -33,6 +33,21 @@ export function discoveryKey(preference: PreferenceWithHistory): string {
 export type PreferencesAction =
   | { type: 'ADD_PREFERENCE'; preference: PreferenceWithHistory }
   | { type: 'UPDATE_PREFERENCE'; preference: PreferenceWithHistory }
+  /**
+   * Upsert by natural identity — `(category, key)` — not by id.
+   *
+   * Neither `ADD_` nor `UPDATE_` can do this. The store overwrites a preference
+   * keyed on `(sessionId, category, key)` and stamps a **fresh uuid** each time
+   * (`in-memory-store.ts:84`), so saving a home city twice returns two different
+   * ids for one fact: `UPDATE_PREFERENCE` matches nothing and `ADD_PREFERENCE`
+   * appends, leaving the dossier showing the city twice until a reload.
+   *
+   * Used by the writers that go over HTTP and get the saved row back in the
+   * response — there is no socket frame to wait for, because a route has no
+   * event router. Named for `MERGE_PERSON` / `MERGE_TASK`, which exist for the
+   * same reason on their own boards.
+   */
+  | { type: 'MERGE_PREFERENCE'; preference: PreferenceWithHistory }
   | { type: 'CLEAR_HIGHLIGHT'; preferenceId: string }
   | { type: 'LOAD_PREFERENCES'; preferences: PreferenceWithHistory[] };
 
@@ -87,6 +102,28 @@ export function preferencesReducer(
         recentlyUpdated: newRecentlyUpdated,
         // A correction is news too: same id, new value, new key.
         discovered: new Set(state.discovered).add(discoveryKey(action.preference)),
+      };
+    }
+
+    case 'MERGE_PREFERENCE': {
+      const category = action.preference.category;
+      const rows = state.preferences[category];
+      const existing = rows.findIndex(
+        (p) => p.key === action.preference.key || p.id === action.preference.id,
+      );
+      const merged =
+        existing === -1
+          ? [...rows, action.preference]
+          : rows.map((p, index) => (index === existing ? action.preference : p));
+      return {
+        ...state,
+        preferences: { ...state.preferences, [category]: merged },
+        // Highlighted like a correction, because from the reader's side that is
+        // what it is: a field on her file just changed under them.
+        recentlyUpdated: new Set(state.recentlyUpdated).add(action.preference.id),
+        // Not added to `discovered`. The user typed this themselves a moment ago;
+        // "✓ noted — Ra'anana" tells them something they already know.
+        discovered: state.discovered,
       };
     }
 

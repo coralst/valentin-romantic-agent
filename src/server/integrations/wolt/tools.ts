@@ -272,6 +272,12 @@ export const proposeGiftTool: AgentTool = {
           `That gift card is missing the shop link. Apologise and offer to look it up again.`,
       };
     }
+    // No `booking` on purpose, even though this confirm knows a venue name.
+    // `ToolResult.booking` feeds the outing history — "where you have already
+    // taken her" — and it is read back to suggest or avoid places for a date. A
+    // florist he had deliver to her door is not somewhere they went, and a survey
+    // asking her how the evening at the flower shop was would be nonsense. Gifts
+    // belong in gift history, which is a different record and does not exist yet.
     return {
       ok: true,
       summary:

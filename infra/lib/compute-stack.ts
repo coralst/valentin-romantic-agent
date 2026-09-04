@@ -395,36 +395,191 @@ export class ComputeStack extends cdk.Stack {
      * key. Its initial random value is meaningless and is overwritten by the
      * real token; until then Google rejects it and `integrationReadiness()`
      * reports Gmail and Calendar as not connected, which is the truth.
+     *
+     * If `config.adoptedSecretArns.googleOAuth` is set the secret already exists
+     * and is adopted instead — see that field's comment. Adoption emits no
+     * resource, so none of the create-time reasoning below applies to it; the
+     * value in the account is whatever was last put there and is left alone.
      */
-    const googleSecret = new secretsmanager.Secret(this, 'GoogleOAuthSecret', {
-      secretName: `valentin/${env}/google-oauth`,
-      description:
-        'Google OAuth client id/secret and refresh token for the Gmail-send and ' +
-        'Calendar-write tools. Populate with `aws secretsmanager put-secret-value`.',
-      generateSecretString: {
-        secretStringTemplate: JSON.stringify({
-          GOOGLE_CLIENT_ID: '',
-          GOOGLE_CLIENT_SECRET: '',
-        }),
-        generateStringKey: 'GOOGLE_REFRESH_TOKEN',
-      },
-      removalPolicy: cdk.RemovalPolicy.RETAIN,
-    });
-    cdk.Tags.of(googleSecret).add('auto-delete', 'no');
+    const adopted = config.adoptedSecretArns;
+    const googleSecret: secretsmanager.ISecret = adopted?.googleOAuth
+      ? secretsmanager.Secret.fromSecretCompleteArn(
+          this,
+          'GoogleOAuthSecret',
+          adopted.googleOAuth,
+        )
+      : new secretsmanager.Secret(this, 'GoogleOAuthSecret', {
+          secretName: `valentin/${env}/google-oauth`,
+          description:
+            'Google OAuth client id/secret and refresh token for the Gmail-send and ' +
+            'Calendar-write tools. Populate with `aws secretsmanager put-secret-value`.',
+          generateSecretString: {
+            secretStringTemplate: JSON.stringify({
+              GOOGLE_CLIENT_ID: '',
+              GOOGLE_CLIENT_SECRET: '',
+            }),
+            generateStringKey: 'GOOGLE_REFRESH_TOKEN',
+          },
+          removalPolicy: cdk.RemovalPolicy.RETAIN,
+        });
+    // Tagging an adopted secret would be a silent no-op — it is not this stack's
+    // resource — and the existing one already carries `auto-delete=no`.
+    if (!adopted?.googleOAuth) cdk.Tags.of(googleSecret).add('auto-delete', 'no');
+
+    /**
+     * Spotify credentials for `find_music` and `propose_playlist`.
+     *
+     * A separate secret from Google's, not three more keys in it: the two
+     * providers are rotated, revoked and re-consented independently, and a
+     * `put-secret-value` is a whole-document write — so sharing one secret means
+     * repopulating Google's refresh token every time Spotify's changes.
+     *
+     * **The id and secret alone are load-bearing.** Track search and playlist
+     * assembly use the client-credentials grant, which needs no user consent, so
+     * id+secret are enough to make the music row work deployed.
+     * `SPOTIFY_REFRESH_TOKEN` is needed only to write a playlist into a real
+     * library; without it `propose_playlist` confirms into a links handoff, which
+     * is a correct and honest outcome rather than a failure. So a half-populated
+     * secret is a legitimate steady state here, unlike Google's all-or-nothing.
+     *
+     * ## Why the generated key is a throwaway
+     *
+     * Secrets Manager requires exactly one generated key, and the obvious choice
+     * would be `SPOTIFY_REFRESH_TOKEN`. That would be wrong. Readiness is
+     * `Boolean(config.integrations.spotifyRefreshToken)` — a *present* value, not
+     * a valid one — and `outcome()` in `spotify/tools.ts` reads the same field to
+     * decide between saving a playlist and handing over links. A random generated
+     * token is present, so the app would advertise a connected Spotify account,
+     * promise on the confirmation card that confirming saves to it, and only then
+     * fail against the real API. Seeding the token as an empty string instead
+     * makes the untouched state read as `links`, which is the truth.
+     *
+     * So the generated key is a field nothing consumes, and all three real keys
+     * start empty in the template. Note this shape only ever applies at *create*
+     * time — and editing `generateSecretString` on a live secret is not a no-op,
+     * CloudFormation regenerates the value and would clobber real credentials.
+     */
+    /*
+     * Adopted on dev, for the same reason Google's is. An earlier note here said
+     * this secret was "not adoptable" because it had never been created — that was
+     * true when it was written and is not true now.
+     *
+     * How it orphaned is worth stating precisely, because the obvious guess is
+     * wrong: no deploy failed. This secret reached `CREATE_COMPLETE`, its deploy
+     * finished `UPDATE_COMPLETE`, and then a second successful deploy ran from a
+     * branch that did not yet contain the commit adding it. The resource was absent
+     * from that template, so CloudFormation moved to delete it during
+     * `UPDATE_COMPLETE_CLEANUP_IN_PROGRESS`, and RETAIN turned that into
+     * `DELETE_SKIPPED` — leaving the secret in the account and out of the stack.
+     * Every later update then failed `AlreadyExists` on a name that is taken.
+     *
+     * So the thing to avoid is not a failed deploy. It is deploying a stack from a
+     * branch that is behind on any RETAIN'd resource in it.
+     *
+     * The stale reasoning was still sound in one respect: an environment that has
+     * never deployed this must go through a normal create, because a complete ARN
+     * for a secret that does not exist fails in the opposite direction. Hence the
+     * per-environment branch rather than adopting unconditionally.
+     */
+    const spotifySecret: secretsmanager.ISecret = adopted?.spotifyOAuth
+      ? secretsmanager.Secret.fromSecretCompleteArn(
+          this,
+          'SpotifyOAuthSecret',
+          adopted.spotifyOAuth,
+        )
+      : new secretsmanager.Secret(this, 'SpotifyOAuthSecret', {
+          secretName: `valentin/${env}/spotify-oauth`,
+          description:
+            'Spotify client id/secret for track search, plus an optional refresh token ' +
+            'for writing playlists. Populate with `aws secretsmanager put-secret-value`.',
+          generateSecretString: {
+            secretStringTemplate: JSON.stringify({
+              SPOTIFY_CLIENT_ID: '',
+              SPOTIFY_CLIENT_SECRET: '',
+              SPOTIFY_REFRESH_TOKEN: '',
+            }),
+            generateStringKey: 'UNUSED_PLACEHOLDER',
+          },
+          removalPolicy: cdk.RemovalPolicy.RETAIN,
+        });
+    if (!adopted?.spotifyOAuth) cdk.Tags.of(spotifySecret).add('auto-delete', 'no');
+
+    /**
+     * The key share links are signed with.
+     *
+     * `sharing/share-token.ts` falls back to a per-process random key when this is
+     * unset, which is the safe direction — an unset secret makes links *break*
+     * rather than makes them *forgeable* — but it also means every share link dies
+     * at the next task replacement, and a link advertised as good for seven days
+     * that stops working at the next deploy is worse than no link at all.
+     *
+     * Generated by CloudFormation rather than templated-and-populated like
+     * `googleSecret`: there is no external system to get this value from, so nobody
+     * ever has to type it in, and a generated secret always exists — which is what
+     * makes it safe to inject with no JSON field below.
+     *
+     * RETAIN and `auto-delete=no` for a sharper reason than the Google secret's:
+     * replacing this secret silently invalidates every share link already in
+     * somebody's inbox. The janitor deletes untagged resources regardless of
+     * CloudFormation retain policies.
+     *
+     * Adopted on dev for the same reason Google's is: a rolled-back deploy left it
+     * in Secrets Manager but out of the stack's resource set.
+     */
+    const shareSecret: secretsmanager.ISecret = adopted?.shareToken
+      ? secretsmanager.Secret.fromSecretCompleteArn(
+          this,
+          'ShareTokenSecret',
+          adopted.shareToken,
+        )
+      : new secretsmanager.Secret(this, 'ShareTokenSecret', {
+          secretName: `valentin/${env}/share-token`,
+          description:
+            'HMAC key for the signed share links that let a guest read one conversation. ' +
+            'Generated; never populated by hand. Replacing it invalidates every live link.',
+          generateSecretString: {
+            passwordLength: 64,
+            // Not for a human to read or retype — but a plain alphanumeric key cannot
+            // be mangled by anything that quotes an environment variable badly.
+            excludePunctuation: true,
+          },
+          removalPolicy: cdk.RemovalPolicy.RETAIN,
+        });
+    if (!adopted?.shareToken) cdk.Tags.of(shareSecret).add('auto-delete', 'no');
 
     /**
      * Injected by the ECS agent at task start, so the values reach the process
      * as ordinary environment variables and never appear in the task definition,
      * the console, or `describe-tasks` output.
      *
-     * This — not the integrations panel — is how the deployed app gets its Google
+     * This — not the integrations panel — is how the deployed app gets its
      * credentials. The panel's connect flow writes `.env`, and both containers run
      * `readonlyRootFilesystem: true`, so that path cannot persist anything here.
+     *
+     * Every key named here must *exist* in its secret document, empty or not: ECS
+     * resolves each one individually and a task whose secret is missing a key dies
+     * at launch with `ResourceInitializationError`, indistinguishable from a
+     * missing IAM grant. That is why the populate step writes all three keys of
+     * each secret and uses `""` for absent optional values rather than omitting
+     * them.
      */
+
     const sharedSecrets: Record<string, ecs.Secret> = {
       GOOGLE_CLIENT_ID: ecs.Secret.fromSecretsManager(googleSecret, 'GOOGLE_CLIENT_ID'),
       GOOGLE_CLIENT_SECRET: ecs.Secret.fromSecretsManager(googleSecret, 'GOOGLE_CLIENT_SECRET'),
       GOOGLE_REFRESH_TOKEN: ecs.Secret.fromSecretsManager(googleSecret, 'GOOGLE_REFRESH_TOKEN'),
+      // No JSON field: the whole secret value *is* the key. A missing JSON key
+      // fails task startup, and this secret is generated, so there is none to miss.
+      SHARE_TOKEN_SECRET: ecs.Secret.fromSecretsManager(shareSecret),
+      SPOTIFY_CLIENT_ID: ecs.Secret.fromSecretsManager(spotifySecret, 'SPOTIFY_CLIENT_ID'),
+      SPOTIFY_CLIENT_SECRET: ecs.Secret.fromSecretsManager(
+        spotifySecret,
+        'SPOTIFY_CLIENT_SECRET',
+      ),
+      SPOTIFY_REFRESH_TOKEN: ecs.Secret.fromSecretsManager(
+        spotifySecret,
+        'SPOTIFY_REFRESH_TOKEN',
+      ),
     };
 
     /**

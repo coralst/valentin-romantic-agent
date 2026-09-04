@@ -304,13 +304,16 @@ describe('guardrail enforcement', () => {
     expect(containerEnv().BEDROCK_GUARDRAIL_VERSION).toBeDefined();
   });
 
-  // The off-topic topic judged Valentin's own replies and got the most important
-  // one wrong: asked what to get her for their anniversary, he wrote four
-  // specific gift ideas from her profile and the classifier replaced the whole
-  // answer with the blocked-output message. Confirmed against the live guardrail
-  // — the prompt scored `action: NONE`, the reply scored `BLOCKED`.
-  it('does not judge the model output for the off-topic topic', () => {
-    expect(deniedTopics()['off-topic'].OutputEnabled).toBe(false);
+  // The off-topic topic is gone, and this asserts it stays gone. Twice it refused
+  // a request the product was built to honour: once on the output side, where four
+  // specific anniversary gift ideas drawn from her profile were replaced wholesale
+  // by the blocked-output message, and once on the input side, where
+  // "send gmail with link to <address>" scored `topic:off-topic` in the live log.
+  // A DENY topic defined by what it excludes cannot recognise the agent's own
+  // mechanics — delivery, reminders, a recipient address — as on-topic. The
+  // system prompt keeps Valentin on the subject of her; a classifier never did.
+  it('does not deny a topic for being off-topic', () => {
+    expect(deniedTopics()['off-topic']).toBeUndefined();
   });
 
   // Leaking the system prompt is an output-side risk by definition, so this one

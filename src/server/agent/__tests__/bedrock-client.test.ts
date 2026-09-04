@@ -535,6 +535,48 @@ describe('AwsBedrockClient', () => {
       ]);
     });
 
+    it('guards the typed question, not the tool result, on later tool-loop turns', async () => {
+      // Bedrock puts tool output in a `user` turn, so from the second iteration
+      // on the newest user message holds `toolResult` blocks and no text. Tagging
+      // "the newest user turn" therefore tagged nothing, and with nothing tagged
+      // Bedrock guards the last message by default — so the policies were aimed
+      // at a tool-result blob. That is what refused
+      // "send gmail with link to <address>": `propose_email` ran, the second call
+      // scored the tool's own JSON, and `off-topic` blocked it.
+      mockSend.mockResolvedValueOnce({
+        output: { message: { content: [{ text: 'Sent.' }] } },
+        stopReason: 'end_turn',
+      });
+
+      await client.converseWithTools(
+        [
+          { role: 'user', content: [{ text: 'send gmail with link to her@example.com' }] },
+          {
+            role: 'assistant',
+            content: [{ toolUse: { toolUseId: 'tu-1', name: 'propose_email', input: {} } }],
+          },
+          {
+            role: 'user',
+            content: [
+              { toolResult: { toolUseId: 'tu-1', content: [{ text: '{"delivered":true}' }] } },
+            ],
+          },
+        ],
+        'You are Valentin.',
+        [{ name: 'propose_email', description: 'email', input_schema: {} }],
+        'session-1',
+      );
+
+      const cmd = mockSend.mock.calls[0][0];
+      expect(cmd.messages[0].content).toEqual([
+        { guardContent: { text: { text: 'send gmail with link to her@example.com' } } },
+      ]);
+      // The tool-result turn is passed through untouched.
+      expect(cmd.messages[2].content).toEqual([
+        { toolResult: { toolUseId: 'tu-1', content: [{ text: '{"delivered":true}' }] } },
+      ]);
+    });
+
     it('logs which policies fired when the guardrail intervenes', async () => {
       // `trace: 'enabled'` was always set and nothing ever read the trace back,
       // so a refusal left no record of its cause anywhere. Finding out why he

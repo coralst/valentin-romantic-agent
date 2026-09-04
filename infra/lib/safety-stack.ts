@@ -10,6 +10,7 @@ export interface SafetyStackProps extends cdk.StackProps {
 /**
  * Bumped whenever the guardrail's policy below changes.
  *
+ * 7 — the off-topic topic is gone; it refused "email me the options".
  * 6 — the EMAIL entity is gone; a recipient address is an input, not a leak.
  * 5 — a street-address regex replaces the ADDRESS entity; SEXUAL input MEDIUM.
  * 4 — ADDRESS no longer judges Valentin's own replies.
@@ -17,7 +18,7 @@ export interface SafetyStackProps extends cdk.StackProps {
  * 2 — NAME and AGE no longer anonymised.
  * 1 — initial policy.
  */
-const POLICY_REVISION = 6;
+const POLICY_REVISION = 7;
 
 export class SafetyStack extends cdk.Stack {
   public readonly guardrailId: string;
@@ -166,33 +167,37 @@ export class SafetyStack extends cdk.Stack {
         ],
       },
       topicPolicyConfig: {
+        /*
+         * The `off-topic` topic is gone — user-approved, 2026-09-04. It is the
+         * fourth policy removed from this guardrail for the same reason as
+         * EMAIL, ADDRESS, NAME and AGE: it refused the product's own features.
+         *
+         * Its history here is two rounds of narrowing that each fixed one
+         * symptom. First it was scored on Valentin's replies, and it marked four
+         * specific anniversary gift ideas drawn from her profile `BLOCKED`, so
+         * revision 3 set `outputEnabled: false`. Then it was scored on the tool
+         * loop's `toolResult` turn — see `guardNewestUserTurn` — and it refused
+         * `send gmail with link to <address>` outright (`topic:off-topic`, live
+         * log 2026-09-04T16:24:39Z). The tagging bug is fixed in the same commit
+         * as this removal, but the topic still has to go, because both failures
+         * came from the same root cause and it is not the tagging.
+         *
+         * A DENY topic defined by what it *excludes* has no way to recognise the
+         * agent's own mechanics as on-topic. "Email me the options", "remind me
+         * on Tuesday", "send it to this address" are all requests about
+         * delivery, not about romance, and they are exactly the requests
+         * `propose_email` exists to serve. The classifier reads the surface of
+         * the sentence and cannot see that the payload is a gift list. Every
+         * time this topic has fired in production it has been on a request the
+         * product was built to honour.
+         *
+         * What still fences Valentin in: `system-prompt-extraction` below, all
+         * six content filters, PROMPT_ATTACK at HIGH on the prompt, the PII
+         * entities and the three address regexes. The system prompt is what
+         * keeps him on the subject of her — a classifier was always the wrong
+         * tool for enforcing a persona.
+         */
         topicsConfig: [
-          {
-            name: 'off-topic',
-            definition:
-              'Requests unrelated to romantic relationships, partner preferences, gift ideas, or date planning',
-            type: 'DENY',
-            /*
-             * INPUT ONLY. This topic judged Valentin's own replies too, and it
-             * was wrong about them in the single most important case: asked
-             * "What should I get her for our anniversary?", the model wrote four
-             * specific, on-topic gift ideas drawn from her profile — and the
-             * classifier marked that reply `off-topic` and replaced all of it
-             * with `blockedOutputsMessaging`. Verified against the live
-             * guardrail with `ApplyGuardrail`/Converse traces: the input scored
-             * `action: NONE`, the reply scored `BLOCKED`.
-             *
-             * The topic is defined by what it excludes, which reads as a
-             * sentence about a *request*. A long assistant answer naming
-             * cottages, trail shoes and poetry anthologies matches the surface
-             * of it however on-topic the answer actually is. Nothing is lost by
-             * scoping it to the prompt: this topic exists to stop a visitor
-             * dragging Valentin off his job, and a prompt he never sees cannot
-             * produce an off-topic answer. The content filters below, and
-             * `system-prompt-extraction`, still judge every reply.
-             */
-            outputEnabled: false,
-          },
           {
             name: 'system-prompt-extraction',
             definition:

@@ -270,6 +270,19 @@ function buildGuardrailConfig(): GuardrailConfiguration | undefined {
  * history that ends on an assistant message would otherwise leave the request
  * untagged, and untagged means Bedrock silently reverts to screening every block
  * — the whole transcript, her profile included, on every turn.
+ *
+ * And the last user turn *that the visitor actually typed*, which is not the same
+ * as the last user turn. From the second iteration of the tool loop onward the
+ * newest `user` message is the one carrying `toolResult` blocks — Bedrock's
+ * protocol puts tool output in a user turn — and those blocks hold no top-level
+ * `text`, so the old version of this function tagged nothing at all. With
+ * nothing tagged, Bedrock guards the last message by default, which meant the
+ * policies were pointed at a tool-result JSON blob instead of at a question.
+ * That is how `send gmail with link to <address>` came back refused: the reply
+ * needed `propose_email`, the second call guarded the tool's own output, and the
+ * `off-topic` topic scored that blob `BLOCKED` (`topic:off-topic`, live log
+ * 2026-09-04T16:24:39Z). Skipping past tool-result turns to the newest turn with
+ * real text keeps every policy aimed at the visitor's words, where it belongs.
  */
 function guardNewestUserTurn(
   messages: Message[],
@@ -277,9 +290,14 @@ function guardNewestUserTurn(
 ): Message[] {
   if (!guardrail || messages.length === 0) return messages;
 
+  const hasGuardableText = (msg: Message): boolean =>
+    (msg.content ?? []).some(
+      (block) => 'text' in block && typeof block.text === 'string',
+    );
+
   let lastUserIdx = -1;
   messages.forEach((msg, i) => {
-    if (msg.role === 'user') lastUserIdx = i;
+    if (msg.role === 'user' && hasGuardableText(msg)) lastUserIdx = i;
   });
   if (lastUserIdx === -1) return messages;
 

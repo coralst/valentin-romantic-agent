@@ -276,5 +276,47 @@ describe('AppLayout', () => {
       expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
       expect(screen.getByTestId('partner-profile-panel')).toBeInTheDocument();
     });
+
+    /*
+     * "I can't press on the chats and go back to main."
+     *
+     * The panel covers every column except the rail, and the rail's navigation used
+     * to act on the shell *underneath* it: ◆ switched surfaces you could not see,
+     * the crest went home behind the overlay, the ☰ resized a hidden column. Three
+     * live-looking buttons with no visible effect, which makes the panel read as a
+     * trap — the only exits were the 32px × in the far corner and Escape.
+     *
+     * Asserted per button rather than once, because each is wired through a
+     * different handler (`changeDesktopView`, `goHome`, the two `onOpenSessions`
+     * closures) and it was adding one of them and not the others that produced the
+     * bug in the first place.
+     */
+    it('gets out of the way when the rail navigates somewhere', async () => {
+      currentMatches = false; // desktop
+      const user = userEvent.setup();
+      renderWithProviders(<AppLayout />);
+
+      for (const exit of ['rail-chat-button', 'rail-home-button', 'sidebar-menu-button']) {
+        await user.click(screen.getByTestId('rail-integrations-button'));
+        expect(screen.getByTestId('integrations-panel')).toBeInTheDocument();
+
+        await user.click(screen.getByTestId(exit));
+        expect(screen.queryByTestId('integrations-panel')).not.toBeInTheDocument();
+      }
+    });
+
+    it('gets out of the way from the mobile strip too', async () => {
+      currentMatches = true; // mobile
+      const user = userEvent.setup();
+      renderWithProviders(<AppLayout />);
+
+      await user.click(screen.getByTestId('rail-integrations-button'));
+      expect(screen.getByTestId('integrations-panel')).toBeInTheDocument();
+
+      // On a phone this matters more, not less: the panel covers the tab bar as well
+      // as the content, so the strip's ◆ is the only way back to the conversation.
+      await user.click(screen.getByTestId('rail-chat-button'));
+      expect(screen.queryByTestId('integrations-panel')).not.toBeInTheDocument();
+    });
   });
 });

@@ -490,6 +490,6 @@ describe('the Gateway caption’s tool count', () => {
     const confirms = offered.filter((tool) => tool.requiresConfirmation).length;
     const total = offered.length + confirms + PROFILE_TOOLS;
 
-    expect(awsNode('ac-gateway').caption).toBe(`MCP · 2 Lambda targets · ${total} tools`);
+    expect(awsNode('ac-gateway')?.caption).toBe(`MCP · 2 Lambda targets · ${total} tools`);
   });
 });

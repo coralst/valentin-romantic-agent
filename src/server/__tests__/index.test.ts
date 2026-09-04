@@ -188,6 +188,58 @@ describe('createServer engine selection', () => {
     expect(engineB.extractor).toBeDefined();
   });
 
+  it('gives engine B the proposal callback too, so a card reaches the browser', async () => {
+    // Engine B could not raise a card at all until the Gateway carried the
+    // integration tools, so `onProposal` was declared above the engine branch and
+    // handed to engine A only. This is the assertion that it is handed to both:
+    // the visible symptom of the old wiring was an agent that talked about a table
+    // it had found and a client that was never told to offer it.
+    const runtime = stubRuntime();
+    runtime.invoke = vi.fn().mockResolvedValue({
+      content: 'I found somewhere — shall I hold it?',
+      toolsUsed: ['valentin-integrations___propose_reservation'],
+      proposals: [
+        {
+          id: 'prop-1',
+          service: 'ontopo',
+          title: 'A table at Port Said',
+          summary: 'Saturday, 21:00, two people',
+          expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+          confirm: 'confirm_reservation',
+        },
+      ],
+    });
+
+    const server = createServer({ engine: 'agentcore', agentCoreRuntime: runtime });
+    const broadcast = vi.spyOn(server.gateway, 'broadcastToSession');
+    const services = server.forUser('user-h');
+    const { sessionId } = await services.orchestrator.initSession();
+
+    await services.orchestrator.handleMessage(sessionId, 'somewhere for Saturday?');
+
+    const proposalEvent = broadcast.mock.calls
+      .map(([, , event]) => event)
+      .find((event) => event.type === 'action_proposal');
+
+    expect(proposalEvent).toBeDefined();
+    const payload = proposalEvent!.payload as unknown as Record<string, unknown>;
+    expect(payload.proposalId).toBe('prop-1');
+    expect(payload.sessionId).toBe(sessionId);
+    // The field-by-field mapping, not a spread: nothing named `payload` may ride
+    // out to the browser, and on engine B the opaque payload never even reached
+    // this process — it stayed in the tool Lambda's `PROPOSAL#` row.
+    expect(payload).not.toHaveProperty('payload');
+    expect(Object.keys(payload).sort()).toEqual([
+      'expiresAt',
+      'proposalId',
+      'service',
+      'sessionId',
+      'summary',
+      'title',
+      'url',
+    ]);
+  });
+
   it('gives every user their own orchestrator, on either engine', () => {
     // Engine B's orchestrator holds the storage id it was scoped to, so a shared
     // instance would write one user's preferences under another's partition.

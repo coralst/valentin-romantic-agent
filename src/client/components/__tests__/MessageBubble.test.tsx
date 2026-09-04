@@ -203,4 +203,57 @@ describe('MessageBubble', () => {
       expect(revealed()).toBe('');
     });
   });
+
+  /**
+   * The regression that made every emailed share link fail: a base64url token
+   * carries `_` characters, and the `_..._` emphasis rule italicised the middle of
+   * the URL and deleted the underscores. It still looked like a link.
+   */
+  describe('URLs in message text', () => {
+    const shareUrl =
+      'https://d26dwovftfq9oe.cloudfront.net/?share=eyJ1c2VySWQiOiJhIn0.l_QyJ_9-abc';
+
+    const bubbleFor = (content: string) => {
+      render(
+        <MessageBubble
+          message={{
+            id: `m-${Math.random()}`,
+            sessionId: 's1',
+            sender: 'agent',
+            content,
+            timestamp: new Date().toISOString(),
+          }}
+        />,
+      );
+      return screen.getByTestId('message-bubble');
+    };
+
+    it('keeps every character of a URL containing underscores', () => {
+      expect(bubbleFor(`Here it is: ${shareUrl}`).textContent).toContain(shareUrl);
+    });
+
+    it('renders it as a clickable link to exactly that URL', () => {
+      const anchor = bubbleFor(`Here it is: ${shareUrl}`).querySelector('a');
+      expect(anchor?.getAttribute('href')).toBe(shareUrl);
+    });
+
+    it('does not italicise inside a URL', () => {
+      expect(bubbleFor(shareUrl).querySelector('em')).toBeNull();
+    });
+
+    it('leaves a trailing full stop out of the link', () => {
+      const anchor = bubbleFor(`Open ${shareUrl}.`).querySelector('a');
+      expect(anchor?.getAttribute('href')).toBe(shareUrl);
+    });
+
+    it('still emphasises prose around the URL', () => {
+      const bubble = bubbleFor(`*Read this* at ${shareUrl}`);
+      expect(bubble.querySelector('em')?.textContent).toBe('Read this');
+      expect(bubble.querySelector('a')?.getAttribute('href')).toBe(shareUrl);
+    });
+
+    it('still emphasises an ordinary underscored phrase with no URL', () => {
+      expect(bubbleFor('that was _lovely_').querySelector('em')?.textContent).toBe('lovely');
+    });
+  });
 });

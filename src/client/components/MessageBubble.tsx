@@ -3,28 +3,92 @@ import type { ChatMessage } from '../../shared/interfaces/message';
 import { colors, radii, typography, layout } from '../design-system/tokens';
 import { useTypewriter } from '../hooks/use-typewriter';
 
-function renderFormattedText(text: string): React.ReactNode[] {
-  const parts: React.ReactNode[] = [];
-  const regex = /(\*\*(.+?)\*\*)|(\*(.+?)\*)|(_(.+?)_)/g;
+/**
+ * A URL, matched *before* emphasis so its punctuation is never read as markup.
+ *
+ * This is load-bearing rather than cosmetic. A share link's token is base64url,
+ * whose alphabet includes `_`, and a 250-character token carries about four of
+ * them — so the `_..._` emphasis rule below used to italicise the middle of every
+ * share link and **delete the underscores on the way**. The result looked like a
+ * URL, so nobody suspected the renderer; it just failed to open, and the guest was
+ * told the link had expired. Reported from the live app on 2026-09-04.
+ *
+ * Ends at whitespace, and then trailing sentence punctuation is trimmed off so a
+ * link at the end of a sentence does not swallow the full stop. `_` and `-` are
+ * deliberately *not* trimmed: both are legal token characters.
+ */
+const URL_PATTERN = /https?:\/\/[^\s<>"]+/g;
+
+/** Trailing characters that end a sentence rather than a URL. */
+const TRAILING_PUNCTUATION = /[.,;:!?)\]}'"]+$/;
+
+/** Emphasis. Applied only to the spans between URLs. */
+const EMPHASIS_PATTERN = /(\*\*(.+?)\*\*)|(\*(.+?)\*)|(_(.+?)_)/g;
+
+function renderEmphasis(text: string, parts: React.ReactNode[], nextKey: () => number): void {
   let lastIndex = 0;
   let match: RegExpExecArray | null;
-  let key = 0;
+  EMPHASIS_PATTERN.lastIndex = 0;
 
-  while ((match = regex.exec(text)) !== null) {
+  while ((match = EMPHASIS_PATTERN.exec(text)) !== null) {
     if (match.index > lastIndex) {
       parts.push(text.slice(lastIndex, match.index));
     }
     if (match[1]) {
-      parts.push(<strong key={key++}>{match[2]}</strong>);
+      parts.push(<strong key={nextKey()}>{match[2]}</strong>);
     } else if (match[3]) {
-      parts.push(<em key={key++}>{match[4]}</em>);
+      parts.push(<em key={nextKey()}>{match[4]}</em>);
     } else if (match[5]) {
-      parts.push(<em key={key++}>{match[6]}</em>);
+      parts.push(<em key={nextKey()}>{match[6]}</em>);
     }
     lastIndex = match.index + match[0].length;
   }
   if (lastIndex < text.length) {
     parts.push(text.slice(lastIndex));
+  }
+}
+
+/**
+ * Render one line: URLs verbatim and clickable, everything else with emphasis.
+ *
+ * The link is an anchor because a share URL that has to be selected and copied by
+ * hand is a link that gets copied wrong — and being able to click it is the whole
+ * point of Valentin handing one over.
+ */
+function renderFormattedText(text: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = [];
+  let key = 0;
+  const nextKey = () => key++;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  URL_PATTERN.lastIndex = 0;
+
+  while ((match = URL_PATTERN.exec(text)) !== null) {
+    const trailing = match[0].match(TRAILING_PUNCTUATION)?.[0] ?? '';
+    const url = match[0].slice(0, match[0].length - trailing.length);
+    // A bare scheme with nothing after it is prose, not a link.
+    if (!/^https?:\/\/\S/.test(url)) continue;
+
+    if (match.index > lastIndex) {
+      renderEmphasis(text.slice(lastIndex, match.index), parts, nextKey);
+    }
+    parts.push(
+      <a
+        key={nextKey()}
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        style={{ color: 'inherit', wordBreak: 'break-all' }}
+      >
+        {url}
+      </a>,
+    );
+    if (trailing) parts.push(trailing);
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    renderEmphasis(text.slice(lastIndex), parts, nextKey);
   }
   return parts;
 }

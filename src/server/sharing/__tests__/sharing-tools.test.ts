@@ -1,9 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createConversationLinkTool } from '../tools';
-import { verifyShareToken } from '../share-token';
+import { mintShareToken, verifyShareToken } from '../share-token';
 import { buildToolRegistry } from '../../integrations';
-import { SHARE_PARAM } from '../../../shared/constants/share-link';
+import { SHARE_PARAM, shareLink } from '../../../shared/constants/share-link';
 import { config } from '../../config';
+import {
+  CONVERSATION_LINK_PLACEHOLDER,
+  expandConversationLinkText,
+} from '../link-placeholder';
 
 /**
  * The bug this file exists for: asked to email a link to the conversation, Valentin
@@ -40,31 +44,43 @@ describe('create_conversation_link', () => {
     expect(createConversationLinkTool.requiresConfirmation).toBe(false);
   });
 
-  it('mints a link that really verifies, for this session and this user', async () => {
+  /**
+   * Hands back a placeholder rather than the URL, and the substituted URL really
+   * verifies. Both halves matter: the model must not be given 250 characters to
+   * retype (it gets one wrong, and the guest is told the link expired), and the
+   * thing that replaces the placeholder must still be a token this server signed.
+   */
+  it('gives the model a placeholder, never a token to transcribe', async () => {
     const result = await createConversationLinkTool.execute(
       {},
       { sessionId: 'sess-1', userId: 'user-1' },
     );
 
     expect(result.ok).toBe(true);
-    const url = (result.data as { url: string }).url;
-    expect(url.startsWith('https://valentin.example/?')).toBe(true);
-
-    // The whole point: a *verifying* token, which is the one thing a language
-    // model could not have produced.
-    expect(verifyShareToken(tokenFrom(url))).toMatchObject({
-      sessionId: 'sess-1',
-      userId: 'user-1',
-    });
+    expect(result.summary).toContain(CONVERSATION_LINK_PLACEHOLDER);
+    // No URL anywhere the model can read, so there is nothing to mis-copy.
+    expect(result.summary).not.toContain('https://valentin.example');
+    expect(result.data).toMatchObject({ link: CONVERSATION_LINK_PLACEHOLDER });
   });
 
-  it('puts the URL in the summary, the only channel the model reads', async () => {
+  it('expands that placeholder into a token that really verifies', async () => {
     const result = await createConversationLinkTool.execute(
       {},
       { sessionId: 'sess-2', userId: 'user-1' },
     );
-    const url = (result.data as { url: string }).url;
-    expect(result.summary).toContain(url);
+
+    // Exactly what the tool loop does to the model's reply and to a tool's input.
+    const prose = expandConversationLinkText(
+      `Here you go: ${result.summary.includes(CONVERSATION_LINK_PLACEHOLDER) ? CONVERSATION_LINK_PLACEHOLDER : ''}`,
+      () => shareLink(config.publicOrigin, mintShareToken('user-1', 'sess-2').token),
+    );
+
+    const url = prose.slice(prose.indexOf('https://'));
+    expect(url.startsWith('https://valentin.example/?')).toBe(true);
+    expect(verifyShareToken(tokenFrom(url))).toMatchObject({
+      sessionId: 'sess-2',
+      userId: 'user-1',
+    });
   });
 
   it('takes no session argument, so it cannot be aimed at another conversation', () => {

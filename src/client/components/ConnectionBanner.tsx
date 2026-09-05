@@ -14,23 +14,32 @@ const bannerStyle: React.CSSProperties = {
   borderRadius: borderRadius.md,
 };
 
-const messages: Record<Exclude<ConnectionStatus, 'connected'>, string> = {
+/**
+ * The two states worth interrupting someone about.
+ *
+ * `connecting` is not one of them — see `ConnectionStatus`. A banner shown while
+ * the first socket is still opening is a false alarm every single load, and it was
+ * red, which is the strongest thing this UI can say.
+ */
+type AnnouncedStatus = Exclude<ConnectionStatus, 'connected' | 'connecting'>;
+
+const messages: Record<AnnouncedStatus, string> = {
   reconnecting: 'Reconnecting to Valentin…',
   disconnected: 'Connection lost. Please check your network.',
 };
 
-const bannerColors: Record<Exclude<ConnectionStatus, 'connected'>, string> = {
+const bannerColors: Record<AnnouncedStatus, string> = {
   reconnecting: colors.champagne,
   disconnected: colors.error,
 };
 
-const textColors: Record<Exclude<ConnectionStatus, 'connected'>, string> = {
+const textColors: Record<AnnouncedStatus, string> = {
   reconnecting: colors.text,
   disconnected: colors.textOnAccent,
 };
 
 export function ConnectionBanner({ status }: ConnectionBannerProps) {
-  if (status === 'connected') return null;
+  if (status === 'connected' || status === 'connecting') return null;
 
   return (
     <div

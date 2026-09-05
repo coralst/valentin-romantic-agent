@@ -19,19 +19,9 @@ import {
   useArchitectureEngineContext,
 } from '../context/architecture-engine-context';
 
-/** Which of the rail's view buttons is currently the active surface. */
-export type RailView = 'chat' | 'profile';
-
 interface IconRailProps {
   /** 'column' is the 76px desktop rail; 'row' is the 56px mobile top strip. */
   orientation: 'column' | 'row';
-  /**
-   * The surface currently on screen, so the ◆ can report `aria-pressed`. On
-   * desktop both surfaces are visible at once, so pass `null` and it claims
-   * nothing.
-   */
-  activeView: RailView | null;
-  onViewChange?: (view: RailView) => void;
   /**
    * What the crest does: land on the conversation, from any surface.
    *
@@ -146,30 +136,6 @@ function getIconButtonStyle(isActive: boolean): React.CSSProperties {
 const spacerStyle: React.CSSProperties = { flex: 1 };
 
 /**
- * The band labels — "talk", "know", "act" — above each group of rail buttons.
- *
- * The rail's glyphs are a diamond, a heart, a hamburger and now a fan-out mark:
- * legible once you know the app, opaque on first sight, and this is the first
- * thing a visitor looks at. Three words say what the agent is made of — it talks,
- * it knows her, it acts — and they cost four lines of chrome to say it.
- *
- * `aria-hidden` because they are a visual grouping only: every button already
- * carries its own accessible name, and a screen reader announcing "talk" before
- * "Conversation" would be reading the furniture. The column is the only
- * orientation that gets them; the 56px mobile strip has no vertical room.
- */
-const bandLabelStyle: React.CSSProperties = {
-  fontFamily: typography.bodyFontFamily,
-  fontSize: typography.px.micro,
-  fontWeight: typography.weights.semibold,
-  letterSpacing: '0.18em',
-  textTransform: 'uppercase',
-  color: 'rgba(255, 253, 251, 0.42)',
-  marginTop: 6,
-  flexShrink: 0,
-};
-
-/**
  * The count of connected services, sat on the integrations button.
  *
  * Gold rather than claret-on-claret: the rail is claret, so the badge needs the
@@ -223,6 +189,44 @@ function FanOutMark() {
       <circle cx="19" cy="12" r="2.2" />
       <circle cx="19" cy="19" r="2.2" />
       <path d="M7.4 12h9.4M7.2 11.2 16.9 5.6M7.2 12.8l9.7 5.6" />
+    </svg>
+  );
+}
+
+/**
+ * The ⚙, as a drawn mark rather than the U+2699 glyph.
+ *
+ * The glyph rendered at `typography.px.control` (15px), which is the right size
+ * for a text control and far too small for a rail icon — next to a 20px
+ * `FanOutMark` and a full-width ☰ it read as a speck, and it is the one control a
+ * presenter reaches for while talking. An SVG also cannot be re-scaled by a
+ * platform's emoji font the way the glyph could.
+ *
+ * Drawn as a *cog*: a gear body ring, a hub, and eight teeth outside the ring.
+ * The first attempt at this kept only the hub and the teeth, which left a hollow
+ * gap between them — at 20px that reads as a small sun, not a gear, and it still
+ * looked smaller than the fan-out beside it despite sharing its box. The body
+ * ring is what makes the mark legible as settings; the extra 2px of box then
+ * gives the densest icon on the rail a little more room than the sparse ones.
+ */
+function GearMark() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={22}
+      height={22}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <circle cx="12" cy="12" r="7.1" />
+      <circle cx="12" cy="12" r="2.6" />
+      {/* Eight teeth, each a radial stub from the body ring (r 7.1) outwards. */}
+      <path d="M12 2.2v2.7M12 19.1v2.7M2.2 12h2.7M19.1 12h2.7M5.1 5.1 7 7M17 17l1.9 1.9M5.1 18.9 7 17M17 7l1.9-1.9" />
     </svg>
   );
 }
@@ -297,6 +301,10 @@ const popoverWrapperStyle: React.CSSProperties = {
  * clips its children (`overflow: hidden`, to keep the 34px radius crisp) — an
  * absolutely positioned popover inside the rail is sliced off at the window
  * edge. Coordinates come from the gear's own bounding box.
+ *
+ * The menu grows *away* from the gear along the rail's axis, and which direction
+ * that is depends on where the gear sits — so this function and the rail's layout
+ * have to be read together.
  */
 function getPopoverStyle(orientation: 'column' | 'row', anchor: DOMRect): React.CSSProperties {
   return {
@@ -311,13 +319,23 @@ function getPopoverStyle(orientation: 'column' | 'row', anchor: DOMRect): React.
       'inset 0 0 0 1px rgba(229, 217, 210, 0.9), 0 4px 12px rgba(42, 34, 38, 0.08), 0 24px 56px rgba(42, 34, 38, 0.18)',
     ...(orientation === 'column'
       ? {
-          // Beside the gear, bottom-aligned to it — but never so tall that it
-          // runs off the top of the viewport. The gear sits at the foot of the
-          // rail, so the menu grows upwards; on a short window that is the only
-          // edge it can escape through.
+          // Beside the gear, top-aligned to it, growing *downwards* — because
+          // every button in the column is top-anchored now that the rail has no
+          // `flex: 1` spacer (see the layout note above the engine switch).
+          //
+          // It used to be bottom-aligned and grow upwards, which was right while
+          // the ⚙ sat at the foot of the rail and wrong the moment it stopped:
+          // 320px of menu rising from a gear near the top of the window ran off
+          // the top edge and covered the conversation list's wordmark row — where
+          // the architecture toggle lives, so opening the demo menu made that
+          // button unclickable.
+          //
+          // Clamped so a tall menu cannot run off the *bottom* either, which is
+          // the edge it can now reach; on a viewport shorter than the menu the
+          // clamp yields to the window's own margin rather than going negative.
           left: anchor.right + 10,
-          bottom: Math.min(
-            window.innerHeight - anchor.bottom,
+          top: Math.min(
+            anchor.top,
             Math.max(insets.tight, window.innerHeight - POPOVER_MAX_HEIGHT),
           ),
           maxHeight: POPOVER_MAX_HEIGHT,
@@ -378,8 +396,6 @@ const menuDividerStyle: React.CSSProperties = {
  */
 export function IconRail({
   orientation,
-  activeView,
-  onViewChange,
   onGoHome,
   onOpenSessions,
   isSessionsOpen,
@@ -445,26 +461,9 @@ export function IconRail({
     };
   }, [isDemoOpen]);
 
-  /*
-   * `aria-pressed` is only meaningful where exactly one surface is on screen.
-   *
-   * That is the mobile strip, where `activeView` names the visible panel. On
-   * desktop chat and brief share the window, `activeView` is `null`, and the ◆
-   * claims nothing — which is what `IconRail.test.tsx` asserts.
-   */
   const { engine, setEngine } = useArchitectureEngineContext();
-  const isChatActive = activeView === 'chat';
-  const hasSurfaceState = activeView !== null;
-
   const { connectedCount } = useIntegrations();
   const isColumn = orientation === 'column';
-  /** A band label, or nothing at all on the mobile strip. */
-  const band = (label: string) =>
-    isColumn ? (
-      <span style={bandLabelStyle} aria-hidden="true">
-        {label}
-      </span>
-    ) : null;
 
   return (
     <nav
@@ -489,27 +488,19 @@ export function IconRail({
         <img src="/logo.png" alt="Valentin logo" style={crestImageStyle} />
       </button>
 
-      {band('talk')}
-
-      <button
-        type="button"
-        style={getIconButtonStyle(isChatActive)}
-        aria-label="Conversation"
-        aria-pressed={hasSurfaceState ? isChatActive : undefined}
-        onClick={() => onViewChange?.('chat')}
-        data-testid="rail-chat-button"
-      >
-        &#9670;
-      </button>
-
       {/*
-        There is deliberately no ♥ here, and so deliberately no "know" band for
-        one to sit under.
-        Her profile is reached by clicking *her* — the portrait at the top of the
-        brief (`brief/WhoHeader.tsx`), and the brief's "Full profile →" link.
-        A heart in the rail was a second, abstract door to the same place, and the
-        one thing on screen that a heart could plausibly mean in this app is the
-        person, not a navigation target.
+        There is deliberately no ◆ and no ♥ here.
+
+        Both were abstract second doors to somewhere the surface already offers a
+        concrete one to. Her profile is reached by clicking *her* — the portrait at
+        the top of the brief (`brief/WhoHeader.tsx`) and its "Full profile →" link.
+        The conversation is reached by the crest above, which is "home" from any
+        surface, and on mobile by `MobileNav`'s own chat tab — so the ◆ was a third
+        control answering to a name two others already own.
+
+        The band labels ("talk", "act", "show") went with them: three groups of
+        one or two icons each is a taxonomy the rail is too short to need, and the
+        eyebrows cost more vertical room than the buttons they titled.
       */}
 
       {/*
@@ -518,10 +509,6 @@ export function IconRail({
         list is a column that this button hides and restores; but it stays the
         name on mobile, where the ☰ only opens an overlay and where the e2e specs
         and `IconRail.test.tsx` query that exact string.
-
-        It sits under "talk" rather than in its old slot below the ♥: the bands
-        group by what the button is for, and the conversation list is part of
-        talking to him, not part of knowing her.
       */}
       <button
         type="button"
@@ -539,8 +526,6 @@ export function IconRail({
       >
         &#9776;
       </button>
-
-      {band('act')}
 
       {/* The badge is the advertisement: a rail icon with "3" on it is the only
           thing on the chat surface that says the agent has hands at all. */}
@@ -565,22 +550,21 @@ export function IconRail({
       </button>
 
       {/*
-        A band, not a spacer.
-        
-        This was `<div style={{ flex: 1 }} />`, which pinned the engine switch and the
-        ⚙ to the *foot* of the rail — so both moved every time the architecture drawer
-        opened, closed or was resized, because the rail's height is what changes. A
-        control that is somewhere different each time you reach for it is the opposite
-        of what a presenter needs mid-sentence.
-        
-        Top-anchored under its own label instead, so the rail is one stable column at
-        every drawer height. The pair stays adjacent, which was the point of putting
-        them together, and "show" names what they share: both choose what you are
-        looking at rather than doing anything to her profile. The mobile strip keeps
-        the spacer — it is a row, so the group sits at the far end and nothing above
-        it can move it.
+        Nothing at all on desktop; a spacer only on the mobile row.
+
+        The desktop column deliberately has no `flex: 1` here. It used to, and that
+        pinned the engine switch and the ⚙ to the *foot* of the rail — so both moved
+        every time the architecture drawer opened, closed or was resized, because the
+        rail's height is what changes. A control that is somewhere different each time
+        you reach for it is the opposite of what a presenter needs mid-sentence. Every
+        button stays top-anchored instead, so the rail is one stable column at every
+        drawer height. (A "show" band label used to hold this slot open; it went with
+        the other two, but the spacer must *not* come back to replace it on desktop.)
+
+        The mobile strip does keep the spacer: it is a row, so the pair sits at the far
+        end and nothing above it can move it.
       */}
-      {orientation === 'column' ? band('show') : <div style={spacerStyle} />}
+      {!isColumn && <div style={spacerStyle} />}
 
       {/* `role="group"` rather than a radiogroup: two buttons that each report
           `aria-pressed` is the same pattern the drawer's data-source switch uses,
@@ -615,7 +599,7 @@ export function IconRail({
           onClick={() => setDemoOpen((open) => !open)}
           data-testid="rail-demo-button"
         >
-          &#9881;
+          <GearMark />
         </button>
         {isDemoOpen &&
           anchor &&

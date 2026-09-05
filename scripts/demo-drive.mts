@@ -678,7 +678,7 @@ async function main(): Promise<void> {
     const integrations = page.getByTestId('rail-integrations-button');
     if (await integrations.isVisible().catch(() => false)) {
       await humanClick(page, integrations, 'open the integrations panel');
-      await caption(page, 'Fourteen tools, registered and reachable');
+      await caption(page, 'Twenty tools, registered and reachable');
       await hold(5_500);
       await shot(page, 'integrations');
       const close = page.getByTestId('integrations-close-button');

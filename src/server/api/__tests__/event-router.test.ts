@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventRouter } from '../event-router';
 import type { AgentOrchestratorInterface } from '../../agent/agent-orchestrator';
-import type { ServerEvent } from '../../../shared/interfaces/ws-events';
+import type {
+  AgentActivityPayload,
+  ServerEvent,
+} from '../../../shared/interfaces/ws-events';
 import type { ChatMessage } from '../../../shared/interfaces/message';
 
 function createMockOrchestrator(): AgentOrchestratorInterface {
@@ -50,7 +53,11 @@ describe('EventRouter', () => {
         content: 'Hi there',
       });
 
-      expect(orchestrator.handleMessage).toHaveBeenCalledWith('sess-1', 'Hi there');
+      expect(orchestrator.handleMessage).toHaveBeenCalledWith('sess-1', 'Hi there', {
+        messageId: undefined,
+        showThinking: false,
+        onActivity: expect.any(Function),
+      });
     });
 
     it('emits typing_start before orchestrator call and typing_stop after', async () => {
@@ -161,7 +168,11 @@ describe('EventRouter', () => {
         proposalId: 'prop-1',
       });
 
-      expect(orchestrator.confirmAction).toHaveBeenCalledWith('sess-1', 'prop-1');
+      expect(orchestrator.confirmAction).toHaveBeenCalledWith(
+        'sess-1',
+        'prop-1',
+        expect.any(Function),
+      );
     });
 
     it('brackets the confirmation with typing indicators and answers', async () => {
@@ -298,6 +309,125 @@ describe('EventRouter', () => {
         isNew: false,
         task: { title: 'Book the table', done: false },
       });
+    });
+  });
+
+  describe('narration', () => {
+    const agentMsg: ChatMessage = {
+      id: 'msg-1',
+      sessionId: 'sess-1',
+      sender: 'agent',
+      content: 'Hello!',
+      timestamp: new Date().toISOString(),
+    };
+
+    /** Run a turn and hand the orchestrator's emitter back to the test. */
+    async function turnEmitting(activity: AgentActivityPayload) {
+      vi.mocked(orchestrator.handleMessage).mockImplementation(async (_s, _c, options) => {
+        options?.onActivity?.(activity);
+        return agentMsg;
+      });
+      await router.routeEvent('send_message', { sessionId: 'sess-1', content: 'hi' });
+    }
+
+    it('puts an activity frame on the wire with a top-level sessionId', async () => {
+      // `resolveBroadcastSessionId` reads `payload.sessionId` and silently drops an
+      // event without one — `pong` and `error` are already dead in practice for
+      // exactly this reason. A frame nested one level deeper would never arrive.
+      await turnEmitting({
+        kind: 'tool_start',
+        sessionId: 'sess-1',
+        id: 'use-0',
+        iteration: 1,
+        tool: 'search_tracks',
+        service: 'spotify',
+        inputSummary: 'query: heavy metal',
+      });
+
+      const frame = emitter.events.find((e) => e.type === 'agent_activity');
+      expect(frame?.payload).toMatchObject({ sessionId: 'sess-1', kind: 'tool_start' });
+    });
+
+    it('narrates while the turn is still running, not after it', async () => {
+      await turnEmitting({
+        kind: 'tool_start',
+        sessionId: 'sess-1',
+        id: 'use-0',
+        iteration: 1,
+        tool: 'search_tracks',
+        service: 'spotify',
+        inputSummary: '',
+      });
+
+      const types = emitter.events.map((e) => e.type);
+      expect(types).toEqual(['typing_start', 'agent_activity', 'typing_stop', 'agent_message']);
+    });
+
+    it('passes the client-supplied message id straight through', async () => {
+      // Validation lives in `adoptableMessageId`, not here: the router's job is to
+      // read the field without casting, and the orchestrator's is to refuse a
+      // value it would put in a sort key.
+      vi.mocked(orchestrator.handleMessage).mockResolvedValue(agentMsg);
+
+      await router.routeEvent('send_message', {
+        sessionId: 'sess-1',
+        content: 'hi',
+        messageId: '3f6d1f0e-8c2a-4b71-9f2e-1d0a5b7c8e91',
+      });
+
+      expect(orchestrator.handleMessage).toHaveBeenCalledWith(
+        'sess-1',
+        'hi',
+        expect.objectContaining({ messageId: '3f6d1f0e-8c2a-4b71-9f2e-1d0a5b7c8e91' }),
+      );
+    });
+
+    it('will not let a truthy non-boolean turn thinking on', async () => {
+      // Thinking forces `temperature: 1`, which retunes Valentin's voice. It must
+      // be on because someone pressed a toggle, never because a field was a
+      // non-empty string.
+      vi.mocked(orchestrator.handleMessage).mockResolvedValue(agentMsg);
+
+      await router.routeEvent('send_message', {
+        sessionId: 'sess-1',
+        content: 'hi',
+        showThinking: 'yes',
+      });
+
+      expect(orchestrator.handleMessage).toHaveBeenCalledWith(
+        'sess-1',
+        'hi',
+        expect.objectContaining({ showThinking: false }),
+      );
+    });
+
+    it('gives the confirm path a tool trail and no display settings', async () => {
+      // A confirm never calls the model with tools, so there is no reasoning to
+      // reveal — and an authorisation frame is the wrong place to carry a
+      // preference about what the user wants to look at.
+      vi.mocked(orchestrator.confirmAction).mockImplementation(async (s, id, narrate) => {
+        narrate?.({
+          kind: 'tool_end',
+          sessionId: s,
+          id,
+          iteration: 1,
+          tool: 'confirm_reservation',
+          service: 'ontopo',
+          durationMs: 2400,
+          ok: true,
+          outcome: 'Table held for two.',
+        });
+        return agentMsg;
+      });
+
+      await router.routeEvent('confirm_action', { sessionId: 'sess-1', proposalId: 'prop-1' });
+
+      const frames = emitter.events.filter((e) => e.type === 'agent_activity');
+      expect(frames).toHaveLength(1);
+      expect(frames[0].payload).toMatchObject({ kind: 'tool_end', durationMs: 2400 });
+      expect(frames.some((f) => (f.payload as AgentActivityPayload).kind === 'thinking')).toBe(
+        false,
+      );
     });
   });
 });

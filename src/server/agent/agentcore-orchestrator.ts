@@ -3,9 +3,11 @@ import type { StorageInterface } from '../persistence/storage-interface';
 import type { ConversationMemory } from '../persistence/conversation-memory';
 import { logger } from '../logging';
 import {
+  adoptableMessageId,
   buildWelcomeMessage,
   MAX_CONTEXT_TOKENS,
   type AgentOrchestratorInterface,
+  type TurnOptions,
   type InitSessionResult,
   type OnPreferenceUpdate,
 } from './agent-orchestrator';
@@ -142,9 +144,26 @@ export class AgentCoreOrchestrator implements AgentOrchestratorInterface {
     return welcomeMessage;
   }
 
-  async handleMessage(sessionId: string, content: string): Promise<ChatMessage> {
+  /**
+   * `messageId` is adopted; `showThinking` and `onActivity` are deliberately
+   * ignored.
+   *
+   * Not an oversight and not a TODO. Reasoning and tool calls happen inside the
+   * AgentCore Runtime, which reports back a reply and a list of tool names and
+   * nothing about when or how long — `agentcore/agent.py` returns `content` and
+   * `tools_used`. Engine B's honest answer is therefore no trail rather than a
+   * reconstructed one, which is the same reason its `AwsSpan`s carry no
+   * `durationMs`. The id is different: it is minted before either engine is
+   * chosen, so adopting it costs nothing and keeps the "Noted" badge working on
+   * whichever engine happens to be serving.
+   */
+  async handleMessage(
+    sessionId: string,
+    content: string,
+    options: TurnOptions = {},
+  ): Promise<ChatMessage> {
     const userMessage: ChatMessage = {
-      id: crypto.randomUUID(),
+      id: adoptableMessageId(options.messageId) ?? crypto.randomUUID(),
       sessionId,
       sender: 'user',
       content,

@@ -5,9 +5,13 @@ import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
 import type { Task } from '../../shared/interfaces/task';
 import type {
   ActionProposalPayload,
+  AgentActivityPayload,
   ServerEvent,
 } from '../../shared/interfaces/ws-events';
-import type { AgentOrchestratorInterface } from '../agent/agent-orchestrator';
+import type {
+  AgentOrchestratorInterface,
+  TurnOptions,
+} from '../agent/agent-orchestrator';
 
 /** Callback to emit a ServerEvent to the client */
 export type EmitFn = (event: ServerEvent) => void;
@@ -19,10 +23,28 @@ export class EventRouter {
     private readonly emit: EmitFn,
   ) {}
 
+  /**
+   * Push one activity frame to this socket.
+   *
+   * Fire-and-forget and never awaited: the frames narrate a turn that is still
+   * running, so anything that made the turn wait on them would defeat the point.
+   *
+   * These payloads carry redacted tool summaries. They are **not** logged, here or
+   * anywhere downstream — see `activity-summary.ts`.
+   */
+  private emitActivity(activity: AgentActivityPayload): void {
+    this.emit({
+      type: 'agent_activity',
+      payload: activity,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
   /** Handle a send_message event from the client */
   async handleSendMessage(
     sessionId: string,
     content: string,
+    options: TurnOptions = {},
   ): Promise<void> {
     // Emit typing_start
     this.emit({
@@ -32,8 +54,11 @@ export class EventRouter {
     });
 
     try {
-      const agentMessage: ChatMessage =
-        await this.orchestrator.handleMessage(sessionId, content);
+      const agentMessage: ChatMessage = await this.orchestrator.handleMessage(
+        sessionId,
+        content,
+        { ...options, onActivity: (activity) => this.emitActivity(activity) },
+      );
 
       // Emit typing_stop
       this.emit({
@@ -89,9 +114,13 @@ export class EventRouter {
     });
 
     try {
+      // The tool trail, and no thinking: a confirm never calls the model with
+      // tools, so there is nothing to reason about, and a display preference has
+      // no business riding on an authorisation frame.
       const agentMessage = await this.orchestrator.confirmAction(
         sessionId,
         proposalId,
+        (activity) => this.emitActivity(activity),
       );
 
       this.emit({
@@ -206,7 +235,14 @@ export class EventRouter {
           return;
         }
 
-        await this.handleSendMessage(sessionId, content);
+        // Both read defensively rather than cast. `messageId` is validated
+        // downstream by `adoptableMessageId` because it lands in a DynamoDB sort
+        // key; `showThinking` is coerced to a real boolean so a truthy string
+        // cannot turn thinking on and retune Valentin's voice by accident.
+        await this.handleSendMessage(sessionId, content, {
+          messageId: typeof payload.messageId === 'string' ? payload.messageId : undefined,
+          showThinking: payload.showThinking === true,
+        });
         break;
       }
 

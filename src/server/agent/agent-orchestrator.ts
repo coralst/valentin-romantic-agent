@@ -5,7 +5,8 @@ import type { ConversationMemory } from '../persistence/conversation-memory';
 import type { BedrockClient } from './bedrock-client';
 import { toLlmMessages } from './bedrock-client';
 import type { ValentinRuntime } from './valentin-runtime';
-import { runToolLoop } from './tool-loop';
+import { runToolLoop, type ActivityEmitter } from './tool-loop';
+import { summariseToolOutcome } from './activity-summary';
 import type {
   ActionProposal,
   AgentTool,
@@ -47,6 +48,44 @@ export interface InitSessionResult {
   welcomeMessage: ChatMessage;
 }
 
+/**
+ * What the client asked for about *this* turn, as opposed to the conversation.
+ *
+ * All three fields are optional and all three describe presentation or identity,
+ * never authority — a turn with none of them behaves exactly as turns did before
+ * any of this existed.
+ */
+export interface TurnOptions {
+  /**
+   * The id the client already gave this turn in its own transcript.
+   *
+   * Adopting it is what makes `Preference.sourceMessageId` name a message the
+   * transcript can actually find; see {@link adoptableMessageId} for why it is
+   * validated first rather than trusted.
+   */
+  messageId?: string;
+  /** Reveal the model's real reasoning for this turn. Costs tokens; retunes voice. */
+  showThinking?: boolean;
+  /** Where to send the narration. Absent means narrate nothing. */
+  onActivity?: ActivityEmitter;
+}
+
+/**
+ * A client-supplied message id we are willing to adopt, or `undefined`.
+ *
+ * This is a validation boundary, not a formality: the adopted id becomes part of
+ * a DynamoDB **sort key** via `msgSk(timestamp, id)`, so an unbounded string is
+ * key injection with a `#` in it. A v4 uuid is exactly what the client generates,
+ * so anything else is a bug or an attack and both get the same answer — ignore it
+ * and mint server-side, which is what happened before this field existed.
+ */
+export function adoptableMessageId(candidate: unknown): string | undefined {
+  if (typeof candidate !== 'string') return undefined;
+  return UUID_V4.test(candidate) ? candidate : undefined;
+}
+
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 /** Abstract orchestrator interface */
 export interface AgentOrchestratorInterface {
   initSession(): Promise<InitSessionResult>;
@@ -54,12 +93,25 @@ export interface AgentOrchestratorInterface {
    * Open the conversation, unless someone already has. See the implementation.
    */
   greetIfEmpty(sessionId: string): Promise<ChatMessage | null>;
-  handleMessage(sessionId: string, content: string): Promise<ChatMessage>;
+  handleMessage(
+    sessionId: string,
+    content: string,
+    options?: TurnOptions,
+  ): Promise<ChatMessage>;
   /**
    * Carry out a proposal the user accepted. See the implementation for why this
    * exists as its own entry point rather than as another turn of conversation.
    */
-  confirmAction(sessionId: string, proposalId: string): Promise<ChatMessage>;
+  confirmAction(
+    sessionId: string,
+    proposalId: string,
+    /**
+     * The tool trail only — a confirm never calls the model with tools, so there
+     * is no reasoning to reveal, and a display setting has no business riding on
+     * an authorisation frame.
+     */
+    narrate?: ActivityEmitter,
+  ): Promise<ChatMessage>;
 }
 
 /**
@@ -197,10 +249,13 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
   async handleMessage(
     sessionId: string,
     content: string,
+    options: TurnOptions = {},
   ): Promise<ChatMessage> {
-    // Store the user message
+    // Store the user message, under the client's own id where it gave us a usable
+    // one. That is what lets an extracted preference point at a message the live
+    // transcript can find — see `adoptableMessageId`.
     const userMessage: ChatMessage = {
-      id: crypto.randomUUID(),
+      id: adoptableMessageId(options.messageId) ?? crypto.randomUUID(),
       sessionId,
       sender: 'user',
       content,
@@ -226,6 +281,7 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
           await readVisitedPlaces(this.storage, sessionId),
         ),
         sessionId,
+        options,
       );
       responseContent = reply.text;
       proposals = reply.proposals;
@@ -287,6 +343,7 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
   async confirmAction(
     sessionId: string,
     proposalId: string,
+    narrate?: ActivityEmitter,
   ): Promise<ChatMessage> {
     let pending;
     try {
@@ -321,9 +378,43 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
     // immediately and has no confirm step — but the two ctx sites have to agree,
     // or a tool that works from chat fails from a card.
     const ctx = { sessionId, userId: this.tools.userId ?? '', storage: this.storage };
+
+    // This is where the trail earns its keep most: the user has just authorised a
+    // booking and is watching a card, and the reservation is a multi-second round
+    // trip to Ontopo. `proposalId` is the correlation id because there is no
+    // `toolUseId` here — no model asked for this, a person did.
+    const startedAt = Date.now();
+    // Named for the confirm rather than the tool, so the two halves of a
+    // propose→confirm pair are distinguishable in the trail. Matches the
+    // `operation` `runToolConfirm` logs.
+    const confirmName = `confirm_${pending.tool.name.replace(/^propose_/, '')}`;
+    narrate?.({
+      kind: 'tool_start',
+      sessionId,
+      id: proposalId,
+      iteration: 1,
+      tool: confirmName,
+      service: pending.tool.service,
+      // The proposal's own title, which the user is looking at already, rather
+      // than the opaque `payload` the tool kept for itself.
+      inputSummary: pending.proposal.title,
+    });
+
     const result = pending.tool.confirm
       ? await pending.tool.confirm(pending.proposal, ctx)
       : await runTool(pending.tool, { confirm: proposalId }, ctx);
+
+    narrate?.({
+      kind: 'tool_end',
+      sessionId,
+      id: proposalId,
+      iteration: 1,
+      tool: confirmName,
+      service: pending.tool.service,
+      durationMs: Date.now() - startedAt,
+      ok: result.ok,
+      outcome: summariseToolOutcome(result.summary, result.ok),
+    });
 
     // Write down where he has taken her, before the reply goes out.
     //
@@ -397,6 +488,7 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
     messages: ChatMessage[],
     systemPrompt: string,
     sessionId: string,
+    options: TurnOptions = {},
   ): Promise<{ text: string; proposals: ActionProposal[] }> {
     const attempt = async (): Promise<{
       text: string;
@@ -407,7 +499,20 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
         const response = await this.bedrockClient.generateResponse(
           messages,
           systemPrompt,
+          { thinking: options.showThinking },
         );
+        // The tool-less path has no iterations to number, so it narrates as one.
+        // It is not a rare branch: it is every local run without integration
+        // credentials, which is where this feature is usually demonstrated.
+        if (response.reasoning) {
+          options.onActivity?.({
+            kind: 'thinking',
+            sessionId,
+            id: 'thinking:1',
+            iteration: 1,
+            text: response.reasoning,
+          });
+        }
         return { text: response.content, proposals: [] };
       }
 
@@ -419,6 +524,8 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
         sessionId,
         userId: this.tools.userId ?? '',
         storage: this.storage,
+        onActivity: options.onActivity,
+        showThinking: options.showThinking,
       });
       return { text: result.text, proposals: result.proposals };
     };

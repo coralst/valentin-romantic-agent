@@ -12,7 +12,9 @@ import {
   type ToolRegistry,
 } from '../integrations/tool-registry';
 import type { StorageInterface } from '../persistence/storage-interface';
+import type { AgentActivityPayload } from '../../shared/interfaces/ws-events';
 import { logger } from '../logging';
+import { summariseToolInput, summariseToolOutcome } from './activity-summary';
 
 /**
  * How many model round trips one user turn may take.
@@ -37,6 +39,15 @@ export interface ToolLoopResult {
   truncated: boolean;
 }
 
+/**
+ * Where an activity frame goes on its way to the user's socket.
+ *
+ * Synchronous and returning nothing, so a slow or throwing subscriber cannot
+ * stall or break the turn it is describing — the emitter is a narrator, and a
+ * narrator failing must not stop the story.
+ */
+export type ActivityEmitter = (activity: AgentActivityPayload) => void;
+
 export interface ToolLoopOptions {
   client: BedrockClient;
   /** The transcript so far, user-first. Not mutated. */
@@ -53,6 +64,25 @@ export interface ToolLoopOptions {
    * needs it refuses politely when it is absent. See `ToolContext.storage`.
    */
   storage?: StorageInterface;
+  /**
+   * Narrate this turn as it happens. Absent means narrate nothing.
+   *
+   * Emitted here rather than derived from the `integration.*` log line that
+   * `span-bridge.ts` already reads, for three reasons: that line is written
+   * *after* the call, so it can never produce the "started" half that makes the
+   * trail feel live; `runTool`'s docblock is an explicit promise that nothing from
+   * `input` is logged, and inputs are half of what makes a row worth reading; and
+   * it carries no reasoning.
+   */
+  onActivity?: ActivityEmitter;
+  /**
+   * Ask the model for its reasoning and emit it.
+   *
+   * Off unless the user pressed the toggle for this turn: it forces
+   * `temperature: 1`, which retunes Valentin's voice, and spends thinking tokens
+   * on every iteration.
+   */
+  showThinking?: boolean;
 }
 
 /** What the user sees if the cap is hit before the model has written anything. */
@@ -95,6 +125,8 @@ export async function runToolLoop({
   sessionId,
   userId,
   storage,
+  onActivity,
+  showThinking,
 }: ToolLoopOptions): Promise<ToolLoopResult> {
   const tools: ToolSchema[] = [...registry.values()].map((tool) => ({
     name: tool.name,
@@ -112,7 +144,21 @@ export async function runToolLoop({
       systemPrompt,
       tools,
       sessionId,
+      { thinking: showThinking },
     );
+
+    // Only ever real reasoning the model actually produced. `turn.reasoning` is
+    // `''` unless thinking was asked for, so nothing is invented and nothing is
+    // announced on a turn the user did not opt into.
+    if (turn.reasoning) {
+      onActivity?.({
+        kind: 'thinking',
+        sessionId,
+        id: `thinking:${iteration}`,
+        iteration,
+        text: turn.reasoning,
+      });
+    }
 
     // Kept even when it is empty prose accompanying a tool call — it is often
     // the "Let me check whether Saturday works" the user should see if the
@@ -128,7 +174,10 @@ export async function runToolLoop({
       role: 'user',
       content: await Promise.all(
         turn.toolUses.map((request) =>
-          resolveToolUse(request, registry, { sessionId, userId, storage }, proposals),
+          resolveToolUse(request, registry, { sessionId, userId, storage }, proposals, {
+            onActivity,
+            iteration,
+          }),
         ),
       ),
     });
@@ -152,6 +201,14 @@ export async function runToolLoop({
   };
 }
 
+/**
+ * What a row says the service is when the model called a tool that does not exist.
+ *
+ * There is no integration to name — the tool was invented — and a plausible guess
+ * would attribute a failure to a partner that was never contacted.
+ */
+const UNKNOWN_TOOL_SERVICE = 'unknown';
+
 /** The names the model may legally call, for the "no such tool" message. */
 function knownToolNames(registry: ToolRegistry): string {
   return [...registry.keys()].join(', ');
@@ -170,14 +227,49 @@ async function resolveToolUse(
   registry: ToolRegistry,
   ctx: ToolContext,
   proposals: ActionProposal[],
+  narration: { onActivity?: ActivityEmitter; iteration: number },
 ): Promise<LlmContentBlock> {
   const tool = registry.get(request.name);
+  const { onActivity, iteration } = narration;
+  const service = tool?.service ?? UNKNOWN_TOOL_SERVICE;
+  const startedAt = Date.now();
+
+  // Announced before anything runs, which is the whole liveness claim: the
+  // visible seconds in a turn are the tool round trips, so the row has to be on
+  // screen while the user is still waiting for it.
+  onActivity?.({
+    kind: 'tool_start',
+    sessionId: ctx.sessionId,
+    id: request.toolUseId,
+    iteration,
+    tool: request.name,
+    service,
+    inputSummary: summariseToolInput(request.input),
+  });
+
+  /** Close the row this call opened. Every exit below goes through it. */
+  const finish = (ok: boolean, outcome: string) => {
+    onActivity?.({
+      kind: 'tool_end',
+      sessionId: ctx.sessionId,
+      id: request.toolUseId,
+      iteration,
+      tool: request.name,
+      service,
+      durationMs: Date.now() - startedAt,
+      ok,
+      outcome,
+    });
+  };
 
   if (!tool) {
     logger.warn('agent.unknown_tool', {
       sessionId: ctx.sessionId,
       requested: request.name,
     });
+    // A tool name the model invented is a real, visible beat — it costs the user
+    // a round trip, so it gets a row rather than an unexplained pause.
+    finish(false, 'no such tool');
     return {
       toolResult: {
         toolUseId: request.toolUseId,
@@ -192,6 +284,9 @@ async function resolveToolUse(
   }
 
   const result = await runTool(tool, request.input, ctx);
+
+  // Redacted, and from the prose the tool already wrote — see `activity-summary`.
+  finish(result.ok, summariseToolOutcome(result.summary, result.ok));
 
   if (result.proposal) {
     proposals.push(result.proposal);

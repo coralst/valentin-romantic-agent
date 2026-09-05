@@ -10,6 +10,7 @@ import type {
   AgentTool,
   ToolRegistry,
 } from '../../integrations/tool-registry';
+import type { AgentActivityPayload } from '../../../shared/interfaces/ws-events';
 
 /** A turn in which the model just answers. */
 function textTurn(text: string): ToolTurn {
@@ -284,6 +285,162 @@ describe('runToolLoop', () => {
         expect.objectContaining({ name: 'search_restaurants' }),
       ],
       'sess-1',
+      { thinking: undefined },
     );
+  });
+
+  /**
+   * The trail is derived from real calls, so it cannot invent a step. What it can
+   * get wrong is *when* it speaks: a row that appears only once the tool has
+   * returned narrates the past and leaves the wait unexplained, which is the bug
+   * this feature exists to fix.
+   */
+  describe('narration', () => {
+    it('opens the row before the tool resolves and closes it after', async () => {
+      let release!: () => void;
+      const blocked = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const tool = readTool({
+        execute: vi.fn(async () => {
+          await blocked;
+          return { ok: true, summary: 'Havdalah at 18:03.' };
+        }),
+      });
+      const { client } = clientReturning([
+        toolTurn({ name: 'check_shabbat', input: { city: 'Tel Aviv' } }),
+        textTurn('Saturday after 18:03 then.'),
+      ]);
+      const activity: AgentActivityPayload[] = [];
+
+      const pending = runToolLoop({
+        client,
+        messages: [{ role: 'user', content: [{ text: 'plan me a date' }] }],
+        systemPrompt: 'be Valentin',
+        registry: registryOf(tool),
+        sessionId: 'sess-1',
+        userId: 'user-1',
+        onActivity: (a) => activity.push(a),
+      });
+
+      // Still in flight: the start frame must already be out.
+      await vi.waitFor(() => expect(activity).toHaveLength(1));
+      expect(activity[0]).toMatchObject({
+        kind: 'tool_start',
+        sessionId: 'sess-1',
+        id: 'use-0',
+        iteration: 1,
+        tool: 'check_shabbat',
+        service: 'hebcal',
+        inputSummary: 'city: Tel Aviv',
+      });
+
+      release();
+      await pending;
+
+      expect(activity).toHaveLength(2);
+      expect(activity[1]).toMatchObject({
+        kind: 'tool_end',
+        // The same id, so the client completes the line it drew instead of
+        // appending a second row under the reader's eyes.
+        id: 'use-0',
+        tool: 'check_shabbat',
+        ok: true,
+        outcome: 'Havdalah at 18:03.',
+      });
+    });
+
+    it('narrates a tool the model invented', async () => {
+      // It costs the user a round trip, so it is a visible beat rather than an
+      // unexplained pause — and no partner is blamed for it.
+      const { client } = clientReturning([
+        toolTurn({ name: 'book_a_hot_air_balloon' }),
+        textTurn('Let me think again.'),
+      ]);
+      const activity: AgentActivityPayload[] = [];
+
+      await runToolLoop({
+        client,
+        messages: [{ role: 'user', content: [{ text: 'surprise her' }] }],
+        systemPrompt: 'be Valentin',
+        registry: registryOf(readTool()),
+        sessionId: 'sess-1',
+        userId: 'user-1',
+        onActivity: (a) => activity.push(a),
+      });
+
+      expect(activity.map((a) => a.kind)).toEqual(['tool_start', 'tool_end']);
+      expect(activity[1]).toMatchObject({ ok: false, outcome: 'no such tool', service: 'unknown' });
+    });
+
+    it('says nothing about reasoning that was never asked for', async () => {
+      const { client } = clientReturning([textTurn('How about Sunday?')]);
+      const activity: AgentActivityPayload[] = [];
+
+      await runToolLoop({
+        client,
+        messages: [{ role: 'user', content: [{ text: 'hi' }] }],
+        systemPrompt: 'be Valentin',
+        registry: registryOf(readTool()),
+        sessionId: 'sess-1',
+        userId: 'user-1',
+        onActivity: (a) => activity.push(a),
+      });
+
+      expect(activity).toEqual([]);
+      expect(client.converseWithTools).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        'sess-1',
+        { thinking: undefined },
+      );
+    });
+
+    it('emits the reasoning the model actually produced', async () => {
+      const turn = textTurn('Sunday, then.');
+      const { client } = clientReturning([{ ...turn, reasoning: 'She hates crowds.' }]);
+      const activity: AgentActivityPayload[] = [];
+
+      await runToolLoop({
+        client,
+        messages: [{ role: 'user', content: [{ text: 'hi' }] }],
+        systemPrompt: 'be Valentin',
+        registry: registryOf(readTool()),
+        sessionId: 'sess-1',
+        userId: 'user-1',
+        showThinking: true,
+        onActivity: (a) => activity.push(a),
+      });
+
+      expect(activity).toEqual([
+        {
+          kind: 'thinking',
+          sessionId: 'sess-1',
+          id: 'thinking:1',
+          iteration: 1,
+          text: 'She hates crowds.',
+        },
+      ]);
+      expect(client.converseWithTools).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        'sess-1',
+        { thinking: true },
+      );
+    });
+
+    it('runs a normal turn with no emitter at all', async () => {
+      const tool = readTool();
+      const { client } = clientReturning([
+        toolTurn({ name: 'check_shabbat' }),
+        textTurn('Saturday works.'),
+      ]);
+
+      const result = await run(registryOf(tool), client);
+
+      expect(result.text).toBe('Saturday works.');
+    });
   });
 });

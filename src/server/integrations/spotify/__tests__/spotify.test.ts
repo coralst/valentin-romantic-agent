@@ -267,7 +267,7 @@ describe('createPlaylist', () => {
 
   /*
    * The failure that actually shipped. The refresh token is valid and mints an
-   * access token, and Spotify then refuses `/me` with 403 "The user is not
+   * access token, and Spotify then refuses the write with 403 "The user is not
    * registered for this application" because the app is in development mode and
    * the account is not on its user list.
    *
@@ -280,7 +280,7 @@ describe('createPlaylist', () => {
     stubFetch([
       { match: /accounts\.spotify\.com/, body: { access_token: 'user-token', expires_in: 3600 } },
       {
-        match: /v1\/me$/,
+        match: /v1\/me\/playlists/,
         status: 403,
         body: { error: { status: 403, message: 'The user is not registered for this application.' } },
       },
@@ -292,11 +292,34 @@ describe('createPlaylist', () => {
     });
   });
 
-  it('reports a plain refusal when /me fails for any other reason', async () => {
+  /*
+   * A bare `403 Forbidden` with no message is *not* `not-registered` — it is what
+   * `POST /users/{id}/playlists` answers for a development-mode app since Spotify's
+   * 2026-02 policy change. Reading it as "not registered" would send someone to the
+   * dashboard to fix an allowlist that was never the problem.
+   */
+  it('reports a plain refusal for a 403 that does not say "not registered"', async () => {
     config.integrations.spotifyRefreshToken = 'refresh-token';
     stubFetch([
       { match: /accounts\.spotify\.com/, body: { access_token: 'user-token', expires_in: 3600 } },
-      { match: /v1\/me$/, status: 500, body: {} },
+      {
+        match: /v1\/me\/playlists/,
+        status: 403,
+        body: { error: { status: 403, message: 'Forbidden' } },
+      },
+    ]);
+
+    expect(await createPlaylist({ name: 'x', description: 'y', trackIds: ['abc'] })).toEqual({
+      ok: false,
+      reason: 'refused',
+    });
+  });
+
+  it('reports a plain refusal when the create call fails for any other reason', async () => {
+    config.integrations.spotifyRefreshToken = 'refresh-token';
+    stubFetch([
+      { match: /accounts\.spotify\.com/, body: { access_token: 'user-token', expires_in: 3600 } },
+      { match: /v1\/me\/playlists/, status: 500, body: {} },
     ]);
 
     expect(await createPlaylist({ name: 'x', description: 'y', trackIds: ['abc'] })).toEqual({
@@ -309,9 +332,8 @@ describe('createPlaylist', () => {
     config.integrations.spotifyRefreshToken = 'refresh-token';
     const calls = stubFetch([
       { match: /accounts\.spotify\.com/, body: { access_token: 'user-token', expires_in: 3600 } },
-      { match: /v1\/me$/, body: ME },
-      { match: /v1\/users\/.*\/playlists/, body: PLAYLIST },
-      { match: /v1\/playlists\/.*\/tracks/, body: { snapshot_id: 'snap' } },
+      { match: /v1\/me\/playlists/, body: PLAYLIST },
+      { match: /v1\/playlists\/.*\/items/, body: { snapshot_id: 'snap' } },
     ]);
 
     const created = await createPlaylist({
@@ -337,14 +359,21 @@ describe('createPlaylist', () => {
      * public profile, and `public: false` is the only thing preventing it —
      * Spotify's default for a created playlist is public.
      */
-    const create = calls.find((call) => /users\/.*\/playlists/.test(call.url));
+    const create = calls.find((call) => /v1\/me\/playlists/.test(call.url));
     expect(JSON.parse(String(create?.init?.body))).toMatchObject({
       name: 'For the drive',
       public: false,
     });
 
+    /*
+     * Never `POST /users/{id}/playlists`. That form answers a bare 403 for a
+     * development-mode app since Spotify's 2026-02 policy change, and it is the
+     * reason no playlist could be saved — so nothing may reintroduce it.
+     */
+    expect(calls.some((call) => /v1\/users\//.test(call.url))).toBe(false);
+
     // Track ids become `spotify:track:` URIs; sending bare ids is a silent no-op.
-    const add = calls.find((call) => /playlists\/.*\/tracks/.test(call.url));
+    const add = calls.find((call) => /playlists\/.*\/items/.test(call.url));
     expect(JSON.parse(String(add?.init?.body))).toEqual({
       uris: ['spotify:track:abc', 'spotify:track:def'],
     });
@@ -359,9 +388,8 @@ describe('createPlaylist', () => {
     config.integrations.spotifyRefreshToken = 'refresh-token';
     stubFetch([
       { match: /accounts\.spotify\.com/, body: { access_token: 'user-token', expires_in: 3600 } },
-      { match: /v1\/me$/, body: ME },
-      { match: /v1\/users\/.*\/playlists/, body: PLAYLIST },
-      { match: /v1\/playlists\/.*\/tracks/, status: 403, body: {} },
+      { match: /v1\/me\/playlists/, body: PLAYLIST },
+      { match: /v1\/playlists\/.*\/items/, status: 403, body: {} },
     ]);
 
     const created = await createPlaylist({ name: 'x', description: 'y', trackIds: ['abc'] });
@@ -560,7 +588,7 @@ describe('propose_playlist', () => {
       stubFetch([
         { match: /accounts\.spotify\.com/, body: { access_token: 'user-token', expires_in: 3600 } },
         {
-          match: /v1\/me$/,
+          match: /v1\/me\/playlists/,
           status: 403,
           body: {
             error: { status: 403, message: 'The user is not registered for this application.' },
@@ -585,15 +613,14 @@ describe('propose_playlist', () => {
           body: { access_token: 'user-token', expires_in: 3600 },
         },
         ...TRACKS_ROUTES,
-        { match: /v1\/me$/, body: { id: 'demo-user' } },
         {
-          match: /v1\/users\/.*\/playlists/,
+          match: /v1\/me\/playlists/,
           body: {
             id: 'playlist-1',
             external_urls: { spotify: 'https://open.spotify.com/playlist/playlist-1' },
           },
         },
-        { match: /v1\/playlists\/.*\/tracks/, body: { snapshot_id: 'snap' } },
+        { match: /v1\/playlists\/.*\/items/, body: { snapshot_id: 'snap' } },
       ]);
 
       const proposed = await runTool(proposePlaylistTool, { name: 'Drive', trackIds: IDS }, CTX);
@@ -617,9 +644,8 @@ describe('propose_playlist', () => {
           body: { access_token: 'user-token', expires_in: 3600 },
         },
         ...TRACKS_ROUTES,
-        { match: /v1\/me$/, body: { id: 'demo-user' } },
-        { match: /v1\/users\/.*\/playlists/, body: { id: 'playlist-1' } },
-        { match: /v1\/playlists\/.*\/tracks/, status: 403, body: {} },
+        { match: /v1\/me\/playlists/, body: { id: 'playlist-1' } },
+        { match: /v1\/playlists\/.*\/items/, status: 403, body: {} },
       ]);
 
       const proposed = await runTool(proposePlaylistTool, { name: 'Drive', trackIds: IDS }, CTX);

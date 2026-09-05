@@ -320,7 +320,7 @@ async function callDetailed(
     return { ok: false, status: response.status, detail };
   }
 
-  // `POST /playlists/{id}/tracks` answers 201 with a body, but a 204 with no body
+  // `POST /playlists/{id}/items` answers 201 with a body, but a 204 with no body
   // is legal elsewhere in this API and `json()` throws on it.
   if (response.status === 204) return { ok: true, body: {} };
   try {
@@ -492,12 +492,17 @@ export async function getTracks(
 /**
  * Create a private playlist on the connected account and fill it.
  *
- * Three calls, in this order, because Spotify offers no way to do it in one:
- * `GET /me` for the user id, `POST /users/{id}/playlists`, then
- * `POST /playlists/{id}/tracks`. The middle one is the point of no return — a
- * playlist created and then not filled leaves an empty playlist in someone's
- * library, so a failure to add tracks reports the count it managed rather than
- * pretending the whole thing failed.
+ * Two calls, because Spotify offers no way to do it in one:
+ * `POST /me/playlists`, then `POST /playlists/{id}/items`. The first is the
+ * point of no return — a playlist created and then not filled leaves an empty
+ * playlist in someone's library, so a failure to add tracks reports the count it
+ * managed rather than pretending the whole thing failed.
+ *
+ * **Not** `POST /users/{id}/playlists`. That form answers a bare
+ * `403 Forbidden` for a development-mode app as of Spotify's 2026-02 developer
+ * policy change, which trimmed the endpoints such an app may call. `/me/playlists`
+ * creates on the connected account and needs no user id, so the `GET /me` hop that
+ * used to fetch one is gone too.
  *
  * Never throws, and never reports success it did not have: see
  * {@link PlaylistFailure} for the three ways it can decline, which the caller
@@ -522,16 +527,7 @@ export async function createPlaylist(input: {
   const token = await userAccessToken();
   if (!token) return { ok: false, reason: 'refused' };
 
-  const me = await callDetailed(token, '/me');
-  if (!me.ok) {
-    return {
-      ok: false,
-      reason: isNotRegistered(me.status, me.detail) ? 'not-registered' : 'refused',
-    };
-  }
-  if (typeof me.body.id !== 'string') return { ok: false, reason: 'refused' };
-
-  const playlist = await call(token, `/users/${encodeURIComponent(me.body.id)}/playlists`, {
+  const created = await callDetailed(token, '/me/playlists', {
     method: 'POST',
     body: {
       name: input.name,
@@ -541,7 +537,14 @@ export async function createPlaylist(input: {
       public: false,
     },
   });
-  if (!playlist || typeof playlist.id !== 'string') return { ok: false, reason: 'refused' };
+  if (!created.ok) {
+    return {
+      ok: false,
+      reason: isNotRegistered(created.status, created.detail) ? 'not-registered' : 'refused',
+    };
+  }
+  const playlist = created.body;
+  if (typeof playlist.id !== 'string') return { ok: false, reason: 'refused' };
 
   const playlistId = playlist.id;
   const url =
@@ -551,7 +554,9 @@ export async function createPlaylist(input: {
 
   if (ids.length === 0) return { ok: true, playlist: { id: playlistId, url, trackCount: 0 } };
 
-  const added = await call(token, `/playlists/${encodeURIComponent(playlistId)}/tracks`, {
+  // `/items`, not the deprecated `/tracks` — the old form answers a bare 403 for a
+  // development-mode app, exactly like `POST /users/{id}/playlists` above.
+  const added = await call(token, `/playlists/${encodeURIComponent(playlistId)}/items`, {
     method: 'POST',
     body: { uris: ids.map((id) => `spotify:track:${id}`) },
   });

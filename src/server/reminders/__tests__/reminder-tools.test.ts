@@ -5,6 +5,7 @@ import { InMemoryStoreFactory } from '../../persistence/in-memory-store';
 import type { StorageInterface } from '../../persistence/storage-interface';
 import { REMINDER_ZONE } from '../../../shared/interfaces/reminder';
 import type { Reminder } from '../../../shared/interfaces/reminder';
+import { config } from '../../config';
 
 /**
  * The gap this file covers: until now a reminder could only be created as a side
@@ -291,16 +292,38 @@ describe('set_reminder', () => {
    * `reminder-sync.ts` points the row at the address the moment `notify_email`
    * lands, so a reminder set before Valentin knew where to write still goes out.
    */
-  it('saves the row even with no address on file, and says so', async () => {
+  it("mails the deployment's owner when nothing is on file, without asking", async () => {
+    // The reported bug: Valentin saved the row and then asked for an address the
+    // owner had already given him. There is one owner here, so the question was
+    // never his to ask.
     const result = await setReminderTool.execute(
       { title: 'Call the florist', date: daysFromNow(6) },
       ctx(),
     );
 
     expect(result.ok).toBe(true);
-    expect(result.summary).toMatch(/address/i);
+    expect(result.summary).toContain(config.reminders.defaultEmail);
+    expect(result.summary).not.toMatch(/no email address on file/i);
     const [row] = await rows();
-    expect(row.target).toBeNull();
+    expect(row.target).toBe(config.reminders.defaultEmail);
+  });
+
+  it('saves the row and asks, only when there is nowhere at all to send it', async () => {
+    const original = config.reminders.defaultEmail;
+    config.reminders.defaultEmail = '';
+    try {
+      const result = await setReminderTool.execute(
+        { title: 'Call the florist', date: daysFromNow(6) },
+        ctx(),
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.summary).toMatch(/address/i);
+      const [row] = await rows();
+      expect(row.target).toBeNull();
+    } finally {
+      config.reminders.defaultEmail = original;
+    }
   });
 
   it('prefers the address he typed over the one that was inferred', async () => {

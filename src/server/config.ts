@@ -41,6 +41,27 @@ export const config = {
     enabled: process.env.REMINDERS_ENABLED !== 'false',
     channel: process.env.REMINDER_CHANNEL ?? 'log',
     intervalMs: parseInt(process.env.REMINDER_INTERVAL_MS ?? '60000', 10),
+
+    /**
+     * Where mail goes when the profile carries no usable address.
+     *
+     * This deployment has exactly one owner, and until now "remind me on Tuesday"
+     * saved a row with a null target and Valentin answered by asking for an
+     * address the owner had already given him elsewhere. `reminder.no_target`
+     * fired five times in half an hour in production on 2026-09-05.
+     *
+     * Defaulted in code rather than only in the environment on purpose: the
+     * container reads its variables from `compute-stack.ts`, so an env-only
+     * default would mean a reminder set today goes nowhere until an infra deploy
+     * lands. The variable is still honoured first, so changing the address does
+     * not need a code change — and `resolveNotifyEmail` checks the shape of
+     * whatever it finds, so a typo here degrades to the old behaviour instead of
+     * addressing mail to nonsense.
+     *
+     * An address the user sets in the panel still wins over this. See
+     * `reminders/notify-email.ts`.
+     */
+    defaultEmail: process.env.REMINDER_DEFAULT_EMAIL ?? 'koralsteinberg@gmail.com',
   },
 
   /**

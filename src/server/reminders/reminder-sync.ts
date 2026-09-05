@@ -5,6 +5,7 @@ import type { StorageInterface } from '../persistence/storage-interface';
 import { config } from '../config';
 import { logger } from '../logging';
 import { planReminders } from './planner';
+import { resolveNotifyEmail } from './notify-email';
 
 /**
  * The bridge between "a date landed on the profile" and "a row exists to sweep".
@@ -123,7 +124,7 @@ export async function syncReminders(
         reminderLeadTime: value('reminder_lead_time'),
         remindersMuted: value('reminders_muted'),
         channel: plannedChannel(config.reminders.channel),
-        target: value('notify_email'),
+        target: resolveNotifyEmail(value('notify_email')),
       },
       now,
     );
@@ -162,7 +163,7 @@ export async function syncReminders(
       await storage.saveReminder(sessionId, reminder);
     }
     await reapSuperseded(storage, sessionId, existing, planned.map((r) => r.id));
-    await adoptTarget(storage, sessionId, existing, value('notify_email'));
+    await adoptTarget(storage, sessionId, existing, resolveNotifyEmail(value('notify_email')));
   } catch (cause) {
     logger.warn('reminder.sync_failed', {
       sessionId,
@@ -217,10 +218,13 @@ async function reapSuperseded(
  * The planner rewrites its own rows from the profile on every sync, so a corrected
  * `notify_email` reaches them for free. A `custom` row is written once by
  * `set_reminder` and never re-planned, so without this it keeps whatever target it
- * had at the moment it was created — and the common case is that it had none,
- * because the user asked for a reminder before ever giving Valentin an address. The
- * dispatcher skips a null target, so that reminder would be silently undeliverable
- * for ever.
+ * had at the moment it was created. The dispatcher skips a null target, so that
+ * reminder would be silently undeliverable for ever.
+ *
+ * Less load-bearing than it was, now that `resolveNotifyEmail` gives a row an owner
+ * address even when nothing has been extracted — but it is what moves those rows
+ * when the user later names a *different* address, which is exactly the correction
+ * that must not be honoured by half the reminders.
  *
  * `notify_email` is already in {@link REMINDER_SOURCE_FIELDS}, so the hook that
  * calls this fires exactly when the address changes. Sent rows are left alone: they

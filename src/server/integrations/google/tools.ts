@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { ActionProposal, AgentTool, ToolResult } from '../tool-registry';
+import type { ActionProposal, AgentTool, ToolContext, ToolResult } from '../tool-registry';
 import {
   GOOGLE_PROPOSAL_TTL_MS,
   insertEvent,
@@ -7,6 +7,12 @@ import {
   sendMessage,
   type CalendarEvent,
 } from './client';
+import {
+  NOTIFY_EMAIL_FIELD,
+  looksLikeEmail,
+  resolveNotifyEmail,
+} from '../../reminders/notify-email';
+import { profileFieldValue } from '../../reminders/reminder-sync';
 
 /**
  * Calendar and Gmail — the two tools that touch someone's own account.
@@ -364,9 +370,27 @@ export const proposeCalendarEventTool: AgentTool = {
   },
 };
 
-/** A very loose sanity check — enough to catch a mangled address, not a validator. */
-function looksLikeEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+/**
+ * The user's own address: his profile's if he has given one, else the owner's.
+ *
+ * Two reads, and only on the turns where the model left `to` out — a mail to a
+ * restaurant costs nothing here. Failures are swallowed on purpose: a throttled
+ * table must cost the *fallback* address, not the offer to send, and
+ * `resolveNotifyEmail` already answers with the deployment owner when it is handed
+ * nothing. A deployment with no store on the tool path lands in the same place.
+ */
+async function ownerAddress(ctx: ToolContext): Promise<string | null> {
+  if (!ctx.storage) return resolveNotifyEmail(null);
+
+  try {
+    const [preferences, manual] = await Promise.all([
+      ctx.storage.getPreferencesBySession(ctx.sessionId),
+      ctx.storage.getManualValues(ctx.sessionId),
+    ]);
+    return resolveNotifyEmail(profileFieldValue(NOTIFY_EMAIL_FIELD, manual, preferences));
+  } catch {
+    return resolveNotifyEmail(null);
+  }
 }
 
 /** Trim a body down for the card while keeping it recognisable. */
@@ -390,14 +414,24 @@ function preview(body: string, limit = 400): string {
 export const proposeEmailTool: AgentTool = {
   name: 'propose_email',
   description:
-    'Offer to send an email — a note to a restaurant, a message to a partner, a ' +
-    'gift order enquiry. This does NOT send anything: it shows the user the exact ' +
-    'recipient and text, and it is sent only after they confirm. Write the body ' +
-    'in full; the user reads it before it goes. Never claim an email has been sent.',
+    'Offer to send an email — the options you have just described, a note to a ' +
+    'restaurant, a gift order enquiry. This does NOT send anything: it shows the ' +
+    'user the exact recipient and text, and it is sent only after they confirm. ' +
+    'Write the body in full; the user reads it before it goes. Never claim an email ' +
+    'has been sent.\n\n' +
+    'To mail the user himself, leave "to" out — his own address is already on file, ' +
+    'so never ask him for it and never stop to check it. Give "to" only when the ' +
+    'mail is going to somebody else.',
   input_schema: {
     type: 'object',
     properties: {
-      to: { type: 'string', description: 'Recipient email address.' },
+      to: {
+        type: 'string',
+        description:
+          'Recipient email address. Omit entirely when the mail is for the user ' +
+          'himself — his address is on file and will be filled in. Give it only for ' +
+          'a third party, like a restaurant.',
+      },
       subject: { type: 'string', description: 'Subject line. Hebrew is fine.' },
       body: {
         type: 'string',
@@ -408,15 +442,37 @@ export const proposeEmailTool: AgentTool = {
         description: 'One line on why you are offering to send this. Shown on the card.',
       },
     },
-    required: ['to', 'subject', 'body'],
+    required: ['subject', 'body'],
   },
   service: 'gmail',
   requiresConfirmation: true,
   async execute(input, ctx) {
-    const to = typeof input.to === 'string' ? input.to.trim() : '';
+    const asked = typeof input.to === 'string' ? input.to.trim() : '';
     const subject = typeof input.subject === 'string' ? input.subject.trim() : '';
     const body = typeof input.body === 'string' ? input.body.trim() : '';
 
+    /*
+     * No recipient means the user himself, which the tool can answer without him.
+     *
+     * The profile first, so an address he typed into the panel is where his own mail
+     * goes, then the deployment's owner. Read here rather than passed in because the
+     * alternative — the model asking "what's your email?" mid-sentence about her
+     * birthday — was the reported bug.
+     *
+     * An address the model *did* supply is never overridden. "Email the restaurant"
+     * has to keep working, and quietly redirecting a third-party mail to the owner
+     * would be worse than refusing it.
+     */
+    const to = asked || (await ownerAddress(ctx));
+
+    if (!to) {
+      return {
+        ok: false,
+        summary:
+          'There is no address on file to send that to, and I must not invent one. ' +
+          'Ask the user what address he wants it at.',
+      };
+    }
     if (!looksLikeEmail(to)) {
       return {
         ok: false,

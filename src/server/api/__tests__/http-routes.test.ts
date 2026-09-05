@@ -1248,7 +1248,9 @@ describe('createHttpRoutes', () => {
    *
    * The share assertions are about the token naming its owner rather than trusting a
    * caller, and about the response carrying a link and not a raw credential. The
-   * email assertions are about the 409 — "you have not told me where to write" is a
+   * email assertions are about where the mail is aimed: the panel's address wins, and
+   * anything the panel cannot supply falls back to the deployment's owner. The 409 is
+   * still asserted, with the owner unset — "you have not told me where to write" is a
    * state the user can fix, and answering it with a 500 would send them looking for a
    * fault that is not there.
    */
@@ -1359,20 +1361,57 @@ describe('createHttpRoutes', () => {
       expect((await routes.emailSession('no-such-session')).status).toBe(404);
     });
 
-    it('409s when no address has been given, and says where to fix it', async () => {
+    it("mails the deployment's owner when the panel is empty", async () => {
+      // The button used to 409 on a fresh session, which read as a refusal: there is
+      // one owner here, and his address is configured, so there was never a question
+      // to ask.
       const result = await routes.emailSession(sessionId);
 
-      expect(result.status).toBe(409);
-      expect((result.body as { error: string }).error).toContain('panel');
-      expect(sent.some((record) => record.event === 'reminder.sent')).toBe(false);
+      expect(result.status).toBe(200);
+      const record = sent.find((entry) => entry.event === 'reminder.sent');
+      expect(record?.data).toMatchObject({ to: config.reminders.defaultEmail });
+    });
+
+    it('falls back to the owner rather than failing on an unusable address', async () => {
+      // Same rule as `set_reminder`: a value that cannot be an address is treated as
+      // no address, not as a fault. Failing it at the channel would report a transport
+      // error for a typo.
+      await store.setManualValue(sessionId, 'notify_email', 'not-an-address');
+
+      expect((await routes.emailSession(sessionId)).status).toBe(200);
+      const record = sent.find((entry) => entry.event === 'reminder.sent');
+      expect(record?.data).toMatchObject({ to: config.reminders.defaultEmail });
+    });
+
+    /*
+     * The 409 still has to work, because a deployment with no owner configured is a
+     * real state and the honest answer there is "tell me where to write" — not a 500
+     * from a channel handed an empty recipient.
+     */
+    it('409s when there is nowhere at all to send it, and says where to fix it', async () => {
+      const original = config.reminders.defaultEmail;
+      config.reminders.defaultEmail = '';
+      try {
+        const result = await routes.emailSession(sessionId);
+
+        expect(result.status).toBe(409);
+        expect((result.body as { error: string }).error).toContain('panel');
+        expect(sent.some((record) => record.event === 'reminder.sent')).toBe(false);
+      } finally {
+        config.reminders.defaultEmail = original;
+      }
     });
 
     it('409s rather than 502s on something that cannot be an address', async () => {
-      // A typo is the same fixable state as an absence; failing it at the channel
-      // would report a transport fault for a value the user can correct.
-      await store.setManualValue(sessionId, 'notify_email', 'not-an-address');
+      const original = config.reminders.defaultEmail;
+      config.reminders.defaultEmail = '';
+      try {
+        await store.setManualValue(sessionId, 'notify_email', 'not-an-address');
 
-      expect((await routes.emailSession(sessionId)).status).toBe(409);
+        expect((await routes.emailSession(sessionId)).status).toBe(409);
+      } finally {
+        config.reminders.defaultEmail = original;
+      }
     });
 
     it('sends to the hand-typed address', async () => {

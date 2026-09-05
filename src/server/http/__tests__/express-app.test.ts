@@ -1043,14 +1043,29 @@ describe('GET /api/share/:token', () => {
 });
 
 describe('POST /api/session/:id/email', () => {
-  it('409s until an address has been given, and needs a token', async () => {
+  it('needs a token, and mails the owner without one being typed', async () => {
     const { sessionId } = (await (await post('/api/session', 'alice')).json()) as {
       sessionId: string;
     };
 
     expect((await post(`/api/session/${sessionId}/email`)).status).toBe(401);
-    // A fixable state, not a fault: the panel has the field.
-    expect((await post(`/api/session/${sessionId}/email`, 'alice')).status).toBe(409);
+    // No address on the profile is no longer a refusal: `resolveNotifyEmail` lands on
+    // the deployment's owner, so the button works on a session's first turn.
+    expect((await post(`/api/session/${sessionId}/email`, 'alice')).status).toBe(200);
+  });
+
+  it('409s through the router when the deployment names no owner', async () => {
+    const { sessionId } = (await (await post('/api/session', 'alice')).json()) as {
+      sessionId: string;
+    };
+    const original = config.reminders.defaultEmail;
+    config.reminders.defaultEmail = '';
+    try {
+      // A fixable state, not a fault: the panel has the field.
+      expect((await post(`/api/session/${sessionId}/email`, 'alice')).status).toBe(409);
+    } finally {
+      config.reminders.defaultEmail = original;
+    }
   });
 
   it('sends once the address is on the profile', async () => {

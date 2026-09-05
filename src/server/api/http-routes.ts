@@ -48,6 +48,7 @@ import {
   touchesReminders,
 } from '../reminders/reminder-sync';
 import { buildConversationEmail } from '../reminders/conversation-email';
+import { NOTIFY_EMAIL_FIELD, resolveNotifyEmail } from '../reminders/notify-email';
 import { resolveSender } from '../reminders/sender';
 import { mintShareToken } from '../sharing/share-token';
 import { shareLink } from '../../shared/constants/share-link';
@@ -351,22 +352,6 @@ async function fillConversation(
   // Without a title every row in the sidebar reads "Samantha", since the
   // denormalised partner name is the fallback label.
   await storage.updateSessionMeta(sessionId, { title: conversation.title });
-}
-
-/** The profile field holding where outbound mail for this user goes. */
-const NOTIFY_EMAIL_FIELD = 'notify_email';
-
-/**
- * Roughly an address, which is all this can honestly check.
- *
- * Not a validator — there is no useful client-side test for deliverability, and
- * RFC 5322 in a regex is a famous waste of a day. This exists only to separate "the
- * user has not told us where to write" from "the user typed something that cannot be
- * an address", because both are the same fixable state and both should get the same
- * answer: go and set it in the panel.
- */
-function looksLikeEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
 /**
@@ -1041,9 +1026,11 @@ export function createHttpRoutes(storage: StorageInterface, userId?: string) {
      *
      * - No session (or somebody else's): **404**, from the same structural guard as
      *   every other route here.
-     * - No usable `notify_email`: **409**. Not a 400 — the request was perfectly
-     *   well formed — and not a 500, because nothing failed. It is a state the user
-     *   can fix in one field in the panel, and the message says so.
+     * - Nowhere to send it: **409**. Not a 400 — the request was perfectly well
+     *   formed — and not a 500, because nothing failed. It is a state the user can
+     *   fix in one field in the panel, and the message says so. Rare now that
+     *   `resolveNotifyEmail` falls back to the deployment's owner: it takes an
+     *   unusable `notify_email` *and* no configured default.
      * - The channel threw: **502**, with a generic message. The provider's own error
      *   text is the one thing that could name a credential, a secret ARN or an
      *   internal host, so it goes to the log and nowhere near the client.
@@ -1060,11 +1047,14 @@ export function createHttpRoutes(storage: StorageInterface, userId?: string) {
         storage.getManualValues(sessionId),
       ]);
 
-      // Manual over inferred, the same precedence `reminder-sync.ts` plans on — and
-      // shared with it rather than reimplemented, so a corrected address cannot be
-      // honoured by the reminder and ignored by the button.
-      const recipient = profileFieldValue(NOTIFY_EMAIL_FIELD, manual, preferences)?.trim();
-      if (!recipient || !looksLikeEmail(recipient)) {
+      // Manual over inferred, the same precedence `reminder-sync.ts` plans on, then
+      // the deployment's owner — and shared with it rather than reimplemented, so a
+      // corrected address cannot be honoured by the reminder and ignored by the
+      // button. The 409 below is now only reachable with no default configured.
+      const recipient = resolveNotifyEmail(
+        profileFieldValue(NOTIFY_EMAIL_FIELD, manual, preferences),
+      );
+      if (!recipient) {
         return {
           status: 409,
           body: {

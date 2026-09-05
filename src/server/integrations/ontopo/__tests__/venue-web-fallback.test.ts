@@ -56,11 +56,56 @@ describe('findVenueOwnPage', () => {
    * single token of the name appears in that host on its own.
    */
   it('matches a hostname that runs the name together', async () => {
-    answered(result('Some review', 'https://mishlam.example/x'), result('Site', 'https://ocdtlv.com/'));
+    answered(
+      result('Some review', 'https://mishlam.example/x'),
+      result('OCD Tel Aviv', 'https://ocdtlv.com/'),
+    );
 
     const lead = await findVenueOwnPage({ name: 'OCD', city: 'Tel Aviv' });
 
     expect(lead?.host).toBe('ocdtlv.com');
+  });
+
+  /*
+   * The false positive the live probe caught before this shipped: searching "Ha Salon
+   * Tel Aviv restaurant" returns `ha.com`, which is Heritage Auctions. It scored only
+   * because the homepage bonus applied to a host with no name evidence at all, and it
+   * would have put a coin dealer's phone number in front of someone booking dinner.
+   */
+  it('does not credit a homepage that has nothing to do with the venue', async () => {
+    answered(result('Heritage Auctions', 'https://www.ha.com/'));
+
+    expect(await findVenueOwnPage({ name: 'Ha Salon', city: 'Tel Aviv' })).toBeNull();
+  });
+
+  /*
+   * The second live false positive. "Buckaroo" in Ra'anana matches `buckaroond.com`
+   * on the name alone — a western-wear shop in the United States. Names are not
+   * unique across countries, so a name in a hostname is suggestive and not sufficient.
+   */
+  it('needs an Israeli domain or the city named, not just the name', async () => {
+    answered(result('Buckaroo\'nd — Western Wear', 'https://buckaroond.com/contact-us'));
+    pageSays('Buckaroo\'nd, Texas. Call 555-0100 for store hours.');
+
+    expect(await findVenueOwnPage({ name: 'Buckaroo', city: "Ra'anana" })).toBeNull();
+  });
+
+  it('accepts a non-Israeli TLD once the city appears on the page', async () => {
+    // `.rest` and `.com` are common enough among Tel Aviv rooms that requiring `.il`
+    // outright would throw away most of the real leads.
+    answered(result('NOEMA', 'https://noema.rest/'));
+    pageSays('NOEMA, Herbert Samuel 14, Tel Aviv. Reservations 03-7614444.');
+
+    const lead = await findVenueOwnPage({ name: 'NOEMA', city: 'Tel Aviv' });
+
+    expect(lead).toMatchObject({ host: 'noema.rest', phone: '03-7614444' });
+  });
+
+  it('accepts the city out of the result title, without reading the page', async () => {
+    answered(result('NOEMA Tel Aviv — reservations', 'https://noema.rest/'));
+    readPage.mockResolvedValue(null);
+
+    expect((await findVenueOwnPage({ name: 'NOEMA', city: 'Tel Aviv' }))?.host).toBe('noema.rest');
   });
 
   it('never offers Ontopo back, since Ontopo is what just failed', async () => {

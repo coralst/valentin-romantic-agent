@@ -131,6 +131,13 @@ function isAggregator(host: string): boolean {
  * contains its name, and nothing else on a results page does. `squash` is what makes
  * that work across transliteration — "Ha Salon" is `hasalon.co.il`, and matching
  * token by token would miss it.
+ *
+ * ## Why nothing else can score on its own
+ *
+ * Everything below the name check is a tie-breaker, gated behind the name having
+ * matched at all. That gate is not tidiness: searching "Ha Salon Tel Aviv restaurant"
+ * really does return `ha.com` — Heritage Auctions — and an ungated homepage bonus was
+ * enough to put a coin dealer's phone number in front of someone booking dinner.
  */
 function ownSiteScore(
   result: { title: string; url: string },
@@ -150,24 +157,48 @@ function ownSiteScore(
 
   const hostSquashed = squash(host);
   const whole = squash(venueName);
-  let score = 0;
 
   // The strongest evidence available: the whole name inside the hostname.
-  if (whole.length >= 4 && hostSquashed.includes(whole)) score += 4;
-  else {
-    const tokens = nameTokens(venueName).filter((token) => hostSquashed.includes(token));
-    if (tokens.length) score += 2;
-  }
+  let score = 0;
+  if (whole.length >= 4 && hostSquashed.includes(whole)) score = 4;
+  else if (nameTokens(venueName).some((token) => hostSquashed.includes(token))) score = 2;
+
+  // No name, no lead — and therefore no tie-breakers either.
+  if (score === 0) return 0;
 
   // A homepage over a deep link, because a booking form and a phone number live at
   // the root far more often than three directories down.
   if (path === '/' || path === '') score += 1;
 
   // Weak on its own — a review headline names the restaurant too — so it only ever
-  // breaks a tie between hosts that already matched.
-  if (score > 0 && squash(result.title).includes(whole)) score += 1;
+  // separates two hosts that already matched.
+  if (squash(result.title).includes(whole)) score += 1;
 
   return score;
+}
+
+/**
+ * Something beyond the name that ties this site to this restaurant.
+ *
+ * A name in a hostname is suggestive and not sufficient, because names are not
+ * unique across countries: "Buckaroo" in Ra'anana matches `buckaroond.com`, a
+ * western-wear shop in the United States, on the name alone. Every venue Ontopo
+ * lists is in Israel, so one of two things has to hold — an Israeli domain, or the
+ * city named somewhere on the page we were given.
+ *
+ * The direction of the error is deliberate. Refusing a real `.com` whose pages never
+ * mention their own city costs the user a link he did not have before; accepting a
+ * stranger's site costs him a phone call to a shop in Texas.
+ */
+function corroborates(
+  host: string,
+  city: string | undefined,
+  text: readonly (string | null | undefined)[],
+): boolean {
+  if (host.toLowerCase().endsWith('.il')) return true;
+  const where = city ? squash(city) : '';
+  if (where.length < 3) return false;
+  return text.some((chunk) => chunk && squash(chunk).includes(where));
 }
 
 /** Reject the deadline instead of waiting on a browser that may never settle. */
@@ -209,7 +240,7 @@ export async function findVenueOwnPage(venue: {
   const found = await withBudget(webSearch(query, { maxResults: 6 }), BUDGET_MS);
   if (!found?.results?.length) return null;
 
-  let best: { url: string; host: string } | null = null;
+  let best: { url: string; host: string; title: string; snippet: string } | null = null;
   let bestScore = 0;
   for (const result of found.results) {
     const score = ownSiteScore(result, name);
@@ -217,14 +248,25 @@ export async function findVenueOwnPage(venue: {
       bestScore = score;
       // Re-parsed rather than carried out of the scorer, so the host in the prose is
       // the host that was scored and not a string assembled twice.
-      best = { url: result.url, host: new URL(result.url).hostname.replace(/^www\./, '') };
+      best = {
+        url: result.url,
+        host: new URL(result.url).hostname.replace(/^www\./, ''),
+        title: result.title,
+        snippet: result.snippet,
+      };
     }
   }
   if (!best) return null;
 
-  // A page read is a nicety, not a requirement: the link alone is already the answer
-  // to "where do I book this myself".
+  // A page read is a nicety for the phone number, and the last chance to corroborate:
+  // a site that never names its own city in a title still usually does on the page.
   const page = await withBudget(readPage(best.url), BUDGET_MS);
+
+  if (!corroborates(best.host, where, [best.title, best.snippet, page?.text])) {
+    logger.info('ontopo.web_fallback_unplaced', { venue: name, host: best.host, city: where });
+    return null;
+  }
+
   const phone = page?.text ? (IL_PHONE.exec(page.text)?.[0]?.trim() ?? null) : null;
 
   logger.info('ontopo.web_fallback', {

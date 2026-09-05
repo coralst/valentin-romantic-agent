@@ -27,11 +27,12 @@ import { config } from '../../config';
  *
  * ## Scopes
  *
- * `calendar.events` and `gmail.send`, and nothing more. Notably *not*
- * `gmail.readonly`: Valentin has no reason to read anyone's mail, and a token
- * that cannot read the inbox cannot leak it. `gmail.send` is also the narrowest
- * scope that can send — `gmail.compose` would additionally allow creating and
- * deleting drafts.
+ * The calendar, `gmail.send`, and `gmail.readonly` — see {@link GOOGLE_SCOPES} for
+ * what each is for and why the read scope is here at all. Nothing that can *modify* a
+ * mailbox: `gmail.send` is the narrowest scope that can send, where `gmail.compose`
+ * would additionally allow creating and deleting drafts, and `gmail.modify` and
+ * `https://mail.google.com/` reach further still. Sending and reading are recoverable;
+ * deletion is not.
  *
  * Like Amadeus and unlike Ontopo, this follows published documentation rather
  * than observation, and has not been exercised against a live account from this

@@ -148,21 +148,30 @@ describe('googleAccessToken', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('asks for send and events scopes only — never read access to mail', () => {
+  it('asks for the calendar, sending mail, and reading it back — and nothing else', () => {
     expect(GOOGLE_SCOPES).toEqual([
       'https://www.googleapis.com/auth/calendar.events',
       'https://www.googleapis.com/auth/calendar.readonly',
       'https://www.googleapis.com/auth/gmail.send',
+      'https://www.googleapis.com/auth/gmail.readonly',
     ]);
-    // The invariant is about the *inbox*. It used to be asserted as "no scope
-    // contains 'readonly'", which forbade `calendar.readonly` as collateral —
-    // without it `calendarList.list` 403s and only the primary calendar is ever
-    // readable. Scoped to Gmail, the guarantee is unchanged and now says what it
-    // means: mail can be sent, never read.
-    expect(GOOGLE_SCOPES.filter((scope) => scope.includes('gmail'))).toEqual([
-      'https://www.googleapis.com/auth/gmail.send',
-    ]);
-    expect(GOOGLE_SCOPES.some((scope) => scope.includes('gmail.compose'))).toBe(false);
+
+    /*
+     * `gmail.readonly` is a deliberate widening, and this assertion is where the cost
+     * is recorded rather than hidden. It exists for one thing:
+     * `scripts/verify-reminder-mail.ts` asking whether an automatic reminder actually
+     * landed in the mailbox, which is the one claim about this system that cannot be
+     * checked by reading code. No request path reads mail.
+     *
+     * What is still forbidden is everything that would let this app *change* a
+     * mailbox. `gmail.modify` and `gmail.compose` can delete drafts and alter labels,
+     * and `https://mail.google.com/` is total control including permanent deletion.
+     * Reading and sending are recoverable; those are not.
+     */
+    for (const forbidden of ['gmail.modify', 'gmail.compose', 'gmail.settings']) {
+      expect(GOOGLE_SCOPES.some((scope) => scope.includes(forbidden))).toBe(false);
+    }
+    expect(GOOGLE_SCOPES).not.toContain('https://mail.google.com/');
   });
 });
 

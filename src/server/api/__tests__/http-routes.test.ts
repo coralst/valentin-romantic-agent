@@ -360,12 +360,18 @@ describe('createHttpRoutes', () => {
           .filter((id): id is string => id !== null),
       );
 
+      /*
+       * `reminders_muted` is the one field the seed must leave empty — see
+       * `demo-profile.test.ts`'s `UNSET_BY_DESIGN`. Muting is a thing he did, and an
+       * empty list is the honest state of a profile in which he has not done it.
+       */
+      const unsetByDesign = ['reminders_muted'];
       const missing = PROFILE_FIELD_REGISTRY.filter(
-        (field) => !resolvedFieldIds.has(field.id),
+        (field) => !resolvedFieldIds.has(field.id) && !unsetByDesign.includes(field.id),
       ).map((field) => field.id);
 
       expect(missing).toEqual([]);
-      expect(resolvedFieldIds.size).toBe(PROFILE_FIELD_REGISTRY.length);
+      expect(resolvedFieldIds.size).toBe(PROFILE_FIELD_REGISTRY.length - unsetByDesign.length);
     });
 
     it('has no seeded preference that fails to resolve to a field', async () => {

@@ -1,12 +1,12 @@
 import {
-  REMINDER_HOUR_LOCAL,
+  REMINDER_SEND_TIME_LOCAL,
   REMINDER_ZONE,
   reminderId,
   type Reminder,
   type ReminderChannelName,
   type ReminderKind,
 } from '../../shared/interfaces/reminder';
-import { leadTimeDays } from '../../shared/constants/profile-fields';
+import { leadTimeDays, mutedReminderKinds } from '../../shared/constants/profile-fields';
 import { parseInZone } from '../integrations/hebcal/client';
 
 /**
@@ -39,6 +39,16 @@ export interface PlanRemindersInput {
   nextOccasion?: string | null;
   /** Stored `reminder_lead_time`, one of `REMINDER_LEAD_OPTIONS`. */
   reminderLeadTime?: string | null;
+  /**
+   * Stored `reminders_muted`, verbatim — the kinds he does not want mailed about.
+   *
+   * Parsed here rather than by the caller so every call site mutes identically, and
+   * so this stays the one place that decides what a stored profile value means. A
+   * muted kind produces no row at all, which is also how the mute takes effect on a
+   * reminder already armed: `reapSuperseded` deletes any pending planner row a fresh
+   * plan no longer contains, so muting cancels rather than only stopping the next one.
+   */
+  remindersMuted?: string | null;
   channel: ReminderChannelName;
   /** Where the mail goes. Absent is legal — see `Reminder.target`. */
   target?: string | null;
@@ -127,7 +137,7 @@ function clampToMonth(year: number, month: number, day: number): number {
 
 /**
  * The instant a reminder should go out: `leadDays` before the occasion, at
- * {@link REMINDER_HOUR_LOCAL} in {@link REMINDER_ZONE}.
+ * {@link REMINDER_SEND_TIME_LOCAL} in {@link REMINDER_ZONE}.
  *
  * The subtraction is done on the calendar date and the hour is pinned afterwards,
  * via `parseInZone`. Subtracting `leadDays * 86_400_000` from an instant instead
@@ -138,8 +148,17 @@ function clampToMonth(year: number, month: number, day: number): number {
  * Exported for `set_reminder`, which needs the identical rule for a user-authored
  * date. A second copy of this is how one of the two paths ends up mailing at 08:00
  * for half the year.
+ *
+ * `atLocalTime` overrides the default send time for a user who named one — "mail me
+ * at seven that morning". Validated by the caller: an unparseable value falls back
+ * to the default rather than producing no reminder, because the date is the part he
+ * cares about and losing the whole thing over a malformed hour is the worse trade.
  */
-export function dueInstant(occursOn: string, leadDays: number): Date | null {
+export function dueInstant(
+  occursOn: string,
+  leadDays: number,
+  atLocalTime: string = REMINDER_SEND_TIME_LOCAL,
+): Date | null {
   const occasionNoon = parseInZone(occursOn, REMINDER_ZONE);
   if (!occasionNoon) return null;
   const shifted = new Date(occasionNoon.getTime() - leadDays * DAY_MS);
@@ -149,8 +168,10 @@ export function dueInstant(occursOn: string, leadDays: number): Date | null {
     month: '2-digit',
     day: '2-digit',
   }).format(shifted);
-  const hour = String(REMINDER_HOUR_LOCAL).padStart(2, '0');
-  return parseInZone(`${wall}T${hour}:00`, REMINDER_ZONE);
+  const at = /^([01]\d|2[0-3]):([0-5]\d)$/.test(atLocalTime.trim())
+    ? atLocalTime.trim()
+    : REMINDER_SEND_TIME_LOCAL;
+  return parseInZone(`${wall}T${at}`, REMINDER_ZONE);
 }
 
 function buildReminder(
@@ -161,19 +182,36 @@ function buildReminder(
   now: Date,
 ): Reminder | null {
   const leadDays = leadTimeDays(input.reminderLeadTime);
-  const dueAt = dueInstant(occursOn, leadDays);
-  if (!dueAt) return null;
+  const scheduled = dueInstant(occursOn, leadDays);
+  if (!scheduled) return null;
 
   /*
-   * A send moment that has already gone produces nothing.
+   * The lead time is a window, not a moment — so a date learned *inside* it sends now.
    *
-   * With a week's notice and a birthday three days away the reminder was due four
-   * days ago. Storing it anyway means the next sweep — within the minute — mails
-   * "her birthday is a week away" on a day when it is not, and does so at whatever
-   * hour the profile happened to be edited. There is no useful reminder left to
-   * send here; the honest output is none.
+   * The usual path crosses into the window while we are watching: a week's notice on
+   * an occasion nine days out counts 9, 8, 7 and fires on the 7th. But a date can
+   * also arrive already inside the window — he tells us on Monday about an
+   * anniversary five days away, with a week's notice configured. Then the scheduled
+   * instant is two days behind us and there is no crossing left to wait for.
+   *
+   * This used to return null there, and that was wrong in the way that matters:
+   * "her anniversary is in five days" is the single most useful thing this system
+   * can say, and it said nothing at all — silently, because a dropped row leaves no
+   * trace. The original worry was the body claiming "a week away" on a day when it
+   * is not, but the body does not read this field: `dispatcher.bodyFor` recomputes
+   * the gap from `occursOn` at send time, precisely so a delayed sweep cannot
+   * misstate it. A clamped row therefore mails "five days away", which is true.
+   *
+   * Clamped to `now` rather than to the next 9am: the whole point is that the
+   * notice is already short, and holding a five-days-out reminder until tomorrow
+   * morning spends another night of it for a tidiness nobody asked for.
+   *
+   * An occasion that has *passed* still yields nothing, and that is unchanged —
+   * recurring dates roll to their next occurrence before they reach here, and a
+   * one-off `next_occasion` in the past is dropped by `planOccasion`. So a clamp
+   * here can only ever mean "inside the window", never "behind us".
    */
-  if (dueAt.getTime() <= now.getTime()) return null;
+  const dueAt = scheduled.getTime() <= now.getTime() ? now : scheduled;
 
   return {
     // Derived, never random, so re-planning a corrected date overwrites in place.
@@ -244,10 +282,16 @@ function planOccasion(input: PlanRemindersInput, today: DateParts, now: Date): R
  */
 export function planReminders(input: PlanRemindersInput, now: Date): Reminder[] {
   const today = localToday(now);
+  // Whether he wants mail about a date is a question about the reminder, so it is
+  // answered here rather than inside each `planX` — and answered before any parsing,
+  // so a muted kind costs nothing and cannot fail.
+  const muted = new Set<string>(mutedReminderKinds(input.remindersMuted));
   const planned = [
-    planRecurring(input, 'birthday', input.birthday, today, now),
-    planRecurring(input, 'anniversary', input.anniversary, today, now),
-    planOccasion(input, today, now),
+    muted.has('birthday') ? null : planRecurring(input, 'birthday', input.birthday, today, now),
+    muted.has('anniversary')
+      ? null
+      : planRecurring(input, 'anniversary', input.anniversary, today, now),
+    muted.has('occasion') ? null : planOccasion(input, today, now),
   ];
   return planned
     .filter((reminder): reminder is Reminder => reminder !== null)

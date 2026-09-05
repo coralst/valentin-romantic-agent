@@ -623,6 +623,33 @@
     }
   },
   {
+    "name": "read_webpage",
+    "description": "Read a web page and return its text. Use it on a search_web result, or on a link the user shared, to get concrete details — event dates, menus, prices, opening hours — before recommending something. Read-only: it never fills forms or buys anything.",
+    "requiresConfirmation": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Storage id of the signed-in user, supplied by the proxy service"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "The conversation session id"
+        },
+        "url": {
+          "type": "string",
+          "description": "The full http(s) URL to read, exactly as search_web returned it."
+        }
+      },
+      "required": [
+        "user_id",
+        "session_id",
+        "url"
+      ]
+    }
+  },
+  {
     "name": "search_activities",
     "description": "Find bookable tours, tastings and experiences in a city — boat trips, food tours, workshops. This is a commercial tours catalogue, not a listing of local events, so do not present its results as \"what is on this weekend\". Good for building a day around a trip.",
     "requiresConfirmation": false,
@@ -690,6 +717,41 @@
         "session_id",
         "city",
         "check_in"
+      ]
+    }
+  },
+  {
+    "name": "search_web",
+    "description": "Search the open web. Use this freely and creatively — for date ideas beyond the built-in catalogues, local events and festivals, seasonal activities, \"best of\" articles, opening hours, anything the specialised tools cannot answer. Returns result titles, URLs and snippets (and sometimes a short synthesised answer). Snippets are teasers: use read_webpage on a promising result to get the actual details before recommending it.",
+    "requiresConfirmation": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Storage id of the signed-in user, supplied by the proxy service"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "The conversation session id"
+        },
+        "query": {
+          "type": "string",
+          "description": "What to search for, as you would type it into a search engine, e.g. \"unusual romantic date ideas Tel Aviv autumn 2026\"."
+        },
+        "max_results": {
+          "type": "number",
+          "description": "How many results. Defaults to 5, which is also the cap."
+        },
+        "topic": {
+          "type": "string",
+          "description": "Either \"general\" (default) or \"news\" for current events."
+        }
+      },
+      "required": [
+        "user_id",
+        "session_id",
+        "query"
       ]
     }
   }

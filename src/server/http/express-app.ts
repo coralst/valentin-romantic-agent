@@ -243,6 +243,20 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
        * B's name. This is the value the label should come from.
        */
       engine: deps.engine ?? DEFAULT_ENGINE,
+      /*
+       * Where a due reminder would actually go.
+       *
+       * Reported because the difference is invisible from outside and matters
+       * completely: `REMINDER_CHANNEL` defaults to `log`, so a correctly armed
+       * reminder gets rendered, stamped sent, and written to the log — the sweep
+       * says `sent: 1` and no mail exists. A demo claimed the mail had gone out on
+       * the strength of that line. Anything that promises delivery can now check
+       * first instead of trusting a log entry.
+       *
+       * Not a secret: it is the *name* of a transport, with no address or
+       * credential in it.
+       */
+      reminderChannel: config.reminders.channel,
     });
   });
 

@@ -43,7 +43,8 @@ export type BrandMarkId =
   | 'amadeus'
   | 'gmail'
   | 'whatsapp'
-  | 'hebcal';
+  | 'hebcal'
+  | 'web-search';
 
 /** A monogram tile, for providers whose logo is a wordmark rather than a symbol. */
 function monogram(letter: string, fill: string, rounded: 'square' | 'circle'): ReactNode {
@@ -151,11 +152,43 @@ const MARKS: Record<BrandMarkId, ReactNode> = {
 
   // Not a company logo: Hebcal is a calendar API, and the thing the row is
   // actually for is knowing when Shabbat comes in. So, a candle, in our own ink.
+  /*
+   * A calendar carrying a small Magen David, rather than the candle this used to
+   * be. Hebcal supplies *dates* — candle-lighting times among them, but also
+   * holidays and the Hebrew date — and a candle read as "Shabbat" specifically,
+   * which is narrower than what the service does. The calendar says the category
+   * and the star says whose.
+   */
   hebcal: (
+    <g
+      stroke={colors.claret}
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      fill="none"
+    >
+      <rect x="3" y="5" width="18" height="16" rx="2.5" />
+      <path d="M3 9.5h18M8 3v3.5M16 3v3.5" />
+      {/* Two overlaid triangles: at 17px the outline reads, a filled star does not. */}
+      <path d="M12 11.4l2.6 4.5h-5.2z" strokeWidth="1.2" />
+      <path d="M12 18.6l2.6-4.5h-5.2z" strokeWidth="1.2" />
+    </g>
+  ),
+
+  // Not a company logo either: the row is the open web, not any one engine —
+  // Tavily and DuckDuckGo are interchangeable behind it. So, a globe with a
+  // magnifier, in our own ink.
+  'web-search': (
     <>
-      <rect x="9.6" y="9.5" width="4.8" height="10.5" rx="1.2" fill={colors.claret} />
-      <path d="M6.5 20.4h11" stroke={colors.claret} strokeWidth="1.7" strokeLinecap="round" />
-      <path d="M12 3.4c1.9 1.7 2.7 3 2.7 4.1a2.7 2.7 0 0 1-5.4 0c0-1.1.8-2.4 2.7-4.1Z" fill="#E9A23B" />
+      <circle cx="10.5" cy="10.5" r="7" fill="none" stroke={colors.claret} strokeWidth="1.7" />
+      <path d="M3.5 10.5h14" stroke={colors.claret} strokeWidth="1.3" />
+      <path
+        d="M10.5 3.5c-2.2 1.9-3.3 4.3-3.3 7s1.1 5.1 3.3 7c2.2-1.9 3.3-4.3 3.3-7s-1.1-5.1-3.3-7Z"
+        fill="none"
+        stroke={colors.claret}
+        strokeWidth="1.3"
+      />
+      <path d="m15.7 15.7 4.6 4.6" stroke={colors.claret} strokeWidth="2.2" strokeLinecap="round" />
     </>
   ),
 };

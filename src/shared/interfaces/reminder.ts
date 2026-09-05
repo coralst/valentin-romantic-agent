@@ -140,10 +140,29 @@ export interface Reminder {
 /**
  * The hour a reminder lands, in the user's day.
  *
- * Nine in the morning: late enough not to wake anyone, early enough that "a week
- * before" still leaves a whole working day to book something.
+ * Half past eight in the morning: late enough not to wake anyone, early enough
+ * that "a week before" still leaves a whole working day to book something, and
+ * before the working day starts rather than in the middle of the first meeting.
+ *
+ * Kept as an hour *and* a minute because the wall time is what the user is told —
+ * `describeInstant` in `reminders/tools.ts` reads it back to him as part of a
+ * promise ("I'll mail you on the Thursday morning"), and a promise that says 9am
+ * about a mail that arrives at 08:30 is a small lie the product does not need.
  */
-export const REMINDER_HOUR_LOCAL = 9;
+export const REMINDER_HOUR_LOCAL = 8;
+
+/** The minute past {@link REMINDER_HOUR_LOCAL} a reminder lands. */
+export const REMINDER_MINUTE_LOCAL = 30;
+
+/**
+ * The send time as `HH:MM`, which is the form `parseInZone` takes.
+ *
+ * Derived rather than written out a second time: two constants that must agree is
+ * how the planner and the sentence describing it end up an hour apart.
+ */
+export const REMINDER_SEND_TIME_LOCAL = `${String(REMINDER_HOUR_LOCAL).padStart(2, '0')}:${String(
+  REMINDER_MINUTE_LOCAL,
+).padStart(2, '0')}`;
 
 /**
  * The timezone reminders are pinned to.

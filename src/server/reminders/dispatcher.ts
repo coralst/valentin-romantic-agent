@@ -5,6 +5,7 @@ import { config } from '../config';
 import { logger } from '../logging';
 import { buildReminderEmail } from './email-body';
 import type { ReminderSender } from './sender';
+import { activityFor, EMPTY_CONTEXT, type ReminderContext } from './suggestions';
 
 /**
  * One sweep of the due-index: read what is ready, claim it, send it.
@@ -60,6 +61,22 @@ export interface DispatchOptions {
   limit?: number;
   /** Where the app lives, for the resume link in the mail. */
   origin?: string;
+  /**
+   * What the mail should be *about*, resolved per row before the claim.
+   *
+   * Injected rather than read here because the dispatcher holds a
+   * {@link ReminderIndexReader} — a cross-tenant view of the due-index and nothing
+   * else — and composing a reminder needs one session's profile. Widening this
+   * parameter into a full storage handle would give a sweeper that walks every user's
+   * rows the ability to read every user's answers, which is a boundary worth keeping
+   * even inside one process. `scheduler.ts` supplies the real resolver from a scoped
+   * factory; `reminderContextFor` in `suggestions.ts` is that function.
+   *
+   * Called *before* `markSent`, so a slow or failing profile read costs a sweep and
+   * not a claimed-but-unsent row — and it is contracted not to throw, for the same
+   * reason. Absent ⇒ the mail is the date and the link, which is what it was before.
+   */
+  context?: (reminder: Reminder) => Promise<ReminderContext>;
 }
 
 const DEFAULT_LIMIT = 25;
@@ -109,25 +126,25 @@ function daysUntil(occursOn: string, now: Date): number {
   return Math.round((Date.UTC(oy, om - 1, od) - Date.UTC(ty, tm - 1, td)) / 86_400_000);
 }
 
-function bodyFor(reminder: Reminder, now: Date, origin: string) {
+function bodyFor(reminder: Reminder, now: Date, origin: string, context: ReminderContext) {
   return buildReminderEmail({
     occasion: reminder.occasion,
+    partnerName: context.partnerName,
     // Set only on a reminder the user asked for by name, and then it is the whole
     // subject — see `ReminderEmailInput.title` for why it cannot just be `occasion`.
     title: reminder.title,
     occasionDate: occasionDateOf(reminder.occursOn),
     daysUntil: daysUntil(reminder.occursOn, now),
     /*
-     * Nothing to suggest, and the body says so honestly.
-     *
-     * The dispatcher holds a reminder row and no search: restaurant discovery is
-     * an outbound HTTP call with its own credentials and rate limits, and doing it
-     * inside a claim-then-send window would put a Places timeout between the claim
-     * and the mail. Wiring it in means composing suggestions *before* this call —
-     * read the session's `restaurant_style`, `home_city` and `search_radius`, run
-     * the same search the agent's tool runs, and pass the rows through here.
+     * Composed before the claim by `DispatchOptions.context`, never here. With no
+     * resolver this is `EMPTY_CONTEXT` and the body falls back to saying it has not
+     * found anything yet, which is honest and still names the date.
      */
-    suggestions: [],
+    activity: context.activity,
+    criteria: context.criteria,
+    suggestions: context.suggestions,
+    ideas: context.ideas,
+    timingNote: context.timingNote,
     origin,
     sessionId: reminder.sessionId,
   });
@@ -141,9 +158,10 @@ async function deliver(
   to: string,
   now: Date,
   origin: string,
+  context: ReminderContext,
 ): Promise<boolean> {
   try {
-    await sender.send(to, bodyFor(reminder, now, origin));
+    await sender.send(to, bodyFor(reminder, now, origin, context));
     logger.info('reminder.sent', {
       reminderId: reminder.id,
       channel: sender.channel,
@@ -186,6 +204,12 @@ export async function dispatchDue(
       continue;
     }
 
+    // Before the claim on purpose: this is the only step that reads another table,
+    // and a claimed row whose composition hung is a reminder nobody will ever get.
+    const context = options?.context
+      ? await options.context(reminder)
+      : { ...EMPTY_CONTEXT, activity: activityFor(reminder) };
+
     // The claim. False means another worker owns this send; moving on without
     // sending is the entire reason two containers are safe.
     const claimed = await reader.markSent(reminder, now);
@@ -194,7 +218,7 @@ export async function dispatchDue(
       continue;
     }
 
-    if (await deliver(reader, sender, reminder, target, now, origin)) summary.sent += 1;
+    if (await deliver(reader, sender, reminder, target, now, origin, context)) summary.sent += 1;
     else summary.failed += 1;
   }
 

@@ -43,7 +43,33 @@ export type ClientEvent =
         visitorId?: string;
       }
     >
-  | WsEnvelope<'send_message', { sessionId: string; content: string }>
+  | WsEnvelope<
+      'send_message',
+      {
+        sessionId: string;
+        content: string;
+        /**
+         * The id the client already gave this turn in its own transcript.
+         *
+         * The server adopts it instead of minting one, which is what makes
+         * `Preference.sourceMessageId` name a message the transcript can
+         * actually find — see `client/utils/provenance.ts` for the mismatch this
+         * closes. Optional, and validated before use: it becomes part of a
+         * DynamoDB sort key, so anything that is not a v4 uuid is ignored and
+         * the server mints as before.
+         */
+        messageId?: string;
+        /**
+         * Reveal the model's real reasoning for *this* turn.
+         *
+         * Per-turn rather than session state because it changes the request:
+         * extended thinking forces `temperature: 1`, which retunes Valentin's
+         * voice, so it must never be on by accident. Nothing to invalidate on a
+         * reconnect or a second tab either.
+         */
+        showThinking?: boolean;
+      }
+    >
   /**
    * Accept a proposal Valentin raised. This click is the authority to act — see
    * `AgentOrchestrator.confirmAction` for why it does not go back through the
@@ -209,11 +235,88 @@ export interface TurnMetrics {
   ok: boolean;
 }
 
+/** Which sort of thing happened while Valentin was working. */
+export type AgentActivityKind = 'thinking' | 'tool_start' | 'tool_end';
+
+/**
+ * Common to every activity frame.
+ *
+ * `sessionId` is at the top level, not nested, for the same reason `AwsSpan` and
+ * `TurnMetrics` put it there: `resolveBroadcastSessionId` reads
+ * `payload.sessionId` and silently drops an event without one.
+ */
+interface AgentActivityBase {
+  sessionId: string;
+  /**
+   * Correlates the two halves of a tool call — Bedrock's `toolUseId` for tool
+   * frames, `thinking:<iteration>` for thinking.
+   *
+   * The client completes the line it already drew rather than appending a second
+   * row, so a finishing call does not reflow the trail under the reader's eyes.
+   */
+  id: string;
+  /** Which model round trip produced it, 1-based. See `MAX_TOOL_ITERATIONS`. */
+  iteration: number;
+}
+
+/**
+ * The model's own reasoning, verbatim from a `reasoningContent` block.
+ *
+ * Only ever emitted for a turn the user asked for it on, and never synthesised:
+ * `client/utils/provenance.ts` is the standing refusal to render reasoning the
+ * system did not perform, and this frame is the first thing that can honour it.
+ */
+export interface AgentThinkingActivity extends AgentActivityBase {
+  kind: 'thinking';
+  text: string;
+}
+
+/** A tool call has been dispatched and is in flight. */
+export interface AgentToolStartActivity extends AgentActivityBase {
+  kind: 'tool_start';
+  /** The tool name as the model called it — `check_availability`. */
+  tool: string;
+  /** The partner behind it — `ontopo`, `hebcal`, `spotify`, … */
+  service: string;
+  /**
+   * A one-line summary of what the tool was asked to do.
+   *
+   * Redacted, never raw JSON: see `server/agent/activity-summary.ts`. Tool
+   * arguments carry her name, his address and prose about their relationship.
+   */
+  inputSummary: string;
+}
+
+/** The same tool call, finished. */
+export interface AgentToolEndActivity extends AgentActivityBase {
+  kind: 'tool_end';
+  tool: string;
+  service: string;
+  /** Measured around the call, so it is the one number nobody can estimate. */
+  durationMs: number;
+  ok: boolean;
+  /** Redacted one-line outcome — "3 slots found", "no availability". */
+  outcome: string;
+}
+
+/**
+ * What Valentin is doing, while he is doing it.
+ *
+ * One event with a discriminated `kind` rather than three event types: it keeps
+ * `resolveBroadcastSessionId` untouched and gives the client a single reducer
+ * case for a frame that arrives many times per turn.
+ */
+export type AgentActivityPayload =
+  | AgentThinkingActivity
+  | AgentToolStartActivity
+  | AgentToolEndActivity;
+
 /** Server → Client events */
 export type ServerEvent =
   | WsEnvelope<'auth_ok', { userId: string; isDemo: boolean }>
   | WsEnvelope<'aws_span', AwsSpan>
   | WsEnvelope<'turn_metrics', TurnMetrics>
+  | WsEnvelope<'agent_activity', AgentActivityPayload>
   | WsEnvelope<'agent_message', { message: ChatMessage }>
   | WsEnvelope<'action_proposal', ActionProposalPayload>
   | WsEnvelope<'typing_start', { sessionId: string }>

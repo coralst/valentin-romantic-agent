@@ -74,8 +74,10 @@ export const GATEWAY_TOOL_SERVICES: Readonly<Record<string, IntegrationId>> = {
   propose_playlist: 'spotify',
   propose_reservation: 'ontopo',
   propose_whatsapp_nudge: 'whatsapp',
+  read_webpage: 'web-search',
   search_activities: 'amadeus',
   search_hotels: 'amadeus',
+  search_web: 'web-search',
 };
 
 /** Split `valentin-integrations___find_restaurants` into its two halves. */

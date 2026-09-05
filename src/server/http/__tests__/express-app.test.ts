@@ -112,7 +112,7 @@ describe('GET /api/config', () => {
     expect(body).not.toContain('demoClientId');
   });
 
-  it('returns exactly the six documented keys', async () => {
+  it('returns exactly the seven documented keys', async () => {
     // The landing page reads this before it has a token. Anything added here is
     // public, so the key list is asserted rather than merely matched.
     const body = (await (await get('/api/config')).json()) as object;
@@ -126,7 +126,22 @@ describe('GET /api/config', () => {
       // Which of the two backends answered. Public, and safely so: it names an
       // engine, not any of its wiring.
       'engine',
+      // Likewise the name of a transport, with no address or credential in it.
+      'reminderChannel',
     ]);
+  });
+
+  /*
+   * The difference between `log` and `gmail` is invisible from outside and total:
+   * on `log` a due reminder is rendered, stamped sent and written to the log, and
+   * the sweep reports `sent: 1` while no mail exists. Anything that promises
+   * delivery has to be able to check first rather than trust that line.
+   */
+  it('says which channel a reminder would actually go out on', async () => {
+    const { reminderChannel } = (await (await get('/api/config')).json()) as {
+      reminderChannel: string;
+    };
+    expect(reminderChannel).toBe(config.reminders.channel);
   });
 
   it('reports engine A when the app was built without an engine', async () => {
@@ -399,6 +414,9 @@ describe('GET /api/integrations', () => {
       // configured — there is no outside service and no credential to be missing.
       'sharing',
       'reminders',
+      // The open web behind two interchangeable tiers (Tavily, DuckDuckGo), so
+      // always configured — the key only changes quality, never readiness.
+      'web-search',
     ]);
     // Hebcal is arithmetic in-process, so it is configured on every deployment.
     expect(body.integrations.find((i) => i.id === 'hebcal')?.configured).toBe(true);

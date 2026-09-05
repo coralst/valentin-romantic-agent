@@ -1,7 +1,11 @@
-import type { ReminderIndexReader } from '../persistence/storage-interface';
+import type {
+  ReminderIndexReader,
+  ScopedStorageFactory,
+} from '../persistence/storage-interface';
 import { logger } from '../logging';
 import { dispatchDue } from './dispatcher';
 import type { ReminderSender } from './sender';
+import { reminderContextFor } from './suggestions';
 
 /**
  * The in-process sweeper that makes reminders actually happen.
@@ -29,6 +33,18 @@ export interface ReminderSchedulerOptions {
   origin?: string;
   /** Rows per sweep. Defaults to the dispatcher's own bound. */
   limit?: number;
+  /**
+   * The scoped store, so a reminder can be composed from the profile it belongs to.
+   *
+   * The scheduler is the right place for this and the dispatcher is not: this is
+   * already the layer that owns process-wide wiring, and scoping per row here means
+   * `dispatchDue` keeps taking only the cross-tenant index it needs. Each row is read
+   * through `forUser(reminder.userId)`, so the composer sees exactly one user's
+   * answers — the same scoping a chat turn gets.
+   *
+   * Absent ⇒ reminders still send, carrying the date and the link but no suggestions.
+   */
+  storeFactory?: ScopedStorageFactory;
 }
 
 export interface ReminderScheduler {
@@ -37,7 +53,17 @@ export interface ReminderScheduler {
 }
 
 export function startReminderScheduler(options: ReminderSchedulerOptions): ReminderScheduler {
-  const { reader, sender, intervalMs, origin, limit } = options;
+  const { reader, sender, intervalMs, origin, limit, storeFactory } = options;
+
+  /*
+   * Scoped per row, not per sweep: `dueBefore` crosses users by design, so the store
+   * handle has to be built from the row in hand. `reminderContextFor` swallows its own
+   * failures, which is what lets this sit on the send path at all.
+   */
+  const context = storeFactory
+    ? (reminder: Parameters<typeof reminderContextFor>[1]) =>
+        reminderContextFor(storeFactory.forUser(reminder.userId), reminder)
+    : undefined;
 
   /*
    * Overlap guard.
@@ -54,7 +80,7 @@ export function startReminderScheduler(options: ReminderSchedulerOptions): Remin
     if (inFlight) return;
     inFlight = true;
     try {
-      const summary = await dispatchDue(reader, sender, new Date(), { origin, limit });
+      const summary = await dispatchDue(reader, sender, new Date(), { origin, limit, context });
       // Only when it did something: at one line a minute an idle sweeper would bury
       // every other event in the log, and the sweep that mattered with it.
       if (summary.considered > 0) logger.info('reminder.sweep', { ...summary });

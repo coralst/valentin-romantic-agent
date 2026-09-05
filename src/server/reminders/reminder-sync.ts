@@ -30,6 +30,9 @@ export const REMINDER_SOURCE_FIELDS: readonly string[] = [
   'next_occasion',
   'reminder_lead_time',
   'notify_email',
+  // Muting is only real if it re-plans: without this the row he just asked to stop
+  // stays armed in the due-index and the mail arrives anyway.
+  'reminders_muted',
 ];
 
 /** Whether anything just written to the profile changes what should be reminded. */
@@ -118,13 +121,44 @@ export async function syncReminders(
         anniversary: value('anniversary'),
         nextOccasion: value('next_occasion'),
         reminderLeadTime: value('reminder_lead_time'),
+        remindersMuted: value('reminders_muted'),
         channel: plannedChannel(config.reminders.channel),
         target: value('notify_email'),
       },
       now,
     );
 
+    /*
+     * A reminder that has already gone out is never re-armed.
+     *
+     * `saveReminder` is a whole-row overwrite and every planned row carries
+     * `sentAt: null`, so writing one blindly resurrects a reminder that has already
+     * been mailed — same id, same occasion, pending again, swept within the minute.
+     *
+     * That was survivable while a past send instant produced nothing: the rewritten
+     * row's `dueAt` was still in the future, so the duplicate was at worst next
+     * year's reminder arriving on schedule. It is not survivable now that the
+     * planner clamps a date learned inside the lead window to `now` — then *any*
+     * later edit to a reminder field re-arms an already-sent row and the user gets
+     * the identical mail a second time, seconds after the first. `dispatcher.ts`
+     * argues at length that a duplicate is the worse failure: it reads as an
+     * automation out of control and cannot be un-sent.
+     *
+     * Matched on id, which is `kind` plus the occasion date. So a *corrected* date
+     * is a different id and is planned and sent normally — which is right, it is a
+     * different occasion. Only re-planning the same occasion is suppressed, and a
+     * changed lead time on an occasion he has already been mailed about does not
+     * earn a second mail.
+     */
+    const alreadySent = new Set(
+      existing.filter((reminder) => reminder.sentAt).map((reminder) => reminder.id),
+    );
+
     for (const reminder of planned) {
+      if (alreadySent.has(reminder.id)) {
+        logger.info('reminder.already_sent', { sessionId, id: reminder.id });
+        continue;
+      }
       await storage.saveReminder(sessionId, reminder);
     }
     await reapSuperseded(storage, sessionId, existing, planned.map((r) => r.id));

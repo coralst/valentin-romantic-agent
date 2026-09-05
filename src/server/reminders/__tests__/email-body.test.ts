@@ -54,6 +54,11 @@ function build(overrides: Partial<ReminderEmailInput> = {}) {
   return buildReminderEmail({ ...BASE, ...overrides });
 }
 
+/** Sentence case, so the expectation reads like the subject line it checks. */
+function capitalised(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 describe('buildReminderEmail', () => {
   it('puts the when and the count in the subject', () => {
     const { subject } = build();
@@ -213,5 +218,81 @@ describe('buildReminderEmail', () => {
 
   it('is pure — the same input twice gives the same bytes', () => {
     expect(build()).toEqual(build());
+  });
+
+  it('leaves an occasion he described himself alone, rather than making it possessive', () => {
+    // "Samantha's our third anniversary" was the shape of this bug, and the mail it
+    // appears in is the one the whole flow is built around.
+    for (const occasion of ['our third anniversary', 'the dinner with her parents']) {
+      expect(build({ occasion }).subject).toBe(`${capitalised(occasion)} is a week away — three ideas`);
+    }
+  });
+
+  it('still says whose it is for a date the planner named', () => {
+    expect(build({ occasion: 'birthday' }).subject).toContain("Samantha's birthday");
+  });
+
+  it('puts the timing note under the date, where it changes the plan', () => {
+    const { body } = build({
+      timingNote: 'That is a Friday, and you have told me her late shift — worth planning around.',
+    });
+
+    expect(body.indexOf('her late shift')).toBeGreaterThan(body.indexOf('Friday 12 June'));
+    expect(body.indexOf('her late shift')).toBeLessThan(body.indexOf('Hotel Montefiore'));
+  });
+
+  it('omits the timing note entirely when her week is unknown', () => {
+    // Not "no plans that evening": a guessed schedule is worse than a silent one.
+    expect(build({ timingNote: null }).body).not.toMatch(/that is a (Sunday|Monday|Friday)/i);
+  });
+});
+
+/**
+ * The evening-in template.
+ *
+ * The failure it exists to prevent is a specific one: he says he would rather stay
+ * home, and the mail answers with three restaurants. That does not read as an
+ * imperfect suggestion, it reads as not having listened.
+ */
+describe('buildReminderEmail — an evening in', () => {
+  const AT_HOME: ReminderEmailInput = {
+    ...BASE,
+    activity: 'at_home',
+    criteria: [],
+    suggestions: [],
+    ideas: [
+      'She loves Thai — cook it or order it in.',
+      'Put Nina Simone on. I can build the playlist if Spotify is connected.',
+    ],
+  };
+
+  it('offers the ideas he gave us and no restaurants', () => {
+    const { body } = buildReminderEmail(AT_HOME);
+
+    expect(body).toContain('You said you would rather keep it at home');
+    expect(body).toContain('1. She loves Thai — cook it or order it in.');
+    expect(body).toContain('2. Put Nina Simone on.');
+    expect(body).not.toContain('Hotel Montefiore');
+  });
+
+  it('never offers to hold a table, because there is nothing to hold', () => {
+    const { body } = buildReminderEmail(AT_HOME);
+
+    expect(body).not.toContain('Nothing is reserved');
+    expect(body).not.toMatch(/bookable|hold one/i);
+    expect(body).toContain('Reply and I will help you put it together:');
+  });
+
+  it('counts the ideas in the subject, so it is worth opening', () => {
+    expect(buildReminderEmail(AT_HOME).subject).toBe(
+      "Samantha's birthday is a week away — two ideas",
+    );
+  });
+
+  it('asks rather than inventing an evening when it knows nothing about her', () => {
+    const { subject, body } = buildReminderEmail({ ...AT_HOME, ideas: [] });
+
+    expect(body).toContain('Tell me what she likes and I will help you plan it.');
+    expect(subject).not.toContain('ideas');
   });
 });

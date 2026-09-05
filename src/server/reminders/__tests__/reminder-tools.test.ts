@@ -81,12 +81,13 @@ describe('set_reminder', () => {
     expect(setReminderTool.service).toBe('reminders');
   });
 
-  it('asks for exactly the three things it needs, title and date required', () => {
+  it('asks for exactly the four things it needs, title and date required', () => {
     const schema = setReminderTool.input_schema as {
       properties: Record<string, unknown>;
       required: string[];
     };
     expect(Object.keys(schema.properties).sort()).toEqual([
+      'at_time',
       'date',
       'remind_days_before',
       'title',
@@ -94,7 +95,7 @@ describe('set_reminder', () => {
     expect(schema.required.sort()).toEqual(['date', 'title']);
   });
 
-  it('writes one pending row due at 9am Israel on the day itself', async () => {
+  it('writes one pending row due at 08:30 Israel on the day itself', async () => {
     await notifyEmail('him@example.com');
     const date = daysFromNow(10);
 
@@ -116,7 +117,7 @@ describe('set_reminder', () => {
     });
     // The default is the morning of the thing, not a week before it — the profile's
     // `reminder_lead_time` is about occasions and would be wrong here.
-    expect(wall(row.dueAt)).toBe(`${date}T09:00`);
+    expect(wall(row.dueAt)).toBe(`${date}T08:30`);
   });
 
   /*
@@ -133,7 +134,65 @@ describe('set_reminder', () => {
     expect(result.ok).toBe(true);
     const [row] = await rows();
     expect(row.leadDays).toBe(7);
-    expect(wall(row.dueAt)).toBe('2027-03-25T09:00');
+    expect(wall(row.dueAt)).toBe('2027-03-25T08:30');
+  });
+
+  /*
+   * The scheduling half of "mail me about this, and mail me *then*". Without it the
+   * only send time in the product is 08:30, so "text me the evening before" could be
+   * agreed to in prose and quietly filed for the morning.
+   */
+  it('sends at the time he named instead of the default', async () => {
+    const date = daysFromNow(20);
+    const result = await setReminderTool.execute(
+      { title: 'Call the florist', date, at_time: '19:45' },
+      ctx(),
+    );
+
+    expect(result.ok).toBe(true);
+    const [row] = await rows();
+    expect(wall(row.dueAt)).toBe(`${date}T19:45`);
+    // Quoted back off the instant, not off the default — a promise of 08:30 for a
+    // mail arriving at a quarter to eight is the small lie this avoids.
+    expect(result.summary).toMatch(/19:45 Israel/);
+  });
+
+  it('combines a named time with a lead time, on the earlier day', async () => {
+    const result = await setReminderTool.execute(
+      { title: 'Book the Italian place', date: '2027-04-01', remind_days_before: 7, at_time: '07:00' },
+      ctx(),
+    );
+
+    expect(result.ok).toBe(true);
+    const [row] = await rows();
+    expect(wall(row.dueAt)).toBe('2027-03-25T07:00');
+  });
+
+  /*
+   * Refused rather than defaulted. `dueInstant` falls back to 08:30 on anything it
+   * cannot parse, which is right inside the planner — a malformed hour must not cost
+   * a birthday its reminder — and wrong for a time he just said out loud, where the
+   * failure is being told the wrong time or being told his own and getting another.
+   */
+  it('refuses a time it cannot read rather than silently using 08:30', async () => {
+    const result = await setReminderTool.execute(
+      { title: 'Call the florist', date: daysFromNow(9), at_time: '8:30am' },
+      ctx(),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.summary).toMatch(/08:30/);
+    expect(await rows()).toHaveLength(0);
+  });
+
+  it('refuses a time that is not on a clock', async () => {
+    const result = await setReminderTool.execute(
+      { title: 'Call the florist', date: daysFromNow(9), at_time: '25:00' },
+      ctx(),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(await rows()).toHaveLength(0);
   });
 
   it('records the title as the occasion too, so every existing reader still works', async () => {
@@ -271,7 +330,7 @@ describe('set_reminder', () => {
 
     expect(result.summary).toContain('him@example.com');
     expect(result.summary).toContain('2027-04-01');
-    expect(result.summary).toMatch(/9am Israel/);
+    expect(result.summary).toMatch(/08:30 Israel/);
   });
 
   /*

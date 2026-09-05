@@ -47,19 +47,21 @@ describe('the consent URL', () => {
     // Imported from the client rather than restated, so a widened scope is a
     // visible diff in one place instead of a quiet change of blast radius.
     expect(url.searchParams.get('scope')).toBe(GOOGLE_SCOPES.join(' '));
-    // Read the calendar, send mail. Never read the inbox — Valentin has no
-    // reason to, so it must not be able to.
-    //
-    // Spelled out per-scope rather than as a blanket /readonly/ match. That match
-    // was a proxy for "nothing that reads", and it outlawed
-    // `calendar.readonly` — which the fan-out across shared calendars requires and
-    // which grants nothing whatsoever on Gmail. The real invariant is about the
-    // inbox, so it is asserted about the inbox: `gmail.send` is the only Gmail
-    // scope, and any future addition there has to fail this line deliberately.
+    /*
+     * Read the calendar, send mail, and read sent mail back — the last of those only
+     * so `scripts/verify-reminder-mail.ts` can prove an unattended reminder arrived.
+     * `google.test.ts` carries the full argument and the list of scopes still refused.
+     *
+     * Asserted per-scope rather than as a blanket /readonly/ match, which was a proxy
+     * for "nothing that reads" and outlawed `calendar.readonly` as collateral. What is
+     * checked here is that consent asks for nothing that could *modify* a mailbox.
+     */
     const scopes = url.searchParams.get('scope')!.split(' ');
     expect(scopes.filter((scope) => scope.includes('gmail'))).toEqual([
       'https://www.googleapis.com/auth/gmail.send',
+      'https://www.googleapis.com/auth/gmail.readonly',
     ]);
+    expect(scopes.some((scope) => /gmail\.(modify|compose|settings)/.test(scope))).toBe(false);
   });
 
   it('refuses to build one before an OAuth client is saved', () => {

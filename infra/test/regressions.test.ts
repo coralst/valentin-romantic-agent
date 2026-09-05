@@ -1313,7 +1313,7 @@ describe('Google credentials reach the deployed task', () => {
       // redirectUri() defaults to http://localhost:5173 when PUBLIC_ORIGIN is
       // unset, which sends a deployed user's OAuth callback to their laptop.
       const origin = containerEnv(engine).PUBLIC_ORIGIN;
-      expect(origin).toBe('https://d26dwovftfq9oe.cloudfront.net');
+      expect(origin).toBe('https://valentin-romantic-agent.coralst.people.aws.dev');
       expect(origin).not.toContain('localhost');
     });
   }
@@ -1679,9 +1679,30 @@ describe('custom domain wiring', () => {
   });
 
   it('keeps the default-certificate path unchanged when no domain is set', () => {
-    // The live dev template, synthesized above without customDomain.
+    // Synthesized fresh with customDomain stripped, since live dev now sets it.
+    const app = new cdk.App();
+    const stackEnv = { account: '111111111111', region: 'us-east-1' };
+    const host = new cdk.Stack(app, 'CdnBareHost', { env: stackEnv });
+    const alb = elbv2.ApplicationLoadBalancer.fromApplicationLoadBalancerAttributes(
+      host,
+      'Alb',
+      {
+        loadBalancerArn:
+          'arn:aws:elasticloadbalancing:us-east-1:111111111111:loadbalancer/app/test/0123456789abcdef',
+        loadBalancerDnsName: 'test-alb.us-east-1.elb.amazonaws.com',
+        securityGroupId: 'sg-00000000000000000',
+      },
+    );
+    const bare = Template.fromStack(
+      new CdnStack(app, 'CdnBare', {
+        config: { ...getConfig('dev'), customDomain: undefined },
+        alb,
+        accessLogBucket: new s3.Bucket(host, 'Logs'),
+        env: stackEnv,
+      }),
+    );
     const dist = Object.values<any>(
-      cdnTemplate.findResources('AWS::CloudFront::Distribution'),
+      bare.findResources('AWS::CloudFront::Distribution'),
     )[0];
     expect(dist.Properties.DistributionConfig.Aliases).toBeUndefined();
     expect(

@@ -1,6 +1,7 @@
 import {
   BedrockRuntimeClient,
   ConverseCommand,
+  type ConverseCommandInput,
   type ConverseCommandOutput,
   type Message,
   type SystemContentBlock,
@@ -26,6 +27,18 @@ export interface ToolSchema {
 /** Response from a standard Bedrock conversation call */
 export interface LlmResponse {
   content: string;
+  /**
+   * The model's own reasoning for this turn, or absent when none was asked for.
+   *
+   * Optional rather than `''` because every existing caller and fake constructs
+   * this object by hand, and a required field would be a compile error in a dozen
+   * places that have nothing to say about thinking. It is here at all because
+   * `callBedrockWithRetry` falls back to `generateResponse` whenever the tool
+   * registry is empty — every local run without integration credentials — so a
+   * reasoning channel that existed only on the tool path would be missing exactly
+   * where the feature is usually demonstrated.
+   */
+  reasoning?: string;
 }
 
 /** Response from a Bedrock tool-use call */
@@ -71,8 +84,39 @@ export interface ToolTurn {
   text: string;
   /** Empty when the model chose to answer rather than to call anything. */
   toolUses: ToolUseRequest[];
+  /**
+   * The model's own reasoning for this turn, concatenated, or `''`.
+   *
+   * Kept apart from {@link ToolTurn.text} because `extractTextFromBlocks` filters
+   * on `'text' in b` and must keep doing so — thinking is shown in its own
+   * register in the trail and must never leak into the chat bubble as if Valentin
+   * had said it out loud.
+   *
+   * Always `''` unless {@link ConverseOptions.thinking} was set: Bedrock does not
+   * produce reasoning blocks unless they were asked for.
+   */
+  reasoning: string;
   /** `tool_use`, `end_turn`, `max_tokens`, `guardrail_intervened`, … */
   stopReason: string;
+}
+
+/**
+ * Per-call knobs that change the request rather than the conversation.
+ *
+ * Optional everywhere, because the default request is the one that has been
+ * tuned and every existing caller expects it unchanged.
+ */
+export interface ConverseOptions {
+  /**
+   * Ask the model to think out loud first, and return the reasoning.
+   *
+   * Off unless the user turned it on for this turn. It is not a free switch:
+   * Anthropic requires `temperature: 1` with extended thinking, and `0.8` is
+   * what tunes Valentin's voice — so leaving this on by default would quietly
+   * change how he talks, for every user, to show a panel most of them have not
+   * opened.
+   */
+  thinking?: boolean;
 }
 
 /** Abstract interface for LLM interactions — implementations can be real Bedrock SDK or stubs */
@@ -81,6 +125,7 @@ export interface BedrockClient {
   generateResponse(
     messages: ChatMessage[],
     systemPrompt: string,
+    options?: ConverseOptions,
   ): Promise<LlmResponse>;
 
   /** Call the LLM with a tool-use schema and return structured output */
@@ -106,6 +151,7 @@ export interface BedrockClient {
     systemPrompt: string,
     tools: readonly ToolSchema[],
     sessionId: string,
+    options?: ConverseOptions,
   ): Promise<ToolTurn>;
 }
 
@@ -185,6 +231,62 @@ function firedPolicies(response: ConverseCommandOutput): string[] {
 const MAX_REPLY_TOKENS = 1024;
 
 /**
+ * The model's scratchpad budget when the user asked to see it think.
+ *
+ * Anthropic's floor is 1024, and this is deliberately at it: the trail shows a
+ * few lines of reasoning, not an essay, and every one of these tokens is billed
+ * on a turn the user could have had for free.
+ */
+const THINKING_BUDGET_TOKENS = 1024;
+
+/**
+ * Total token ceiling for a thinking turn.
+ *
+ * Must exceed the budget — the scratchpad is spent *before* the reply, and
+ * Bedrock rejects `maxTokens <= budget_tokens` outright. Keeping the reply's own
+ * allowance at {@link MAX_REPLY_TOKENS} on top means turning thinking on cannot
+ * shorten the answer.
+ */
+const THINKING_MAX_TOKENS = MAX_REPLY_TOKENS + THINKING_BUDGET_TOKENS;
+
+/**
+ * Temperature Anthropic requires when extended thinking is on.
+ *
+ * Not a preference — any other value is rejected. It is the reason thinking is
+ * opt-in per turn rather than simply switched on: 0.8 is what tunes Valentin's
+ * voice, and this is not 0.8.
+ */
+const THINKING_TEMPERATURE = 1;
+
+/** Valentin's tuned voice. Anything else and he stops sounding like himself. */
+const DEFAULT_TEMPERATURE = 0.8;
+
+/**
+ * The request fields that differ between a normal turn and a thinking one.
+ *
+ * One helper for both call sites, because `generateResponse` and
+ * `converseWithTools` both need the whole set — inference config *and*
+ * `additionalModelRequestFields` — and getting one of the three wrong fails at
+ * runtime in a way that only shows up when the toggle is pressed.
+ */
+function thinkingRequestFields(
+  options: ConverseOptions | undefined,
+): Pick<ConverseCommandInput, 'inferenceConfig' | 'additionalModelRequestFields'> {
+  if (!options?.thinking) {
+    return {
+      // Claude Sonnet 4.5 rejects temperature and topP together — temperature only.
+      inferenceConfig: { maxTokens: MAX_REPLY_TOKENS, temperature: DEFAULT_TEMPERATURE },
+    };
+  }
+  return {
+    inferenceConfig: { maxTokens: THINKING_MAX_TOKENS, temperature: THINKING_TEMPERATURE },
+    additionalModelRequestFields: {
+      thinking: { type: 'enabled', budget_tokens: THINKING_BUDGET_TOKENS },
+    },
+  };
+}
+
+/**
  * Cut a reply back to its last complete sentence.
  *
  * Only used when Bedrock reports it stopped because it ran out of tokens. A
@@ -212,6 +314,33 @@ function extractTextFromBlocks(blocks: ContentBlock[] | undefined): string {
     .filter((b): b is ContentBlock & { text: string } => 'text' in b && typeof b.text === 'string')
     .map((b) => b.text)
     .join('');
+}
+
+/**
+ * Extract the model's reasoning from Bedrock response content blocks.
+ *
+ * `reasoningText.text` only. A `reasoningContent` block can instead carry
+ * `redactedContent`, which is ciphertext the provider encrypted — presenting that
+ * as reasoning would be noise dressed up as insight, so it is skipped and the
+ * frame simply does not go out.
+ *
+ * The SDK types `reasoningContent` loosely enough that this reads it structurally
+ * rather than by cast, so a block shape we do not recognise yields `''` instead of
+ * throwing inside a turn that otherwise succeeded.
+ */
+function extractReasoningFromBlocks(blocks: ContentBlock[] | undefined): string {
+  if (!blocks) return '';
+  const parts: string[] = [];
+  for (const block of blocks) {
+    if (!('reasoningContent' in block)) continue;
+    const reasoning = (block as { reasoningContent?: unknown }).reasoningContent;
+    if (typeof reasoning !== 'object' || reasoning === null) continue;
+    const reasoningText = (reasoning as { reasoningText?: unknown }).reasoningText;
+    if (typeof reasoningText !== 'object' || reasoningText === null) continue;
+    const text = (reasoningText as { text?: unknown }).text;
+    if (typeof text === 'string' && text.trim() !== '') parts.push(text);
+  }
+  return parts.join('\n\n');
 }
 
 /**
@@ -453,6 +582,7 @@ export class AwsBedrockClient implements BedrockClient {
   async generateResponse(
     messages: ChatMessage[],
     systemPrompt: string,
+    options?: ConverseOptions,
   ): Promise<LlmResponse> {
     try {
       const system: SystemContentBlock[] = [{ text: systemPrompt }];
@@ -466,11 +596,7 @@ export class AwsBedrockClient implements BedrockClient {
         modelId: this.modelId,
         system,
         messages: bedrockMessages,
-        inferenceConfig: {
-          maxTokens: MAX_REPLY_TOKENS,
-          // Claude Sonnet 4.5 rejects temperature and topP together — use temperature only.
-          temperature: 0.8,
-        },
+        ...thinkingRequestFields(options),
         guardrailConfig,
       });
 
@@ -514,7 +640,8 @@ export class AwsBedrockClient implements BedrockClient {
       const content =
         response.stopReason === 'max_tokens' ? trimToLastSentence(raw) : raw;
 
-      return { content };
+      const reasoning = extractReasoningFromBlocks(response.output?.message?.content);
+      return reasoning ? { content, reasoning } : { content };
     } catch (err) {
       if (err instanceof LlmError) throw err;
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -533,6 +660,7 @@ export class AwsBedrockClient implements BedrockClient {
     systemPrompt: string,
     tools: readonly ToolSchema[],
     sessionId: string,
+    options?: ConverseOptions,
   ): Promise<ToolTurn> {
     try {
       const guardrailConfig = buildGuardrailConfig();
@@ -544,11 +672,7 @@ export class AwsBedrockClient implements BedrockClient {
         // contains toolUse/toolResult blocks by the second iteration, and that
         // function only knows how to build text blocks.
         messages: guardNewestUserTurn(messages, guardrailConfig),
-        inferenceConfig: {
-          maxTokens: MAX_REPLY_TOKENS,
-          // Claude Sonnet 4.5 rejects temperature and topP together.
-          temperature: 0.8,
-        },
+        ...thinkingRequestFields(options),
         toolConfig: {
           tools: tools.map(toBedrockTool),
           // The whole difference from `extractWithTool`, which pins one tool.
@@ -574,6 +698,7 @@ export class AwsBedrockClient implements BedrockClient {
       return {
         message: response.output?.message ?? { role: 'assistant', content: blocks },
         text: extractTextFromBlocks(blocks),
+        reasoning: extractReasoningFromBlocks(blocks),
         // A single turn may request several tools at once — "check Shabbat and
         // search restaurants" is one natural sentence and Bedrock will emit two
         // blocks for it. Collecting all of them is what lets the loop answer in

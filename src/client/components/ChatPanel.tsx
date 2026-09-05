@@ -8,6 +8,8 @@ import { TypingIndicator } from './TypingIndicator';
 import { ConnectionBanner } from './ConnectionBanner';
 import { GuidedIntro } from './GuidedIntro';
 import { ShareMenu } from './ShareMenu';
+import { ShowThinkingToggle } from './ShowThinkingToggle';
+import { AgentActivityTrail } from './AgentActivityTrail';
 import { IntegrationStatusStrip } from './IntegrationStatusStrip';
 import { useSharedIntegrationReadiness } from '../context/integration-readiness-context';
 import { colors, insets, typography } from '../design-system/tokens';
@@ -57,12 +59,15 @@ const headNameStyle: React.CSSProperties = {
 };
 
 /**
- * The right-hand group: what he can reach, then how to share it.
+ * The right-hand group: whether to show his reasoning, what he can reach, then how
+ * to share it.
  *
- * A group with one `marginLeft: auto` rather than two controls each claiming it.
- * `ShareMenu`'s own wrapper still sets the property, which inside this group has
- * nothing left to distribute and so does nothing — meaning the share menu keeps
- * working unchanged wherever else it is mounted.
+ * Everything scoped to *this* conversation lives here, as opposed to the rail,
+ * which is scoped to the whole app. A group with one `marginLeft: auto` rather than
+ * three controls each claiming it. `ShareMenu`'s own wrapper still sets the
+ * property, which inside this group has nothing left to distribute and so does
+ * nothing — meaning the share menu keeps working unchanged wherever else it is
+ * mounted.
  */
 const headActionsStyle: React.CSSProperties = {
   marginLeft: 'auto',
@@ -125,7 +130,11 @@ export function ChatPanel({ onOpenIntegrations }: ChatPanelProps = {}) {
     };
 
     dispatch({ type: 'SEND_MESSAGE', message });
-    sendMessage(content);
+    // The id travels with the turn so the server can file its extracted
+    // preferences against the message the transcript is already rendering — which
+    // is what the permanent "Noted" badge joins on. The server validates it and
+    // mints its own if it is not a v4 uuid.
+    sendMessage(content, { messageId: message.id, showThinking: state.showThinking });
   };
 
   /*
@@ -163,7 +172,12 @@ export function ChatPanel({ onOpenIntegrations }: ChatPanelProps = {}) {
             <b style={headNameStyle}>{partnerName ?? 'Someone special'}</b>
             <em style={headStatusStyle}>{status}</em>
           </div>
-          <div style={headActionsStyle}>
+          <div style={headActionsStyle} data-testid="chat-header-controls">
+            {/* Beside the header rather than beside the composer: it must not
+                compete with the primary action or change the composer's height,
+                and it must stay reachable when the trail is empty — inside the
+                trail it would vanish exactly when someone wants to switch it on. */}
+            <ShowThinkingToggle />
             {/* Reads the shared readiness context, so it is the server's answer and
                 not a guess — see the component's own note on what the dot may and
                 may not claim. */}
@@ -187,6 +201,11 @@ export function ChatPanel({ onOpenIntegrations }: ChatPanelProps = {}) {
         onConfirmProposal={handleConfirmProposal}
         onDismissProposal={handleDismissProposal}
       />
+      {/* Shares the typing indicator's slot — a fixed region outside the
+          transcript, so growing it displaces no message. The dots keep showing
+          while the trail is empty, which is every turn with the toggle off and no
+          tool calls. */}
+      <AgentActivityTrail activity={state.activity} showThinking={state.showThinking} />
       <TypingIndicator isVisible={state.isTyping} />
       <MessageInput
         value={state.inputValue}

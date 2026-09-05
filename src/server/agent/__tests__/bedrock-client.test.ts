@@ -649,6 +649,134 @@ describe('AwsBedrockClient', () => {
     expect(cmd.guardrailConfig).toBeUndefined();
     expect(cmd.messages[0].content).toEqual([{ text: 'My partner loves Italian food' }]);
   });
+
+  /**
+   * Extended thinking is opt-in per turn, and the default path must stay exactly
+   * as it was: `temperature: 0.8` is what tunes Valentin's voice, and thinking
+   * forces it to 1. Both call sites are asserted because `callBedrockWithRetry`
+   * falls back to `generateResponse` whenever the tool registry is empty — every
+   * local run without integration credentials, and every test.
+   */
+  describe('extended thinking', () => {
+    const okReply = {
+      output: { message: { content: [{ text: 'Lovely.' }] } },
+      stopReason: 'end_turn',
+    };
+
+    it('leaves the default generateResponse request untouched', async () => {
+      mockSend.mockResolvedValueOnce(okReply);
+
+      await client.generateResponse([sampleMessage], 'prompt');
+
+      const cmd = mockSend.mock.calls[0][0];
+      expect(cmd.additionalModelRequestFields).toBeUndefined();
+      expect(cmd.inferenceConfig).toEqual({ maxTokens: 1024, temperature: 0.8 });
+    });
+
+    it('leaves the default converseWithTools request untouched', async () => {
+      mockSend.mockResolvedValueOnce(okReply);
+
+      await client.converseWithTools([], 'prompt', [], 'session-1');
+
+      const cmd = mockSend.mock.calls[0][0];
+      expect(cmd.additionalModelRequestFields).toBeUndefined();
+      expect(cmd.inferenceConfig).toEqual({ maxTokens: 1024, temperature: 0.8 });
+    });
+
+    it('enables thinking on generateResponse when asked', async () => {
+      mockSend.mockResolvedValueOnce(okReply);
+
+      await client.generateResponse([sampleMessage], 'prompt', { thinking: true });
+
+      const cmd = mockSend.mock.calls[0][0];
+      expect(cmd.additionalModelRequestFields).toEqual({
+        thinking: { type: 'enabled', budget_tokens: 1024 },
+      });
+      // Anthropic rejects any other temperature with thinking on, and rejects a
+      // maxTokens that does not exceed the budget the scratchpad spends first.
+      expect(cmd.inferenceConfig.temperature).toBe(1);
+      expect(cmd.inferenceConfig.maxTokens).toBeGreaterThan(1024);
+    });
+
+    it('enables thinking on converseWithTools when asked', async () => {
+      mockSend.mockResolvedValueOnce(okReply);
+
+      await client.converseWithTools([], 'prompt', [], 'session-1', { thinking: true });
+
+      const cmd = mockSend.mock.calls[0][0];
+      expect(cmd.additionalModelRequestFields).toEqual({
+        thinking: { type: 'enabled', budget_tokens: 1024 },
+      });
+      expect(cmd.inferenceConfig.temperature).toBe(1);
+      expect(cmd.inferenceConfig.maxTokens).toBeGreaterThan(1024);
+    });
+
+    it('reads reasoning out of a reasoningContent block without it reaching the reply', async () => {
+      mockSend.mockResolvedValueOnce({
+        output: {
+          message: {
+            content: [
+              { reasoningContent: { reasoningText: { text: 'She said peonies twice.' } } },
+              { text: 'Peonies it is.' },
+            ],
+          },
+        },
+        stopReason: 'end_turn',
+      });
+
+      const result = await client.generateResponse([sampleMessage], 'prompt', {
+        thinking: true,
+      });
+
+      expect(result.reasoning).toBe('She said peonies twice.');
+      // The chat bubble must never show thinking; `extractTextFromBlocks` filters
+      // on `'text' in b`, which is what keeps them apart.
+      expect(result.content).toBe('Peonies it is.');
+    });
+
+    it('claims no reasoning for a redacted block', async () => {
+      // `redactedContent` is ciphertext. Rendering it would be noise presented as
+      // insight, so the frame simply does not go out.
+      mockSend.mockResolvedValueOnce({
+        output: {
+          message: {
+            content: [
+              { reasoningContent: { redactedContent: new Uint8Array([1, 2, 3]) } },
+              { text: 'Peonies it is.' },
+            ],
+          },
+        },
+        stopReason: 'end_turn',
+      });
+
+      const result = await client.generateResponse([sampleMessage], 'prompt', {
+        thinking: true,
+      });
+
+      expect(result.reasoning).toBeUndefined();
+      expect(result.content).toBe('Peonies it is.');
+    });
+
+    it('surfaces reasoning on a tool turn while leaving the assistant message whole', async () => {
+      const reasoningBlock = {
+        reasoningContent: { reasoningText: { text: 'Heavy metal, eighties.' } },
+      };
+      mockSend.mockResolvedValueOnce({
+        output: { message: { role: 'assistant', content: [reasoningBlock, { text: 'One sec.' }] } },
+        stopReason: 'end_turn',
+      });
+
+      const turn = await client.converseWithTools([], 'prompt', [], 'session-1', {
+        thinking: true,
+      });
+
+      expect(turn.reasoning).toBe('Heavy metal, eighties.');
+      expect(turn.text).toBe('One sec.');
+      // The block goes back to Bedrock verbatim on the next iteration — a stripped
+      // thinking block is rejected outright.
+      expect(turn.message.content).toContain(reasoningBlock);
+    });
+  });
 });
 
 describe('guardrailPoliciesFrom', () => {

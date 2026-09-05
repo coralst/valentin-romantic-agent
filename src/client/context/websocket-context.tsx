@@ -1,5 +1,5 @@
 import React, { createContext, useContext } from 'react';
-import { useWebSocket } from '../hooks/use-websocket';
+import { useWebSocket, type SendMessageOptions } from '../hooks/use-websocket';
 import { useChatContext } from './chat-context';
 import { usePreferencesContext } from './preferences-context';
 import { useOptionalPeopleContext } from './people-context';
@@ -8,7 +8,7 @@ import { useOptionalOutingsContext } from './outings-context';
 import { useArchitectureEngineContext } from './architecture-engine-context';
 
 interface WebSocketContextValue {
-  sendMessage: (content: string) => void;
+  sendMessage: (content: string, options?: SendMessageOptions) => void;
   confirmAction: (proposalId: string) => void;
   connectionStatus: 'connected' | 'reconnecting' | 'disconnected';
   lastError: string | null;

@@ -15,9 +15,24 @@ import {
   peekVisitorId,
 } from '../auth/token-store';
 
+/**
+ * Per-turn extras on a `send_message`.
+ *
+ * Both describe *this* turn rather than the session, which is why they travel on
+ * the frame instead of a `set_preferences` event: `showThinking` describes one
+ * `ConverseCommand`, and a session-level flag would have to be re-sent on every
+ * reconnect — the socket rebinds on a session switch — for the same effect.
+ */
+export interface SendMessageOptions {
+  /** The id the transcript is already rendering. Validated server-side. */
+  messageId?: string;
+  /** Ask Bedrock for its reasoning on this turn only. */
+  showThinking?: boolean;
+}
+
 /** Return type of the useWebSocket hook */
 export interface UseWebSocketReturn {
-  sendMessage: (content: string) => void;
+  sendMessage: (content: string, options?: SendMessageOptions) => void;
   /**
    * Accept a proposal. This is the authority to act: the server executes the
    * held tool on receipt without going back through the model, so nothing calls
@@ -116,6 +131,13 @@ export function dispatchServerEvent(
       // Its own event rather than prose in a message, because it has to be
       // accepted with a click — see `ActionProposalPayload`.
       chatDispatch({ type: 'RECEIVE_PROPOSAL', proposal: event.payload });
+      break;
+
+    // What he is doing while the dots are showing. High volume compared with its
+    // neighbours — several frames per turn — and the reducer is what collapses a
+    // start/end pair into the one row the trail draws.
+    case 'agent_activity':
+      chatDispatch({ type: 'RECEIVE_ACTIVITY', activity: event.payload });
       break;
 
     case 'typing_start':
@@ -528,11 +550,16 @@ export function useWebSocket({
   );
 
   const sendMessage = useCallback(
-    (content: string) => {
+    (content: string, options: SendMessageOptions = {}) => {
       if (!sessionId) return;
       sendFrame({
         type: 'send_message',
-        payload: { sessionId, content },
+        payload: {
+          sessionId,
+          content,
+          ...(options.messageId ? { messageId: options.messageId } : {}),
+          ...(options.showThinking ? { showThinking: true } : {}),
+        },
         timestamp: new Date().toISOString(),
       });
     },

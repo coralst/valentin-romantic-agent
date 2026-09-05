@@ -1,7 +1,7 @@
 [
   {
     "name": "check_availability",
-    "description": "Ask Ontopo which tables are actually free at one restaurant on a given date, for a given party size. Returns real bookable times grouped by seating area, including times either side of the one asked for. Always check this before proposing a reservation, and check Shabbat first for a Friday or Saturday — most of these kitchens are closed then.",
+    "description": "Ask Ontopo which tables are actually free at one restaurant on a given date, for a given party size. Returns real bookable times grouped by seating area, including times either side of the one asked for. Always check this before proposing a reservation, and check Shabbat first for a Friday or Saturday — most of these kitchens are closed then. When Ontopo has nothing or does not answer, this also returns the restaurant's own site and phone number where it can find them — pass those on rather than ending on a no.",
     "requiresConfirmation": false,
     "inputSchema": {
       "type": "object",
@@ -379,7 +379,7 @@
   },
   {
     "name": "propose_email",
-    "description": "Offer to send an email — a note to a restaurant, a message to a partner, a gift order enquiry. This does NOT send anything: it shows the user the exact recipient and text, and it is sent only after they confirm. Write the body in full; the user reads it before it goes. Never claim an email has been sent.",
+    "description": "Offer to send an email — the options you have just described, a note to a restaurant, a gift order enquiry. This does NOT send anything: it shows the user the exact recipient and text, and it is sent only after they confirm. Write the body in full; the user reads it before it goes. Never claim an email has been sent.\n\nTo mail the user himself, leave \"to\" out — his own address is already on file, so never ask him for it and never stop to check it. Give \"to\" only when the mail is going to somebody else.",
     "requiresConfirmation": true,
     "inputSchema": {
       "type": "object",
@@ -394,7 +394,7 @@
         },
         "to": {
           "type": "string",
-          "description": "Recipient email address."
+          "description": "Recipient email address. Omit entirely when the mail is for the user himself — his address is on file and will be filled in. Give it only for a third party, like a restaurant."
         },
         "subject": {
           "type": "string",
@@ -412,7 +412,6 @@
       "required": [
         "user_id",
         "session_id",
-        "to",
         "subject",
         "body"
       ]

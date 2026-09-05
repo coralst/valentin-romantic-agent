@@ -5,8 +5,22 @@ import type {
   AgentActivityPayload,
 } from '../../shared/interfaces/ws-events';
 
-/** Connection status for the WebSocket link */
-export type ConnectionStatus = 'connected' | 'reconnecting' | 'disconnected';
+/**
+ * Connection status for the WebSocket link.
+ *
+ * `'connecting'` is the state before the socket has ever opened, and it is
+ * deliberately distinct from `'disconnected'`, which means "we had a link and lost
+ * it". Collapsing the two is what made the red "Connection lost. Please check your
+ * network." banner flash on every cold load: the store opened at `'disconnected'`,
+ * so the first paint asserted a failure that had not happened yet, and the socket
+ * cleared it a few hundred milliseconds later. Nothing is wrong while a connection
+ * is merely being established, and the UI should not claim otherwise.
+ */
+export type ConnectionStatus =
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'disconnected';
 
 /**
  * What has become of a proposal Valentin raised.
@@ -125,7 +139,8 @@ const initialState: ChatState = {
   sessionId: null,
   messages: [],
   isTyping: false,
-  connectionStatus: 'disconnected',
+  // Not `'disconnected'` — see `ConnectionStatus`. Nothing has failed yet.
+  connectionStatus: 'connecting',
   inputValue: '',
   proposals: [],
   activity: [],

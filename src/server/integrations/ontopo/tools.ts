@@ -30,6 +30,7 @@ import { RESTAURANT_STYLE_OPTIONS } from '../../../shared/constants/profile-fiel
 // stays pure so the bookable list has no dependency on a Maps key.
 import { geocode } from '../google-places/client';
 import { resolveAnyVenue, venuesInCity, knownCities } from './discovery';
+import { describeVenueWebLead, findVenueOwnPage } from './venue-web-fallback';
 import { completeCheckout, type CheckoutGuest } from './checkout-form';
 import { config } from '../../config';
 import { logger } from '../../logging';
@@ -150,6 +151,30 @@ function describeVenue(venue: CuratedVenue): string {
   const tags = venue.cuisine.length ? venue.cuisine.join(', ') : venue.vibes.join(', ');
   const where = venue.neighbourhood ? `${venue.neighbourhood}, ${venue.city}` : venue.city;
   return `${venue.name} (${where}; ${tags}) — ${venue.note}`;
+}
+
+/**
+ * The venue's own page, and never an exception.
+ *
+ * `findVenueOwnPage` is written not to throw, but the two call sites below are both
+ * *already* partial failures — Ontopo silent, or Ontopo empty — and each returns a
+ * message the user can act on. A throw escaping here would replace that with
+ * `runTool`'s generic "check_availability could not be completed", which the model
+ * reads as a transient fault worth retrying. So the guarantee is enforced where it is
+ * relied on rather than assumed from the other file.
+ */
+async function webLeadFor(venue: BookableVenue): Promise<
+  Awaited<ReturnType<typeof findVenueOwnPage>>
+> {
+  try {
+    return await findVenueOwnPage(venue);
+  } catch (error) {
+    logger.warn('ontopo.web_fallback_failed', {
+      venue: venue.name,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }
 
 /** Render a slot grid as prose, distinguishing bookable from merely shown. */
@@ -338,7 +363,9 @@ export const checkAvailabilityTool: AgentTool = {
     'date, for a given party size. Returns real bookable times grouped by seating ' +
     'area, including times either side of the one asked for. Always check this ' +
     'before proposing a reservation, and check Shabbat first for a Friday or ' +
-    'Saturday — most of these kitchens are closed then.',
+    'Saturday — most of these kitchens are closed then. When Ontopo has nothing ' +
+    'or does not answer, this also returns the restaurant\'s own site and phone ' +
+    'number where it can find them — pass those on rather than ending on a no.',
   input_schema: {
     type: 'object',
     properties: {
@@ -382,23 +409,40 @@ export const checkAvailabilityTool: AgentTool = {
 
     const availability = await fetchAvailability(venue, { date: date.ontopo, time, size });
     if (!availability) {
+      // Ontopo being silent says nothing about the restaurant, so the answer should
+      // not be a dead end. `lead` is null whenever we could not be sure whose site we
+      // found, and the message is then exactly what it was before.
+      const lead = await webLeadFor(venue);
       return {
         ok: false,
         summary:
           `Ontopo did not answer for ${venue.name}. Tell the user you could not check ` +
           `that one and offer to try another restaurant or another night — do not ` +
-          `guess whether it is free.`,
+          `guess whether it is free.` +
+          (lead ? describeVenueWebLead(lead, venue.name) : ''),
+        data: lead ? { venueSite: lead.url, venuePhone: lead.phone } : undefined,
       };
     }
 
     const bookable = availability.slots.filter((slot) => slot.bookable);
     if (bookable.length === 0) {
+      // An empty grid means Ontopo holds no tables here tonight — not that the room is
+      // full. Restaurants keep seats back off the platforms, so their own line is a
+      // real second chance rather than a consolation.
+      const lead = await webLeadFor(venue);
       return {
         ok: true,
         summary:
           `${venue.name} has nothing bookable for ${size} on ${date.readable} around ` +
-          `${formatSlotTime(time)}. Offer a different night, or another restaurant.`,
-        data: { venue: venue.name, date: date.readable, slots: [] },
+          `${formatSlotTime(time)}. Offer a different night, or another restaurant.` +
+          (lead ? describeVenueWebLead(lead, venue.name) : ''),
+        data: {
+          venue: venue.name,
+          date: date.readable,
+          slots: [],
+          venueSite: lead?.url,
+          venuePhone: lead?.phone,
+        },
       };
     }
 

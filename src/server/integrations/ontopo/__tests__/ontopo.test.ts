@@ -1,4 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+/**
+ * Only the lookup is faked, not the prose.
+ *
+ * `findVenueOwnPage` reaches the open web, which `stubFetch` below cannot stand in
+ * for — it answers Ontopo's POST shape and nothing else. `describeVenueWebLead` stays
+ * real, because what these tests are about is the sentence `check_availability` ends
+ * up sending to the model, and a stubbed formatter would assert my own mock.
+ */
+const { findVenueOwnPage } = vi.hoisted(() => ({ findVenueOwnPage: vi.fn() }));
+vi.mock('../venue-web-fallback', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../venue-web-fallback')>()),
+  findVenueOwnPage,
+}));
+
 import {
   checkoutUrl,
   createCheckout,
@@ -91,16 +106,32 @@ function stubFetch(responder: (call: { body: Record<string, unknown> }) => unkno
         headers: init.headers as Record<string, string>,
       });
       const result = responder({ body });
+      // `text` matters as much as `json`: the client reads the body of a refusal to
+      // log the status and a snippet, and a stub without it turned a 400 into a
+      // TypeError — the mock disagreeing with `Response`, not the code being wrong.
       if (result === null) {
-        return { ok: false, status: 400, json: async () => ({}) } as unknown as Response;
+        return {
+          ok: false,
+          status: 400,
+          json: async () => ({}),
+          text: async () => '{"status":400,"message":"{}"}',
+        } as unknown as Response;
       }
-      return { ok: true, status: 200, json: async () => result } as unknown as Response;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => result,
+        text: async () => JSON.stringify(result),
+      } as unknown as Response;
     }),
   );
 }
 
 beforeEach(() => {
   calls = [];
+  // "We could not place a site for this venue" is the default, so every test that is
+  // not about the fallback sees the message this tool sent before it existed.
+  findVenueOwnPage.mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -520,6 +551,88 @@ describe('check_availability', () => {
 
     expect(result.ok).toBe(true);
     expect(result.summary).toMatch(/nothing bookable/i);
+  });
+
+  /*
+   * The two dead ends, and why they should not be dead ends. Ontopo covers a few
+   * hundred rooms and answers for fewer on any given night; neither silence nor an
+   * empty grid means the restaurant has no table, only that this platform has nothing
+   * to say. Both now carry the venue's own line, and both still say plainly that no
+   * table has been held.
+   */
+  it('hands over the venue’s own site and phone when Ontopo is silent', async () => {
+    stubFetch(() => null);
+    findVenueOwnPage.mockResolvedValue({
+      url: 'https://noema.rest/',
+      host: 'noema.rest',
+      phone: '03-6021133',
+    });
+
+    const result = await checkAvailabilityTool.execute(
+      { restaurant: 'NOEMA', date: '2026-09-05' },
+      { userId: 'user-1', sessionId: 's1' },
+    );
+
+    // Still not a claim about availability — the original refusal is intact and the
+    // link is offered alongside it.
+    expect(result.summary).toMatch(/do not\s+guess/i);
+    expect(result.summary).toContain('noema.rest');
+    expect(result.summary).toContain('03-6021133');
+    expect(result.data).toMatchObject({ venueSite: 'https://noema.rest/' });
+    expect(findVenueOwnPage).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'NOEMA', city: 'Tel Aviv' }),
+    );
+  });
+
+  it('hands over the venue’s own site when the grid comes back empty', async () => {
+    stubFetch(() => NO_TABLES);
+    findVenueOwnPage.mockResolvedValue({
+      url: 'https://noema.rest/',
+      host: 'noema.rest',
+      phone: null,
+    });
+
+    const result = await checkAvailabilityTool.execute(
+      { restaurant: 'NOEMA', date: '2026-09-05' },
+      { userId: 'user-1', sessionId: 's1' },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.summary).toMatch(/nothing bookable/i);
+    expect(result.summary).toContain('noema.rest');
+    expect(result.summary).toMatch(/not a table you have held/);
+  });
+
+  it('sends the message it always sent when no site can be placed', async () => {
+    stubFetch(() => null);
+    findVenueOwnPage.mockResolvedValue(null);
+
+    const result = await checkAvailabilityTool.execute(
+      { restaurant: 'NOEMA', date: '2026-09-05' },
+      { userId: 'user-1', sessionId: 's1' },
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.summary).toMatch(/do not\s+guess/i);
+    expect(result.summary).not.toMatch(/their own site/);
+  });
+
+  /*
+   * The property the whole fallback rests on. It runs on a path that has already
+   * partly failed, so a throw would replace a usable "try another night" with
+   * `runTool`'s generic "could not be completed" — which reads to the model as a
+   * transient fault worth retrying, and every retry would fail identically.
+   */
+  it('survives a fallback that throws', async () => {
+    stubFetch(() => NO_TABLES);
+    findVenueOwnPage.mockRejectedValue(new Error('ETIMEDOUT'));
+
+    await expect(
+      checkAvailabilityTool.execute(
+        { restaurant: 'NOEMA', date: '2026-09-05' },
+        { userId: 'user-1', sessionId: 's1' },
+      ),
+    ).resolves.toMatchObject({ ok: true });
   });
 });
 

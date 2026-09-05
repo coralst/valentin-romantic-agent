@@ -239,36 +239,18 @@ describe('dossier surface routing', () => {
   });
 
   /*
-   * The ◆ and the ☰ were both inert on desktop: the desktop rail was rendered
-   * without `onViewChange`, so the ◆ called an undefined prop, and the ☰ opened a
-   * sidebar that was already permanently open.
+   * The ☰ was inert on desktop: it opened a sidebar that was already permanently
+   * open.
+   *
+   * Two tests for the rail's ◆ used to live here — it left the dossier and put the
+   * caret in the composer, via `returnToChat`. The ◆ has been removed from the rail
+   * entirely, so both are gone with it. What they protected is not lost: the crest
+   * covers "leave the dossier and land on chat" and is asserted just above. The
+   * composer no longer takes focus from any rail button, which is deliberate —
+   * `closeDossier` focuses the portrait that opened the dossier, which is the
+   * correct place to return a keyboard user to.
    */
-  describe('the desktop rail’s ◆ and ☰', () => {
-    it('◆ leaves the dossier and puts the caret in the composer', async () => {
-      const user = userEvent.setup();
-      renderApp();
-      await user.click(screen.getByTestId('brief-cameo'));
-
-      await user.click(screen.getByTestId('rail-chat-button'));
-
-      expect(screen.getByTestId('app-layout')).toHaveAttribute('data-surface', 'chat');
-      await waitFor(() =>
-        expect(screen.getByLabelText('Type a message')).toHaveFocus(),
-      );
-    });
-
-    it('◆ is still observable on the chat shell, where the surface cannot change', async () => {
-      // Both surfaces are already on screen here, so the caret *is* the effect.
-      const user = userEvent.setup();
-      renderApp();
-
-      await user.click(screen.getByTestId('rail-chat-button'));
-
-      await waitFor(() =>
-        expect(screen.getByLabelText('Type a message')).toHaveFocus(),
-      );
-    });
-
+  describe('the desktop rail’s ☰', () => {
     it('☰ hands the conversation list’s column to the chat, and gives it back', async () => {
       const user = userEvent.setup();
       renderApp();

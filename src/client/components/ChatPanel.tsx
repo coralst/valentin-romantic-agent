@@ -6,7 +6,6 @@ import { MessageHistory } from './MessageHistory';
 import { MessageInput } from './MessageInput';
 import { TypingIndicator } from './TypingIndicator';
 import { ConnectionBanner } from './ConnectionBanner';
-import { GuidedIntro } from './GuidedIntro';
 import { ShareMenu } from './ShareMenu';
 import { ShowThinkingToggle } from './ShowThinkingToggle';
 import { AgentActivityTrail } from './AgentActivityTrail';
@@ -190,22 +189,33 @@ export function ChatPanel({ onOpenIntegrations }: ChatPanelProps = {}) {
         </div>
       </div>
       <div style={separatorStyle} />
-      {/* Renders nothing once there is a conversation or a profile — see its own
-          note. It sits above the transcript rather than inside it so the messages
-          it produces are ordinary messages. */}
-      <GuidedIntro />
       <MessageHistory
         messages={state.messages}
         liveMessageIds={state.liveMessageIds}
         proposals={state.proposals}
         onConfirmProposal={handleConfirmProposal}
         onDismissProposal={handleDismissProposal}
+        /*
+         * The trail goes *inside* the transcript, at its tail.
+         *
+         * It used to be a flex sibling here, between the transcript and the
+         * composer. That is a fixed region pinned to the foot of the column, so on
+         * any conversation shorter than the viewport the reasoning for the newest
+         * turn appeared hundreds of pixels below the message it belonged to, with
+         * empty cream in between — it read as belonging to the composer rather than
+         * to Valentin's reply.
+         *
+         * Passed as a slot rather than imported by `MessageHistory` so the
+         * transcript stays a pure function of messages and proposals, and keeps
+         * knowing nothing about activity frames.
+         */
+        tail={
+          <AgentActivityTrail activity={state.activity} showThinking={state.showThinking} />
+        }
       />
-      {/* Shares the typing indicator's slot — a fixed region outside the
-          transcript, so growing it displaces no message. The dots keep showing
-          while the trail is empty, which is every turn with the toggle off and no
-          tool calls. */}
-      <AgentActivityTrail activity={state.activity} showThinking={state.showThinking} />
+      {/* Stays outside the transcript: the dots are about the *pending* turn, so
+          they belong in a fixed slot above the composer where nothing scrolls them
+          out of view. This is the slot the trail used to share. */}
       <TypingIndicator isVisible={state.isTyping} />
       <MessageInput
         value={state.inputValue}

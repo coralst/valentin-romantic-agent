@@ -6,14 +6,12 @@ import { ChatProvider } from '../../context/chat-context';
 import { PreferencesProvider } from '../../context/preferences-context';
 import { ProfileStoreProvider } from '../../context/profile-store-context';
 import { IntegrationsProvider } from '../../context/integrations-context';
-import { IconRail, type RailView } from '../IconRail';
+import { IconRail } from '../IconRail';
 import { ArchitectureEngineProvider } from '../../context/architecture-engine-context';
 import { layout, radii } from '../../design-system/tokens';
 
 interface RenderOptions {
   orientation?: 'column' | 'row';
-  activeView?: RailView | null;
-  onViewChange?: (view: RailView) => void;
   onGoHome?: () => void;
   onOpenSessions?: () => void;
   isSessionsOpen?: boolean;
@@ -29,8 +27,6 @@ interface RenderOptions {
 
 function renderRail({
   orientation = 'column',
-  activeView = null,
-  onViewChange,
   onGoHome,
   onOpenSessions = () => {},
   isSessionsOpen,
@@ -41,8 +37,6 @@ function renderRail({
   const rail = (
     <IconRail
       orientation={orientation}
-      activeView={activeView}
-      onViewChange={onViewChange}
       onGoHome={onGoHome}
       onOpenSessions={onOpenSessions}
       isSessionsOpen={isSessionsOpen}
@@ -71,7 +65,6 @@ describe('IconRail', () => {
 
   it('labels its controls for screen readers', () => {
     renderRail();
-    expect(screen.getByRole('button', { name: 'Conversation' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open session history' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Demo controls' })).toBeInTheDocument();
   });
@@ -166,34 +159,24 @@ describe('IconRail', () => {
     });
   });
 
-  it('reports the active view via aria-pressed when one surface is shown', () => {
-    renderRail({ activeView: 'profile' });
-    expect(screen.getByRole('button', { name: 'Conversation' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    );
+  /*
+   * The \u25c6 is gone, in both orientations.
+   *
+   * It was a third control answering to a name two others already own: the crest
+   * above it is "home" from any surface, and on mobile `MobileNav` has its own chat
+   * tab. Asserted rather than merely deleted because the rail is where every future
+   * "add a button for X" lands, and the reason this particular one went is not
+   * visible from the file that no longer contains it.
+   */
+  it('has no \u25c6 view switch, the crest and the mobile tabs owning that job', () => {
+    renderRail({ orientation: 'column' });
+    expect(screen.queryByTestId('rail-chat-button')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Conversation' })).not.toBeInTheDocument();
+    cleanup();
 
-    renderRail({ activeView: 'chat' });
-    expect(screen.getAllByRole('button', { name: 'Conversation' })[1]).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-  });
-
-  it('omits aria-pressed on desktop, where both surfaces are visible at once', () => {
-    renderRail({ activeView: null });
-    expect(screen.getByRole('button', { name: 'Conversation' })).not.toHaveAttribute(
-      'aria-pressed',
-    );
-  });
-
-  it('switches view when the \u25c6 is pressed', async () => {
-    const onViewChange = vi.fn();
-    const user = userEvent.setup();
-    renderRail({ activeView: 'profile', onViewChange });
-
-    await user.click(screen.getByRole('button', { name: 'Conversation' }));
-    expect(onViewChange).toHaveBeenCalledWith('chat');
+    renderRail({ orientation: 'row' });
+    expect(screen.queryByTestId('rail-chat-button')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Conversation' })).not.toBeInTheDocument();
   });
 
   describe('demo popover', () => {
@@ -227,6 +210,27 @@ describe('IconRail', () => {
       const popover = screen.getByTestId('rail-demo-popover');
       expect(popover.closest('[data-testid="icon-rail"]')).toBeNull();
       expect(popover.style.position).toBe('fixed');
+    });
+
+    /*
+     * Which way the menu grows is a function of where the ⚙ is, and the ⚙ moved:
+     * with no `flex: 1` spacer left in the rail every button is top-anchored, so a
+     * menu that grew *upwards* from it ran off the top of the window and covered the
+     * conversation list's wordmark row — architecture toggle included, which made
+     * that button unclickable whenever the demo menu was open.
+     *
+     * jsdom reports a zero-sized rect for the gear, so the numbers here are all 0
+     * and worth nothing. The assertable part is the *direction*: the column menu is
+     * placed by its top edge, never its bottom.
+     */
+    it('grows downwards from the gear, which is top-anchored in the rail', async () => {
+      const user = userEvent.setup();
+      renderRail({ orientation: 'column' });
+
+      await user.click(screen.getByRole('button', { name: 'Demo controls' }));
+      const popover = screen.getByTestId('rail-demo-popover');
+      expect(popover.style.top).not.toBe('');
+      expect(popover.style.bottom).toBe('');
     });
 
     it('stays open when the popover itself is clicked', async () => {
@@ -301,33 +305,28 @@ describe('IconRail', () => {
   });
 
   /*
-   * The rail's glyphs are legible once you know the app and opaque on first
-   * sight, and this is the first thing a visitor looks at. The bands are the
-   * cheapest fix; they are decoration to a screen reader, which already hears
-   * every button's own name.
+   * The band labels are gone too.
+   *
+   * They existed to explain four opaque glyphs to a first-time visitor. Two of
+   * those glyphs (◆, ♥) have since been removed, which left three eyebrows titling
+   * groups of one — a taxonomy costing more vertical room than the buttons it
+   * organised, on the surface where a presenter most needs the rail to hold still.
    */
   describe('the band labels', () => {
-    it('groups the vertical rail into talk / act', () => {
-      renderRail({ orientation: 'column' });
-      for (const label of ['talk', 'act']) {
-        const band = screen.getByText(label);
-        expect(band).toHaveAttribute('aria-hidden', 'true');
+    it('titles nothing, in either orientation', () => {
+      for (const orientation of ['column', 'row'] as const) {
+        renderRail({ orientation });
+        for (const label of ['talk', 'know', 'act', 'show']) {
+          expect(screen.queryByText(label)).not.toBeInTheDocument();
+        }
+        cleanup();
       }
     });
 
-    // There is no "know" band because there is no ♥ to put under it: her profile
-    // opens from her portrait in the brief, not from the rail. A band label with
-    // nothing beneath it names an empty group.
-    it('has no "know" band, the ♥ having been dropped from the rail', () => {
+    // Her profile opens from her portrait in the brief, never from the rail.
+    it('has no ♥, so nothing wants a "know" group', () => {
       renderRail({ orientation: 'column' });
-      expect(screen.queryByText('know')).not.toBeInTheDocument();
       expect(screen.queryByTestId('rail-profile-button')).not.toBeInTheDocument();
-    });
-
-    it('drops them on the 56px mobile strip, which has no vertical room', () => {
-      renderRail({ orientation: 'row' });
-      expect(screen.queryByText('talk')).not.toBeInTheDocument();
-      expect(screen.queryByText('act')).not.toBeInTheDocument();
     });
   });
 
@@ -401,7 +400,7 @@ describe('IconRail', () => {
             <PreferencesProvider>
               <ProfileStoreProvider sessionId="session-1">
                 <ArchitectureEngineProvider>
-                  <IconRail orientation={orientation} activeView={null} onOpenSessions={() => {}} />
+                  <IconRail orientation={orientation} onOpenSessions={() => {}} />
                 </ArchitectureEngineProvider>
               </ProfileStoreProvider>
             </PreferencesProvider>

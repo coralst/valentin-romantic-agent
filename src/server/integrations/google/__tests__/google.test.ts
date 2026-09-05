@@ -16,6 +16,7 @@ import {
   proposeCalendarEventTool,
   proposeEmailTool,
 } from '../tools';
+import type { ToolContext } from '../../tool-registry';
 
 /**
  * Google, with `fetch` stubbed.
@@ -527,6 +528,47 @@ describe('propose_email', () => {
     expect(result.ok).toBe(false);
     expect(result.summary).toContain('rather than guessing one');
     expect(calls).toHaveLength(0);
+  });
+
+  it('addresses mail to the user himself when the model leaves "to" out', async () => {
+    // The reported bug was Valentin stopping mid-flow to ask for an address the
+    // deployment's single owner had already given him.
+    stubEverything();
+    const { to: _omitted, ...noRecipient } = good;
+    const result = await proposeEmailTool.execute(noRecipient, ctx);
+
+    expect(result.ok).toBe(true);
+    expect(result.proposal?.payload?.to).toBe(config.reminders.defaultEmail);
+    expect(result.summary).not.toMatch(/ask the user/i);
+  });
+
+  it('prefers the address on the profile over the deployment default', async () => {
+    stubEverything();
+    // Only the two reads `ownerAddress` makes. A full store would assert nothing
+    // more here and would hide which two they are.
+    const storage = {
+      getPreferencesBySession: async () => [
+        { fieldId: 'notify_email', key: 'notify_email', value: 'inbox@example.test' },
+      ],
+      getManualValues: async () => ({}),
+    };
+
+    const { to: _omitted, ...noRecipient } = good;
+    const result = await proposeEmailTool.execute(noRecipient, {
+      ...ctx,
+      storage: storage as unknown as ToolContext['storage'],
+    });
+
+    expect(result.proposal?.payload?.to).toBe('inbox@example.test');
+  });
+
+  it('never redirects a mail the model addressed to somebody else', async () => {
+    // "Email the restaurant" has to keep working. Quietly sending it to the owner
+    // instead would be worse than refusing it.
+    stubEverything();
+    const result = await proposeEmailTool.execute(good, ctx);
+
+    expect(result.proposal?.payload?.to).toBe('dana@example.test');
   });
 
   it('refuses an empty subject or body', async () => {

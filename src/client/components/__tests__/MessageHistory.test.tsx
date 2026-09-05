@@ -92,6 +92,49 @@ describe('MessageHistory', () => {
   });
 
   /**
+   * "The reasoning is at the bottom and not near the latest message."
+   *
+   * `AgentActivityTrail` used to be a flex sibling *below* the transcript, which
+   * `flex: 1` had already stretched to fill the column — so the trail was pinned
+   * just above the composer with the whole empty transcript between it and the
+   * message that caused it. On a short exchange that reads as two unrelated
+   * things on screen rather than one turn in progress.
+   *
+   * It comes in through this slot now, which puts it inside the scroller and after
+   * the bubbles, so it sits directly under the latest message and scrolls with it.
+   * Asserted by document order rather than by geometry, because jsdom does no
+   * layout — the same idiom the announcement test below uses.
+   */
+  it('renders the tail slot inside the transcript, after every bubble', () => {
+    render(
+      <PreferencesProvider>
+        <MessageHistory
+          messages={[message('m1', 'user', 'She surfs'), message('m2', 'agent', 'Noted')]}
+          tail={<div data-testid="trail-stand-in">reasoning</div>}
+        />
+      </PreferencesProvider>,
+    );
+
+    const tail = screen.getByTestId('trail-stand-in');
+    const bubbles = screen.getAllByTestId('message-bubble');
+    for (const bubble of bubbles) {
+      // Node.DOCUMENT_POSITION_FOLLOWING — the tail comes after every bubble.
+      expect(bubble.compareDocumentPosition(tail) & 4).toBeTruthy();
+    }
+    // And *inside* the transcript, not merely after it: that is what makes it
+    // scroll with the conversation instead of holding a fixed slot at the foot.
+    // Its parent is the scrolling content box, which is the thing that also holds
+    // the bubbles — each of those sits in a wrapper of its own, so this is the
+    // relationship to assert rather than direct siblinghood.
+    expect(tail.parentElement?.contains(bubbles[0])).toBe(true);
+  });
+
+  it('renders no tail when none is passed, leaving the transcript untouched', () => {
+    renderHistory([message('m1', 'user', 'She surfs')]);
+    expect(screen.queryByTestId('trail-stand-in')).not.toBeInTheDocument();
+  });
+
+  /**
    * Regression: the announcement was originally keyed off
    * `Preference.sourceMessageId`, which is the *server's* id for the user's
    * message. The transcript renders the optimistic client copy under a locally

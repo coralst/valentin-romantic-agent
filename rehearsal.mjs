@@ -77,6 +77,16 @@ const openDemoMenu = async () => {
   if (await seed.isVisible().catch(() => false)) return;
   await p.getByTestId('rail-demo-button').click();
 };
+// And put it away again before touching the app underneath it. The menu is a
+// ~360px floating panel over the shell, so leaving it up means the next click can
+// land on the menu instead of its target — which is exactly what happened here,
+// silently, until the ⚙ moved and the menu started covering a button this script
+// presses. A presenter closes the menu after seeding; so does this.
+const closeDemoMenu = async () => {
+  if (!(await seed.isVisible().catch(() => false))) return;
+  await p.keyboard.press('Escape');
+  await p.getByTestId('rail-demo-popover').waitFor({ state: 'hidden' });
+};
 
 // The rail's empty state, which is the seed/reset signal now.
 //
@@ -101,6 +111,7 @@ let body = await bodyText();
 ok('persona rendered (Samantha + Kyoto + sage)',
   body.includes('Samantha') && body.includes('Kyoto') && body.includes('sage'));
 ok('announced "Demo profile loaded"', /demo profile loaded/i.test(body));
+await closeDemoMenu();
 
 // 2. architecture drawer + live message
 // By testid rather than by name: the drawer's own Hide control also matches
@@ -197,6 +208,9 @@ ok('re-seed refills the rail', await waitFor(railIsPopulated, { label: 'rail rep
 
 ok('no console errors', errs.length === 0);
 if (errs.length) console.log('  errors:', errs.slice(0, 4));
+// The headline screenshot is the artefact a reviewer actually opens, so it should
+// show the app rather than the demo menu parked on top of the shell.
+await closeDemoMenu();
 await p.screenshot({ path: `${SHOT_DIR}/rehearsal-${RUN}.png` });
 await b.close();
 

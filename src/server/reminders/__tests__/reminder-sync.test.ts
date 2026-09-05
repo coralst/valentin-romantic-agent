@@ -10,6 +10,7 @@ import {
 } from '../../../shared/interfaces/reminder';
 import type { Reminder } from '../../../shared/interfaces/reminder';
 import { logger } from '../../logging';
+import { config } from '../../config';
 
 /**
  * The call site that turns a stored date into a row the sweeper can find.
@@ -80,15 +81,31 @@ describe('syncReminders', () => {
     expect(rows[0].sentAt).toBeNull();
   });
 
-  it('records a reminder with no target when no address is known', async () => {
+  it("falls back to the deployment's owner when the profile has no address", async () => {
     await extracted('birthday', '1988-06-12');
 
     await syncReminders(store, sessionId, new Date('2026-03-01T08:00:00Z'));
 
     const [row] = await store.getRemindersBySession(sessionId);
+    expect(row.target).toBe(config.reminders.defaultEmail);
+  });
+
+  it('records a reminder with no target when there is nowhere at all to send it', async () => {
     // Worth recording without anywhere to send it — the dispatcher skips it with
-    // `reminder.no_target` rather than the date going unnoticed.
-    expect(row.target).toBeNull();
+    // `reminder.no_target` rather than the date going unnoticed. Only reachable now
+    // with the default unset, which is the anonymous-deployment case.
+    const original = config.reminders.defaultEmail;
+    config.reminders.defaultEmail = '';
+    try {
+      await extracted('birthday', '1988-06-12');
+
+      await syncReminders(store, sessionId, new Date('2026-03-01T08:00:00Z'));
+
+      const [row] = await store.getRemindersBySession(sessionId);
+      expect(row.target).toBeNull();
+    } finally {
+      config.reminders.defaultEmail = original;
+    }
   });
 
   it('overwrites in place when the lead time changes', async () => {

@@ -40,10 +40,11 @@
  * ## What it deliberately does not do
  *
  * It cannot aim at another conversation — `sessionId` comes from
- * {@link ToolContext} and is not an input — and it does not decide where the mail
- * goes. The address is read from `notify_email` on the profile, the one field the
- * extraction guidance forbids inferring, because a reminder sent to a guessed
- * address reaches a stranger.
+ * {@link ToolContext} and is not an input — and the model does not get to say where
+ * the mail goes. The address is `notify_email` on the profile, or failing that the
+ * deployment's own owner (`resolveNotifyEmail`). Neither can be an argument: the
+ * extraction guidance forbids *inferring* an address for exactly the reason it
+ * cannot be a tool input either, which is that a guessed one reaches a stranger.
  */
 
 import {
@@ -56,9 +57,7 @@ import type { AgentTool, ToolContext, ToolResult } from '../integrations/tool-re
 import { config } from '../config';
 import { dueInstant } from './planner';
 import { plannedChannel, profileFieldValue } from './reminder-sync';
-
-/** The profile field holding the address reminders go to. */
-const NOTIFY_EMAIL_FIELD = 'notify_email';
+import { NOTIFY_EMAIL_FIELD, resolveNotifyEmail } from './notify-email';
 
 /** `YYYY-MM-DD`, and nothing else. */
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -257,7 +256,9 @@ export const setReminderTool: AgentTool = {
       storage.getPreferencesBySession(ctx.sessionId),
       storage.getManualValues(ctx.sessionId),
     ]);
-    const target = profileFieldValue(NOTIFY_EMAIL_FIELD, manual, preferences)?.trim() || null;
+    const target = resolveNotifyEmail(
+      profileFieldValue(NOTIFY_EMAIL_FIELD, manual, preferences),
+    );
 
     const reminder: Reminder = {
       id: customReminderId(date, title),

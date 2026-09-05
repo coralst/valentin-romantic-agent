@@ -1,20 +1,19 @@
-import { colors, radii, typography } from '../../design-system/tokens';
-import {
-  outingHistory,
-  OUTING_VERDICTS,
-  type Outing,
-  type OutingVerdict,
-} from '../../../shared/interfaces/outing';
+import { colors, typography } from '../../design-system/tokens';
+import { outingHistory, type Outing } from '../../../shared/interfaces/outing';
 import {
   cardCountStyle,
   cardHeadStyle,
   cardStyle,
   cardTitleStyle,
-  goldWash,
-  GOLD_INK,
   linenWash,
 } from './board-tones';
 import { DossierIcon, dossierType } from './dossier-icons';
+import {
+  isRated,
+  OutingSurvey,
+  OutingVerdictPill,
+  type OutingRatePatch,
+} from './OutingSurvey';
 
 /**
  * Where he has taken her, and the survey for the ones he has not answered on yet.
@@ -24,17 +23,21 @@ import { DossierIcon, dossierType } from './dossier-icons';
  * about which memory is fading fastest. Both orders are right for their own job;
  * this card is a record, not a queue.
  *
- * ## Why the survey is rendered inline instead of as its own card
+ * ## Where this renders now
  *
- * The survey is not a separate feature. It is the missing half of one row, and it
- * has to appear against the venue name for the question to mean anything — "how
- * was it?" with no place attached is unanswerable. So an unrated past row grows
- * the controls in place and loses them again the moment it is answered, and the
- * card never announces "1 survey waiting" as though it were a chore.
+ * Not on the dossier board — `EventTimeline` shows these rows in date order
+ * against her upcoming dates, which is what the board wanted. This card is kept
+ * as the standalone list because it is the only surface that shows outings
+ * *without* needing her occasions derived, and its behaviour is pinned by tests
+ * the timeline's own tests do not replace.
  *
- * Only *past* rows get it. A table booked for next Friday cannot be rated, and
- * offering stars against it would invite an answer about the booking rather than
- * about the evening.
+ * The survey itself lives in `OutingSurvey`, shared with the timeline: the
+ * question has to be asked identically in both places or the two disagree about
+ * what closes a row.
+ *
+ * Only *past* rows get asked about. A table booked for next Friday cannot be
+ * rated, and offering hearts against it would invite an answer about the booking
+ * rather than about the evening.
  *
  * Deliberately not routed through `ProfileField.tsx`: that component dispatches on
  * a registry field's `valueType`, and an outing is not a field on her profile.
@@ -77,72 +80,6 @@ const whenStyle: React.CSSProperties = {
   whiteSpace: 'nowrap',
 };
 
-/** Her answer, once there is one. Gold, because it is the payoff of the row. */
-const verdictPillStyle: React.CSSProperties = {
-  display: 'inline-block',
-  marginTop: 6,
-  padding: '4px 10px',
-  borderRadius: radii.pill,
-  fontFamily: typography.bodyFontFamily,
-  fontSize: dossierType.small,
-  fontWeight: typography.weights.semibold,
-  background: '#FFF4E6',
-  color: GOLD_INK,
-  boxShadow: `inset 0 0 0 1.5px ${goldWash(0.45)}`,
-};
-
-const surveyStyle: React.CSSProperties = {
-  marginTop: 8,
-  padding: '10px 12px',
-  borderRadius: radii.kv,
-  background: colors.porcelain,
-};
-
-const askStyle: React.CSSProperties = {
-  margin: '0 0 8px',
-  fontFamily: typography.bodyFontFamily,
-  fontSize: dossierType.small,
-  color: colors.ink,
-};
-
-const starRowStyle: React.CSSProperties = { display: 'flex', gap: 4, marginBottom: 8 };
-
-const starButtonStyle: React.CSSProperties = {
-  background: 'none',
-  border: 'none',
-  padding: 2,
-  cursor: 'pointer',
-  display: 'flex',
-  color: colors.linenShade,
-  font: 'inherit',
-};
-
-const litStarStyle: React.CSSProperties = { ...starButtonStyle, color: colors.claret };
-
-const verdictRowStyle: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 6 };
-
-const verdictButtonStyle: React.CSSProperties = {
-  padding: '5px 11px',
-  borderRadius: radii.pill,
-  fontFamily: typography.bodyFontFamily,
-  fontSize: dossierType.small,
-  fontWeight: typography.weights.semibold,
-  background: colors.porcelain,
-  color: colors.inkMuted,
-  boxShadow: `inset 0 0 0 1.5px ${colors.linenShade}`,
-  border: 'none',
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
-};
-
-/** The verdict he has already picked, while the stars are still outstanding. */
-const chosenVerdictButtonStyle: React.CSSProperties = {
-  ...verdictButtonStyle,
-  background: colors.claret,
-  color: colors.textOnAccent,
-  boxShadow: 'none',
-};
-
 const emptyStyle: React.CSSProperties = {
   margin: 0,
   fontFamily: typography.bodyFontFamily,
@@ -176,25 +113,10 @@ export function hasHappened(outing: Outing, now: Date = new Date()): boolean {
   return outing.occursOn <= today;
 }
 
-/**
- * A star is what closes the survey; a verdict on its own does not.
- *
- * Both are useful, but the number is the part the recommendation logic reads
- * (`placesToAvoid` thresholds on it), and it is the same field `unratedOutings`
- * looks for — so if a verdict alone collapsed the controls, the row would sit
- * unrated forever with nowhere left to answer.
- */
-function isRated(outing: Outing): boolean {
-  return outing.rating !== null && outing.rating !== undefined;
-}
-
 interface OutingHistoryProps {
   outings: Outing[];
   /** Records her answer. One call covers the stars and the verdict alike. */
-  onRate: (
-    outingId: string,
-    patch: { rating?: number | null; verdict?: OutingVerdict | null },
-  ) => void;
+  onRate: (outingId: string, patch: OutingRatePatch) => void;
   now?: Date;
 }
 
@@ -239,49 +161,9 @@ export function OutingHistory({ outings, onRate, now = new Date() }: OutingHisto
                 <span style={whenStyle}>{whenLabel(outing)}</span>
               </div>
 
-              {rated && (
-                <span style={verdictPillStyle}>
-                  {outing.rating}/5{outing.verdict ? ` — ${outing.verdict}` : ''}
-                </span>
-              )}
+              {rated && <OutingVerdictPill outing={outing} />}
 
-              {askable && (
-                <div style={surveyStyle} data-testid={`outing-survey-${outing.id}`}>
-                  <p style={askStyle}>How was it?</p>
-
-                  <div style={starRowStyle} role="group" aria-label={`Rate ${outing.venueName}`}>
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <button
-                        key={star}
-                        type="button"
-                        style={star <= (outing.rating ?? 0) ? litStarStyle : starButtonStyle}
-                        onClick={() => onRate(outing.id, { rating: star })}
-                        aria-label={`${star} out of 5`}
-                      >
-                        <DossierIcon name="heart" size={20} />
-                      </button>
-                    ))}
-                  </div>
-
-                  <div style={verdictRowStyle}>
-                    {OUTING_VERDICTS.map((verdict) => (
-                      <button
-                        key={verdict}
-                        type="button"
-                        style={
-                          outing.verdict === verdict
-                            ? chosenVerdictButtonStyle
-                            : verdictButtonStyle
-                        }
-                        onClick={() => onRate(outing.id, { verdict })}
-                        aria-pressed={outing.verdict === verdict}
-                      >
-                        {verdict}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
+              {askable && <OutingSurvey outing={outing} onRate={onRate} />}
             </div>
           );
         })

@@ -81,22 +81,22 @@ describe('planReminders — recurring dates', () => {
 });
 
 describe('planReminders — dueAt', () => {
-  it('pins the send to 09:00 Israel time, lead days before the occasion', () => {
+  it('pins the send to 08:30 Israel time, lead days before the occasion', () => {
     const now = new Date('2026-01-01T08:00:00Z');
     const [reminder] = planReminders({ ...base, birthday: '1988-06-12' }, now);
 
-    // Summer, so Israel is UTC+3: 09:00 local is 06:00Z.
-    expect(wall(reminder.dueAt)).toBe('2026-06-05T09:00');
-    expect(reminder.dueAt).toBe('2026-06-05T06:00:00.000Z');
+    // Summer, so Israel is UTC+3: 08:30 local is 05:30Z.
+    expect(wall(reminder.dueAt)).toBe('2026-06-05T08:30');
+    expect(reminder.dueAt).toBe('2026-06-05T05:30:00.000Z');
   });
 
-  it('still pins 09:00 across the winter offset', () => {
+  it('still pins 08:30 across the winter offset', () => {
     const now = new Date('2026-01-01T08:00:00Z');
     const [reminder] = planReminders({ ...base, birthday: '1988-02-10' }, now);
 
     // Winter is UTC+2, so the same wall clock is a different instant.
-    expect(wall(reminder.dueAt)).toBe('2026-02-03T09:00');
-    expect(reminder.dueAt).toBe('2026-02-03T07:00:00.000Z');
+    expect(wall(reminder.dueAt)).toBe('2026-02-03T08:30');
+    expect(reminder.dueAt).toBe('2026-02-03T06:30:00.000Z');
   });
 
   it('sends at once for a date learned inside the lead window', () => {
@@ -135,7 +135,7 @@ describe('planReminders — dueAt', () => {
       now,
     );
 
-    expect(wall(reminder.dueAt)).toBe('2026-06-11T09:00');
+    expect(wall(reminder.dueAt)).toBe('2026-06-11T08:30');
   });
 
   it('defaults to a week when the lead-time field is unset', () => {

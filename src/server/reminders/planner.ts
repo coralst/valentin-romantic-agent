@@ -1,5 +1,5 @@
 import {
-  REMINDER_HOUR_LOCAL,
+  REMINDER_SEND_TIME_LOCAL,
   REMINDER_ZONE,
   reminderId,
   type Reminder,
@@ -127,7 +127,7 @@ function clampToMonth(year: number, month: number, day: number): number {
 
 /**
  * The instant a reminder should go out: `leadDays` before the occasion, at
- * {@link REMINDER_HOUR_LOCAL} in {@link REMINDER_ZONE}.
+ * {@link REMINDER_SEND_TIME_LOCAL} in {@link REMINDER_ZONE}.
  *
  * The subtraction is done on the calendar date and the hour is pinned afterwards,
  * via `parseInZone`. Subtracting `leadDays * 86_400_000` from an instant instead
@@ -138,8 +138,17 @@ function clampToMonth(year: number, month: number, day: number): number {
  * Exported for `set_reminder`, which needs the identical rule for a user-authored
  * date. A second copy of this is how one of the two paths ends up mailing at 08:00
  * for half the year.
+ *
+ * `atLocalTime` overrides the default send time for a user who named one — "mail me
+ * at seven that morning". Validated by the caller: an unparseable value falls back
+ * to the default rather than producing no reminder, because the date is the part he
+ * cares about and losing the whole thing over a malformed hour is the worse trade.
  */
-export function dueInstant(occursOn: string, leadDays: number): Date | null {
+export function dueInstant(
+  occursOn: string,
+  leadDays: number,
+  atLocalTime: string = REMINDER_SEND_TIME_LOCAL,
+): Date | null {
   const occasionNoon = parseInZone(occursOn, REMINDER_ZONE);
   if (!occasionNoon) return null;
   const shifted = new Date(occasionNoon.getTime() - leadDays * DAY_MS);
@@ -149,8 +158,10 @@ export function dueInstant(occursOn: string, leadDays: number): Date | null {
     month: '2-digit',
     day: '2-digit',
   }).format(shifted);
-  const hour = String(REMINDER_HOUR_LOCAL).padStart(2, '0');
-  return parseInZone(`${wall}T${hour}:00`, REMINDER_ZONE);
+  const at = /^([01]\d|2[0-3]):([0-5]\d)$/.test(atLocalTime.trim())
+    ? atLocalTime.trim()
+    : REMINDER_SEND_TIME_LOCAL;
+  return parseInZone(`${wall}T${at}`, REMINDER_ZONE);
 }
 
 function buildReminder(

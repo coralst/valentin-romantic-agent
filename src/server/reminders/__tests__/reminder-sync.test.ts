@@ -74,8 +74,8 @@ describe('syncReminders', () => {
     const rows = pendingReminders(await store.getRemindersBySession(sessionId));
     expect(rows).toHaveLength(1);
     expect(rows[0].id).toBe(reminderId('birthday', '2026-06-12'));
-    // A week before the 12th, at nine in her morning.
-    expect(wall(rows[0].dueAt)).toBe('2026-06-05T09:00');
+    // A week before the 12th, at half past eight in his morning.
+    expect(wall(rows[0].dueAt)).toBe('2026-06-05T08:30');
     expect(rows[0].target).toBe('him@example.com');
     expect(rows[0].sentAt).toBeNull();
   });
@@ -102,7 +102,7 @@ describe('syncReminders', () => {
 
     const rows = await store.getRemindersBySession(sessionId);
     expect(rows).toHaveLength(1);
-    expect(wall(rows[0].dueAt)).toBe('2026-06-11T09:00');
+    expect(wall(rows[0].dueAt)).toBe('2026-06-11T08:30');
     expect(rows[0].leadDays).toBe(1);
   });
 

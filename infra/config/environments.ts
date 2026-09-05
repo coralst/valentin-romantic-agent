@@ -100,6 +100,27 @@ export interface EnvironmentConfig {
     shareToken?: string;
     spotifyOAuth?: string;
   };
+  /**
+   * Custom domain served by the CloudFront distribution, backed by a
+   * SuperNova-delegated Route 53 hosted zone in this account. When set,
+   * CdnStack requests a DNS-validated ACM certificate (validation records land
+   * in the same zone, so it validates unattended), attaches the alias to the
+   * distribution, and creates the A/AAAA alias records.
+   *
+   * The hosted zone itself is created outside CDK (it must exist before the
+   * SuperNova delegation request can name it), so it is referenced by id, not
+   * constructed. Leave undefined until the zone exists and SuperNova has
+   * delegated to it — deploying before delegation would stall the stack on
+   * certificate validation that can never complete.
+   */
+  customDomain?: {
+    /** FQDN the app is served from, e.g. `valentin-romantic-agent.coralst.people.aws.dev` */
+    domainName: string;
+    /** Route 53 hosted zone id holding the records (Z…) */
+    hostedZoneId: string;
+    /** The zone's apex name, e.g. `coralst.people.aws.dev` */
+    zoneName: string;
+  };
 }
 
 /**

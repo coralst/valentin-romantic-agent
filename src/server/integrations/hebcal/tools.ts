@@ -40,6 +40,36 @@ function parseDate(value: unknown, timeZone: string): Date | null {
   return parseInZone(value, timeZone);
 }
 
+/**
+ * A `YYYY-MM-DD` with its weekday spelled out, e.g. `Sunday 2026-09-13`.
+ *
+ * The date alone is not enough for the model, and it does not do this arithmetic
+ * reliably: given a correct Havdalah of `2026-09-13` it told a user "Havdalah
+ * Saturday night at 19:26" — 13 September 2026 is a Sunday. That happens exactly
+ * when Havdalah is deferred by a festival, which is the case the tool went to
+ * trouble to get right, so the weekday is stated rather than left to be inferred.
+ *
+ * Read off the components with `Date.UTC` rather than through a zone: a bare civil
+ * date has one weekday everywhere, and routing it through a timezone is what
+ * introduces the off-by-one this is meant to prevent.
+ */
+function withWeekday(localDate: string): string {
+  const [year, month, day] = localDate.split('-').map(Number);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return localDate;
+  const at = new Date(Date.UTC(year, month - 1, day));
+  if (Number.isNaN(at.getTime())) return localDate;
+  const weekday = new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', weekday: 'long' }).format(at);
+  return `${weekday} ${localDate}`;
+}
+
+/** Whole days from one `YYYY-MM-DD` to another, or `null` if either is unusable. */
+function daysBetween(from: string, to: string): number | null {
+  const start = Date.parse(`${from}T00:00:00Z`);
+  const end = Date.parse(`${to}T00:00:00Z`);
+  if (Number.isNaN(start) || Number.isNaN(end)) return null;
+  return Math.round((end - start) / 86_400_000);
+}
+
 /** One line per occasion, in the order the agent should mention them. */
 function renderOccasions(occasions: Occasion[]): string {
   return occasions
@@ -101,13 +131,28 @@ export const checkShabbatTool: AgentTool = {
       // "begins … ends" would read as a forecast of something under way.
       const verb = window.inProgress ? 'began' : 'begins';
       notes.push(
-        `Shabbat ${verb} ${window.candleLighting.localDate} at ${window.candleLighting.localTime}`,
+        `Shabbat ${verb} ${withWeekday(window.candleLighting.localDate)} at ${window.candleLighting.localTime}`,
       );
     }
     if (window.havdalah) {
       notes.push(
-        `and ends (Havdalah, מוצ״ש) ${window.havdalah.localDate} at ${window.havdalah.localTime}`,
+        `and ends (Havdalah, מוצ״ש) ${withWeekday(window.havdalah.localDate)} at ${window.havdalah.localTime}`,
       );
+
+      // Shabbat running straight into a yom tov has no Saturday-night Havdalah —
+      // it is deferred to the end of the festival. Say so, because the weekday
+      // alone reads like a mistake, and a model that assumes "Saturday night"
+      // will quietly correct the tool and tell the user the wrong evening.
+      const gap = window.candleLighting
+        ? daysBetween(window.candleLighting.localDate, window.havdalah.localDate)
+        : null;
+      if (gap !== null && gap > 1) {
+        notes.push(
+          `— note Havdalah is ${gap} days after candle lighting, not the next night: ` +
+            'Shabbat runs straight into a festival, so the rest period does not break on ' +
+            'Saturday evening. Say which evening it actually ends and do not call it Saturday night.',
+        );
+      }
     }
     if (window.parsha) notes.push(`(${window.parsha})`);
 

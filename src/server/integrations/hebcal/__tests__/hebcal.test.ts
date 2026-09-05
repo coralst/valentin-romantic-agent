@@ -277,7 +277,9 @@ describe('check_shabbat tool', () => {
       CTX,
     );
 
-    expect(result.summary).toContain('Shabbat began 2026-02-13');
+    // The weekday is part of the rendering on purpose — see
+    // `check-shabbat-weekday.test.ts` for the production answer that motivated it.
+    expect(result.summary).toContain('Shabbat began Friday 2026-02-13');
     expect(result.summary).toContain('2026-02-14');
     expect(result.summary).not.toContain('Shabbat begins');
     expect(result.summary.indexOf('2026-02-13')).toBeLessThan(
@@ -291,7 +293,7 @@ describe('check_shabbat tool', () => {
       CTX,
     );
 
-    expect(result.summary).toContain('Shabbat begins 2026-02-13');
+    expect(result.summary).toContain('Shabbat begins Friday 2026-02-13');
   });
 
   it('says out loud when it substituted a city', async () => {

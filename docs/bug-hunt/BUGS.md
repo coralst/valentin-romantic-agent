@@ -1,5 +1,9 @@
 # Bug hunt — conversation and tool usage
 
+**Twelve bugs, all fixed.** Eleven from the hunt itself; the twelfth was found in
+production while verifying the fix for the second, and is written up at the end of
+the status section below.
+
 What this is: the result of driving the **real agent** against the **real
 providers** with a recording seam on the tool registry, then checking its factual
 claims against ground truth fetched independently of our own clients. 29 live
@@ -50,6 +54,31 @@ behaviour and pass, plus 13 new ones for the id recovery and the search fallback
 `npm test` is 3604/3604 green, lint and build clean. Bugs 3, 4, 5 and 9 are model
 behaviour as much as code, so the live corpus remains the only thing that can
 show they stay fixed — re-run it after any prompt change.
+
+### 12, found in production *after* the eleven were deployed
+
+Verifying bug 2 live turned up a twelfth, in the same festival case one layer up.
+Asked "what time does Shabbat start next Friday", the deployed agent answered:
+
+> Candles next Friday are **18:32**, Havdalah **Saturday night at 19:26**.
+
+The times are hebcal's and the 18:32 is exactly what bug 2's fix restored — but
+that Havdalah is **2026-09-13, a Sunday.** It is deferred because Shabbat runs
+straight into Rosh Hashanah, which is the very thing bug 2 was about. The tool
+returned the correct date; the model attached "Saturday night" to it, because
+nothing in the tool result said otherwise and Saturday night is what Havdalah
+almost always is.
+
+**Fix:** `check_shabbat` now spells the weekday out on both moments (`Friday
+2026-09-11`, `Sunday 2026-09-13`) and, when Havdalah is more than one day after
+candle lighting, says so in as many words and tells the model not to call it
+Saturday night. Pinned by
+`src/server/integrations/hebcal/__tests__/check-shabbat-weekday.test.ts`,
+including that an ordinary week gets no such note.
+
+Worth stating plainly: bug 2's fix was correct and necessary, and it was not
+sufficient. Getting a date right in a tool result does not stop the model
+narrating it wrongly, so anything unusual has to be labelled as unusual.
 
 ## Confirmed bugs
 

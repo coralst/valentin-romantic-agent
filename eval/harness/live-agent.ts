@@ -90,7 +90,8 @@ export async function driveTurns(
   let iterations = 0;
   const startedAt = Date.now();
 
-  for (const text of texts) {
+  for (const [index, text] of texts.entries()) {
+    recording.beginTurn(index);
     transcript.push({ role: 'user', content: [{ text }] });
 
     const result = await runToolLoop({

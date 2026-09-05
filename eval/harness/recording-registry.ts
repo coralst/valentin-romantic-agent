@@ -33,6 +33,14 @@ import {
 
 /** One tool call as it actually happened, arguments included. */
 export interface RecordedCall {
+  /**
+   * Which user turn this call belongs to, zero-based.
+   *
+   * Needed because several cases are about what happens *after* something the user
+   * said — "I don't want a reminder" — and without a boundary a call from turn one
+   * would fail an assertion about turn three.
+   */
+  readonly turn: number;
   readonly name: string;
   readonly service: string;
   readonly args: Record<string, unknown>;
@@ -69,6 +77,8 @@ export interface Recording {
   readonly calls: RecordedCall[];
   /** Names whose confirm the harness refused to let through. */
   readonly stubbedConfirms: string[];
+  /** Called by the driver between user turns, so each call knows its turn. */
+  beginTurn(index: number): void;
 }
 
 /**
@@ -82,6 +92,7 @@ export function recordingRegistry(base: ToolRegistry, mode: WriteMode = 'proposa
   const calls: RecordedCall[] = [];
   const stubbedConfirms: string[] = [];
   const wrapped = new Map<string, AgentTool>();
+  let turn = 0;
 
   for (const [name, tool] of base) {
     const record = (
@@ -91,6 +102,7 @@ export function recordingRegistry(base: ToolRegistry, mode: WriteMode = 'proposa
       stubbed?: boolean,
     ): ToolResult => {
       calls.push({
+        turn,
         name: tool.name,
         service: tool.service,
         args,
@@ -145,5 +157,12 @@ export function recordingRegistry(base: ToolRegistry, mode: WriteMode = 'proposa
     });
   }
 
-  return { registry: wrapped, calls, stubbedConfirms };
+  return {
+    registry: wrapped,
+    calls,
+    stubbedConfirms,
+    beginTurn(index: number): void {
+      turn = index;
+    },
+  };
 }

@@ -13,6 +13,13 @@ import {
 } from '../integrations/tool-registry';
 import type { StorageInterface } from '../persistence/storage-interface';
 import { logger } from '../logging';
+import { config } from '../config';
+import { shareLink } from '../../shared/constants/share-link';
+import { mintShareToken } from '../sharing/share-token';
+import {
+  expandConversationLinkText,
+  expandConversationLinks,
+} from '../sharing/link-placeholder';
 
 /**
  * How many model round trips one user turn may take.
@@ -106,6 +113,24 @@ export async function runToolLoop({
   const proposals: ActionProposal[] = [];
   let lastText = '';
 
+  /**
+   * Mint a real share URL for this turn's conversation.
+   *
+   * Called only where a `{{conversation_link}}` placeholder was actually found,
+   * so a turn that never mentions sharing signs nothing. An empty `userId` is the
+   * anonymous deployment: there is no owner for a token to name, and
+   * `create_conversation_link` already refuses there, so no placeholder should
+   * reach this — the guard is here so a stray one degrades to plain words rather
+   * than to a token signed over an empty string.
+   */
+  const mintLink = (): string =>
+    userId
+      ? shareLink(config.publicOrigin, mintShareToken(userId, sessionId).token)
+      : 'a shareable link (unavailable on this deployment)';
+
+  /** Every path that returns prose goes through here — see `mintLink`. */
+  const withLinks = (text: string): string => expandConversationLinkText(text, mintLink);
+
   for (let iteration = 1; iteration <= MAX_TOOL_ITERATIONS; iteration += 1) {
     const turn = await client.converseWithTools(
       transcript,
@@ -120,7 +145,12 @@ export async function runToolLoop({
     if (turn.text) lastText = turn.text;
 
     if (turn.toolUses.length === 0) {
-      return { text: turn.text || lastText, proposals, iterations: iteration, truncated: false };
+      return {
+        text: withLinks(turn.text || lastText),
+        proposals,
+        iterations: iteration,
+        truncated: false,
+      };
     }
 
     transcript.push(turn.message);
@@ -128,7 +158,7 @@ export async function runToolLoop({
       role: 'user',
       content: await Promise.all(
         turn.toolUses.map((request) =>
-          resolveToolUse(request, registry, { sessionId, userId, storage }, proposals),
+          resolveToolUse(request, registry, { sessionId, userId, storage }, proposals, mintLink),
         ),
       ),
     });
@@ -145,7 +175,7 @@ export async function runToolLoop({
   });
 
   return {
-    text: lastText || NO_TEXT_FALLBACK,
+    text: withLinks(lastText || NO_TEXT_FALLBACK),
     proposals,
     iterations: MAX_TOOL_ITERATIONS,
     truncated: true,
@@ -170,6 +200,7 @@ async function resolveToolUse(
   registry: ToolRegistry,
   ctx: ToolContext,
   proposals: ActionProposal[],
+  mintLink: () => string,
 ): Promise<LlmContentBlock> {
   const tool = registry.get(request.name);
 
@@ -191,7 +222,13 @@ async function resolveToolUse(
     };
   }
 
-  const result = await runTool(tool, request.input, ctx);
+  // Substituted before the tool runs, so what the proposal card shows and what
+  // `propose_email` later sends are the same real URL, and the model never held
+  // a character of it. Deep, because the link belongs in a body or a description
+  // rather than at a fixed key — see `sharing/link-placeholder.ts`.
+  const input = expandConversationLinks(request.input, mintLink);
+
+  const result = await runTool(tool, input, ctx);
 
   if (result.proposal) {
     proposals.push(result.proposal);

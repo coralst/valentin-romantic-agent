@@ -22,7 +22,8 @@ const log: LogFn = (level, message, meta) => {
   else console.log(line);
 };
 
-const { gateway, verifier, forUser, demoLogin, engine } = createServer();
+const { gateway, verifier, forUser, demoLogin, engine, bedrockReadiness } =
+  createServer();
 
 const app = createExpressApp({
   verifier,
@@ -31,6 +32,7 @@ const app = createExpressApp({
   log,
   demoLogin,
   engine,
+  bedrockReadiness,
 });
 
 const server = createHttpServer(app);

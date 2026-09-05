@@ -15,6 +15,8 @@ import { applyGoogleRefreshToken, applySpotifyRefreshToken } from '../integratio
 import { buildToolRegistry } from '../integrations';
 import { verifyShareToken } from '../sharing/share-token';
 import { buildSharedConversation } from '../sharing/shared-conversation';
+import { continueSharedConversation } from '../sharing/continue-share';
+import type { BedrockReadiness } from '../agent/bedrock-preflight';
 
 /**
  * Escape text destined for the OAuth callback's HTML page.
@@ -57,7 +59,15 @@ export interface ExpressAppDeps {
    * authenticated surface; the route then reports 503 rather than 404, since
    * "not configured on this deployment" is the truth the client should show.
    */
-  demoLogin?: Pick<DemoLoginService, 'login'>;
+  demoLogin?: Pick<DemoLoginService, 'login' | 'isConfigured' | 'issueVisitorCredentials'>;
+  /**
+   * What the boot-time Bedrock probe found, for `/api/health` to report.
+   *
+   * Optional, and absent reads as "not probed" rather than as a failure: a test
+   * app that never wired a real client has nothing to say about the model, and
+   * saying "broken" there would be a lie.
+   */
+  bedrockReadiness?: () => BedrockReadiness | null;
 }
 
 /** What a verified request carries, hung off `res.locals` */
@@ -177,12 +187,25 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
    * present a JWT. Gate this and ECS rolls back in a loop.
    */
   app.get('/api/health', (_req, res) => {
+    // Reported, deliberately not gated on: a task that cannot reach Bedrock still
+    // serves share links, the dossier and the login page, and failing the health
+    // check would turn a degraded chat into a rolling outage. `model` is here so
+    // "is chat actually going to work" is answerable with one curl, before a demo
+    // rather than during it.
+    const readiness = deps.bedrockReadiness?.() ?? null;
     res.status(200).json({
       status: 'healthy',
       uptime: process.uptime(),
       connections: deps.connectionCount(),
       environment: process.env.NODE_ENV ?? 'development',
       authenticated: !isAuthDisabled(),
+      model: !deps.bedrockReadiness
+        ? 'unprobed'
+        : readiness === null
+          ? 'checking'
+          : readiness.ok
+            ? 'reachable'
+            : readiness.kind,
     });
   });
 
@@ -455,6 +478,41 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
     } catch (err) {
       deps.log('error', 'Failed to serve a shared conversation', {
         sessionId: payload.sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  /**
+   * Turn a share link into a live conversation of the visitor's own.
+   *
+   * Unauthenticated, like the route above it and for the same reason — the caller has
+   * no account and the token is their credential — but this one *writes*, so it is
+   * worth being explicit about what it can touch: the owner's store is opened
+   * read-only and the fork is written into a freshly minted visitor's store. See
+   * `sharing/continue-share.ts` for the identities involved and
+   * `sharing/branch-conversation.ts` for why it is a fork.
+   *
+   * Registered above `requireAuth` deliberately. Below it, a guest has no token yet
+   * and would 401 on the one route whose whole job is to give them one.
+   */
+  app.post('/api/share/:token/continue', async (req, res) => {
+    try {
+      const result = await continueSharedConversation(pathParam(req, 'token'), {
+        forUser: deps.forUser,
+        demoLogin: deps.demoLogin,
+        authDisabled: isAuthDisabled(),
+      });
+      // Neither the token nor the owner's id: the first is a credential, the second
+      // a `sub` this route was handed by a stranger's URL.
+      deps.log('info', 'Continued a shared conversation', {
+        status: result.status,
+        requestId: req.headers['x-request-id'],
+      });
+      res.status(result.status).json(result.body);
+    } catch (err) {
+      deps.log('error', 'Failed to continue a shared conversation', {
         error: err instanceof Error ? err.message : String(err),
       });
       res.status(500).json({ error: 'Internal server error' });

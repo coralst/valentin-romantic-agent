@@ -29,6 +29,21 @@ export interface ChatState {
   inputValue: string;
   /** Open and resolved proposals for the conversation on screen, oldest first. */
   proposals: ProposalEntry[];
+  /**
+   * Ids of messages that *arrived* while this transcript was on screen, as
+   * opposed to being loaded with it.
+   *
+   * Only the typewriter reveal reads this, and it is the whole reason the set
+   * exists: revealing a reply character by character is right when it is
+   * happening in front of you, and wrong when you have just opened a
+   * conversation and the last thing Valentin said re-types itself as though he
+   * were saying it again. Nothing in a stored `ChatMessage` distinguishes the
+   * two cases — a restored message and a live one are byte-identical — so the
+   * distinction has to be recorded at the moment of arrival. `RECEIVE_MESSAGE`
+   * is that moment and the only one; `SWITCH_SESSION` hydrates and therefore
+   * deliberately empties this.
+   */
+  liveMessageIds: ReadonlySet<string>;
 }
 
 /** All actions the chat reducer can handle */
@@ -58,6 +73,7 @@ const initialState: ChatState = {
   connectionStatus: 'disconnected',
   inputValue: '',
   proposals: [],
+  liveMessageIds: new Set<string>(),
 };
 
 /** Reducer handling all chat state transitions */
@@ -81,9 +97,17 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         return state;
       }
 
+      // The greeting is only appended to an empty transcript (see below), and in
+      // that case it genuinely is being said now, so it counts as live. A
+      // restored conversation keeps its stored greeting and adds nothing here.
+      const greetingIsNew = state.messages.length === 0;
+
       return {
         ...state,
         sessionId: action.sessionId,
+        liveMessageIds: greetingIsNew
+          ? new Set([...state.liveMessageIds, action.welcomeMessage.id])
+          : state.liveMessageIds,
         /*
          * The greeting only belongs in an *empty* transcript. The server greets
          * whenever a session has no messages, and it may say so to two sockets
@@ -105,6 +129,10 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         messages: action.messages,
         isTyping: false,
         inputValue: '',
+        // Everything in `action.messages` is being *loaded*, including whatever
+        // was live a moment ago in the conversation being left. Carrying an id
+        // across is what made the last reply re-type itself on entry.
+        liveMessageIds: new Set<string>(),
         /*
          * Proposals do not survive a switch. They are held in memory on the
          * server too — deliberately, since an Ontopo checkout link is good for
@@ -126,6 +154,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return {
         ...state,
         messages: sortByTimestamp([...state.messages, action.message]),
+        liveMessageIds: new Set([...state.liveMessageIds, action.message.id]),
       };
 
     case 'SET_TYPING':

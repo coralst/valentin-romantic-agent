@@ -39,10 +39,10 @@
  * confused model ask for a link to a session id it saw quoted in text.
  */
 
-import { config } from '../config';
 import type { AgentTool, ToolContext, ToolResult } from '../integrations/tool-registry';
-import { SHARE_TTL_DAYS, shareLink } from '../../shared/constants/share-link';
+import { SHARE_TTL_DAYS } from '../../shared/constants/share-link';
 import { mintShareToken } from './share-token';
+import { CONVERSATION_LINK_PLACEHOLDER } from './link-placeholder';
 
 export const createConversationLinkTool: AgentTool = {
   name: 'create_conversation_link',
@@ -76,23 +76,26 @@ export const createConversationLinkTool: AgentTool = {
       };
     }
 
-    const { token, expiresAt } = mintShareToken(ctx.userId, ctx.sessionId);
-    const url = shareLink(config.publicOrigin, token);
+    const { expiresAt } = mintShareToken(ctx.userId, ctx.sessionId);
 
     return {
       ok: true,
-      // The URL is in the summary because the summary is the only channel back
-      // into the conversation — `data` is for the model to quote from, and a link
-      // it cannot see is a link it will paraphrase.
+      // Deliberately NOT the URL. The link is ~250 characters of signed base64url
+      // and asking a model to reproduce it exactly is a transcription task it
+      // fails often enough to matter — one wrong character and the guest is told
+      // the link has expired. So the summary hands back a placeholder the model
+      // can retype perfectly, and the server substitutes the real URL on the way
+      // out. See `sharing/link-placeholder.ts`.
       summary:
-        `Here is a read-only link to this conversation, good for ${SHARE_TTL_DAYS} days ` +
-        `(until ${expiresAt}): ${url}\n\n` +
-        'Give the user this URL exactly as written — every character matters, it is ' +
-        'signed. Whoever opens it can read this transcript but nothing from her ' +
+        `The link is ready and is good for ${SHARE_TTL_DAYS} days (until ${expiresAt}).\n\n` +
+        `Write ${CONVERSATION_LINK_PLACEHOLDER} wherever the link should appear — in ` +
+        'your reply to the user, or in the body of propose_email if they asked you ' +
+        'to send it. Write that placeholder exactly and nothing else: never invent ' +
+        'or copy a URL of your own, because the real link is signed and is filled ' +
+        'in for you. Whoever opens it can read this transcript but nothing from her ' +
         'file: no preferences, dates, people or tasks. Mention that, and that it ' +
-        'expires. If they asked you to email it, call propose_email now with this ' +
-        'URL in the body.',
-      data: { url, expiresAt },
+        'expires.',
+      data: { link: CONVERSATION_LINK_PLACEHOLDER, expiresAt },
     };
   },
 };

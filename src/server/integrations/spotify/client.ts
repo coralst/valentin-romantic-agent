@@ -383,24 +383,65 @@ export async function searchTracks(query: string, limit = 10): Promise<SpotifyTr
 }
 
 /**
- * Resolve several track ids at once, keeping the order asked for.
+ * One `GET /v1/tracks/{id}`, keeping the two failures that matter apart.
  *
- * The batch endpoint rather than one call per id, and not only for the round
- * trips: `GET /v1/tracks?ids=` distinguishes the two failures that matter here.
- * A transport or auth fault fails the whole request and returns `null`, while an
- * id Spotify does not know comes back as a `null` *entry* inside a successful
- * response. Looking ids up one at a time collapses those into the same `null`,
- * and the caller has to tell "Spotify is down" apart from "the model invented
- * that id" — they get opposite messages.
- *
- * Returns `null` only for the first case. Per-id `null`s mean exactly "no such
- * track".
+ * `'missing'` covers exactly the statuses Spotify uses for "no such track" — a
+ * 404 for a well-formed id it does not know, a 400 for an id that is not an id
+ * at all. Anything else non-ok is a `'fault'`: auth, quota, an outage — things
+ * that would refuse a *real* id too, so treating them as "missing" would tell
+ * the model its ids were invented when Spotify was simply down.
+ */
+async function getOneTrack(
+  token: string,
+  id: string,
+): Promise<{ kind: 'found'; track: SpotifyTrack } | { kind: 'missing' } | { kind: 'fault' }> {
+  let response: Response;
+  const path = `/tracks/${encodeURIComponent(id)}?market=IL`;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      headers: { authorization: `Bearer ${token}`, accept: 'application/json' },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  } catch (err) {
+    console.error(`[spotify] ${path} threw:`, err instanceof Error ? err.message : err);
+    return { kind: 'fault' };
+  }
+  if (response.status === 404 || response.status === 400) return { kind: 'missing' };
+  if (!response.ok) {
+    console.error(`[spotify] ${path} → ${response.status}`, await refusalDetail(response));
+    return { kind: 'fault' };
+  }
+
+  try {
+    const track = readTrack(await response.json());
+    return track ? { kind: 'found', track } : { kind: 'missing' };
+  } catch {
+    return { kind: 'fault' };
+  }
+}
+
+/**
+ * Resolve several track ids, keeping the order asked for.
  *
  * Ids already returned by a search in this process are answered from
  * {@link seenTracks} without a request — see the note there for why that is the
  * primary path rather than a cache optimisation. The endpoint is still called for
  * anything unseen, so an id the model invented is still caught, and a genuinely
  * unreachable Spotify is still reported as unreachable.
+ *
+ * For those unseen ids: one `GET /v1/tracks/{id}` each, *not* the batch
+ * `GET /v1/tracks?ids=` the
+ * reference page suggests — the batch endpoint answers **403 Forbidden** for
+ * this app (a development-mode quota restriction, verified live 2026-09-05
+ * with a token that passed `/search` in the same second), while the single-id
+ * form answers 200 with the same token. No request shape lifts the 403, so the
+ * round trips are the price of working at all; they run in parallel, and a
+ * playlist's worth of ids is at most {@link MAX_TRACKS_PER_REQUEST}.
+ *
+ * The two failures that matter stay distinct: a transport or auth fault on
+ * *any* id fails the whole call and returns `null` ("Spotify is down"), while
+ * an id Spotify does not know becomes a `null` *entry* ("the model invented
+ * that id"). The caller gives those opposite messages.
  */
 export async function getTracks(
   ids: readonly string[],
@@ -416,15 +457,18 @@ export async function getTracks(
   const token = await appAccessToken();
   if (!token) return null;
 
-  const params = new URLSearchParams({ ids: missing.join(','), market: 'IL' });
-  const body = await call(token, `/tracks?${params.toString()}`);
-  if (!body || !Array.isArray(body.tracks)) return null;
+  const results = await Promise.all(missing.map((id) => getOneTrack(token, id)));
+  if (results.some((result) => result.kind === 'fault')) return null;
 
-  const fetched = body.tracks.map((raw) => readTrack(raw));
-  remember(fetched.filter((track): track is SpotifyTrack => track !== null));
-  const byId = new Map(missing.map((id, index) => [id, fetched[index] ?? null]));
+  const fetched = new Map(
+    missing.map((id, index) => {
+      const result = results[index];
+      return [id, result?.kind === 'found' ? result.track : null] as const;
+    }),
+  );
+  remember([...fetched.values()].filter((track): track is SpotifyTrack => track !== null));
 
-  return wanted.map((id) => seenTracks.get(id) ?? byId.get(id) ?? null);
+  return wanted.map((id) => seenTracks.get(id) ?? fetched.get(id) ?? null);
 }
 
 /**

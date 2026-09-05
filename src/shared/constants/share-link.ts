@@ -77,3 +77,45 @@ export interface SharedConversation {
   /** So the guest view can say how long they have, rather than failing silently. */
   expiresAt: string;
 }
+
+/**
+ * What `POST /api/share/:token/continue` answers with.
+ *
+ * ## Why a share link hands out credentials at all
+ *
+ * A read-only transcript was the original bargain, and it was the wrong one for
+ * what people actually do with these links: they send one to continue a
+ * conversation, and landing on a dead page with no composer reads as the app being
+ * broken. So opening a link now puts the visitor **in the app**, in a conversation
+ * of their own forked from the shared point — see `server/sharing/branch-conversation.ts`
+ * for why it is a fork and never the original.
+ *
+ * That requires a token, because everything below `/api` except this route and the
+ * demo login needs one. The token issued here is an ordinary visitor credential —
+ * the same kind `POST /api/demo/login` hands out, scoped to its own corner of
+ * storage — so nothing downstream has to learn about a third class of caller. It
+ * authorises the visitor's *own* forked session and nothing of the owner's.
+ *
+ * The honest cost: possession of the URL now buys a live conversation on this
+ * deployment for the life of the link, not just a read. That is the trade the Share
+ * control has to describe in words.
+ */
+export interface ShareContinueResponse {
+  accessToken: string;
+  /** Null for a demo-account credential, whose refresh token is server-only. */
+  refreshToken: string | null;
+  /** Seconds until the access token expires. */
+  expiresIn: number;
+  /** The forked session, ready to open. */
+  sessionId: string;
+  /** This visitor's corner of a shared account, when there is one. */
+  visitorId: string | null;
+  /** True when the credential belongs to the shared demo account. */
+  demo: boolean;
+  /** The fork's heading, e.g. "Planning the anniversary (continued)". */
+  title: string;
+  /** How many turns were carried across. */
+  copied: number;
+  /** True when the original conversation had moved on past the shared point. */
+  advanced: boolean;
+}

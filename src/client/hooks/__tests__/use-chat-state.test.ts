@@ -30,6 +30,7 @@ function makeState(messages: ChatMessage[], inputValue: string): ChatState {
     connectionStatus: 'connected',
     inputValue,
     proposals: [],
+    liveMessageIds: new Set<string>(),
   };
 }
 
@@ -305,5 +306,90 @@ describe('chatReducer — proposals', () => {
     // nothing to come back to — a leftover card would offer to act on a proposal
     // the orchestrator has already forgotten.
     expect(next.proposals).toEqual([]);
+  });
+});
+
+/**
+ * THE USER'S REPRO: "the gradual typing of last message when enter to it … (the
+ * behavior is good as reaction to you send something)".
+ *
+ * The typewriter reveal has no way of its own to tell a reply that just arrived
+ * from one that was loaded a moment ago — the two `ChatMessage`s are identical.
+ * It used to guess from the timestamp, which is why entering a conversation
+ * shortly after the last reply re-typed it and entering an hour later did not.
+ * The reducer is the only place that knows, so it records it.
+ */
+describe('chatReducer — which messages arrived live', () => {
+  const agentReply: ChatMessage = {
+    id: 'reply-1',
+    sessionId: 'sess',
+    sender: 'agent',
+    content: 'A reply the socket just delivered.',
+    timestamp: new Date().toISOString(),
+  };
+
+  it('marks a received message as live', () => {
+    const next = chatReducer(makeState([], ''), {
+      type: 'RECEIVE_MESSAGE',
+      message: agentReply,
+    });
+
+    expect(next.liveMessageIds.has('reply-1')).toBe(true);
+  });
+
+  it('treats a hydrated transcript as not live, however new its last reply is', () => {
+    // Exactly the entry case: the reply is seconds old and it still must not
+    // re-type itself, because the user is opening the conversation rather than
+    // watching it happen.
+    const next = chatReducer(makeState([], ''), {
+      type: 'SWITCH_SESSION',
+      sessionId: 'sess-2',
+      messages: [agentReply],
+    });
+
+    expect(next.messages).toEqual([agentReply]);
+    expect(next.liveMessageIds.size).toBe(0);
+  });
+
+  it("drops the previous conversation's live ids on a switch", () => {
+    const afterLive = chatReducer(makeState([], ''), {
+      type: 'RECEIVE_MESSAGE',
+      message: agentReply,
+    });
+
+    // Leaving and coming back: the same message is history now, so the id must
+    // not survive — carrying it across is what replayed the reveal on return.
+    const switched = chatReducer(afterLive, {
+      type: 'SWITCH_SESSION',
+      sessionId: 'sess-3',
+      messages: [agentReply],
+    });
+
+    expect(switched.liveMessageIds.has('reply-1')).toBe(false);
+  });
+
+  it('counts a greeting it actually appends as live', () => {
+    const next = chatReducer(makeState([], ''), {
+      type: 'SESSION_INIT',
+      sessionId: 'test-session',
+      welcomeMessage: { ...agentReply, id: 'welcome-9' },
+    });
+
+    // A brand-new conversation's greeting is being said now, so revealing it is
+    // the reaction-to-something behaviour the user asked to keep.
+    expect(next.liveMessageIds.has('welcome-9')).toBe(true);
+  });
+
+  it('does not mark a greeting it declines to append', () => {
+    const existing: ChatMessage = { ...agentReply, id: 'stored-1' };
+
+    const next = chatReducer(makeState([existing], ''), {
+      type: 'SESSION_INIT',
+      sessionId: 'test-session',
+      welcomeMessage: { ...agentReply, id: 'welcome-9' },
+    });
+
+    expect(next.messages).toEqual([existing]);
+    expect(next.liveMessageIds.has('welcome-9')).toBe(false);
   });
 });

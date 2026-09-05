@@ -1,7 +1,7 @@
 [
   {
     "name": "check_availability",
-    "description": "Ask Ontopo which tables are actually free at one restaurant on a given date, for a given party size. Returns real bookable times grouped by seating area, including times either side of the one asked for. Always check this before proposing a reservation, and check Shabbat first for a Friday or Saturday — most of these kitchens are closed then.",
+    "description": "Ask Ontopo which tables are actually free at one restaurant on a given date, for a given party size. Returns real bookable times grouped by seating area, including times either side of the one asked for. Always check this before proposing a reservation, and check Shabbat first for a Friday or Saturday — most of these kitchens are closed then. When Ontopo has nothing or does not answer, this also returns the restaurant's own site and phone number where it can find them — pass those on rather than ending on a no.",
     "requiresConfirmation": false,
     "inputSchema": {
       "type": "object",

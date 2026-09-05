@@ -34,13 +34,14 @@ describe('the generated Gateway tool schemas', () => {
   it('declares every tool the registry holds when fully credentialled', async () => {
     const fresh = await generateToolSchemas();
 
-    // 18, having been 14 when the plan was written and 16 a day later: Spotify's
-    // two arrived, then `find_places_nearby` and `create_conversation_link` came in
-    // from main. An exact count so adding an integration is a deliberate change to
-    // engine B's surface rather than something that happens quietly — this number
-    // moving is the signal to look at what a merge just exposed to the model.
-    expect(fresh).toHaveLength(18);
-    expect(committed).toHaveLength(18);
+    // 20, having been 14 when the plan was written, 16 a day later, and 18 after
+    // that: Spotify's two arrived, then `find_places_nearby` and
+    // `create_conversation_link`, now `search_web` and `read_webpage`. An exact
+    // count so adding an integration is a deliberate change to engine B's surface
+    // rather than something that happens quietly — this number moving is the
+    // signal to look at what a merge just exposed to the model.
+    expect(fresh).toHaveLength(20);
+    expect(committed).toHaveLength(20);
   });
 
   /*

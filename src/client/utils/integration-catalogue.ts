@@ -308,6 +308,26 @@ export const INTEGRATION_CATALOGUE: readonly IntegrationService[] = [
     defaultCapUsd: null,
   },
   {
+    /*
+     * Not one provider's row: Tavily and DuckDuckGo are interchangeable tiers
+     * behind the same two read-only tools, and the visitor is granting "he may
+     * look things up on the web", not an account with either engine. That is why
+     * the title is the capability itself — the same footing as the Hebrew
+     * calendar row — and why there is no credential to connect.
+     */
+    id: 'web-search',
+    name: 'Web search',
+    backing: ['web-search'],
+    capability: 'ideas from the web',
+    mark: 'web-search',
+    blurb: 'Finds the date ideas no catalogue has — events, articles, hidden spots.',
+    scopes: [
+      { label: 'search the web', detail: 'Read-only — public search results, no account involved', reach: 'read' },
+      { label: 'read a page for details', detail: 'Read-only — he never fills a form, logs in, or buys anything', reach: 'read' },
+    ],
+    defaultCapUsd: null,
+  },
+  {
     id: 'hebcal',
     name: 'Hebrew calendar',
     backing: ['hebcal'],

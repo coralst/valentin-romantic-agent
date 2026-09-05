@@ -14,6 +14,7 @@ import { sharingTools } from '../sharing/tools';
 import { reminderTools } from '../reminders/tools';
 import { spotifyTools } from './spotify/tools';
 import { spotifyFixtureMode } from './spotify/client';
+import { webSearchTools } from './websearch/tools';
 
 export type { ToolRegistry, AgentTool, ActionProposal, IntegrationId } from './tool-registry';
 
@@ -126,6 +127,13 @@ export function integrationReadiness(): Record<IntegrationId, boolean> {
      * where the fallback merely delays it.
      */
     reminders: true,
+    /*
+     * Always true, like Wolt: the free tier (keyless HTML results from
+     * DuckDuckGo, then Bing) needs no credential, so the capability cannot be
+     * unconfigured. A Tavily key upgrades quality but is not what readiness
+     * reports on.
+     */
+    'web-search': true,
   };
 }
 
@@ -205,6 +213,9 @@ export function buildToolRegistry(): ToolRegistry {
    * description of a process with no key.
    */
   if (ready.spotify || spotifyFixtureMode()) tools.push(...spotifyTools);
+  // The open web, read-only — where ideas outside every catalogue above come
+  // from. Always on: Tavily when keyed, DuckDuckGo otherwise.
+  if (ready['web-search']) tools.push(...webSearchTools);
 
   // Cleared first, so a *disconnect* actually removes tools. Refilling without
   // clearing would leave the old ones registered and let the model keep calling

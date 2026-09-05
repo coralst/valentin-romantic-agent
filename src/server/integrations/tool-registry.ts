@@ -74,6 +74,20 @@ export interface ToolResult {
    * offer Sunday, where a thrown exception would just cost the user their turn.
    */
   summary: string;
+  /**
+   * What the *user* is shown verbatim when a confirm ends the turn.
+   *
+   * `summary` cannot serve here. It is addressed to the model — "Say so
+   * plainly", "Do not claim it is in their library" — and `confirmAction`
+   * deliberately has no model in it to read those instructions. Passing one
+   * through put our own prompt text in Valentin's mouth in front of a user, so
+   * a tool that can be confirmed writes this sentence itself, in his voice, for
+   * every outcome it can reach.
+   *
+   * Absent on tools that only ever report back to the model, and on the propose
+   * half of a tool that also confirms.
+   */
+  reply?: string;
   /** Structured detail for the model to quote from. Kept small — it is tokens. */
   data?: unknown;
   /** Set when the tool wants a human yes before anything happens. */

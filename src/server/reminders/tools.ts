@@ -94,7 +94,18 @@ export const setReminderTool: AgentTool = {
     'Her birthday, your anniversary and the next occasion being planned are ' +
     'already reminded about automatically from her profile — do not duplicate ' +
     'those here. This is for everything else: an errand, a booking to make, a ' +
-    'dinner, someone else\'s birthday.',
+    'dinner, someone else\'s birthday.\n\n' +
+    // The live bug this paragraph exists for: asked to be reminded a week before
+    // the anniversary every year, the agent said the reminder system "can only set
+    // one reminder at a time for a specific date, not a recurring annual one" and
+    // then offered to file exactly the duplicate the paragraph above forbids. Both
+    // halves were false. Saying what is true is a one-liner; leaving it unsaid
+    // makes the model guess, and it guesses badly.
+    'If he asks for something recurring or annual: the anniversary and her birthday ' +
+    'already recur every year on their own, so say that plainly rather than claiming ' +
+    'you cannot do recurring reminders — you are not being asked to. How much warning ' +
+    'those built-in ones give is a preference on her profile, not something this tool ' +
+    'sets; if he wants it changed, say so plainly instead of filing a one-off copy.',
   input_schema: {
     type: 'object',
     properties: {

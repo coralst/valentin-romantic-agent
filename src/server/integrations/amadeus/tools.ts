@@ -102,10 +102,10 @@ export const searchHotelsTool: AgentTool = {
         type: 'string',
         description: 'City name, e.g. "Tel Aviv", "Jerusalem", "Eilat".',
       },
-      check_in: { type: 'string', description: 'Arrival date, as "2026-09-05".' },
+      check_in: { type: 'string', description: 'Arrival date as YYYY-MM-DD, e.g. "2026-09-05".' },
       check_out: {
         type: 'string',
-        description: 'Departure date, as "2026-09-06". Defaults to one night.',
+        description: 'Departure date as YYYY-MM-DD, e.g. "2026-09-06". Defaults to one night.',
       },
       adults: { type: 'number', description: 'How many adults. Defaults to 2.' },
     },
@@ -352,6 +352,9 @@ export const proposeHotelBookingTool: AgentTool = {
         summary:
           `That hotel offer is missing the id needed to re-check it. Apologise and offer ` +
           `to search again.`,
+        reply:
+          `That hotel offer has lost the id I need to re-check it — I'm sorry. Shall I search ` +
+          `again?`,
       };
     }
 
@@ -362,6 +365,9 @@ export const proposeHotelBookingTool: AgentTool = {
         summary:
           `${hotelName} is no longer holding that room — Amadeus does not recognise the ` +
           `offer any more. Nothing was booked and nothing was charged. Offer to look again.`,
+        reply:
+          `${hotelName} isn't holding that room any more. Nothing was booked and nothing was ` +
+          `charged. Shall I look again?`,
       };
     }
 
@@ -379,6 +385,12 @@ export const proposeHotelBookingTool: AgentTool = {
         `${offer.refundable ? 'Free cancellation.' : 'Non-refundable.'} ` +
         `No payment was taken and nothing is booked: tell them the room is available and ` +
         `that they complete the booking with the hotel themselves.`,
+      reply:
+        `${hotelName} still has that room, ${offer.checkInDate} to ${offer.checkOutDate}, at ` +
+        `${money(offer)}` +
+        (moved ? ` — the price has moved from ${quotedTotal} ${currency}. ` : '. ') +
+        `${offer.refundable ? 'Free cancellation.' : 'Non-refundable.'} Nothing is booked and ` +
+        `no payment was taken — you complete it with the hotel yourself.`,
       data: {
         hotel: hotelName,
         total: offer.total,

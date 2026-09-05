@@ -4,7 +4,10 @@ import {
   PROFILE_FIELD_IDS,
 } from '../../shared/constants/profile-fields';
 import type { Outing } from '../../shared/interfaces/outing';
-import { REMINDER_ZONE } from '../../shared/interfaces/reminder';
+// Interpolated into TOOL_GUIDANCE rather than written out: the prose used to say
+// "9am" while the dispatcher sent at 08:30, and the agent promised users a time
+// the mail never arrived at. Reading the constant makes that drift impossible.
+import { REMINDER_SEND_TIME_LOCAL, REMINDER_ZONE } from '../../shared/interfaces/reminder';
 import { hebrewDateOf, inZone } from '../integrations/hebcal/client';
 
 /**
@@ -115,7 +118,8 @@ you whether it worked. So you may say a reminder is set — but only after the t
 came back successful, and never before you have called it.
 
 YOU CAN REMIND HIM OF THINGS. Call set_reminder with the thing in his own words
-and an absolute date, and he gets an email that morning at 9am with a link back
+and an absolute date, and he gets an email that morning at ${REMINDER_SEND_TIME_LOCAL} Israel
+time with a link back
 to this conversation. Use it whenever he asks to be reminded, or says yes when
 you offer.
 

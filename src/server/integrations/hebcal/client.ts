@@ -7,6 +7,8 @@ import {
   type Event,
 } from '@hebcal/core';
 
+import { REMINDER_ZONE } from '../../../shared/interfaces/reminder';
+
 /**
  * Hebrew calendar facts, computed locally.
  *
@@ -258,7 +260,11 @@ export function shabbatWindow(from: Date, city?: string): ShabbatWindow {
   const timeZone = location.getTimeZone();
 
   const events = HebrewCalendar.calendar({
-    start: new Date(from.getTime() - 2 * 86_400_000),
+    // Nine days back, not two: the lower bound on the candle lighting below is the
+    // *previous* Havdalah, and a week and a half guarantees one is in range whatever
+    // day of the week `from` falls on. The extra days cost nothing — this is
+    // arithmetic on a table, no network.
+    start: new Date(from.getTime() - 9 * 86_400_000),
     end: new Date(from.getTime() + 8 * 86_400_000),
     location,
     candlelighting: true,
@@ -273,15 +279,37 @@ export function shabbatWindow(from: Date, city?: string): ShabbatWindow {
       .map(timeOf)
       .filter((at): at is Date => at !== null);
 
-  const havdalah = timed('Havdalah').find((at) => at.getTime() >= from.getTime()) ?? null;
+  const havdalahs = timed('Havdalah');
+  const havdalah = havdalahs.find((at) => at.getTime() >= from.getTime()) ?? null;
 
-  // The candle lighting belonging to that Havdalah: the last one before it. With
-  // no Havdalah to anchor to, fall back to the next candle lighting rather than
-  // returning nothing — a half-answer still keeps the agent off a Friday night.
+  /**
+   * The candle lighting that *opens* the rest period this Havdalah closes.
+   *
+   * Not simply "the last lighting before the Havdalah", which is what this used to
+   * be. That assumes one lighting per Havdalah, and when Shabbat runs straight into
+   * a yom tov there is no Saturday-night Havdalah — it is deferred to the end of the
+   * festival. So the anchor was the festival's Havdalah, "the last lighting before
+   * it" was the festival's own, and the Friday the user asked about was skipped: for
+   * Friday 2026-09-11 the tool answered "Shabbat begins 2026-09-12 at 19:28" and the
+   * agent passed that on as "next Friday is September 12th", which is a Saturday.
+   *
+   * Bounding below by the *previous* Havdalah picks the earliest lighting in the
+   * current rest period instead, which is Friday's in the festival case and still
+   * the already-past one when asked during Shabbat — the behaviour the anchor was
+   * introduced for. A continuous Friday-to-Sunday period reports as one window,
+   * which is what it is.
+   */
+  const previous = [...havdalahs].reverse().find((at) => at.getTime() < from.getTime()) ?? null;
   const candles = timed('Candle lighting');
   const candle = havdalah
-    ? ([...candles].reverse().find((at) => at.getTime() < havdalah.getTime()) ?? null)
-    : (candles.find((at) => at.getTime() >= from.getTime()) ?? null);
+    ? (candles.find(
+        (at) =>
+          at.getTime() < havdalah.getTime() &&
+          (previous === null || at.getTime() > previous.getTime()),
+      ) ?? null)
+    : // With no Havdalah to anchor to, fall back to the next candle lighting rather
+      // than returning nothing — a half-answer still keeps the agent off a Friday night.
+      (candles.find((at) => at.getTime() >= from.getTime()) ?? null);
 
   const inProgress =
     candle !== null &&
@@ -466,9 +494,24 @@ function safeHDate(day: number, month: number, year: number): HDate | null {
   }
 }
 
-/** The Hebrew date a civil date falls on, e.g. `12 Iyyar 5784`. */
-export function hebrewDateOf(date: Date): string {
-  return new HDate(date).toString();
+/**
+ * The Hebrew date a civil date falls on, e.g. `12 Iyyar 5784`.
+ *
+ * `new HDate(instant)` reads the `Date`'s *process-local* calendar components, so
+ * on a UTC container — which is what production ECS is — this used to disagree with
+ * the Israeli civil date rendered right next to it in the same sentence. Between
+ * roughly 00:00 and 03:00 Israel time UTC is still yesterday, and the agent said
+ * "23 Elul" for the Israeli day hebcal calls 24 Elul.
+ *
+ * So the zone's calendar day is resolved first, and the HDate is built from a Date
+ * whose *local* components are that day by construction. That makes the answer a
+ * function of the instant and the zone, and not of the host's configuration.
+ */
+export function hebrewDateOf(date: Date, timeZone: string = REMINDER_ZONE): string {
+  const [year, month, day] = inZone(date, timeZone).localDate.split('-').map(Number);
+  // Local noon: the components come back out of `getFullYear()` and friends exactly
+  // as they went in, whatever the offset, which is the property HDate needs.
+  return new HDate(new Date(year, month - 1, day, 12)).toString();
 }
 
 /** Re-exported so tools can name a month without importing hebcal themselves. */

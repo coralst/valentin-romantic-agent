@@ -183,6 +183,10 @@ const OWNERSHIP = [
   // page the localhost driver never sees. QA's for the same reason — it asserts on
   // what a person would see, it does not deploy anything.
   ['rehearsal-prod.mjs', 'qa-agent'],
+  // The live conversation/tool-usage bug-hunt corpus. Shared test harness for the
+  // same reason as the rows above: it drives the real agent and asserts on what it
+  // did, and it ships no product code.
+  ['eval/', 'qa-agent'],
   // ── workflow & platform ─────────────────────────────────────────────────
   // The frontend shell (index.html) and static assets (public/) are platform
   // wiring, not component work: they change when the build or the deploy target

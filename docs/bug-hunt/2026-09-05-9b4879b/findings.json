@@ -1,0 +1,515 @@
+[
+  {
+    "id": "CON-01",
+    "group": "consistency",
+    "severity": "high",
+    "status": "PASS",
+    "why": "The date agreed in turn one must be the date in the proposal three turns later. A silent change between search and card is the failure that books the wrong night.",
+    "detail": "",
+    "reply": "I don't have a table at Matteo at 8pm on Thursday — they're fully booked at that time. \n\nWould you like me to check what times *are* available at Matteo on Thursday, or would you prefer to try a different evening?",
+    "calls": [
+      {
+        "turn": 0,
+        "name": "find_restaurants",
+        "service": "ontopo",
+        "args": {
+          "query": "Italian"
+        },
+        "ok": true,
+        "summary": "2 option(s) for \"Italian\": Matteo (Tel Aviv; Italian, Meat, Fish, Seafood) — Italian, warm, dependable — an easy yes when nobody wants to be adventurous. | Rendez-vous (Tel Aviv; Italian, Kosher) — The kosher option that is genuinely a nice dinner rather than a compromise..",
+        "data": {
+          "venues": [
+            {
+              "slug": "83133618",
+              "name": "Matteo",
+              "city": "Tel Aviv",
+              "cuisine": [
+                "Italian",
+                "Meat",
+                "Fish",
+                "Seafood"
+              ],
+              "vibes": [
+                "italian",
+                "romantic"
+              ]
+            },
+            {
+              "slug": "40980635",
+              "name": "Rendez-vous",
+              "city": "Tel Aviv",
+              "cuisine": [
+                "Italian",
+                "Kosher"
+              ],
+              "vibes": [
+                "italian",
+                "kosher",
+                "romantic"
+              ]
+            }
+          ],
+          "radiusApplied": false
+        },
+        "ms": 1,
+        "stubbed": false
+      },
+      {
+        "turn": 1,
+        "name": "check_availability",
+        "service": "ontopo",
+        "args": {
+          "restaurant": "Matteo",
+          "date": "2026-09-11",
+          "time": "20:00",
+          "party_size": 2
+        },
+        "ok": true,
+        "summary": "Matteo has nothing bookable for 2 on Friday 11 September around 20:00. Offer a different night, or another restaurant.",
+        "data": {
+          "venue": "Matteo",
+          "date": "Friday 11 September",
+          "slots": []
+        },
+        "ms": 190,
+        "stubbed": false
+      },
+      {
+        "turn": 1,
+        "name": "check_availability",
+        "service": "ontopo",
+        "args": {
+          "restaurant": "Rendez-vous",
+          "date": "2026-09-11",
+          "time": "20:00",
+          "party_size": 2
+        },
+        "ok": true,
+        "summary": "Rendez-vous has nothing bookable for 2 on Friday 11 September around 20:00. Offer a different night, or another restaurant.",
+        "data": {
+          "venue": "Rendez-vous",
+          "date": "Friday 11 September",
+          "slots": []
+        },
+        "ms": 191,
+        "stubbed": false
+      }
+    ],
+    "ms": 19523
+  },
+  {
+    "id": "CON-02",
+    "group": "consistency",
+    "severity": "high",
+    "status": "PASS",
+    "why": "Party size stated once must never grow. \"Just the two of us\" becoming a table for four is a booking the restaurant honours and the user does not want.",
+    "detail": "",
+    "reply": "I haven't searched yet — I wanted to check the Shabbat timing with you first.\n\nJust to confirm: you'd like me to find a quiet Italian place for two on **Saturday night, September 13th** (מוצ״ש), after Shabbat ends at 19:26?\n\nWhat time were you thinking — 20:00, 20:30?",
+    "calls": [
+      {
+        "turn": 0,
+        "name": "check_shabbat",
+        "service": "hebcal",
+        "args": {
+          "city": "Tel Aviv",
+          "when": "2026-09-11"
+        },
+        "ok": true,
+        "summary": "Tel Aviv: Shabbat begins 2026-09-12 at 19:28 and ends (Havdalah, מוצ״ש) 2026-09-13 at 19:26 (Parashat Ha’azinu)",
+        "data": {
+          "city": "Tel Aviv",
+          "candleLighting": {
+            "at": "2026-09-12T16:28:00.000Z",
+            "localDate": "2026-09-12",
+            "localTime": "19:28"
+          },
+          "havdalah": {
+            "at": "2026-09-13T16:26:00.000Z",
+            "localDate": "2026-09-13",
+            "localTime": "19:26"
+          },
+          "parsha": "Parashat Ha’azinu",
+          "duringShabbat": null
+        },
+        "ms": 8,
+        "stubbed": false
+      }
+    ],
+    "ms": 13745
+  },
+  {
+    "id": "CON-03",
+    "group": "consistency",
+    "severity": "high",
+    "status": "PASS",
+    "why": "A stated dietary constraint must survive into the recommendation. Proposing a shellfish place after being told no shellfish is the memory failure with real consequences.",
+    "detail": "",
+    "reply": "Yes, **Matteo** works perfectly for Maya. They serve Italian with meat and fish options, and while they do have shellfish on the menu, there's plenty she can eat — pasta, risotto, fish dishes, meat mains. She just skips the shellfish plates, which is straightforward at any Italian restaurant.\n\nSo you're good there. Want me to check what tables they have?",
+    "calls": [
+      {
+        "turn": 0,
+        "name": "check_shabbat",
+        "service": "hebcal",
+        "args": {
+          "city": "Tel Aviv",
+          "when": "2026-09-06"
+        },
+        "ok": true,
+        "summary": "Tel Aviv: Shabbat begins 2026-09-12 at 19:28 and ends (Havdalah, מוצ״ש) 2026-09-13 at 19:26 (Parashat Nitzavim-Vayeilech)",
+        "data": {
+          "city": "Tel Aviv",
+          "candleLighting": {
+            "at": "2026-09-12T16:28:00.000Z",
+            "localDate": "2026-09-12",
+            "localTime": "19:28"
+          },
+          "havdalah": {
+            "at": "2026-09-13T16:26:00.000Z",
+            "localDate": "2026-09-13",
+            "localTime": "19:26"
+          },
+          "parsha": "Parashat Nitzavim-Vayeilech",
+          "duringShabbat": null
+        },
+        "ms": 4,
+        "stubbed": false
+      },
+      {
+        "turn": 0,
+        "name": "find_restaurants",
+        "service": "ontopo",
+        "args": {
+          "query": "Italian",
+          "limit": 5
+        },
+        "ok": true,
+        "summary": "2 option(s) for \"Italian\": Matteo (Tel Aviv; Italian, Meat, Fish, Seafood) — Italian, warm, dependable — an easy yes when nobody wants to be adventurous. | Rendez-vous (Tel Aviv; Italian, Kosher) — The kosher option that is genuinely a nice dinner rather than a compromise..",
+        "data": {
+          "venues": [
+            {
+              "slug": "83133618",
+              "name": "Matteo",
+              "city": "Tel Aviv",
+              "cuisine": [
+                "Italian",
+                "Meat",
+                "Fish",
+                "Seafood"
+              ],
+              "vibes": [
+                "italian",
+                "romantic"
+              ]
+            },
+            {
+              "slug": "40980635",
+              "name": "Rendez-vous",
+              "city": "Tel Aviv",
+              "cuisine": [
+                "Italian",
+                "Kosher"
+              ],
+              "vibes": [
+                "italian",
+                "kosher",
+                "romantic"
+              ]
+            }
+          ],
+          "radiusApplied": false
+        },
+        "ms": 1,
+        "stubbed": false
+      }
+    ],
+    "ms": 16676
+  },
+  {
+    "id": "CON-04",
+    "group": "consistency",
+    "severity": "medium",
+    "status": "PASS",
+    "why": "Every URL in the prose must be one a tool returned. A fluent invented link is indistinguishable from a real one until the user clicks it.",
+    "detail": "",
+    "reply": "Perfect — I've found you a table at **Matteo** tonight at **21:30** (that's after Havdalah at 19:37, so you're clear). It's Italian, which Maya loves, and they have both inside and sidewalk seating. The table is waiting for you to confirm.\n\nHere's the link to this conversation: http://localhost:5173/?share=eyJ1c2VySWQiOiJldmFsLXVzZXIiLCJzZXNzaW9uSWQiOiJldmFsLTE3ODg2MzQzNzY3MTUtZmVtYjZ2eXJlcmQiLCJleHAiOjE3ODkyMzkxOTUsImlhdCI6MTc4ODYzNDM5NX0.bRQMZncxncSdaN2vlFkj2UaSt2g__H6IksS_IgO4M20  \n(It's good for 7 days and anyone can read the chat, but your personal details stay private.)",
+    "calls": [
+      {
+        "turn": 0,
+        "name": "check_shabbat",
+        "service": "hebcal",
+        "args": {
+          "city": "Tel Aviv",
+          "when": "2026-09-05T19:00"
+        },
+        "ok": true,
+        "summary": "Tel Aviv: Shabbat began 2026-09-04 at 18:41 and ends (Havdalah, מוצ״ש) 2026-09-05 at 19:37 (Parashat Nitzavim-Vayeilech) That time IS during Shabbat — do not propose it; offer after Havdalah instead.",
+        "data": {
+          "city": "Tel Aviv",
+          "candleLighting": {
+            "at": "2026-09-04T15:41:00.000Z",
+            "localDate": "2026-09-04",
+            "localTime": "18:41"
+          },
+          "havdalah": {
+            "at": "2026-09-05T16:37:00.000Z",
+            "localDate": "2026-09-05",
+            "localTime": "19:37"
+          },
+          "parsha": "Parashat Nitzavim-Vayeilech",
+          "duringShabbat": true
+        },
+        "ms": 2,
+        "stubbed": false
+      },
+      {
+        "turn": 0,
+        "name": "find_restaurants",
+        "service": "ontopo",
+        "args": {
+          "query": "Italian"
+        },
+        "ok": true,
+        "summary": "2 option(s) for \"Italian\": Matteo (Tel Aviv; Italian, Meat, Fish, Seafood) — Italian, warm, dependable — an easy yes when nobody wants to be adventurous. | Rendez-vous (Tel Aviv; Italian, Kosher) — The kosher option that is genuinely a nice dinner rather than a compromise..",
+        "data": {
+          "venues": [
+            {
+              "slug": "83133618",
+              "name": "Matteo",
+              "city": "Tel Aviv",
+              "cuisine": [
+                "Italian",
+                "Meat",
+                "Fish",
+                "Seafood"
+              ],
+              "vibes": [
+                "italian",
+                "romantic"
+              ]
+            },
+            {
+              "slug": "40980635",
+              "name": "Rendez-vous",
+              "city": "Tel Aviv",
+              "cuisine": [
+                "Italian",
+                "Kosher"
+              ],
+              "vibes": [
+                "italian",
+                "kosher",
+                "romantic"
+              ]
+            }
+          ],
+          "radiusApplied": false
+        },
+        "ms": 1,
+        "stubbed": false
+      },
+      {
+        "turn": 0,
+        "name": "check_availability",
+        "service": "ontopo",
+        "args": {
+          "restaurant": "Rendez-vous",
+          "date": "2026-09-05",
+          "time": "20:00",
+          "party_size": 2
+        },
+        "ok": true,
+        "summary": "Rendez-vous has nothing bookable for 2 on Saturday 5 September around 20:00. Offer a different night, or another restaurant.",
+        "data": {
+          "venue": "Rendez-vous",
+          "date": "Saturday 5 September",
+          "slots": []
+        },
+        "ms": 172,
+        "stubbed": false
+      },
+      {
+        "turn": 0,
+        "name": "check_availability",
+        "service": "ontopo",
+        "args": {
+          "restaurant": "Matteo",
+          "date": "2026-09-05",
+          "time": "20:00",
+          "party_size": 2
+        },
+        "ok": true,
+        "summary": "Matteo on Saturday 5 September for 2 — Inside: 21:30; Outside - on the sidewalk: 21:30. Offer the user a specific time from this list, then use propose_reservation.",
+        "data": {
+          "venue": "Matteo",
+          "slug": "83133618",
+          "date": "Saturday 5 September",
+          "partySize": 2,
+          "slots": [
+            {
+              "time": "21:30",
+              "area": "Inside"
+            },
+            {
+              "time": "21:30",
+              "area": "Outside - on the sidewalk"
+            }
+          ]
+        },
+        "ms": 308,
+        "stubbed": false
+      },
+      {
+        "turn": 0,
+        "name": "create_conversation_link",
+        "service": "sharing",
+        "args": {},
+        "ok": true,
+        "summary": "The link is ready and is good for 7 days (until 2026-09-12T18:53:10.000Z).\n\nWrite {{conversation_link}} wherever the link should appear — in your reply to the user, or in the body of propose_email if they asked you to send it. Write that placeholder exactly and nothing else: never invent or copy a URL of your own, because the real link is signed and is filled in for you. Whoever opens it can read this transcript but nothing from her file: no preferences, dates, people or tasks. Mention that, and that it expires.",
+        "data": {
+          "link": "{{conversation_link}}",
+          "expiresAt": "2026-09-12T18:53:10.000Z"
+        },
+        "ms": 3,
+        "stubbed": false
+      },
+      {
+        "turn": 0,
+        "name": "propose_reservation",
+        "service": "ontopo",
+        "args": {
+          "restaurant": "Matteo",
+          "date": "2026-09-05",
+          "time": "21:30",
+          "party_size": 2,
+          "occasion": "Saturday night"
+        },
+        "ok": true,
+        "summary": "I've put a card in front of them for Matteo, Saturday 5 September at 21:30, Inside, for 2. Tell them what you found and that it needs their confirmation. Do not say it is booked.",
+        "data": {
+          "venue": "Matteo",
+          "time": "21:30",
+          "area": "Inside",
+          "partySize": 2
+        },
+        "proposal": {
+          "id": "a05ca3e2-fb93-4e2f-a021-e5829926e941",
+          "sessionId": "eval-1788634376715-femb6vyrerd",
+          "service": "ontopo",
+          "title": "Matteo, Saturday 5 September at 21:30",
+          "summary": "Table for 2 for Saturday night — Inside at Matteo in Tel Aviv. Confirming opens Ontopo's booking page, where you finish the reservation. Nothing is held until you do.",
+          "expiresAt": "2026-09-05T19:08:11.131Z",
+          "payload": {
+            "slug": "83133618",
+            "venueName": "Matteo",
+            "date": "20260905",
+            "readableDate": "Saturday 5 September",
+            "time": "2130",
+            "size": 2,
+            "area": "מתאו"
+          }
+        },
+        "ms": 176,
+        "stubbed": false
+      }
+    ],
+    "ms": 18977
+  },
+  {
+    "id": "CON-05",
+    "group": "consistency",
+    "severity": "medium",
+    "status": "PASS",
+    "why": "The card and the prose must agree. A user reads the sentence and clicks the button, so a venue or time that differs between them is a booking they did not agree to.",
+    "detail": "",
+    "reply": "I need to clarify — today is Saturday September 5th. Did you mean tonight (in about two hours), or next Saturday the 12th?\n\nIf you meant next Saturday, that's actually during Shabbat — restaurants will be closed. מוצ\"ש (Saturday night after Havdalah, around 19:26) would work instead. Let me know which evening you're thinking of and I'll find you a great Italian spot for Maya.",
+    "calls": [
+      {
+        "turn": 0,
+        "name": "check_shabbat",
+        "service": "hebcal",
+        "args": {
+          "city": "Tel Aviv",
+          "when": "2026-09-05T20:00"
+        },
+        "ok": true,
+        "summary": "Tel Aviv: Shabbat begins 2026-09-12 at 19:28 and ends (Havdalah, מוצ״ש) 2026-09-13 at 19:26 (Parashat Nitzavim-Vayeilech) That time is outside Shabbat, so it is available.",
+        "data": {
+          "city": "Tel Aviv",
+          "candleLighting": {
+            "at": "2026-09-12T16:28:00.000Z",
+            "localDate": "2026-09-12",
+            "localTime": "19:28"
+          },
+          "havdalah": {
+            "at": "2026-09-13T16:26:00.000Z",
+            "localDate": "2026-09-13",
+            "localTime": "19:26"
+          },
+          "parsha": "Parashat Nitzavim-Vayeilech",
+          "duringShabbat": false
+        },
+        "ms": 2,
+        "stubbed": false
+      }
+    ],
+    "ms": 9006
+  },
+  {
+    "id": "CON-06",
+    "group": "consistency",
+    "severity": "low",
+    "status": "PASS",
+    "why": "A declined offer must be dropped. Re-offering a reminder the user just refused is the behaviour that makes an assistant feel like it is not listening.",
+    "detail": "",
+    "reply": "About the restaurants? Both are solid choices for Maya since she loves Italian and doesn't eat shellfish. \n\nIf you're asking more generally—Sunday September 7th is clear, no holidays or anything in the way. It's a regular weeknight, so most places will be open and quieter than the weekend.\n\nWhich restaurant appeals to you, and what time should I check?",
+    "calls": [
+      {
+        "turn": 1,
+        "name": "find_restaurants",
+        "service": "ontopo",
+        "args": {
+          "query": "Italian"
+        },
+        "ok": true,
+        "summary": "2 option(s) for \"Italian\": Matteo (Tel Aviv; Italian, Meat, Fish, Seafood) — Italian, warm, dependable — an easy yes when nobody wants to be adventurous. | Rendez-vous (Tel Aviv; Italian, Kosher) — The kosher option that is genuinely a nice dinner rather than a compromise..",
+        "data": {
+          "venues": [
+            {
+              "slug": "83133618",
+              "name": "Matteo",
+              "city": "Tel Aviv",
+              "cuisine": [
+                "Italian",
+                "Meat",
+                "Fish",
+                "Seafood"
+              ],
+              "vibes": [
+                "italian",
+                "romantic"
+              ]
+            },
+            {
+              "slug": "40980635",
+              "name": "Rendez-vous",
+              "city": "Tel Aviv",
+              "cuisine": [
+                "Italian",
+                "Kosher"
+              ],
+              "vibes": [
+                "italian",
+                "kosher",
+                "romantic"
+              ]
+            }
+          ],
+          "radiusApplied": false
+        },
+        "ms": 1,
+        "stubbed": false
+      }
+    ],
+    "ms": 15521
+  }
+]

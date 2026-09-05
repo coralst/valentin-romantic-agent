@@ -262,7 +262,7 @@ export const proposeCalendarEventTool: AgentTool = {
     type: 'object',
     properties: {
       title: { type: 'string', description: 'What the entry says, e.g. "Dinner at NOEMA".' },
-      date: { type: 'string', description: 'The date, as "2026-09-05".' },
+      date: { type: 'string', description: 'The date as YYYY-MM-DD, e.g. "2026-09-05".' },
       time: {
         type: 'string',
         description: 'Start time as "20:00", in Israel time. Omit for an all-day entry.',
@@ -342,6 +342,8 @@ export const proposeCalendarEventTool: AgentTool = {
       return {
         ok: false,
         summary: 'That calendar entry is missing its details. Apologise and offer to set it up again.',
+        reply:
+          `That calendar entry has lost its details — I'm sorry. Shall I set it up again?`,
       };
     }
 
@@ -359,12 +361,15 @@ export const proposeCalendarEventTool: AgentTool = {
         summary:
           `Google would not accept the calendar entry, so nothing was added. Tell them ` +
           `plainly and offer to try again.`,
+        reply:
+          `Google wouldn't accept that calendar entry, so nothing was added. Shall I try again?`,
       };
     }
 
     return {
       ok: true,
       summary: `"${title}" is in the calendar for ${readable}. Confirm it briefly and move on.`,
+      reply: `Done — "${title}" is in your calendar for ${readable}.`,
       data: { eventId: created.id, url: created.htmlLink, title },
     };
   },
@@ -524,6 +529,9 @@ export const proposeEmailTool: AgentTool = {
         summary:
           `That email is missing its text or its recipient, so nothing was sent. Offer to ` +
           `write it again.`,
+        reply:
+          `That email has lost either its text or its recipient, so nothing was sent. Shall I ` +
+          `write it again?`,
       };
     }
 
@@ -534,12 +542,14 @@ export const proposeEmailTool: AgentTool = {
         summary:
           `Gmail would not send that message, so it was not sent. Tell them plainly — do ` +
           `not say it went out.`,
+        reply: `Gmail wouldn't send that message, so it hasn't gone out. Shall I try again?`,
       };
     }
 
     return {
       ok: true,
       summary: `The email to ${to} has been sent. Say so once, briefly.`,
+      reply: `Sent — the email to ${to} has gone out.`,
       data: { messageId: sent.id, to },
     };
   },

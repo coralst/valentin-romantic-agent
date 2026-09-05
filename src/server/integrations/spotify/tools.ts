@@ -11,6 +11,7 @@ import {
   SPOTIFY_PROPOSAL_TTL_MS,
   type SpotifyTrack,
 } from './client';
+import { correctOfferedIds, rememberOffered } from './offered-tracks';
 
 /**
  * The playlist for the drive there — the capability the music row promised.
@@ -68,6 +69,45 @@ function readLimit(value: unknown, fallback: number, ceiling: number): number {
 
 function readText(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+/**
+ * Drop tracks that are the same song as one already in the list.
+ *
+ * Spotify returns a single recording several times over — a single, an album, a
+ * remaster, a regional release — each under its own id. That is fine for a search
+ * result page and wrong for a shortlist a model is about to build a playlist out
+ * of: a mood query for "warm mellow evening chill acoustic soft" came back with
+ * the same track twice, the model dutifully used both ids, and the card offered
+ * one song twice under two names. Title-and-artist is the coarsest key that
+ * catches it and the only one available without a second lookup.
+ */
+function withoutRepeatedSongs(tracks: readonly SpotifyTrack[]): SpotifyTrack[] {
+  const seen = new Set<string>();
+  return tracks.filter((track) => {
+    const key = `${track.name}|${track.artists}`.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * A shorter version of a query that returned nothing, or `null` if there is none.
+ *
+ * Spotify's free-text search ANDs its terms, so a query naming two artists and
+ * four mood words matches no single recording — `"Fleetwood Mac Norah Jones warm
+ * melodic folk rock"` returned zero, and the two artists it names have plenty
+ * between them. The leading words are where the subject is (models write the
+ * artist first and the adjectives after), so retrying with them recovers the
+ * common case. Only for genuinely long queries: narrowing a three-word search
+ * that legitimately found nothing would answer a different question than the one
+ * asked.
+ */
+function narrowerQuery(query: string): string | null {
+  const words = query.split(/\s+/).filter(Boolean);
+  if (words.length < 4) return null;
+  return words.slice(0, 2).join(' ');
 }
 
 /** Prefix the fixture notice when it applies, so no caller can forget to. */
@@ -138,7 +178,7 @@ export const findMusicTool: AgentTool = {
   },
   service: 'spotify',
   requiresConfirmation: false,
-  async execute(input) {
+  async execute(input, ctx) {
     const query = readText(input.query);
     if (!query) {
       return {
@@ -147,31 +187,45 @@ export const findMusicTool: AgentTool = {
       };
     }
 
-    const tracks = await searchTracks(
-      query,
-      readLimit(input.limit, DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT),
-    );
-    if (!tracks) return unavailable(`music for "${query}"`);
+    const limit = readLimit(input.limit, DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT);
+    const first = await searchTracks(query, limit);
+    if (!first) return unavailable(`music for "${query}"`);
+
+    // One retry, narrower, before giving up — see `narrowerQuery`.
+    const fallback = narrowerQuery(query);
+    const retry = first.length === 0 && fallback ? await searchTracks(fallback, limit) : null;
+    const used = retry && retry.length > 0 ? fallback : query;
+    const tracks = withoutRepeatedSongs(retry && retry.length > 0 ? retry : first);
 
     if (tracks.length === 0) {
       return {
         ok: true,
         summary: stamp(
-          `Spotify has nothing for "${query}". Say so and offer a different artist or mood — ` +
+          `Spotify has nothing for "${query}"${fallback ? ` or for the shorter "${fallback}"` : ''}. ` +
+            `Say so and offer a different artist or mood — ` +
             `do not substitute songs you were not shown.`,
         ),
         data: { query, tracks: [] },
       };
     }
 
+    rememberOffered(
+      ctx.sessionId,
+      tracks.map((track) => track.id),
+    );
+
     return {
       ok: true,
       summary: stamp(
+        (used !== query
+          ? `Nothing matched "${query}" as a whole — Spotify matches all the words at once — ` +
+            `so this is "${used}". Search the other names separately if you need them. `
+          : '') +
         // The id rides in the text the model reads, not only in `data`: the tool
         // loop hands the model `summary` alone, and a model told to "use the track
         // ids exactly as given" without ever being given one can only fail — which
         // is exactly what happened once the 403 stopped masking it.
-        `${tracks.length} track(s) for "${query}": ` +
+        `${tracks.length} track(s) for "${used}": ` +
           `${tracks.map((track) => `${describeTrack(track)} [id: ${track.id}]`).join(' | ')}. ` +
           `Pick from these by name when you build a playlist — use propose_playlist with the ` +
           `bracketed track ids exactly as given.`,
@@ -225,7 +279,7 @@ export const proposePlaylistTool: AgentTool = {
           'What to call the playlist, e.g. "For the drive to Rosh Pina". Keep it short ' +
           'and about the occasion rather than about you.',
       },
-      trackIds: {
+      track_ids: {
         type: 'array',
         items: { type: 'string' },
         description:
@@ -243,7 +297,7 @@ export const proposePlaylistTool: AgentTool = {
           'One line on why these songs, shown on the card. This is where the thought goes.',
       },
     },
-    required: ['name', 'trackIds'],
+    required: ['name', 'track_ids'],
   },
   service: 'spotify',
   requiresConfirmation: true,
@@ -253,8 +307,19 @@ export const proposePlaylistTool: AgentTool = {
       return { ok: false, summary: 'A playlist needs a name before it can be offered.' };
     }
 
-    const rawIds = Array.isArray(input.trackIds)
-      ? input.trackIds.filter((id): id is string => typeof id === 'string' && id.trim() !== '')
+    /*
+     * `track_ids` is the schema's spelling; `trackIds` is accepted too.
+     *
+     * The schema said `trackIds` — the one camelCase property among twenty-one
+     * tools — so a model that had learned the house style from every other schema
+     * would send `track_ids` and be told "no track ids were given" right after
+     * searching for them. Renaming the property fixes the cause; accepting both
+     * spellings means the fix cannot regress into the opposite failure while a
+     * model is mid-conversation on the older description.
+     */
+    const given = Array.isArray(input.track_ids) ? input.track_ids : input.trackIds;
+    const rawIds = Array.isArray(given)
+      ? given.filter((id): id is string => typeof id === 'string' && id.trim() !== '')
       : [];
     if (rawIds.length === 0) {
       return {
@@ -274,8 +339,12 @@ export const proposePlaylistTool: AgentTool = {
      * playlist — the duplicates are legal, just embarrassing — so the guard has to
      * be here rather than at the wire.
      */
-    const ids = [...new Set(rawIds)].slice(0, MAX_LENGTH);
-    const duplicates = rawIds.length - ids.length;
+    // Repair single-character transcription slips against the ids this session was
+    // actually offered, before deduplicating — two ids that were both meant to be
+    // the same track only collapse once they are spelled the same.
+    const repaired = correctOfferedIds(ctx.sessionId, rawIds);
+    const ids = [...new Set(repaired.ids)].slice(0, MAX_LENGTH);
+    const duplicates = repaired.ids.length - ids.length;
     const tracks = await resolveTracks(ids);
     if (!tracks) return unavailable('those tracks');
 
@@ -340,6 +409,10 @@ export const proposePlaylistTool: AgentTool = {
               `${tracks.length} track(s) and not the number you asked for. Search again with a ` +
               `different wording if you want more. `
             : '') +
+          // Bug the live hunt caught: the card carried a track no reply had named,
+          // and the user approves the card by reading the sentence next to it.
+          `The card lists exactly these ${tracks.length} track(s) and the user can see them, ` +
+          `so name each of them in your reply and name nothing else. ` +
           {
             fixture:
               'Tell them what you chose and why, and that this build is running on a demo ' +
@@ -388,6 +461,9 @@ export const proposePlaylistTool: AgentTool = {
         summary:
           `That playlist card has no tracks on it any more. Apologise and offer to put it ` +
           `together again.`,
+        reply:
+          `That playlist seems to have lost its songs before I could save it — I'm sorry. ` +
+          `Shall I put it together again?`,
       };
     }
 
@@ -426,12 +502,35 @@ export const proposePlaylistTool: AgentTool = {
           `again — do not guess at why.`,
       }[result.reason];
 
+      /*
+       * The same three failures in Valentin's own voice, for the card path.
+       *
+       * Kept beside `links` rather than derived from it so neither can quietly
+       * become a translation of the other: one is an instruction to a model, the
+       * other is a sentence a person reads.
+       */
+      const spoken: Record<typeof result.reason, string> = {
+        'no-grant': `There's no Spotify account connected, so I couldn't save this one.`,
+        'not-registered':
+          `Spotify won't let me write to that account yet — it has to be added to this ` +
+          `app's allowed-users list in the Spotify dashboard first. Reconnecting won't ` +
+          `help, I'm afraid.`,
+        refused: `Spotify wouldn't save the playlist just now.`,
+      };
+
+      const listed = titles
+        .map((title, index) => `${index + 1}. ${title}${urls[index] ? ` — ${urls[index]}` : ''}`)
+        .join('\n');
+
       return {
         ok: true,
         summary:
           `${links} Give them the ${titles.length} song(s) as a list they can open — ` +
           `${titles.join(' | ')} — and say plainly that you could not save the playlist ` +
           `itself. Do not claim it is in their library.`,
+        reply:
+          `${spoken[result.reason]} The songs themselves are still good, so here they are ` +
+          `to open one by one:\n\n${listed}\n\nShall I try saving it again?`,
         data: { saved: false, reason: result.reason, name, tracks: titles, urls },
       };
     }
@@ -444,6 +543,9 @@ export const proposePlaylistTool: AgentTool = {
         summary:
           `The playlist "${name}" was created but Spotify refused the tracks, so it is empty. ` +
           `Tell them that plainly and offer to try again — do not describe it as done.`,
+        reply:
+          `I made "${name}", but Spotify turned the songs away, so it's sitting there empty. ` +
+          `That's no gift at all — shall I try again?`,
         data: { saved: true, empty: true, url: created.url },
       };
     }
@@ -462,16 +564,29 @@ export const proposePlaylistTool: AgentTool = {
             `There is no playlist to open — say so if they ask for the link — but you can ` +
             `name the songs: ${titles.slice(0, 3).join(' | ')}.`,
         ),
+        reply:
+          `I've put "${name}" together — ${created.trackCount} track(s), opening with ` +
+          `${titles.slice(0, 2).join(' and ')}. This build is running on a demo catalogue, ` +
+          `though, so there's no playlist on Spotify for me to link you to.`,
         data: { saved: false, demo: true, name, trackCount: created.trackCount },
       };
     }
 
     return {
       ok: true,
+      /*
+       * No claim about who can see it. We ask for `public: false`, but a
+       * development-mode app does not get the last word: Spotify has been
+       * observed creating the playlist public anyway. Promising privacy we
+       * cannot deliver is worse than saying nothing about it.
+       */
       summary:
-        `Saved "${name}" as a private playlist with ${created.trackCount} track(s). ` +
+        `Saved "${name}" to their library with ${created.trackCount} track(s). ` +
         `Give them the link — ${created.url} — and name a couple of the songs: ` +
         `${titles.slice(0, 3).join(' | ')}.`,
+      reply:
+        `Saved — "${name}" is in your Spotify library with ${created.trackCount} track(s):\n\n` +
+        `${created.url}\n\nIt opens with ${titles.slice(0, 2).join(' and ')}.`,
       data: {
         saved: true,
         name,

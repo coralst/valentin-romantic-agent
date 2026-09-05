@@ -4,6 +4,7 @@ import type { ReminderIndexReader } from '../persistence/storage-interface';
 import { config } from '../config';
 import { logger } from '../logging';
 import { buildReminderEmail } from './email-body';
+import { resolveNotifyEmail } from './notify-email';
 import type { ReminderSender } from './sender';
 import { activityFor, EMPTY_CONTEXT, type ReminderContext } from './suggestions';
 
@@ -194,10 +195,24 @@ export async function dispatchDue(
   const summary: DispatchSummary = { considered: due.length, sent: 0, skipped: 0, failed: 0 };
 
   for (const reminder of due) {
-    const target = reminder.target;
+    /*
+     * Resolved here and not only where the row was written.
+     *
+     * `syncReminders` adopts the owner's address onto the rows it plans, but that
+     * runs when a profile changes — so every row saved before the owner default
+     * existed still carries a null target, and nothing re-plans it until its
+     * session is touched again. Three such rows logged `reminder.no_target` once a
+     * minute in production immediately after the default shipped: the fix was
+     * live, and the dates it was meant to rescue still went nowhere.
+     *
+     * Send time is the honest place for the fallback. It is also the only place
+     * that covers a row whose adoption failed rather than never ran.
+     */
+    const target = resolveNotifyEmail(reminder.target);
     // A row with no address cannot be sent to anyone. Worth having — it is a
     // visible "I know about this date" — so it is a skip and a log line, never a
-    // throw that would abandon the rest of the batch.
+    // throw that would abandon the rest of the batch. Reachable now only when the
+    // deployment names no owner at all.
     if (!target) {
       summary.skipped += 1;
       logger.warn('reminder.no_target', { reminderId: reminder.id, kind: reminder.kind });

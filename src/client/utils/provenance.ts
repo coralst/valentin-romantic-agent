@@ -39,8 +39,13 @@ import type { Preference } from '../../shared/interfaces/preference';
  * never said by anyone, so claiming a conversation happened would be a lie.
  */
 
-/** The synthetic id `demo-profile.ts` stamps on seeded preferences. */
-const DEMO_SEED_SOURCE_MESSAGE_ID = 'demo-seed';
+/**
+ * The synthetic id `demo-profile.ts` stamps on seeded preferences.
+ *
+ * Exported because `noted-index.ts` has to skip the same rows for the same
+ * reason, and two copies of a sentinel is one copy too many.
+ */
+export const DEMO_SEED_SOURCE_MESSAGE_ID = 'demo-seed';
 
 /** "11 Aug" — the mockup's compact provenance date (`full-profile.html:297`). */
 const PROVENANCE_DATE = new Intl.DateTimeFormat('en-GB', {

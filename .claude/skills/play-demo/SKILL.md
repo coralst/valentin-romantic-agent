@@ -18,13 +18,38 @@ One command, watched live:
 npm run demo:drive -- --to=<their email>
 ```
 
-It opens a headed Chromium on **the login page**, signs in, starts a new profile,
-holds the eleven-turn conversation at typing speed, shows the rail filling in,
-opens the architecture drawer and the integrations panel, waits out the
-60-second scheduler sweep while the real email is sent, and ends on the
-day-after survey. Roughly **12–15 minutes** at `--speed=1`.
+It opens a headed Chromium on **the login page** and plays nine acts:
+
+1. the entrance page, and **Create an Account** — a profile that knows nothing
+2. the conversation: nine turns of facts, typed at human speed
+3. the rail filling in, and the countdown that is the notification
+4. the 60-second scheduler sweep firing, and the **real reminder email**
+5. the integrations panel — what is connected, and what is dark for want of a key
+6. the plan: a **Google Calendar** clash check, an **Ontopo** table and a
+   **Spotify** playlist, each with its proposal card confirmed on camera
+7. the **inspector** — the Live Architecture drawer, replaying one call hop by hop
+8. **the other architecture** — the engine switch, Glue code ↔ AgentCore
+9. the day-after survey (the one substituted beat)
+
+Roughly **20–25 minutes** at `--speed=1`.
 
 The browser window stays open at the end on purpose. Ctrl-C closes it.
+
+## Recording it
+
+```bash
+npm run demo:drive -- --to=<their email> --record
+```
+
+Same run, written to `screenshots/demo/video/` as `.webm` **and** `.mp4` (ffmpeg
+converts it; Keynote and Slack will not play the webm). Recording implies
+headless — the pointer and captions are drawn into the page, so the frames are
+identical and nobody's screen is held for twenty minutes. Add `--headed` to watch
+it being made.
+
+`--record` also implies `--no-hold`, and must: the video file is only finalised by
+`context.close()`, so a run left holding at the end and then Ctrl-C'd leaves a
+truncated file.
 
 ## Before you run it
 
@@ -60,10 +85,32 @@ The browser window stays open at the end on purpose. Ctrl-C closes it.
 | `--no-survey` | Skip the final substituted beat. |
 | `--no-hold` | Exit instead of leaving the window open. For checking the script itself. |
 | `--base=url` | Point at a different origin (default `http://localhost:5273`). |
+| `--record` | Write a video as well. Implies headless and `--no-hold`. |
+| `--headed` | Show the window during a `--record` run. |
+
+## What acts 6–8 need, and what they do when they do not have it
+
+These beats are written to degrade honestly rather than to be skipped, because a
+missing credential is a normal state of this app and pretending otherwise is the
+one thing the script must not do.
+
+- **Calendar** needs `GOOGLE_*` in `.env`; the clash check is read-only either way.
+- **Ontopo** needs nothing — but `confirm` only *books* when a full
+  `ONTOPO_GUEST_*` identity is set, which no local `.env` has. Without it the
+  confirm mints a checkout link and hands it over, which is why it is safe to press
+  Confirm on camera. **Do not set the guest variables to make the demo look
+  better** — that books a real table at a real restaurant.
+- **Spotify** searches on the client-credentials pair alone; without
+  `SPOTIFY_REFRESH_TOKEN` a confirmed playlist hands over track links instead of
+  saving into a library, and says so.
+- **The engine switch** reads the serving chip back before captioning it. If
+  AgentCore is not wired on the deployment, the caption says so in amber and the
+  engine-B turn is skipped, rather than narrating engine A's answers as AgentCore's.
 
 ## Afterwards
 
-Screenshots land in `screenshots/demo/` (gitignored), numbered in play order.
+Screenshots land in `screenshots/demo/` (gitignored), numbered in play order; the
+video, if any, in `screenshots/demo/video/`.
 
 To prove the email arrived from the mailbox side rather than trusting the log:
 

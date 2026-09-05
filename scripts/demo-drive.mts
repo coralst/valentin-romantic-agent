@@ -32,13 +32,24 @@
  * to a real inbox; guessing which one is the single mistake here that reaches a
  * stranger, and it cannot be un-sent.
  *
+ * ## Recording it
+ *
+ * `--record` turns the same run into a video (`screenshots/demo/video/`). It also
+ * switches the browser to headless, which is not a detail: the pointer, the
+ * captions and the click rings are all drawn *into the page* by {@link OVERLAY},
+ * so the recording is identical either way — and a twenty-minute headed run owns
+ * the machine's screen for twenty minutes. `--record --headed` if you want to
+ * watch it being made.
+ *
  * Usage:
  *   npm run demo:drive -- --to=you@example.com
  *   npm run demo:drive -- --to=you@example.com --speed=1.6   # rehearse faster
  *   npm run demo:drive -- --to=you@example.com --no-mail     # skip the send beat
+ *   npm run demo:drive -- --to=you@example.com --record      # write a video too
  */
-import { chromium, type Page, type Locator } from '@playwright/test';
-import { mkdir, rm } from 'node:fs/promises';
+import { chromium, type Page, type Locator, type BrowserContext } from '@playwright/test';
+import { mkdir, readdir, rename, rm } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
 import path from 'node:path';
 
 function flag(name: string): string | undefined {
@@ -54,6 +65,28 @@ const SPEED = Math.max(0.2, Number(flag('speed') ?? 1));
 const SEND_MAIL = !has('no-mail');
 const DO_SURVEY = !has('no-survey');
 const SHOT_DIR = path.resolve('screenshots/demo');
+const VIDEO_DIR = path.join(SHOT_DIR, 'video');
+/** Write a video of the run as well as the stills. */
+const RECORD = has('record');
+/**
+ * Show the browser window.
+ *
+ * On by default because this script exists to be watched. A recording run is the
+ * exception: the overlay is DOM, so headless records the same frames, and there is
+ * no reason to hold someone's screen hostage for a file.
+ */
+const HEADED = !RECORD || has('headed');
+
+/**
+ * The step-forward control's accessible name, copied from `DRAWER_COPY.next`.
+ *
+ * Duplicated rather than imported: this is a `tsx`-run script outside the app's
+ * module graph, and importing a component module to read one string would drag
+ * React and the design system into a driver that has no DOM. If the drawer renames
+ * the button, the inspector beat stops stepping and says so in the log — a visible,
+ * harmless failure, which is the trade being made here.
+ */
+const DRAWER_COPY_NEXT = 'Next step';
 
 /** How long to wait for one model turn before giving up on the whole run. */
 const REPLY_TIMEOUT_MS = 90_000;
@@ -92,6 +125,15 @@ interface Turn {
    * missing target *without* claiming it, so nothing is burned.
    */
   needsMail?: boolean;
+  /**
+   * Expect this turn to raise a proposal card, and press Confirm on it.
+   *
+   * Best-effort by design — see {@link confirmProposal}. Whether the model reaches
+   * for `propose_reservation` on a given run is the model's call, and a run that
+   * stops because it chose to ask a clarifying question first would be reporting a
+   * scripting failure as a product failure.
+   */
+  confirms?: boolean;
 }
 
 /**
@@ -124,7 +166,7 @@ interface Turn {
  * work at 17:00" is quoted back verbatim in the mail, so it should still be in the
  * audience's mind when the mail appears.
  */
-const TURNS: Turn[] = [
+const PROFILE_TURNS: Turn[] = [
   {
     say: "Hi! Let me get her details down first, then we'll talk about the evening. " +
       'Her name is Maya, and our third anniversary is on 10 September.',
@@ -171,9 +213,60 @@ const TURNS: Turn[] = [
     say: "Don't email me about her birthday though, I never forget that one.",
     beat: 'Per-date control: silences the mail, keeps the date',
   },
+];
+
+/**
+ * The planning half: the turns that make him *do* something outside the app.
+ *
+ * Split out from {@link PROFILE_TURNS} for the reason that half is ordered the way
+ * it is — nothing here can be asked until the profile exists, because every one of
+ * these calls is parameterised by a fact he was told. The shortlist respects the
+ * shellfish allergy, the playlist comes off `music`, the clash check is against the
+ * anniversary date. Asked in the other order they are three generic API calls with
+ * a chat window around them.
+ *
+ * They also run *after* the mail beat rather than before it, which is not a
+ * cosmetic choice: the reminder is armed the moment the anniversary is learned, and
+ * the scheduler sweeps every 60 seconds. Any beat placed between the arming and the
+ * sweep means the mail has already gone by the time the run announces it is waiting
+ * for it — so the wait is taken first, while the conversation is still short, and
+ * the audience sees the sweep fire rather than being told it fired earlier.
+ *
+ * `confirms` is the point of the last two. A search is a read and reads are cheap;
+ * the interesting claim this product makes is that **nothing is written without a
+ * human pressing Confirm**, and that is only visible if someone presses it.
+ */
+const PLAN_TURNS: Turn[] = [
   {
-    say: 'Can you put together a playlist for the evening?',
-    beat: 'Spotify, live',
+    say: "Before we book anything — what's already in my calendar around the 10th? " +
+      "I don't want to double-book that evening.",
+    beat: 'Google Calendar, read-only — checking for a clash before proposing a thing',
+  },
+  {
+    say: 'Good. Find us a table for two that evening — quiet, Mediterranean, ' +
+      'and nothing with shellfish on it.',
+    beat: 'Ontopo — real restaurants, real availability, and her allergy in the query',
+  },
+  /*
+   * The search and the booking are two turns because that is what the model does.
+   * Asked to "find us a table" it searches and then *asks which one* — a read needs
+   * no consent, so no card appears, and a run that expected one here logged a missed
+   * proposal for a beat that behaved correctly. An explicit instruction to book is
+   * what reaches `propose_reservation`, and it also films better: he offers, you pick.
+   *
+   * Deliberately does not name a restaurant. Whatever the shortlist holds on the day
+   * is real Ontopo availability, and a scripted "book Yaffo" is a line that goes
+   * wrong on camera the first time Yaffo is full.
+   */
+  {
+    say: 'Yes — go ahead and book the quiet one at 20:00.',
+    beat: 'Now it is a write, so it comes back as a proposal instead of an answer',
+    confirms: true,
+  },
+  {
+    say: 'And put together a playlist for the drive there.',
+    beat: 'Spotify — real tracks, chosen off the row that says Nina Simone',
+    confirms: true,
   },
 ];
 
@@ -495,6 +588,114 @@ async function linger(page: Page, target: Locator, ms: number): Promise<void> {
   await hold(ms);
 }
 
+/** True if the element is there to be pointed at, without throwing if it is not. */
+const showing = (target: Locator) => target.isVisible().catch(() => false);
+
+/**
+ * Press Confirm on whatever proposal the last turn raised.
+ *
+ * ## Why this is the beat worth filming
+ *
+ * Every tool that costs money or leaves the building is a *proposal* first: the
+ * model calls `propose_reservation`, the server mints nothing, and a card appears
+ * with a countdown on it. The write happens in `runToolConfirm`, reachable only
+ * from this button. So this click is the entire consent model, on camera.
+ *
+ * ## Why it never fails the run
+ *
+ * The model decides whether to propose. It may reasonably ask which of three
+ * restaurants first, and then there is no card and nothing has gone wrong — so a
+ * missing card is logged and skipped. What is *not* tolerated is a card that fails
+ * to resolve after the click: that is the confirm path being broken, which is worth
+ * stopping for.
+ *
+ * ## What the confirm actually does here
+ *
+ * Ontopo has no booking API, so `confirm` mints a checkout link and hands it back
+ * unless a full guest identity is configured (`ONTOPO_GUEST_*`, unset in every
+ * local `.env`) — see `guestForCheckout`. A playlist with no `SPOTIFY_REFRESH_TOKEN`
+ * likewise hands over track links instead of saving into a library. Both are the
+ * documented, safe fallback, and both say which happened in the text on screen —
+ * which is why this is filmable at all: no restaurant is being committed to for the
+ * sake of a demo.
+ */
+async function confirmProposal(page: Page, what: string): Promise<void> {
+  /*
+   * The card's own testid is `proposal-<uuid>`, but two of its *children* are
+   * `proposal-countdown` and `proposal-resolved` — so a bare prefix match plus
+   * `.last()` lands on the countdown, which is visible, contains no Confirm button,
+   * and made the run report a live card as "already resolved or lapsed". Excluding
+   * the two fixed names leaves only real cards, and `.last()` then means the newest.
+   */
+  const card = page
+    .locator(
+      '[data-testid^="proposal-"]'
+      + ':not([data-testid="proposal-countdown"])'
+      + ':not([data-testid="proposal-resolved"])',
+    )
+    .last();
+  const appeared = await card
+    .waitFor({ state: 'visible', timeout: 15_000 })
+    .then(() => true)
+    .catch(() => false);
+
+  if (!appeared) {
+    console.log(`  (no proposal card for ${what} — he answered without proposing)`);
+    return;
+  }
+
+  await caption(page, 'Nothing is booked yet — this is a proposal, with a clock on it');
+  await linger(page, card, 4_200);
+  await shot(page, `proposal-${what}`);
+
+  const confirm = card.getByRole('button', { name: 'Confirm' });
+  if (!(await showing(confirm))) {
+    console.log(`  (the ${what} proposal is already resolved or lapsed)`);
+    return;
+  }
+
+  await caption(page, 'This click is the only thing in the system that writes');
+  await humanClick(page, confirm, `confirm the ${what}`);
+
+  const resolved = await card
+    .getByTestId('proposal-resolved')
+    .waitFor({ state: 'visible', timeout: 30_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!resolved) {
+    throw new Error(`confirmed the ${what} proposal and the card never resolved`);
+  }
+
+  // Read it out rather than asserting a wording: what a confirm *does* depends on
+  // which credentials this deployment holds, and the card is where it says so.
+  const outcome = (await card.getByTestId('proposal-resolved').innerText()).trim();
+  console.log(`  ✓ ${what}: ${outcome}`);
+  await hold(3_600);
+  await shot(page, `confirmed-${what}`);
+}
+
+/** Play a block of scripted turns, waiting out each reply. */
+async function playTurns(page: Page, composer: Locator, turns: Turn[], tag: string): Promise<void> {
+  const playable = turns.filter((turn) => SEND_MAIL || !turn.needsMail);
+  for (const [index, turn] of playable.entries()) {
+    console.log(`\n${tag} ${index + 1}/${playable.length}: ${turn.beat}`);
+    await caption(page, turn.beat);
+    const before = await transcriptOf(page);
+    await typeHuman(page, composer, turn);
+    await composer.press('Enter');
+    await awaitReply(page, before, turn.say);
+    await shot(page, `${tag}-${String(index + 1).padStart(2, '0')}`);
+    if (turn.confirms) await confirmProposal(page, tag === 'plan' ? planName(turn) : 'action');
+  }
+}
+
+/** A short, file-safe name for the proposal a planning turn is expected to raise. */
+function planName(turn: Turn): string {
+  if (/playlist/i.test(turn.say)) return 'playlist';
+  if (/table|restaurant/i.test(turn.say)) return 'reservation';
+  return 'action';
+}
+
 async function main(): Promise<void> {
   if (SEND_MAIL && !TO) {
     console.error(
@@ -545,16 +746,29 @@ async function main(): Promise<void> {
    */
   await rm(SHOT_DIR, { recursive: true, force: true });
   await mkdir(SHOT_DIR, { recursive: true });
+  if (RECORD) await mkdir(VIDEO_DIR, { recursive: true });
   console.log(
-    `demo-drive: ${BASE} · speed ${SPEED}× · mail ${SEND_MAIL ? `→ ${TO}` : 'skipped'}\n`,
+    `demo-drive: ${BASE} · speed ${SPEED}× · mail ${SEND_MAIL ? `→ ${TO}` : 'skipped'}` +
+      `${RECORD ? ` · recording${HEADED ? ' (headed)' : ''}` : ''}\n`,
   );
 
-  const browser = await chromium.launch({ headless: false, args: ['--window-size=1680,1020'] });
+  const browser = await chromium.launch({
+    headless: !HEADED,
+    args: ['--window-size=1680,1020'],
+  });
   const context = await browser.newContext({
     viewport: { width: 1600, height: 960 },
-    // A real pointer is the point of this script; a device scale of 2 makes the
-    // overlay crisp on a retina screen being mirrored to a projector.
-    deviceScaleFactor: 2,
+    /*
+     * A device scale of 2 makes the overlay crisp on a retina screen being
+     * mirrored to a projector — but it doubles every recorded frame to 3200×1920
+     * before ffmpeg ever sees it, and Playwright's encoder is the bottleneck in a
+     * twenty-minute run. A recording run therefore takes scale 1 and a video sized
+     * to the viewport: same layout, same captions, a file that plays anywhere.
+     */
+    deviceScaleFactor: RECORD ? 1 : 2,
+    ...(RECORD
+      ? { recordVideo: { dir: VIDEO_DIR, size: { width: 1600, height: 960 } } }
+      : {}),
   });
   await context.addInitScript(`(${OVERLAY})()`);
   const page = await context.newPage();
@@ -650,45 +864,22 @@ async function main(): Promise<void> {
 
     console.log('\nact 2 — the conversation');
     const composer = page.getByRole('textbox', { name: /type a message/i });
-
-    const turns = TURNS.filter((turn) => SEND_MAIL || !turn.needsMail);
-    for (const [index, turn] of turns.entries()) {
-      console.log(`\nturn ${index + 1}/${turns.length}: ${turn.beat}`);
-      await caption(page, turn.beat);
-      const before = await transcriptOf(page);
-      await typeHuman(page, composer, turn);
-      await composer.press('Enter');
-      await awaitReply(page, before, turn.say);
-      await shot(page, `turn-${String(index + 1).padStart(2, '0')}`);
-    }
+    await playTurns(page, composer, PROFILE_TURNS, 'turn');
 
     console.log('\nact 3 — what it learned');
     await caption(page, 'Every row on the right was extracted from what he just said');
     await linger(page, page.getByTestId('brief-rail'), 4_500);
     await shot(page, 'brief-rail');
 
-    const architecture = page.getByTestId('architecture-toggle');
-    if (await architecture.isVisible().catch(() => false)) {
-      await humanClick(page, architecture, 'open the architecture drawer');
-      await caption(page, 'The calls that just happened — every one of them real');
-      await hold(5_000);
-      await shot(page, 'architecture');
-    }
-
-    const integrations = page.getByTestId('rail-integrations-button');
-    if (await integrations.isVisible().catch(() => false)) {
-      await humanClick(page, integrations, 'open the integrations panel');
-      await caption(page, 'Fourteen tools, registered and reachable');
-      await hold(5_500);
-      await shot(page, 'integrations');
-      const close = page.getByTestId('integrations-close-button');
-      if (await close.isVisible().catch(() => false)) {
-        await humanClick(page, close, 'close integrations');
-      }
+    const nextUp = page.getByTestId('brief-next-up');
+    if (await showing(nextUp)) {
+      await caption(page, 'The countdown is the notification, before any mail exists');
+      await linger(page, nextUp, 4_000);
+      await shot(page, 'next-up');
     }
 
     if (SEND_MAIL) {
-      console.log('\nact 4 — the mail');
+      console.log('\nact 4 — the notification, and the mail');
       await caption(page, 'The scheduler sweeps every 60 seconds. Waiting for it to fire…');
       // Nothing to click here and that is the point: no button was pressed to
       // make this happen. Wait it out on screen so the audience sees that.
@@ -707,8 +898,180 @@ async function main(): Promise<void> {
       console.log('  (needs one Google Disconnect→Connect first, or it exits 2)');
     }
 
+    console.log('\nact 5 — the tools he can actually reach');
+    const integrations = page.getByTestId('rail-integrations-button');
+    if (await showing(integrations)) {
+      await humanClick(page, integrations, 'open the integrations panel');
+      /*
+       * The numbers are read off the panel rather than written into the caption.
+       * It was "Fourteen tools" in prose here, and the number of registered tools
+       * is a function of which credentials the deployment holds — so the line was
+       * one `buildToolRegistry` change away from being a false claim, delivered
+       * with total confidence, on camera.
+       *
+       * The count it reads is the per-row **readiness** badge, not the panel's
+       * "N connected" chip. Those are different facts: the chip counts services
+       * connected *through this panel in this browser*, which is legitimately 0 on a
+       * deployment whose Google and Spotify credentials come from the environment —
+       * so captioning "0 connected" over a panel listing seven live rows was the
+       * screen and the voice-over contradicting each other.
+       */
+      const readiness = await page
+        .locator('[data-testid^="integration-readiness-"]')
+        .allInnerTexts()
+        .catch(() => [] as string[]);
+      const live = readiness.filter((text) => /^live/i.test(text.trim())).length;
+      const keyless = readiness.filter((text) => /needs credentials/i.test(text)).length;
+      await caption(
+        page,
+        live
+          ? `${live} of these are live code against a real provider`
+            + (keyless ? ` — ${keyless} more are the same code waiting for a key` : '')
+          : 'Every tool he can reach, and the ones he cannot',
+      );
+      await hold(5_500);
+      await shot(page, 'integrations');
+      const close = page.getByTestId('integrations-close-button');
+      if (await showing(close)) await humanClick(page, close, 'close integrations');
+    }
+
+    console.log('\nact 6 — the plan: calendar, then a table, then the music');
+    await playTurns(page, composer, PLAN_TURNS, 'plan');
+
+    console.log('\nact 7 — the inspector');
+    /*
+     * Two ways in, and both are on screen: the magnifier in the sidebar and the
+     * bar across the bottom. The sidebar toggle is preferred because it is the one
+     * a presenter can point at; the bar is the fallback for a layout where the
+     * sidebar is collapsed.
+     */
+    const architecture = page.getByTestId('architecture-toggle');
+    const reopenBar = page.getByTestId('architecture-reopen-bar');
+    const opener = (await showing(architecture)) ? architecture : reopenBar;
+    if (await showing(opener)) {
+      await humanClick(page, opener, 'open the live architecture drawer');
+      const drawer = page.getByTestId('architecture-drawer');
+      await drawer.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
+      await caption(page, 'Every call the last ten minutes made — with its trace id');
+      await linger(page, page.getByTestId('aws-topology-diagram'), 5_200);
+      await shot(page, 'inspector-topology');
+
+      /*
+       * Replay one call rather than describing the feed.
+       *
+       * Clicking a group is what turns the feed from a log into an inspector: the
+       * diagram stops following live traffic and walks that one request hop by hop,
+       * and the step controls appear because there is now something that can be
+       * stepped. `aws-feed-group-header` is the clickable row — the group is the
+       * container.
+       */
+      const group = page.getByTestId('aws-feed-group-header').first();
+      if (await showing(group)) {
+        const traceId = await page
+          .getByTestId('aws-feed-trace-id')
+          .first()
+          .innerText()
+          .catch(() => '');
+        await caption(page, 'Pick one of them apart — hop by hop');
+        await humanClick(page, group, 'replay one call');
+        if (traceId) console.log(`  replaying trace ${traceId.trim()}`);
+
+        const steps = page.getByTestId('architecture-step-count');
+        await steps.waitFor({ state: 'visible', timeout: 8_000 }).catch(() => {});
+        await shot(page, 'inspector-replay');
+
+        // Scoped to the drawer: `/^next/i` alone also matches the rail's "Next up"
+        // hero, and stepping the flow by clicking a countdown card is a confusing
+        // way for this beat to appear to do nothing.
+        const next = drawer.getByRole('button', { name: DRAWER_COPY_NEXT });
+        for (let step = 0; step < 4 && (await showing(next)); step++) {
+          if (await next.isDisabled().catch(() => true)) break;
+          await humanClick(page, next, `advance the replay (${step + 1})`);
+          // The readout already reads "Step 2 of 10" — prefixing it produced
+          // "Step Step 2 of 10" on screen.
+          const readout = (await steps.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+          await caption(page, readout || 'Stepping through the call');
+          await hold(2_400);
+        }
+        await shot(page, 'inspector-stepped');
+      }
+
+      const scoreboard = page.getByTestId('scoreboard-toggle');
+      if (await showing(scoreboard)) {
+        await humanClick(page, scoreboard, 'open the engine scoreboard');
+        await caption(page, 'The two engines, measured against each other');
+        await hold(5_000);
+        await shot(page, 'inspector-scoreboard');
+      }
+    }
+
+    console.log('\nact 8 — the other architecture');
+    /*
+     * The engine switch is the claim that the same conversation runs on two
+     * different back ends: engine A is this repo's own tool loop ("Glue code"),
+     * engine B is Bedrock AgentCore running the same tools behind a managed
+     * runtime.
+     *
+     * What is *not* assumed is that engine B is reachable. `resolveEngine`
+     * downgrades to A when the AgentCore wiring is absent, and the drawer says so
+     * through `architecture-serving-chip` / the `downgraded` marker. The caption is
+     * therefore read from the app rather than written here — a video that says
+     * "now on AgentCore" over engine A's answers is exactly the lie this project
+     * keeps deciding not to tell.
+     */
+    const engineSwitch = page.getByTestId('rail-engine-switch');
+    if (await showing(engineSwitch)) {
+      await caption(page, 'Same conversation, same tools — a different engine underneath');
+      await linger(page, engineSwitch, 3_000);
+      await humanClick(page, page.getByTestId('rail-engine-agentcore'), 'switch to AgentCore');
+      await hold(3_000);
+
+      const serving = page.getByTestId('architecture-serving-chip');
+      const downgraded = (await showing(page.getByTestId('downgraded')))
+        || /glue/i.test(await serving.innerText().catch(() => ''));
+      // The chip renders its own "SERVING:" prefix, so the raw text read back into a
+      // sentence gave "is serving SERVING: GLUE CODE". Keep the engine name only.
+      const label = (await serving.innerText().catch(() => ''))
+        .replace(/\s+/g, ' ')
+        .replace(/^serving:?\s*/i, '')
+        .trim();
+
+      if (downgraded) {
+        await caption(
+          page,
+          label
+            ? `Asked for AgentCore; this deployment is serving ${label} — it says so rather than pretending`
+            : 'AgentCore is not wired on this deployment, and the app refuses to claim it is',
+          'substituted',
+        );
+        console.log(`  engine B unavailable here — serving chip reads: ${label || '(none)'}`);
+        await hold(6_000);
+      } else {
+        await caption(page, `Now served by ${label || 'AgentCore'} — the topology redraws`);
+        await hold(2_500);
+        const agentcoreBox = page.getByTestId('aws-agentcore-box');
+        if (await showing(agentcoreBox)) await linger(page, agentcoreBox, 4_500);
+        await shot(page, 'engine-agentcore-topology');
+
+        // One real turn on engine B. Short on purpose: the claim being filmed is
+        // "the switch is live", and one answer proves it as well as ten.
+        await playTurns(
+          page,
+          composer,
+          [{ say: "Remind me what she can't eat.", beat: 'Answered by AgentCore, not by the glue code' }],
+          'agentcore',
+        );
+      }
+      await shot(page, 'engine-agentcore');
+
+      await humanClick(page, page.getByTestId('rail-engine-valentin'), 'switch back to the glue code');
+      await caption(page, 'And back. The switch is a runtime choice, not a redeploy');
+      await hold(4_000);
+      await shot(page, 'engine-back');
+    }
+
     if (DO_SURVEY) {
-      console.log('\nact 5 — the day-after survey (substituted)');
+      console.log('\nact 9 — the day-after survey (substituted)');
       const demo = page.getByTestId('rail-demo-button');
       if (await demo.isVisible().catch(() => false)) {
         await caption(
@@ -739,15 +1102,67 @@ async function main(): Promise<void> {
       for (const error of errors.slice(0, 12)) console.error(`  ${error}`);
     }
 
-    // Leave it on screen. Closing the window the instant the last beat ends is
-    // the wrong ending for something someone is watching. `--no-hold` is for
-    // rehearsing the script itself, where an exit code is the whole point.
-    if (has('no-hold')) return;
+    /*
+     * Leave it on screen. Closing the window the instant the last beat ends is
+     * the wrong ending for something someone is watching. `--no-hold` is for
+     * rehearsing the script itself, where an exit code is the whole point.
+     *
+     * A recording run must not hold either, and this is not a preference: the
+     * `.webm` is finalised by `context.close()`, so a run that sits in a ten-minute
+     * sleep and is then Ctrl-C'd out of leaves a truncated file — the failure mode
+     * being "I recorded the demo" followed by no video.
+     */
+    if (has('no-hold') || RECORD) return;
     console.log('\ndone — window stays open, Ctrl-C to close');
     await sleep(600_000);
   } finally {
+    if (RECORD) await finishVideo(context);
     await browser.close().catch(() => {});
   }
+}
+
+/**
+ * Close the context so the video is flushed, then give the file a name.
+ *
+ * Playwright names videos after an internal page guid, which is unusable as a
+ * deliverable — and it only writes them on `close()`, which is why this runs
+ * before `browser.close()` rather than after it.
+ *
+ * The mp4 is a convenience, not the artifact: Keynote, Slack and QuickTime all
+ * decline to play a VP8 `.webm`, so a run whose whole purpose is something to show
+ * people would otherwise end in a file they cannot open. When ffmpeg is missing the
+ * webm is still there and the run still succeeded, so this only ever warns.
+ */
+async function finishVideo(context: BrowserContext): Promise<void> {
+  await context.close().catch(() => {});
+
+  const written = (await readdir(VIDEO_DIR).catch(() => [])).filter((name) =>
+    name.endsWith('.webm'),
+  );
+  if (!written.length) {
+    console.error('\n--record was passed but no video was written.');
+    return;
+  }
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const webm = path.join(VIDEO_DIR, `valentin-demo-${stamp}.webm`);
+  await rename(path.join(VIDEO_DIR, written[0]), webm);
+  console.log(`\nvideo → ${webm}`);
+
+  const mp4 = webm.replace(/\.webm$/, '.mp4');
+  const converted = await new Promise<boolean>((resolve) => {
+    execFile(
+      'ffmpeg',
+      ['-y', '-i', webm, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
+        '-pix_fmt', 'yuv420p', '-movflags', '+faststart', mp4],
+      (error) => resolve(!error),
+    );
+  });
+  console.log(
+    converted
+      ? `        ${mp4}`
+      : '        (ffmpeg not available or failed — the .webm above is the recording)',
+  );
 }
 
 main().catch((error) => {

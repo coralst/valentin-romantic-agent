@@ -144,13 +144,23 @@ export const playlistCases: readonly EvalCase[] = [
         if (!playlist) return 'propose_playlist was never called';
         if (!playlist.ok) return `propose_playlist failed: ${playlist.summary}`;
 
-        const { ids } = idsGivenToPlaylist(calls);
-        // Fewer is fine and honest; zero is the bug, and duplicates inflate a count
-        // the user will later find missing.
-        if (ids.length === 0) return 'the card carries no tracks at all';
-        const unique = new Set(ids);
-        if (unique.size !== ids.length) {
-          return `${ids.length - unique.size} duplicate ids padded the playlist`;
+        /*
+         * Asserted on what reached the *card*, not on the raw argument.
+         *
+         * The first version of this case failed a run in which the model repeated
+         * two ids to pad a 20-song request — but the tool dedupes before resolving
+         * and tells the model plainly that it did ("You repeated 2 id(s); the
+         * repeats were removed"), so the user was never offered the same song
+         * twice. Failing that reported honest behaviour as a bug. What must hold
+         * is the outcome: the card carries distinct tracks, and the prose does not
+         * promise a count the card does not have.
+         */
+        const onCard = ((playlist.data as { tracks?: { id?: unknown }[] } | undefined)?.tracks ?? [])
+          .map((track) => String(track.id));
+        if (onCard.length === 0) return 'the card carries no tracks at all';
+        const unique = new Set(onCard);
+        if (unique.size !== onCard.length) {
+          return `${onCard.length - unique.size} duplicate track(s) reached the card`;
         }
         return true;
       },

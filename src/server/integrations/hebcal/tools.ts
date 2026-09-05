@@ -162,8 +162,9 @@ export const hebrewOccasionsTool: AgentTool = {
       anniversary_date: {
         type: 'string',
         description:
-          'The civil date of the original event, e.g. "2019-05-20". Its Hebrew ' +
-          'date is read off and projected forward.',
+          'The civil date of the original event as YYYY-MM-DD, e.g. "2019-05-20" — ' +
+          'the year it actually happened, not this year. Its Hebrew date is read off ' +
+          'and projected forward.',
       },
       anniversary_title: {
         type: 'string',

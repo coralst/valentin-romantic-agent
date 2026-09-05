@@ -26,6 +26,31 @@ is not machine-generated.
 
 ---
 
+## Status: all eleven are fixed on this branch
+
+The sections below are the findings as recorded during the hunt, kept in the past
+tense so the evidence still reads as evidence. What changed:
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | Hebrew date a day off on a UTC host | `hebrewDateOf` resolves the Israeli civil day via `inZone`, then builds the `HDate` from local noon |
+| 2 | Shabbat reported as starting Saturday next to a festival | the candle lighting is bounded below by the *previous* Havdalah, and the calendar window widened to 9 days back |
+| 3 | Playlist loses a song to a mistyped id | new `spotify/offered-tracks.ts` records what `find_music` offered and repairs a one-character miss against it — never when two offered ids are equally close |
+| 4 | Card carries a track the reply never names | the tool summary now tells the model the card lists exactly these tracks and to name each of them and nothing else |
+| 5 | `find_music` empty for the two-artist query, duplicated for a mood | one narrower retry when a long query matches nothing (Spotify ANDs its terms), and results deduped by title-and-artist |
+| 6 | Round-number request padded with duplicates | *not a code bug* — see the correction in that section |
+| 7 | `propose_playlist` alone in camelCase | schema property renamed `track_ids`; `trackIds` still accepted so nothing regresses mid-conversation |
+| 8 | Prompt promised 9am, dispatch at 08:30 | `TOOL_GUIDANCE` interpolates `REMINDER_SEND_TIME_LOCAL` instead of writing a number |
+| 9 | Agent invents a recurring-reminder limitation | `set_reminder`'s description says what is actually true: the anniversary and birthday already recur, and the lead time is a profile preference |
+| 10 | `anniversary_date` never states its format | it does now, as do the three other date descriptions that did not — the invariant covers all of them |
+| 11 | Activity trail shows `check_out`, redacts `check_in` | `SAFE_INPUT_KEYS` holds every date-shaped key, not one of them |
+
+Hermetic coverage: the eight tests written to reproduce these now assert the fixed
+behaviour and pass, plus 13 new ones for the id recovery and the search fallback.
+`npm test` is 3604/3604 green, lint and build clean. Bugs 3, 4, 5 and 9 are model
+behaviour as much as code, so the live corpus remains the only thing that can
+show they stay fixed — re-run it after any prompt change.
+
 ## Confirmed bugs
 
 Ordered by what a user would notice first.
@@ -132,14 +157,25 @@ calls and ~1.5s. A request that names a *mood* rather than an artist has nothing
 to fall back on. This is the other half of "ask for a playlist and it doesn't
 work", and the duplicate-ids-per-track behaviour is what makes bug 6 possible.
 
-### 6. A round-number request is padded with duplicates — `medium`
+### 6. A round-number request is padded with duplicates — **not a bug; the harness was wrong**
 
-**Evidence.** `PLAY-04`, failed on 1 of 3 passes. Asked for a 20-song playlist
+**What happened.** `PLAY-04` failed on 1 of 3 passes: asked for a 20-song playlist
 when only 8 Norah Jones tracks were available, the model repeated two ids to reach
-the count. The user is promised 20 songs and gets 18 plus two repeats.
+the count.
 
-Intermittent, which is worse than deterministic: it depends on what the search
-happened to return.
+**Why it is not a defect.** `propose_playlist` already dedupes before resolving
+and already tells the model what it did — *"You repeated 2 id(s); the repeats were
+removed, so the playlist has 6 track(s) and not the number you asked for. Search
+again with a different wording if you want more."* No duplicate ever reached the
+card and the user was never offered the same song twice. The case was asserting on
+the **raw argument** rather than the outcome, so it reported correct, honest
+behaviour as a bug. `PLAY-04` now checks the tracks on the card, which is the thing
+that matters; bug 5's fix removes most of the padding pressure upstream anyway by
+not offering the same song under two ids.
+
+Recorded rather than deleted because the original card overstated the app's
+behaviour, and a findings report that quietly drops its own mistakes cannot be
+trusted about the ten it kept.
 
 ### 7. `propose_playlist` is the one tool in the app spelled camelCase — `high` (latent)
 

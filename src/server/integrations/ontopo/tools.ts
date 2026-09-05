@@ -346,7 +346,7 @@ export const checkAvailabilityTool: AgentTool = {
         type: 'string',
         description: 'Name of the restaurant, from find_restaurants.',
       },
-      date: { type: 'string', description: 'The date, as "2026-09-05".' },
+      date: { type: 'string', description: 'The date as YYYY-MM-DD, e.g. "2026-09-05".' },
       time: {
         type: 'string',
         description: 'Preferred time, as "20:00". Ontopo returns nearby times too.',
@@ -481,7 +481,7 @@ export const proposeReservationTool: AgentTool = {
     type: 'object',
     properties: {
       restaurant: { type: 'string', description: 'Name of the restaurant.' },
-      date: { type: 'string', description: 'The date, as "2026-09-05".' },
+      date: { type: 'string', description: 'The date as YYYY-MM-DD, e.g. "2026-09-05".' },
       time: {
         type: 'string',
         description: 'Exact time from check_availability, as "20:30".',

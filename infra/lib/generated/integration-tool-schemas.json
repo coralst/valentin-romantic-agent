@@ -20,7 +20,7 @@
         },
         "date": {
           "type": "string",
-          "description": "The date, as \"2026-09-05\"."
+          "description": "The date as YYYY-MM-DD, e.g. \"2026-09-05\"."
         },
         "time": {
           "type": "string",
@@ -316,7 +316,7 @@
         },
         "anniversary_date": {
           "type": "string",
-          "description": "The civil date of the original event, e.g. \"2019-05-20\". Its Hebrew date is read off and projected forward."
+          "description": "The civil date of the original event as YYYY-MM-DD, e.g. \"2019-05-20\" — the year it actually happened, not this year. Its Hebrew date is read off and projected forward."
         },
         "anniversary_title": {
           "type": "string",
@@ -350,7 +350,7 @@
         },
         "date": {
           "type": "string",
-          "description": "The date, as \"2026-09-05\"."
+          "description": "The date as YYYY-MM-DD, e.g. \"2026-09-05\"."
         },
         "time": {
           "type": "string",
@@ -512,7 +512,7 @@
           "type": "string",
           "description": "What to call the playlist, e.g. \"For the drive to Rosh Pina\". Keep it short and about the occasion rather than about you."
         },
-        "trackIds": {
+        "track_ids": {
           "type": "array",
           "items": {
             "type": "string"
@@ -532,7 +532,7 @@
         "user_id",
         "session_id",
         "name",
-        "trackIds"
+        "track_ids"
       ]
     }
   },
@@ -557,7 +557,7 @@
         },
         "date": {
           "type": "string",
-          "description": "The date, as \"2026-09-05\"."
+          "description": "The date as YYYY-MM-DD, e.g. \"2026-09-05\"."
         },
         "time": {
           "type": "string",
@@ -701,11 +701,11 @@
         },
         "check_in": {
           "type": "string",
-          "description": "Arrival date, as \"2026-09-05\"."
+          "description": "Arrival date as YYYY-MM-DD, e.g. \"2026-09-05\"."
         },
         "check_out": {
           "type": "string",
-          "description": "Departure date, as \"2026-09-06\". Defaults to one night."
+          "description": "Departure date as YYYY-MM-DD, e.g. \"2026-09-06\". Defaults to one night."
         },
         "adults": {
           "type": "number",

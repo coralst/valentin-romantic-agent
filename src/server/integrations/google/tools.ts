@@ -256,7 +256,7 @@ export const proposeCalendarEventTool: AgentTool = {
     type: 'object',
     properties: {
       title: { type: 'string', description: 'What the entry says, e.g. "Dinner at NOEMA".' },
-      date: { type: 'string', description: 'The date, as "2026-09-05".' },
+      date: { type: 'string', description: 'The date as YYYY-MM-DD, e.g. "2026-09-05".' },
       time: {
         type: 'string',
         description: 'Start time as "20:00", in Israel time. Omit for an all-day entry.',

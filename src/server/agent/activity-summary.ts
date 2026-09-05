@@ -36,10 +36,18 @@ export const OUTCOME_MAX_CHARS = 80;
  * <her name>".
  */
 export const SAFE_INPUT_KEYS: ReadonlySet<string> = new Set([
+  'anniversary_date',
   'area',
   'category',
+  // Every date-shaped key, not some of them. The list used to hold `check_out`
+  // alone, so the trail rendered one leg of a hotel stay and redacted the other,
+  // and `date: <text>` hid the single most useful thing to see when the agent
+  // picks the wrong day. A date is a date whichever tool asks for it; the rule in
+  // the docblock above already says a date holds nothing about a person.
+  'check_in',
   'check_out',
   'city',
+  'date',
   'days_ahead',
   'duration_minutes',
   'keyword',

@@ -8,6 +8,8 @@ import { TypingIndicator } from './TypingIndicator';
 import { ConnectionBanner } from './ConnectionBanner';
 import { GuidedIntro } from './GuidedIntro';
 import { ShareMenu } from './ShareMenu';
+import { IntegrationStatusStrip } from './IntegrationStatusStrip';
+import { useSharedIntegrationReadiness } from '../context/integration-readiness-context';
 import { colors, insets, typography } from '../design-system/tokens';
 import { chatMeasureStyle } from './chat-measure';
 import type { ChatMessage } from '../../shared/interfaces/message';
@@ -54,6 +56,22 @@ const headNameStyle: React.CSSProperties = {
   color: colors.ink,
 };
 
+/**
+ * The right-hand group: what he can reach, then how to share it.
+ *
+ * A group with one `marginLeft: auto` rather than two controls each claiming it.
+ * `ShareMenu`'s own wrapper still sets the property, which inside this group has
+ * nothing left to distribute and so does nothing — meaning the share menu keeps
+ * working unchanged wherever else it is mounted.
+ */
+const headActionsStyle: React.CSSProperties = {
+  marginLeft: 'auto',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 10,
+  flexShrink: 0,
+};
+
 const headStatusStyle: React.CSSProperties = {
   fontStyle: 'normal',
   fontSize: typography.px.labelLoose,
@@ -74,8 +92,20 @@ const separatorStyle: React.CSSProperties = {
   flexShrink: 0,
 };
 
-export function ChatPanel() {
+interface ChatPanelProps {
+  /**
+   * Raises the integrations panel, for the header's status strip.
+   *
+   * Optional because the chat column mounts standalone in component tests and in
+   * the mobile tab shell; without it the strip still tells the truth, it just has
+   * nowhere to send you.
+   */
+  onOpenIntegrations?: () => void;
+}
+
+export function ChatPanel({ onOpenIntegrations }: ChatPanelProps = {}) {
   const { state, dispatch } = useChatContext();
+  const readiness = useSharedIntegrationReadiness();
   const { sendMessage, confirmAction } = useWebSocketContext();
   // Optional: the chat column renders standalone in tests and on mobile, where
   // the profile store is not necessarily above it.
@@ -133,10 +163,16 @@ export function ChatPanel() {
             <b style={headNameStyle}>{partnerName ?? 'Someone special'}</b>
             <em style={headStatusStyle}>{status}</em>
           </div>
-          {/* Shares *this* conversation, so it belongs beside the header that names
-              it rather than in the rail, which is scoped to the whole app. Renders
-              nothing until there is a session id to share. */}
-          <ShareMenu sessionId={state.sessionId} />
+          <div style={headActionsStyle}>
+            {/* Reads the shared readiness context, so it is the server's answer and
+                not a guess — see the component's own note on what the dot may and
+                may not claim. */}
+            <IntegrationStatusStrip readiness={readiness} onOpen={onOpenIntegrations} />
+            {/* Shares *this* conversation, so it belongs beside the header that
+                names it rather than in the rail, which is scoped to the whole app.
+                Renders nothing until there is a session id to share. */}
+            <ShareMenu sessionId={state.sessionId} />
+          </div>
         </div>
       </div>
       <div style={separatorStyle} />

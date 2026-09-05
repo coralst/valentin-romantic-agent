@@ -9,10 +9,10 @@ import { useIntegrations } from '../context/integrations-context';
 import {
   capabilityReadiness,
   liveServices,
-  useIntegrationReadiness,
   type CapabilityReadiness,
   type IntegrationReadiness,
 } from '../hooks/use-integration-readiness';
+import { useSharedIntegrationReadiness } from '../context/integration-readiness-context';
 import { INTEGRATION_LABELS } from '../../shared/interfaces/integrations';
 import { IntegrationConsentSheet } from './IntegrationConsentSheet';
 import { useIntegrationConnect } from '../hooks/use-integration-connect';
@@ -470,7 +470,9 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
 
   const { state, connectedCount, isConnected, connect, disconnect, setCap, dismissStorageError } =
     useIntegrations();
-  const readiness = useIntegrationReadiness();
+  // The shared instance, not a private one: the conversation header shows the same
+  // readiness, and a connect made here has to move both.
+  const readiness = useSharedIntegrationReadiness();
   const [pending, setPending] = useState<PendingGrant | null>(null);
   // `readiness.refresh` is stable (a useCallback over a setState), so this does
   // not re-subscribe on every render.

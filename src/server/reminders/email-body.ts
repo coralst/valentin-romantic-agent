@@ -35,6 +35,23 @@ import { resumeLink } from '../../shared/constants/resume-link';
  * about a real restaurant.
  */
 
+/**
+ * The kind of evening the mail is written for, which picks the middle block.
+ *
+ * Declared here rather than in `suggestions.ts` — which is what computes it — because
+ * this file is the one that has to *render* each case, and a fourth activity is only
+ * real once there is a paragraph for it. Keeping the vocabulary next to the paragraphs
+ * is also what stops the import cycle: `suggestions.ts` already imports
+ * {@link ReminderSuggestion} from here.
+ */
+export type ReminderActivity =
+  /** Dinner out. Bookable venue suggestions, and an offer to hold a table. */
+  | 'restaurant'
+  /** An evening in. Nothing to reserve, so nothing is offered — only ideas. */
+  | 'at_home'
+  /** A reminder he wrote himself. Say the thing and stop. */
+  | 'errand';
+
 /** How Valentin can act on a suggestion, which is the distinction that matters. */
 export type SuggestionReach =
   /** Ontopo. Valentin can hold this table himself, on confirmation. */
@@ -95,6 +112,29 @@ export interface ReminderEmailInput {
    */
   criteria?: readonly string[];
   suggestions: readonly ReminderSuggestion[];
+  /**
+   * Which block to render. Absent ⇒ inferred from `title` and `suggestions`, which is
+   * what every caller that predates the activity split does.
+   */
+  activity?: ReminderActivity;
+  /**
+   * What to do about an occasion with nothing bookable — an evening in.
+   *
+   * Every entry is a restatement of a stored answer ("she loves Thai — cook it or
+   * order it in"), never a generated suggestion, for the reason in this file's header:
+   * nobody is reading this before it goes out. Rendered as a plain list with no
+   * "nothing is reserved" line, because there is nothing to reserve.
+   */
+  ideas?: readonly string[];
+  /**
+   * One line about what else is on her week that evening, when the profile says.
+   *
+   * Sits directly under the date because it changes the shape of the plan rather than
+   * the choice of venue: "that is a Tuesday, and Tuesday is her pottery night" is the
+   * difference between a reminder and a plan. Omitted entirely when unknown — a
+   * guessed schedule is the worst thing this mail could contain.
+   */
+  timingNote?: string | null;
   /** Where the app lives. `PUBLIC_ORIGIN` in a container. */
   origin: string;
   /** The conversation to reopen. The whole reason the link is worth clicking. */
@@ -217,15 +257,40 @@ function headline(input: ReminderEmailInput): string {
 
   const who = input.partnerName ? `${input.partnerName}'s` : 'Her';
   const occasion = input.occasion.trim() || 'the date you are planning';
+
+  /*
+   * An occasion he described himself already has a determiner on the front — "our
+   * third anniversary", "the dinner with her parents" — and the possessive turns it
+   * into "Maya's our third anniversary". A `next_occasion` value is a phrase in his
+   * voice, not a noun belonging to her, so it is used as written. `birthday` and
+   * `anniversary` come from the planner as bare nouns and still take the possessive.
+   */
+  if (/^(our|the|a|an|my|this|that|his|their)\b/i.test(occasion)) return occasion;
   return occasion.toLowerCase().startsWith(who.toLowerCase())
     ? occasion
     : `${who} ${occasion.replace(/^her\s+/i, '')}`;
 }
 
+/**
+ * Which block the body renders, from the activity if the caller named one.
+ *
+ * The fallback is the behaviour this file had before activities existed — a title
+ * means his own errand, anything else is the suggestion path — so `conversation-email`
+ * and the tests that predate the split keep working untouched.
+ */
+function activityOf(input: ReminderEmailInput): ReminderActivity {
+  if (input.activity) return input.activity;
+  return input.title?.trim() ? 'errand' : 'restaurant';
+}
+
 function buildSubject(input: ReminderEmailInput): string {
   const subject = headline(input);
 
-  const count = Math.min(input.suggestions.length, MAX_SUGGESTIONS);
+  // An evening in has ideas and no suggestions; the subject should still say there is
+  // something to act on, because that is what decides whether it is opened.
+  const offered =
+    input.suggestions.length > 0 ? input.suggestions.length : (input.ideas?.length ?? 0);
+  const count = Math.min(offered, MAX_SUGGESTIONS);
   const ideas = count === 0 ? '' : count === 1 ? ' — one idea' : ` — ${numberWord(count)} ideas`;
   return `${capitalise(subject)} is ${describeGap(input.daysUntil)}${ideas}`;
 }
@@ -241,6 +306,8 @@ function capitalise(value: string): string {
 /** Build the reminder. Pure: no clock, no network, no model. */
 export function buildReminderEmail(input: ReminderEmailInput): ReminderEmail {
   const suggestions = input.suggestions.slice(0, MAX_SUGGESTIONS);
+  const ideas = (input.ideas ?? []).filter((idea) => idea.trim().length > 0);
+  const activity = activityOf(input);
   const subjectOf = headline(input);
 
   const parts: string[] = ['Hi,', ''];
@@ -249,11 +316,29 @@ export function buildReminderEmail(input: ReminderEmailInput): ReminderEmail {
     `${capitalise(subjectOf)} is on ${formatDate(input.occasionDate)}, ` +
       `${describeGap(input.daysUntil)}.`,
   );
+  const timingNote = input.timingNote?.trim();
+  if (timingNote) parts.push(timingNote);
   parts.push('');
 
-  const hisOwnReminder = Boolean(input.title?.trim());
+  const hisOwnReminder = activity === 'errand';
 
-  if (hisOwnReminder && suggestions.length === 0) {
+  if (activity === 'at_home') {
+    /*
+     * He said he wants to stay in, so this must not answer with restaurants. There is
+     * nothing to book and therefore nothing to offer to hold — only what he has
+     * already told Valentin about her, handed back at the moment it is useful.
+     */
+    parts.push(
+      ideas.length > 0
+        ? 'You said you would rather keep it at home. Going on what you have told me:'
+        : 'You said you would rather keep it at home. Tell me what she likes and I ' +
+          'will help you plan it.',
+    );
+    if (ideas.length > 0) {
+      parts.push('');
+      parts.push(ideas.map((idea, index) => `  ${index + 1}. ${idea}`).join('\n'));
+    }
+  } else if (hisOwnReminder && suggestions.length === 0) {
     /*
      * A reminder he wrote himself is not a suggestion problem.
      *
@@ -290,11 +375,14 @@ export function buildReminderEmail(input: ReminderEmailInput): ReminderEmail {
   }
 
   parts.push('');
-  // "Pick one" only makes sense when something was offered.
+  // "Pick one" only makes sense when a choice was offered. An evening in was not a
+  // list of options, so it gets an offer of help rather than an instruction to choose.
   parts.push(
     hisOwnReminder && suggestions.length === 0
       ? 'Pick up where we left off:'
-      : 'Pick one, or tell me what you would rather:',
+      : activity === 'at_home'
+        ? 'Reply and I will help you put it together:'
+        : 'Pick one, or tell me what you would rather:',
   );
   parts.push(resumeLink(input.origin, input.sessionId));
   parts.push('');

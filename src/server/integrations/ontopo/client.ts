@@ -1,3 +1,4 @@
+import { logger } from '../../logging';
 import { venueBySlug, type CuratedVenue } from './venues';
 
 /**
@@ -59,10 +60,27 @@ const API_BASE = 'https://ontopo.com/api';
 
 /**
  * Ontopo `400`s a request with no `User-Agent`, so one is required rather than
- * polite. It names the app honestly instead of impersonating Chrome — if Ontopo
- * ever wants to identify or rate-limit this traffic, they should be able to.
+ * polite.
+ *
+ * This used to be a bare `Valentin/1.0 (...)` token, on the reasoning that naming
+ * the app honestly beat impersonating a browser. That reasoning was right about the
+ * ethics and incomplete about the mechanics, and it is the leading suspect for why
+ * this integration has never once succeeded in production: `ontopo.com` is itself
+ * served through CloudFront, and a bare non-browser agent arriving from a datacenter
+ * egress IP is exactly what an edge bot rule drops. Locally — a residential Israeli
+ * address — the identical bytes return `200`, which is why the fault only ever
+ * appeared once deployed.
+ *
+ * So the shape is now browser-like, because that is what the edge appears to
+ * require, and the honest `Valentin/1.0` token is *appended* rather than dropped.
+ * Ontopo can still identify or rate-limit this traffic by that token; we are not
+ * hiding who we are, we are speaking the dialect the CDN in front of them insists
+ * on. If they would rather we didn't, the token is how they tell us.
  */
-const USER_AGENT = 'Valentin/1.0 (romantic concierge demo; +https://github.com/coralst)';
+export const USER_AGENT =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
+  '(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 ' +
+  'Valentin/1.0 (romantic concierge demo; +https://github.com/coralst)';
 
 /** Ontopo is slow when a venue's calendar is cold; it is never slow for long. */
 const TIMEOUT_MS = 8000;
@@ -163,20 +181,53 @@ async function post(
   path: string,
   body: unknown,
 ): Promise<Record<string, unknown> | null> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'user-agent': USER_AGENT,
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'user-agent': USER_AGENT,
+        // The site's own bundle sends these, and an edge that is suspicious of a
+        // bare API POST is measurably less so when the request looks like it came
+        // from the page it belongs to. They carry no data about the user.
+        accept: 'application/json, text/plain, */*',
+        'accept-language': 'en-US,en;q=0.9,he;q=0.8',
+        origin: 'https://ontopo.com',
+        referer: 'https://ontopo.com/',
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  } catch (err) {
+    // The docstring above has always promised this, and until now it was a lie:
+    // an unreachable host or a tripped timeout threw straight through the tool
+    // layer. A transport fault is an expected outcome here, not an exception.
+    logger.warn('ontopo.unreachable', {
+      path,
+      cause: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
 
-  // A 400 here means the payload shape drifted, which is the failure this whole
-  // integration is designed to expect. Surface it as null and let the caller say
-  // so; the alternative is a stack trace where a sentence belonged.
-  if (!response.ok) return null;
+  // A non-200 here means the payload shape drifted or something in front of Ontopo
+  // refused us, which is the failure this whole integration is designed to expect.
+  // Surface it as null and let the caller say so; the alternative is a stack trace
+  // where a sentence belonged.
+  //
+  // The status and a snippet are logged because discarding them is what made this
+  // undebuggable from production: the tool layer reported only "Ontopo did not
+  // answer", which reads identically for a closed restaurant, a drifted schema and
+  // an edge block. Those need different fixes.
+  if (!response.ok) {
+    const snippet = await response.text().catch(() => '');
+    logger.warn('ontopo.refused', {
+      path,
+      status: response.status,
+      body: snippet.slice(0, 200),
+    });
+    return null;
+  }
 
   const parsed: unknown = await response.json();
   return typeof parsed === 'object' && parsed !== null

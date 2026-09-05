@@ -150,6 +150,14 @@ export const config = {
      */
     spotifyFixture: process.env.SPOTIFY_FIXTURE === '1',
 
+    /**
+     * Tavily, the paid tier of web search. Optional on purpose: `web-search`
+     * falls back to DuckDuckGo's keyless HTML results when this is unset, so the
+     * capability is always on and the key only buys cleaner snippets and page
+     * extraction — see `integrations/websearch/client.ts`.
+     */
+    tavilyApiKey: process.env.TAVILY_API_KEY,
+
     /** WhatsApp Cloud API, via the Graph endpoint for one phone number id. */
     whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
     whatsappToken: process.env.WHATSAPP_TOKEN,

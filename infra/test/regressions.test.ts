@@ -1009,7 +1009,7 @@ describe('the integration-tools Lambda', () => {
 
 describe('the integrations Gateway target', () => {
   /*
-   * The ten read-only tools, which the model may call freely.
+   * The twelve read-only tools, which the model may call freely.
    *
    * The other fourteen are the seven `propose_*` tools and their paired
    * `confirm_*`. The pairing is what the tests below are actually about: a
@@ -1027,20 +1027,22 @@ describe('the integrations Gateway target', () => {
     'find_places_nearby',
     'find_restaurants',
     'get_hebrew_occasions',
+    'read_webpage',
     'search_activities',
     'search_hotels',
+    'search_web',
   ];
 
-  it('exposes the ten read-only tools, unchanged by the confirm machinery', () => {
+  it('exposes the twelve read-only tools, unchanged by the confirm machinery', () => {
     const names = gatewayToolNames('valentin-integrations');
     expect(names.filter((n) => !/^(propose|confirm)_/.test(n))).toEqual(READ_ONLY);
   });
 
-  it('exposes exactly 24 tools: 10 read-only, 7 proposals, 7 confirms', () => {
+  it('exposes exactly 26 tools: 12 read-only, 7 proposals, 7 confirms', () => {
     // The total is asserted so an accidental addition is visible, and the split is
     // asserted because the interesting failure is not the count but the balance.
     const names = gatewayToolNames('valentin-integrations');
-    expect(names).toHaveLength(24);
+    expect(names).toHaveLength(26);
     expect(names.filter((n) => n.startsWith('propose_'))).toHaveLength(7);
     expect(names.filter((n) => n.startsWith('confirm_'))).toHaveLength(7);
   });

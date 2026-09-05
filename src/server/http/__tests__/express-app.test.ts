@@ -414,6 +414,9 @@ describe('GET /api/integrations', () => {
       // configured — there is no outside service and no credential to be missing.
       'sharing',
       'reminders',
+      // The open web behind two interchangeable tiers (Tavily, DuckDuckGo), so
+      // always configured — the key only changes quality, never readiness.
+      'web-search',
     ]);
     // Hebcal is arithmetic in-process, so it is configured on every deployment.
     expect(body.integrations.find((i) => i.id === 'hebcal')?.configured).toBe(true);

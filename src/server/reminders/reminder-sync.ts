@@ -30,6 +30,9 @@ export const REMINDER_SOURCE_FIELDS: readonly string[] = [
   'next_occasion',
   'reminder_lead_time',
   'notify_email',
+  // Muting is only real if it re-plans: without this the row he just asked to stop
+  // stays armed in the due-index and the mail arrives anyway.
+  'reminders_muted',
 ];
 
 /** Whether anything just written to the profile changes what should be reminded. */
@@ -118,6 +121,7 @@ export async function syncReminders(
         anniversary: value('anniversary'),
         nextOccasion: value('next_occasion'),
         reminderLeadTime: value('reminder_lead_time'),
+        remindersMuted: value('reminders_muted'),
         channel: plannedChannel(config.reminders.channel),
         target: value('notify_email'),
       },

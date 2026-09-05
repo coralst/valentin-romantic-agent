@@ -6,7 +6,7 @@ import {
   type ReminderChannelName,
   type ReminderKind,
 } from '../../shared/interfaces/reminder';
-import { leadTimeDays } from '../../shared/constants/profile-fields';
+import { leadTimeDays, mutedReminderKinds } from '../../shared/constants/profile-fields';
 import { parseInZone } from '../integrations/hebcal/client';
 
 /**
@@ -39,6 +39,16 @@ export interface PlanRemindersInput {
   nextOccasion?: string | null;
   /** Stored `reminder_lead_time`, one of `REMINDER_LEAD_OPTIONS`. */
   reminderLeadTime?: string | null;
+  /**
+   * Stored `reminders_muted`, verbatim — the kinds he does not want mailed about.
+   *
+   * Parsed here rather than by the caller so every call site mutes identically, and
+   * so this stays the one place that decides what a stored profile value means. A
+   * muted kind produces no row at all, which is also how the mute takes effect on a
+   * reminder already armed: `reapSuperseded` deletes any pending planner row a fresh
+   * plan no longer contains, so muting cancels rather than only stopping the next one.
+   */
+  remindersMuted?: string | null;
   channel: ReminderChannelName;
   /** Where the mail goes. Absent is legal — see `Reminder.target`. */
   target?: string | null;
@@ -272,10 +282,16 @@ function planOccasion(input: PlanRemindersInput, today: DateParts, now: Date): R
  */
 export function planReminders(input: PlanRemindersInput, now: Date): Reminder[] {
   const today = localToday(now);
+  // Whether he wants mail about a date is a question about the reminder, so it is
+  // answered here rather than inside each `planX` — and answered before any parsing,
+  // so a muted kind costs nothing and cannot fail.
+  const muted = new Set<string>(mutedReminderKinds(input.remindersMuted));
   const planned = [
-    planRecurring(input, 'birthday', input.birthday, today, now),
-    planRecurring(input, 'anniversary', input.anniversary, today, now),
-    planOccasion(input, today, now),
+    muted.has('birthday') ? null : planRecurring(input, 'birthday', input.birthday, today, now),
+    muted.has('anniversary')
+      ? null
+      : planRecurring(input, 'anniversary', input.anniversary, today, now),
+    muted.has('occasion') ? null : planOccasion(input, today, now),
   ];
   return planned
     .filter((reminder): reminder is Reminder => reminder !== null)

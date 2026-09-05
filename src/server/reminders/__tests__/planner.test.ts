@@ -161,6 +161,52 @@ describe('planReminders — dueAt', () => {
   });
 });
 
+describe('planReminders — muted dates', () => {
+  const now = new Date('2026-01-01T08:00:00Z');
+  const both = { ...base, birthday: '1988-06-12', anniversary: '2015-03-04' };
+
+  it('plans nothing for a kind he has muted, and everything else as before', () => {
+    const planned = planReminders({ ...both, remindersMuted: 'birthday' }, now);
+
+    expect(planned.map((r) => r.kind)).toEqual(['anniversary']);
+  });
+
+  it('mutes two kinds at once', () => {
+    const planned = planReminders(
+      { ...both, nextOccasion: '2026-02-14@the dinner', remindersMuted: 'birthday, anniversary' },
+      now,
+    );
+
+    expect(planned.map((r) => r.kind)).toEqual(['occasion']);
+  });
+
+  it('reads the occasion mute the way he would say it', () => {
+    const planned = planReminders(
+      { ...base, nextOccasion: '2026-02-14@the dinner', remindersMuted: 'the next occasion' },
+      now,
+    );
+
+    expect(planned).toEqual([]);
+  });
+
+  it('mutes nothing when the value is empty or unrecognisable', () => {
+    // Lenient in the safe direction: an entry nobody can parse must cost a mute, not
+    // a reminder. Over-muting is silence the user cannot see.
+    expect(planReminders({ ...both, remindersMuted: '' }, now)).toHaveLength(2);
+    expect(planReminders({ ...both, remindersMuted: 'her cake day' }, now)).toHaveLength(2);
+  });
+
+  it('keeps muting a kind after its date is corrected', () => {
+    // The list holds kinds, not dates, so fixing the birthday does not un-mute it.
+    const planned = planReminders(
+      { ...base, birthday: '1988-07-04', remindersMuted: 'birthday' },
+      now,
+    );
+
+    expect(planned).toEqual([]);
+  });
+});
+
 describe('planReminders — next_occasion', () => {
   it('parses the date and the description out of "YYYY-MM-DD@what it is"', () => {
     const now = new Date('2026-09-01T08:00:00Z');

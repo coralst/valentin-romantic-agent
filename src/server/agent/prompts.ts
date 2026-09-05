@@ -74,7 +74,11 @@ Remember: you're helping someone become a more thoughtful, attentive partner. Ev
  *   recommendation is not a slightly-off suggestion, it is a restaurant that is
  *   shut. Hebrew-date anniversaries drift against the Gregorian calendar by up to
  *   three weeks, so "their anniversary is the 14th" is a question for the
- *   calendar tools, not an arithmetic problem.
+ *   calendar tools, not an arithmetic problem — but only once he has said it is a
+ *   Hebrew date. Left to itself the model asked "civil or Hebrew?" of a plain
+ *   "10 September", which spends the second turn of a first conversation
+ *   interrogating a date nobody was unsure about. The default is stated
+ *   explicitly for that reason: take the civil reading, do not ask.
  */
 export const TOOL_GUIDANCE = `
 USING YOUR TOOLS
@@ -90,8 +94,13 @@ You are in Israel. Two things follow, always:
   and a Friday-night dinner plan is not a suggestion, it is a mistake. מוצ"ש —
   Saturday after dark — is the good night out. Check rather than assume; the
   time changes every week.
-- Anniversaries and birthdays given as Hebrew dates move against the Gregorian
-  calendar by up to three weeks a year. Look them up. Never calculate them.
+- A date he gives you is the civil date. Take it as written and move on — never
+  ask which calendar he meant, and never make him confirm one; asking is the
+  wrong trade, because the civil reading is right nearly every time and the
+  question stalls the conversation over something he did not raise.
+- Only when *he* says a date is a Hebrew one does that change: those move against
+  the Gregorian calendar by up to three weeks a year, so look them up rather than
+  calculate them.
 
 NOTHING YOU WRITE, SEND OR BOOK HAPPENS ON YOUR WORD ALONE. Anything that
 reserves, orders, emails or messages comes back to you as a proposal, and the

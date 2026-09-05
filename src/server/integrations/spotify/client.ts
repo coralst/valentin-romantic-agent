@@ -311,6 +311,48 @@ function readTrack(raw: unknown): SpotifyTrack | null {
 }
 
 /**
+ * Every track this process has already been handed by Spotify, by id.
+ *
+ * ## Why a cache is the fix for a 403
+ *
+ * `GET /v1/tracks` returns **403 Forbidden** for this application while
+ * `GET /v1/search` returns 200 for the same token in the same second — a
+ * restriction on the Spotify app, not on our credentials, so no change to the
+ * request shape lifts it. It broke `propose_playlist` outright: the ids came from
+ * a successful search and then could not be resolved.
+ *
+ * The resolution step exists so that the card only ever describes tracks that
+ * genuinely exist. A search response already carries the whole track object, so
+ * remembering it satisfies that requirement from the same source — this is
+ * Spotify's own data, not a substitute for it, and the ids a playlist is built
+ * from came from a search moments earlier in the same conversation.
+ *
+ * Bounded because it is process-lifetime state on a long-running server; oldest
+ * out first, and losing an entry is not a correctness problem — {@link getTracks}
+ * simply asks the API, which is what it did before.
+ */
+const seenTracks = new Map<string, SpotifyTrack>();
+const SEEN_TRACKS_CEILING = 500;
+
+function remember(tracks: readonly SpotifyTrack[]): void {
+  for (const track of tracks) {
+    // Delete-then-set so a re-seen id moves to the end and survives eviction.
+    seenTracks.delete(track.id);
+    seenTracks.set(track.id, track);
+  }
+  while (seenTracks.size > SEEN_TRACKS_CEILING) {
+    const oldest = seenTracks.keys().next();
+    if (oldest.done) break;
+    seenTracks.delete(oldest.value);
+  }
+}
+
+/** For tests: forget what earlier cases searched for. */
+export function resetSeenTracks(): void {
+  seenTracks.clear();
+}
+
+/**
  * Search the catalogue.
  *
  * `market=IL` is not cosmetic: without a market Spotify happily returns tracks
@@ -335,7 +377,9 @@ export async function searchTracks(query: string, limit = 10): Promise<SpotifyTr
 
   const items = (body.tracks as { items?: unknown } | undefined)?.items;
   if (!Array.isArray(items)) return null;
-  return items.map(readTrack).filter((track): track is SpotifyTrack => track !== null);
+  const tracks = items.map(readTrack).filter((track): track is SpotifyTrack => track !== null);
+  remember(tracks);
+  return tracks;
 }
 
 /**
@@ -351,6 +395,12 @@ export async function searchTracks(query: string, limit = 10): Promise<SpotifyTr
  *
  * Returns `null` only for the first case. Per-id `null`s mean exactly "no such
  * track".
+ *
+ * Ids already returned by a search in this process are answered from
+ * {@link seenTracks} without a request — see the note there for why that is the
+ * primary path rather than a cache optimisation. The endpoint is still called for
+ * anything unseen, so an id the model invented is still caught, and a genuinely
+ * unreachable Spotify is still reported as unreachable.
  */
 export async function getTracks(
   ids: readonly string[],
@@ -360,14 +410,21 @@ export async function getTracks(
 
   if (spotifyFixtureMode()) return wanted.map((id) => fixtureTrack(id));
 
+  const missing = wanted.filter((id) => !seenTracks.has(id));
+  if (missing.length === 0) return wanted.map((id) => seenTracks.get(id) ?? null);
+
   const token = await appAccessToken();
   if (!token) return null;
 
-  const params = new URLSearchParams({ ids: wanted.join(','), market: 'IL' });
+  const params = new URLSearchParams({ ids: missing.join(','), market: 'IL' });
   const body = await call(token, `/tracks?${params.toString()}`);
   if (!body || !Array.isArray(body.tracks)) return null;
 
-  return body.tracks.map((raw) => readTrack(raw));
+  const fetched = body.tracks.map((raw) => readTrack(raw));
+  remember(fetched.filter((track): track is SpotifyTrack => track !== null));
+  const byId = new Map(missing.map((id, index) => [id, fetched[index] ?? null]));
+
+  return wanted.map((id) => seenTracks.get(id) ?? byId.get(id) ?? null);
 }
 
 /**

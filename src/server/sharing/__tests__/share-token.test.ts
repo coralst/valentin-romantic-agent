@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mintShareToken, verifyShareToken } from '../share-token';
+import { createHmac } from 'node:crypto';
+import { mintShareToken, sharedAtSeconds, verifyShareToken } from '../share-token';
 import { buildSharedConversation } from '../shared-conversation';
 import { InMemoryStoreFactory } from '../../persistence/in-memory-store';
 import { SHARE_TTL_DAYS } from '../../../shared/constants/share-link';
@@ -23,6 +24,17 @@ beforeAll(() => {
 afterAll(() => {
   config.shareTokenSecret = originalSecret;
 });
+
+/**
+ * Sign a payload the way the server would.
+ *
+ * Unlike `tamper`, this produces a token that genuinely *verifies* — which is what
+ * the backward-compatibility cases need: a payload shaped like an older minter's,
+ * signed correctly, has to still be accepted.
+ */
+function signFor(encoded: string): string {
+  return createHmac('sha256', 'test-share-secret').update(encoded).digest('base64url');
+}
 
 function tamper(token: string, payload: object): string {
   const [, signature] = token.split('.');
@@ -211,5 +223,66 @@ describe('buildSharedConversation', () => {
     );
 
     expect(shared.messages[0].role).toBe('assistant');
+  });
+});
+
+/**
+ * `iat` is what lets a link be *continued* rather than only read: the branch is cut
+ * at the moment the link was handed over. So the cases that matter are the ones that
+ * would silently move that cut — an absent field on an older token, and a nonsense
+ * one on a payload someone re-signed.
+ */
+describe('when the link was shared', () => {
+  const DAY_SECONDS = 24 * 60 * 60;
+
+  it('records the mint time and reads it back', () => {
+    const now = Date.parse('2026-03-01T12:00:00.000Z');
+    const { token } = mintShareToken('alice', 's1', now);
+
+    const payload = verifyShareToken(token, now)!;
+    expect(payload.iat).toBe(Math.floor(now / 1000));
+    expect(sharedAtSeconds(payload)).toBe(Math.floor(now / 1000));
+  });
+
+  it('recovers the mint time of a token that predates the field', () => {
+    const now = Date.parse('2026-03-01T12:00:00.000Z');
+    const seconds = Math.floor(now / 1000);
+    // Exactly how the old minter built one: `exp` and nothing else.
+    const encoded = Buffer.from(
+      JSON.stringify({
+        userId: 'alice',
+        sessionId: 's1',
+        exp: seconds + SHARE_TTL_DAYS * DAY_SECONDS,
+      }),
+      'utf8',
+    ).toString('base64url');
+
+    // Round-tripped through the verifier rather than asserted on an object, because
+    // the point is that such a token is still *valid*, not merely readable.
+    const verified = verifyShareToken(`${encoded}.${signFor(encoded)}`, now);
+    expect(verified).not.toBeNull();
+    expect(verified!.iat).toBeUndefined();
+    expect(sharedAtSeconds(verified!)).toBe(seconds);
+  });
+
+  it('refuses a payload whose iat is not a finite number', () => {
+    const now = Date.parse('2026-03-01T12:00:00.000Z');
+    const seconds = Math.floor(now / 1000);
+
+    for (const iat of ['yesterday', null, Number.NaN, {}]) {
+      const encoded = Buffer.from(
+        JSON.stringify({
+          userId: 'alice',
+          sessionId: 's1',
+          exp: seconds + SHARE_TTL_DAYS * DAY_SECONDS,
+          iat,
+        }),
+        'utf8',
+      ).toString('base64url');
+
+      // Correctly signed and still rejected: `NaN` does not survive JSON and arrives
+      // as null, which is the same outcome by a different route.
+      expect(verifyShareToken(`${encoded}.${signFor(encoded)}`, now)).toBeNull();
+    }
   });
 });

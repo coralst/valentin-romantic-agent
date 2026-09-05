@@ -59,6 +59,23 @@ export function hasShareToken(): boolean {
   return shareToken !== null;
 }
 
+/**
+ * Forget the token, once it has been spent.
+ *
+ * Called by `ShareEntry` after the link has been traded for a real session. From
+ * that moment the visitor is an ordinary signed-in caller, and leaving the token in
+ * place would keep `App.tsx` answering "this is a guest page load" on every render —
+ * so a remount would fork the conversation a second time.
+ *
+ * The URL is cleaned by the same caller, for the reader rather than for safety: a
+ * long signed credential sitting in the address bar of a live conversation is the
+ * kind of thing people copy and paste to a friend, expecting to share *this*
+ * conversation, and it would hand over the original instead.
+ */
+export function clearShareToken(): void {
+  shareToken = null;
+}
+
 /** Test seam. Nothing in the app calls this. */
 export function setShareTokenForTests(token: string | null): void {
   shareToken = token;

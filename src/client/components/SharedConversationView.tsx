@@ -9,19 +9,20 @@ import { chatMeasureStyle } from './chat-measure';
 import { MessageBubble } from './MessageBubble';
 
 /**
- * What somebody sees when they open a `/?share=<token>` link.
+ * The fallback for a share link that cannot be continued.
  *
- * This is the whole app for that page load. There is no account behind it, so
- * `App.tsx` renders this *instead of* `AuthProvider` and everything under it —
- * mounting the session stack would only produce a wall of 401s, and mounting the
- * auth provider would put `LoginScreen` in front of a guest who has no account and
- * is not being asked to make one.
+ * This used to be what *every* `/?share=<token>` link opened, and the dead end was
+ * the point. It is no longer: `ShareEntry` now trades a link for a session of the
+ * visitor's own and drops them into the live app, because that is what people send
+ * these links expecting. This component is what is left when that cannot happen —
+ * an expired or forged token, a deleted conversation, or a deployment with no
+ * shared account behind `POST /api/share/:token/continue`.
  *
- * It is deliberately a dead end: transcript and title, no composer, no dossier, no
- * rails, nothing to click through to. `share-link.ts` argues the narrow-type case
- * for why the profile is not here; this component is the other half of that promise,
- * and the copy states what the page is rather than letting it look like a stripped
- * version of the real app someone might try to sign into.
+ * Still a dead end, and still deliberately: transcript and title, no composer, no
+ * dossier, no rails, nothing to click through to. `share-link.ts` argues the
+ * narrow-type case for why the profile is not here; this component is the other half
+ * of that promise, and the copy states what the page is rather than letting it look
+ * like a stripped version of the real app someone might try to sign into.
  */
 
 interface SharedConversationViewProps {
@@ -233,8 +234,9 @@ export function SharedConversationView({ token }: SharedConversationViewProps) {
             {conversation.title}
           </h1>
           <p style={noteStyle} data-testid="shared-readonly-note">
-            A read-only copy of one conversation, shared by its owner. You cannot
-            reply here.
+            A read-only copy of one conversation, shared by its owner. This
+            deployment could not open it as a conversation of your own, so there is
+            nothing to reply into here.
             {expiry ? ` This link stops working on ${expiry}.` : ''}
           </p>
         </header>

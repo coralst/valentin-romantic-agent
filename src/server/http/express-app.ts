@@ -16,6 +16,7 @@ import { buildToolRegistry } from '../integrations';
 import { verifyShareToken } from '../sharing/share-token';
 import { buildSharedConversation } from '../sharing/shared-conversation';
 import { continueSharedConversation } from '../sharing/continue-share';
+import type { BedrockReadiness } from '../agent/bedrock-preflight';
 
 /**
  * Escape text destined for the OAuth callback's HTML page.
@@ -59,6 +60,14 @@ export interface ExpressAppDeps {
    * "not configured on this deployment" is the truth the client should show.
    */
   demoLogin?: Pick<DemoLoginService, 'login' | 'isConfigured' | 'issueVisitorCredentials'>;
+  /**
+   * What the boot-time Bedrock probe found, for `/api/health` to report.
+   *
+   * Optional, and absent reads as "not probed" rather than as a failure: a test
+   * app that never wired a real client has nothing to say about the model, and
+   * saying "broken" there would be a lie.
+   */
+  bedrockReadiness?: () => BedrockReadiness | null;
 }
 
 /** What a verified request carries, hung off `res.locals` */
@@ -178,12 +187,25 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
    * present a JWT. Gate this and ECS rolls back in a loop.
    */
   app.get('/api/health', (_req, res) => {
+    // Reported, deliberately not gated on: a task that cannot reach Bedrock still
+    // serves share links, the dossier and the login page, and failing the health
+    // check would turn a degraded chat into a rolling outage. `model` is here so
+    // "is chat actually going to work" is answerable with one curl, before a demo
+    // rather than during it.
+    const readiness = deps.bedrockReadiness?.() ?? null;
     res.status(200).json({
       status: 'healthy',
       uptime: process.uptime(),
       connections: deps.connectionCount(),
       environment: process.env.NODE_ENV ?? 'development',
       authenticated: !isAuthDisabled(),
+      model: !deps.bedrockReadiness
+        ? 'unprobed'
+        : readiness === null
+          ? 'checking'
+          : readiness.ok
+            ? 'reachable'
+            : readiness.kind,
     });
   });
 

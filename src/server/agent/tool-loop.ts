@@ -22,6 +22,7 @@ import {
   expandConversationLinkText,
   expandConversationLinks,
 } from '../sharing/link-placeholder';
+import { stripToolMarkup } from './strip-tool-markup';
 
 /**
  * How many model round trips one user turn may take.
@@ -160,8 +161,29 @@ export async function runToolLoop({
       ? shareLink(config.publicOrigin, mintShareToken(userId, sessionId).token)
       : 'a shareable link (unavailable on this deployment)';
 
-  /** Every path that returns prose goes through here — see `mintLink`. */
-  const withLinks = (text: string): string => expandConversationLinkText(text, mintLink);
+  /**
+   * Every path that returns prose goes through here — see `mintLink`.
+   *
+   * It is also where tool markup the model typed as prose is removed, for the
+   * same reason: this is the single choke point every returning branch shares, so
+   * a reply cannot reach a bubble without passing it. If stripping leaves nothing
+   * — the whole turn was markup, which is what the live report looked like — the
+   * user gets the same honest fallback as an empty turn rather than a blank
+   * bubble.
+   */
+  const withLinks = (text: string): string => {
+    const prose = stripToolMarkup(text);
+    if (prose !== text) {
+      logger.warn('agent.tool_markup_in_prose', {
+        sessionId,
+        // Enough to recognise which call the model narrated, without logging the
+        // whole reply — the arguments can carry her name and her address.
+        removedChars: text.length - prose.length,
+        emptyAfterStrip: prose === '',
+      });
+    }
+    return expandConversationLinkText(prose || NO_TEXT_FALLBACK, mintLink);
+  };
 
   for (let iteration = 1; iteration <= MAX_TOOL_ITERATIONS; iteration += 1) {
     const turn = await client.converseWithTools(

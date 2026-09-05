@@ -263,6 +263,39 @@ describe('runToolLoop', () => {
     expect(result.text).toBe('Let me check that.');
   });
 
+  it('never returns tool markup the model typed instead of calling a tool', async () => {
+    // Reported live, 2026-09-05: the model narrated `find_music` as XML, so
+    // `toolUses` came back empty and the loop returned an ordinary prose turn —
+    // straight into a bubble. Built from parts so this file does not contain a
+    // literal tool tag.
+    const narrated = [
+      'Let me put that together.',
+      '',
+      `<${'invoke'} name="find_music">`,
+      `<${'parameter'} name="query">Kill Bill soundtrack</${'parameter'}>`,
+      `</${'invoke'}>`,
+    ].join('\n');
+    const { client } = clientReturning([textTurn(narrated)]);
+
+    const result = await run(registryOf(readTool()), client);
+
+    expect(result.text).toBe('Let me put that together.\n\nKill Bill soundtrack');
+    expect(result.text).not.toContain('<');
+  });
+
+  it('falls back to a sentence when the model types nothing but markup', async () => {
+    // The whole turn was the call. There is no prose to salvage, so the user
+    // gets a real sentence rather than a blank bubble.
+    const { client } = clientReturning([
+      textTurn(`<${'invoke'} name="find_music"></${'invoke'}>`),
+    ]);
+
+    const result = await run(registryOf(readTool()), client);
+
+    expect(result.truncated).toBe(false);
+    expect(result.text).toMatch(/tell me again what you'd like me to arrange/);
+  });
+
   it('falls back to a sentence when the cap is hit with no prose at all', async () => {
     const tool = readTool();
     const { client } = clientReturning([toolTurn({ name: 'check_shabbat' })]);

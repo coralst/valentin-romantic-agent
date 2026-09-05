@@ -98,3 +98,4 @@ vite.config.*.mts
 !vite.config.ts
 shots-*.mjs
 verify-fixes.mjs
+eval/.cache/

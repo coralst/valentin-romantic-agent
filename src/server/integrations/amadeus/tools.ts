@@ -102,10 +102,10 @@ export const searchHotelsTool: AgentTool = {
         type: 'string',
         description: 'City name, e.g. "Tel Aviv", "Jerusalem", "Eilat".',
       },
-      check_in: { type: 'string', description: 'Arrival date, as "2026-09-05".' },
+      check_in: { type: 'string', description: 'Arrival date as YYYY-MM-DD, e.g. "2026-09-05".' },
       check_out: {
         type: 'string',
-        description: 'Departure date, as "2026-09-06". Defaults to one night.',
+        description: 'Departure date as YYYY-MM-DD, e.g. "2026-09-06". Defaults to one night.',
       },
       adults: { type: 'number', description: 'How many adults. Defaults to 2.' },
     },

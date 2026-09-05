@@ -161,19 +161,36 @@ function buildReminder(
   now: Date,
 ): Reminder | null {
   const leadDays = leadTimeDays(input.reminderLeadTime);
-  const dueAt = dueInstant(occursOn, leadDays);
-  if (!dueAt) return null;
+  const scheduled = dueInstant(occursOn, leadDays);
+  if (!scheduled) return null;
 
   /*
-   * A send moment that has already gone produces nothing.
+   * The lead time is a window, not a moment — so a date learned *inside* it sends now.
    *
-   * With a week's notice and a birthday three days away the reminder was due four
-   * days ago. Storing it anyway means the next sweep — within the minute — mails
-   * "her birthday is a week away" on a day when it is not, and does so at whatever
-   * hour the profile happened to be edited. There is no useful reminder left to
-   * send here; the honest output is none.
+   * The usual path crosses into the window while we are watching: a week's notice on
+   * an occasion nine days out counts 9, 8, 7 and fires on the 7th. But a date can
+   * also arrive already inside the window — he tells us on Monday about an
+   * anniversary five days away, with a week's notice configured. Then the scheduled
+   * instant is two days behind us and there is no crossing left to wait for.
+   *
+   * This used to return null there, and that was wrong in the way that matters:
+   * "her anniversary is in five days" is the single most useful thing this system
+   * can say, and it said nothing at all — silently, because a dropped row leaves no
+   * trace. The original worry was the body claiming "a week away" on a day when it
+   * is not, but the body does not read this field: `dispatcher.bodyFor` recomputes
+   * the gap from `occursOn` at send time, precisely so a delayed sweep cannot
+   * misstate it. A clamped row therefore mails "five days away", which is true.
+   *
+   * Clamped to `now` rather than to the next 9am: the whole point is that the
+   * notice is already short, and holding a five-days-out reminder until tomorrow
+   * morning spends another night of it for a tidiness nobody asked for.
+   *
+   * An occasion that has *passed* still yields nothing, and that is unchanged —
+   * recurring dates roll to their next occurrence before they reach here, and a
+   * one-off `next_occasion` in the past is dropped by `planOccasion`. So a clamp
+   * here can only ever mean "inside the window", never "behind us".
    */
-  if (dueAt.getTime() <= now.getTime()) return null;
+  const dueAt = scheduled.getTime() <= now.getTime() ? now : scheduled;
 
   return {
     // Derived, never random, so re-planning a corrected date overwrites in place.

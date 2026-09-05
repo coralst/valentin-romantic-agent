@@ -99,14 +99,33 @@ describe('planReminders — dueAt', () => {
     expect(reminder.dueAt).toBe('2026-02-03T07:00:00.000Z');
   });
 
-  it('produces nothing when the send moment has already passed', () => {
+  it('sends at once for a date learned inside the lead window', () => {
     /*
-     * A week's notice and a birthday three days away: the send was due four days
-     * ago. Storing it would have the next sweep mail "her birthday is a week away"
-     * on a day when it is three — so there is no reminder left to make.
+     * A week's notice and a birthday three days away. There is no crossing left to
+     * wait for — the window opened four days ago — so the row is due immediately
+     * rather than dropped, and the next sweep mails it.
+     *
+     * The body cannot misstate the gap: `dispatcher.bodyFor` recomputes it from
+     * `occursOn` at send time, so this mails "three days away".
      */
     const now = new Date('2026-06-09T08:00:00Z');
-    expect(planReminders({ ...base, birthday: '1988-06-12' }, now)).toEqual([]);
+    const [reminder] = planReminders({ ...base, birthday: '1988-06-12' }, now);
+
+    expect(reminder.dueAt).toBe(now.toISOString());
+    expect(reminder.occursOn).toBe('2026-06-12');
+    // The planned notice is still recorded as what the profile asked for.
+    expect(reminder.leadDays).toBe(7);
+  });
+
+  it('produces nothing once the occasion itself has passed', () => {
+    /*
+     * The clamp above must never resurrect something behind us. A one-off occasion
+     * in the past is not projected forward — there is no second promotion dinner.
+     */
+    const now = new Date('2026-06-09T08:00:00Z');
+    expect(
+      planReminders({ ...base, birthday: null, nextOccasion: '2026-06-01@the dinner' }, now),
+    ).toEqual([]);
   });
 
   it('honours a shorter lead time on the same near date', () => {

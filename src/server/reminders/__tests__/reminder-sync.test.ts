@@ -38,9 +38,12 @@ function wall(iso: string): string {
 describe('syncReminders', () => {
   let store: StorageInterface;
   let sessionId: string;
+  /** Kept because `markSent` — the dispatcher's claim — lives on the factory. */
+  let factory: InMemoryStoreFactory;
 
   beforeEach(async () => {
-    store = new InMemoryStoreFactory().forUser('user-under-test');
+    factory = new InMemoryStoreFactory();
+    store = factory.forUser('user-under-test');
     sessionId = await store.createSession();
   });
 
@@ -148,6 +151,53 @@ describe('syncReminders', () => {
       [reminderId('occasion', '2026-03-12'), reminderId('occasion', '2026-03-20')].sort(),
     );
     expect(pendingReminders(rows)).toHaveLength(1);
+  });
+
+  /*
+   * The beat the demo turns on: he tells Valentin about an anniversary that is
+   * already closer than his lead time. There is no crossing to wait for, so the row
+   * is due at once and the sweeper mails it on its next pass — rather than the date
+   * landing on the profile and nothing ever arriving.
+   */
+  it('arms a date learned inside the lead window for immediate sending', async () => {
+    const now = new Date('2026-03-01T08:00:00Z');
+    await extracted('anniversary', '2023-03-05');
+    await extracted('reminder_lead_time', '1 week before');
+    await extracted('notify_email', 'him@example.com');
+
+    await syncReminders(store, sessionId, now);
+
+    const rows = pendingReminders(await store.getRemindersBySession(sessionId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].occursOn).toBe('2026-03-05');
+    expect(rows[0].dueAt).toBe(now.toISOString());
+    expect(rows[0].target).toBe('him@example.com');
+  });
+
+  /*
+   * The duplicate the clamp above would otherwise cause. Before it, a re-planned row
+   * whose send moment had passed simply vanished; now it is due immediately, so
+   * overwriting an already-sent row means the identical mail goes out again seconds
+   * later. `dispatcher.ts` treats a duplicate as the worse failure of the two.
+   */
+  it('does not re-arm an already-sent reminder when the profile is edited again', async () => {
+    const now = new Date('2026-03-01T08:00:00Z');
+    await extracted('anniversary', '2023-03-05');
+    await extracted('reminder_lead_time', '1 week before');
+    await syncReminders(store, sessionId, now);
+
+    const [armed] = await store.getRemindersBySession(sessionId);
+    const claimed = await factory.markSent(armed, new Date(now.getTime() + 60_000));
+    expect(claimed).toBe(true);
+
+    // Any later edit to a reminder-bearing field re-runs the sync over the same date.
+    await extracted('notify_email', 'him@example.com');
+    await syncReminders(store, sessionId, new Date(now.getTime() + 120_000));
+
+    const rows = await store.getRemindersBySession(sessionId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].sentAt).not.toBeNull();
+    expect(pendingReminders(rows)).toHaveLength(0);
   });
 
   /*

@@ -161,6 +161,9 @@ export const proposeWhatsappNudgeTool: AgentTool = {
         summary:
           `That reminder is missing the details needed to send it, so nothing was sent. ` +
           `Offer to set it up again.`,
+        reply:
+          `That reminder has lost the details I need to send it, so nothing went out. Shall I ` +
+          `set it up again?`,
       };
     }
 
@@ -169,6 +172,7 @@ export const proposeWhatsappNudgeTool: AgentTool = {
       return {
         ok: true,
         summary: `The WhatsApp reminder has been sent to ${maskPhone(phone)}. Say so once, briefly.`,
+        reply: `Sent — the reminder has gone to ${maskPhone(phone)}.`,
         data: { messageId: result.messageId, template: template.name },
       };
     }
@@ -193,7 +197,23 @@ export const proposeWhatsappNudgeTool: AgentTool = {
         `it may not have gone out rather than claiming it did.`,
     };
 
-    return { ok: false, summary: explanation[result.reason] };
+    // The same four, in his voice, for the card path. See `ToolResult.reply`.
+    const spoken: Record<typeof result.reason, string> = {
+      'not-configured':
+        `WhatsApp isn't connected in this build, so the reminder couldn't go out. Shall I put ` +
+        `it in the calendar instead?`,
+      'template-not-approved':
+        `WhatsApp hasn't approved that message yet, so the reminder couldn't be sent — that's ` +
+        `a setup step on my side, nothing you did. Shall I use the calendar instead?`,
+      rejected:
+        `WhatsApp refused to send that reminder, so nothing went out. Shall I add a calendar ` +
+        `reminder instead?`,
+      unreachable:
+        `WhatsApp didn't confirm the reminder, so I can't tell you it was sent — it may not ` +
+        `have gone out. Shall I add a calendar reminder to be safe?`,
+    };
+
+    return { ok: false, summary: explanation[result.reason], reply: spoken[result.reason] };
   },
 };
 

@@ -461,6 +461,9 @@ export const proposePlaylistTool: AgentTool = {
         summary:
           `That playlist card has no tracks on it any more. Apologise and offer to put it ` +
           `together again.`,
+        reply:
+          `That playlist seems to have lost its songs before I could save it — I'm sorry. ` +
+          `Shall I put it together again?`,
       };
     }
 
@@ -499,12 +502,35 @@ export const proposePlaylistTool: AgentTool = {
           `again — do not guess at why.`,
       }[result.reason];
 
+      /*
+       * The same three failures in Valentin's own voice, for the card path.
+       *
+       * Kept beside `links` rather than derived from it so neither can quietly
+       * become a translation of the other: one is an instruction to a model, the
+       * other is a sentence a person reads.
+       */
+      const spoken: Record<typeof result.reason, string> = {
+        'no-grant': `There's no Spotify account connected, so I couldn't save this one.`,
+        'not-registered':
+          `Spotify won't let me write to that account yet — it has to be added to this ` +
+          `app's allowed-users list in the Spotify dashboard first. Reconnecting won't ` +
+          `help, I'm afraid.`,
+        refused: `Spotify wouldn't save the playlist just now.`,
+      };
+
+      const listed = titles
+        .map((title, index) => `${index + 1}. ${title}${urls[index] ? ` — ${urls[index]}` : ''}`)
+        .join('\n');
+
       return {
         ok: true,
         summary:
           `${links} Give them the ${titles.length} song(s) as a list they can open — ` +
           `${titles.join(' | ')} — and say plainly that you could not save the playlist ` +
           `itself. Do not claim it is in their library.`,
+        reply:
+          `${spoken[result.reason]} The songs themselves are still good, so here they are ` +
+          `to open one by one:\n\n${listed}\n\nShall I try saving it again?`,
         data: { saved: false, reason: result.reason, name, tracks: titles, urls },
       };
     }
@@ -517,6 +543,9 @@ export const proposePlaylistTool: AgentTool = {
         summary:
           `The playlist "${name}" was created but Spotify refused the tracks, so it is empty. ` +
           `Tell them that plainly and offer to try again — do not describe it as done.`,
+        reply:
+          `I made "${name}", but Spotify turned the songs away, so it's sitting there empty. ` +
+          `That's no gift at all — shall I try again?`,
         data: { saved: true, empty: true, url: created.url },
       };
     }
@@ -535,16 +564,29 @@ export const proposePlaylistTool: AgentTool = {
             `There is no playlist to open — say so if they ask for the link — but you can ` +
             `name the songs: ${titles.slice(0, 3).join(' | ')}.`,
         ),
+        reply:
+          `I've put "${name}" together — ${created.trackCount} track(s), opening with ` +
+          `${titles.slice(0, 2).join(' and ')}. This build is running on a demo catalogue, ` +
+          `though, so there's no playlist on Spotify for me to link you to.`,
         data: { saved: false, demo: true, name, trackCount: created.trackCount },
       };
     }
 
     return {
       ok: true,
+      /*
+       * No claim about who can see it. We ask for `public: false`, but a
+       * development-mode app does not get the last word: Spotify has been
+       * observed creating the playlist public anyway. Promising privacy we
+       * cannot deliver is worse than saying nothing about it.
+       */
       summary:
-        `Saved "${name}" as a private playlist with ${created.trackCount} track(s). ` +
+        `Saved "${name}" to their library with ${created.trackCount} track(s). ` +
         `Give them the link — ${created.url} — and name a couple of the songs: ` +
         `${titles.slice(0, 3).join(' | ')}.`,
+      reply:
+        `Saved — "${name}" is in your Spotify library with ${created.trackCount} track(s):\n\n` +
+        `${created.url}\n\nIt opens with ${titles.slice(0, 2).join(' and ')}.`,
       data: {
         saved: true,
         name,

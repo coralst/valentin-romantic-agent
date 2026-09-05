@@ -265,7 +265,17 @@ export const proposePlaylistTool: AgentTool = {
       };
     }
 
-    const ids = rawIds.slice(0, MAX_LENGTH);
+    /*
+     * Deduplicate before resolving, keeping first-seen order.
+     *
+     * A model asked for eight tracks by an artist Spotify only returned four of
+     * will pad the list by repeating ids, and it produced a real card offering the
+     * same song five times out of eight. Spotify would happily have written that
+     * playlist — the duplicates are legal, just embarrassing — so the guard has to
+     * be here rather than at the wire.
+     */
+    const ids = [...new Set(rawIds)].slice(0, MAX_LENGTH);
+    const duplicates = rawIds.length - ids.length;
     const tracks = await resolveTracks(ids);
     if (!tracks) return unavailable('those tracks');
 
@@ -325,6 +335,11 @@ export const proposePlaylistTool: AgentTool = {
             ? `${dropped} of the ids you gave did not resolve and were left out; do not mention ` +
               `songs that are not on this list. `
             : '') +
+          (duplicates > 0
+            ? `You repeated ${duplicates} id(s); the repeats were removed, so the playlist has ` +
+              `${tracks.length} track(s) and not the number you asked for. Search again with a ` +
+              `different wording if you want more. `
+            : '') +
           {
             fixture:
               'Tell them what you chose and why, and that this build is running on a demo ' +
@@ -382,19 +397,46 @@ export const proposePlaylistTool: AgentTool = {
       .filter((part): part is string => Boolean(part))
       .join(' ');
 
-    const created = await createPlaylist({ name, description, trackIds });
+    const result = await createPlaylist({ name, description, trackIds });
 
-    // `null` means there is no user grant — not a failure. Hand over the links.
-    if (!created) {
+    /*
+     * Three ways to fail, three different things to say. They were one string
+     * once — "no Spotify account is connected" — which was false for the failure
+     * that actually happens most: a connected account that Spotify refuses
+     * because the app is still in development mode and the account is not on its
+     * user list. Telling that person to connect their account is advice they
+     * cannot act on, so each reason names the step that would actually help.
+     *
+     * All three hand over the track links, because that part is always true and
+     * always useful.
+     */
+    if (!result.ok) {
+      const links = {
+        'no-grant':
+          `No Spotify account is connected, so nothing was saved.`,
+        'not-registered':
+          `A Spotify account is connected and its token is valid, but Spotify refused the ` +
+          `write because this app is still in development mode and that account is not on ` +
+          `its allowed-users list. Say that plainly: the connection worked, the app's owner ` +
+          `has to add the account under User Management in the Spotify developer dashboard ` +
+          `(or request an extension of quota) before playlists can be saved. Reconnecting ` +
+          `will not help, so do not suggest it.`,
+        refused:
+          `Spotify refused to save the playlist just now. Say so plainly and offer to try ` +
+          `again — do not guess at why.`,
+      }[result.reason];
+
       return {
         ok: true,
         summary:
-          `No Spotify account is connected, so nothing was saved. Give them the ${titles.length} ` +
-          `song(s) as a list they can open — ${titles.join(' | ')} — and say plainly that you ` +
-          `could not save the playlist itself. Do not claim it is in their library.`,
-        data: { saved: false, name, tracks: titles, urls },
+          `${links} Give them the ${titles.length} song(s) as a list they can open — ` +
+          `${titles.join(' | ')} — and say plainly that you could not save the playlist ` +
+          `itself. Do not claim it is in their library.`,
+        data: { saved: false, reason: result.reason, name, tracks: titles, urls },
       };
     }
+
+    const created = result.playlist;
 
     if (created.trackCount === 0) {
       return {

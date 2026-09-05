@@ -25,6 +25,15 @@ interface MessageHistoryProps {
   proposals?: ProposalEntry[];
   onConfirmProposal?: (proposalId: string) => void;
   onDismissProposal?: (proposalId: string) => void;
+  /**
+   * Rendered last inside the scroll region — `ChatPanel` puts the activity trail
+   * here so the reasoning for a turn sits under the message it produced instead of
+   * in a fixed strip above the composer.
+   *
+   * A slot rather than a prop the transcript understands: this component stays a
+   * function of messages and proposals only.
+   */
+  tail?: React.ReactNode;
 }
 
 const containerStyle: React.CSSProperties = {
@@ -109,6 +118,7 @@ export function MessageHistory({
   proposals = [],
   onConfirmProposal,
   onDismissProposal,
+  tail,
 }: MessageHistoryProps) {
   const { state: preferencesState } = usePreferencesContext();
 
@@ -313,6 +323,18 @@ export function MessageHistory({
             onDismiss={(id) => onDismissProposal?.(id)}
           />
         ))}
+        {/*
+          Last, below the transient line and the cards, so the two things whose
+          whole design premise is "nothing renders under me" keep it. The trail
+          grows a row at a time while a turn runs; anything below it would be
+          shoved down mid-sentence, and anything above it is a message the reader
+          may be in the middle of.
+
+          Being inside the scroll content also means the `ResizeObserver` above
+          follows the trail's growth, which it could not do while the trail was an
+          outside sibling — the transcript only ever saw its own box shrink.
+        */}
+        {tail}
       </div>
     </div>
   );

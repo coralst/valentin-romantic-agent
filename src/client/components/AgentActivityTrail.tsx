@@ -1,6 +1,5 @@
-import { colors, layout, radii, typography, animation, insets } from '../design-system/tokens';
+import { colors, layout, radii, typography, animation } from '../design-system/tokens';
 import { prefersReducedMotion } from '../utils/motion-preference';
-import { chatMeasureStyle } from './chat-measure';
 import type { AgentActivityEntry } from '../hooks/use-chat-state';
 
 interface AgentActivityTrailProps {
@@ -30,8 +29,9 @@ interface AgentActivityTrailProps {
 export function AgentActivityTrail({ activity, showThinking }: AgentActivityTrailProps) {
   const rows = showThinking ? activity : activity.filter((row) => row.kind !== 'thinking');
 
-  // Nothing to say ⇒ nothing rendered, and `TypingIndicator`'s dots show in this
-  // slot instead. With the toggle off and no tools called, the UI is unchanged.
+  // Nothing to say ⇒ nothing rendered, leaving the transcript exactly as it was.
+  // With the toggle off and no tools called, the UI is unchanged; `TypingIndicator`
+  // keeps its own slot above the composer either way.
   if (rows.length === 0) return null;
 
   const reduced = prefersReducedMotion();
@@ -39,21 +39,19 @@ export function AgentActivityTrail({ activity, showThinking }: AgentActivityTrai
 
   return (
     <div style={wrapperStyle}>
-      <div style={measureStyle}>
-        <div
-          style={listStyle}
-          role="group"
-          aria-label="What Valentin is doing"
-          data-testid="agent-activity-trail"
-        >
-          {rows.map((row) =>
-            row.kind === 'thinking' ? (
-              <ThinkingRow key={row.id} text={row.text} />
-            ) : (
-              <ToolRow key={row.id} row={row} reduced={reduced} />
-            ),
-          )}
-        </div>
+      <div
+        style={listStyle}
+        role="group"
+        aria-label="What Valentin is doing"
+        data-testid="agent-activity-trail"
+      >
+        {rows.map((row) =>
+          row.kind === 'thinking' ? (
+            <ThinkingRow key={row.id} text={row.text} />
+          ) : (
+            <ToolRow key={row.id} row={row} reduced={reduced} />
+          ),
+        )}
       </div>
     </div>
   );
@@ -123,14 +121,17 @@ export function formatDuration(ms: number): string {
   return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
 }
 
-/** Same slot geometry as `TypingIndicator`, which this renders beside. */
+/**
+ * Sits at the tail of the transcript, so it needs no gutter and no measure of its
+ * own: the scroll container supplies the first and `chatMeasureStyle` on the
+ * content box supplies the second. Adding either back here would inset the rows
+ * twice over. Only the gap that separates it from the message above is local.
+ */
 const wrapperStyle: React.CSSProperties = {
-  padding: `0 ${insets.roomy}px`,
+  marginTop: 2,
   marginBottom: 6,
   flexShrink: 0,
 };
-
-const measureStyle: React.CSSProperties = { ...chatMeasureStyle };
 
 /**
  * The 44px indent is the avatar (32) plus the bubble gap (12), so the rows start
@@ -150,8 +151,10 @@ const rowStyle: React.CSSProperties = {
   alignItems: 'center',
   gap: 7,
   minWidth: 0,
-  // One line per row: the trail sits in a fixed region above the composer, and a
-  // wrapped row would push the transcript rather than the other way round.
+  // One line per row, still: a turn can call four tools, and a trail that wraps
+  // each of them to two or three lines becomes taller than the reply it explains.
+  // Truncation is safe here in a way it is not for reasoning prose — the service,
+  // the tool name and the outcome all sit at fixed ends of the row.
   whiteSpace: 'nowrap',
   overflow: 'hidden',
 };
@@ -211,9 +214,8 @@ const outcomeStyle: React.CSSProperties = {
  * The one row allowed to wrap, because reasoning is prose and a single truncated
  * line of it would be less use than nothing.
  *
- * Capped at three lines rather than left unbounded: this whole region sits between
- * the transcript and the composer, so every line it takes is a line of conversation
- * the reader loses.
+ * Capped at three lines rather than left unbounded: a reasoning block can run to a
+ * paragraph, and the aside must not end up longer than the reply it belongs to.
  */
 const thinkingRowStyle: React.CSSProperties = {
   display: 'flex',

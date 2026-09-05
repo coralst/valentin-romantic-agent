@@ -281,22 +281,23 @@ describe('AppLayout', () => {
      * "I can't press on the chats and go back to main."
      *
      * The panel covers every column except the rail, and the rail's navigation used
-     * to act on the shell *underneath* it: ◆ switched surfaces you could not see,
-     * the crest went home behind the overlay, the ☰ resized a hidden column. Three
-     * live-looking buttons with no visible effect, which makes the panel read as a
-     * trap — the only exits were the 32px × in the far corner and Escape.
+     * to act on the shell *underneath* it: the crest went home behind the overlay,
+     * the ☰ resized a hidden column. Live-looking buttons with no visible effect,
+     * which makes the panel read as a trap — the only exits were the 32px × in the
+     * far corner and Escape.
      *
      * Asserted per button rather than once, because each is wired through a
-     * different handler (`changeDesktopView`, `goHome`, the two `onOpenSessions`
-     * closures) and it was adding one of them and not the others that produced the
-     * bug in the first place.
+     * different handler (`goHome`, the two `onOpenSessions` closures) and it was
+     * adding one of them and not the others that produced the bug in the first
+     * place. The list used to include the ◆; that button has been removed from the
+     * rail, and the crest below covers the same escape.
      */
     it('gets out of the way when the rail navigates somewhere', async () => {
       currentMatches = false; // desktop
       const user = userEvent.setup();
       renderWithProviders(<AppLayout />);
 
-      for (const exit of ['rail-chat-button', 'rail-home-button', 'sidebar-menu-button']) {
+      for (const exit of ['rail-home-button', 'sidebar-menu-button']) {
         await user.click(screen.getByTestId('rail-integrations-button'));
         expect(screen.getByTestId('integrations-panel')).toBeInTheDocument();
 
@@ -314,8 +315,10 @@ describe('AppLayout', () => {
       expect(screen.getByTestId('integrations-panel')).toBeInTheDocument();
 
       // On a phone this matters more, not less: the panel covers the tab bar as well
-      // as the content, so the strip's ◆ is the only way back to the conversation.
-      await user.click(screen.getByTestId('rail-chat-button'));
+      // as the content, so the strip's crest is the only way back to the
+      // conversation — it routes through `changePanel('chat')`, which is exactly
+      // what the removed ◆ used to do.
+      await user.click(screen.getByTestId('rail-home-button'));
       expect(screen.queryByTestId('integrations-panel')).not.toBeInTheDocument();
     });
   });

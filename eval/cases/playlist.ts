@@ -150,6 +150,37 @@ export const playlistCases: readonly EvalCase[] = [
     },
   },
   {
+    id: 'PLAY-06',
+    group: 'playlist',
+    severity: 'high',
+    why: 'Every id in the card must be one find_music returned, character for character. The contract makes the model hand-copy 22-character opaque ids out of prose, and a single wrong character silently drops a song — observed once in a 17-track playlist, where find_music returned …S5XeNUgr and the card carried …S6XeNUgr.',
+    turns: ['Make Maya a playlist of about eight songs she would love.'],
+    facts: FACTS,
+    expect: {
+      calledTool: ['propose_playlist'],
+      args: (calls) => {
+        // The ids find_music actually offered, harvested from its own summaries.
+        const offered = new Set(
+          calls
+            .filter((call) => call.name === 'find_music')
+            .flatMap((call) => [...call.summary.matchAll(/\[id:\s*([A-Za-z0-9]+)\]/g)])
+            .map((match) => match[1]),
+        );
+        if (offered.size === 0) return 'find_music offered no ids to copy';
+
+        const { ids } = idsGivenToPlaylist(calls);
+        if (ids.length === 0) return 'propose_playlist got no ids under any spelling';
+
+        const invented = ids.filter((id) => !offered.has(id.replace(/^spotify:track:/, '')));
+        return invented.length === 0
+          ? true
+          : `${invented.length}/${ids.length} ids were not among those find_music returned — ` +
+            `transcription corruption: ${invented.join(', ')}`;
+      },
+      maxMs: 150_000,
+    },
+  },
+  {
     id: 'PLAY-05',
     group: 'playlist',
     severity: 'high',

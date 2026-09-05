@@ -135,21 +135,30 @@ export async function spotifyTracks(
   const found = new Map<string, { name: string; artist: string }>();
   if (bare.length === 0) return found;
 
-  const response = await fetch(`https://api.spotify.com/v1/tracks?ids=${bare.slice(0, 50).join(',')}`, {
-    headers: { authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!response.ok) throw new Error(`Spotify /v1/tracks: ${response.status}`);
-  const body = (await response.json()) as {
-    tracks?: ({ id?: string; name?: string; artists?: { name?: string }[] } | null)[];
-  };
-
-  for (const track of body.tracks ?? []) {
-    if (!track?.id) continue;
-    found.set(track.id, {
-      name: track.name ?? '',
-      artist: track.artists?.[0]?.name ?? '',
+  // One id per request, not the batch `?ids=` form.
+  //
+  // This app 403s on `GET /v1/tracks?ids=…` while `GET /v1/tracks/{id}` returns
+  // 200 for the same ids and the same token — verified directly against both. It
+  // is an app-level restriction, not a credential problem, and it is the same
+  // restriction the production client already works around. An oracle that used
+  // the batch form would report every playlist case UNPROVEN and prove nothing.
+  for (const id of bare.slice(0, 30)) {
+    const response = await fetch(`https://api.spotify.com/v1/tracks/${encodeURIComponent(id)}`, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(10_000),
     });
+    // A 404 means the id does not exist, which is a finding rather than an outage,
+    // so it is recorded as absent instead of thrown.
+    if (response.status === 404) continue;
+    if (!response.ok) throw new Error(`Spotify /v1/tracks/${id}: ${response.status}`);
+
+    const track = (await response.json()) as {
+      id?: string;
+      name?: string;
+      artists?: { name?: string }[];
+    };
+    if (!track.id) continue;
+    found.set(track.id, { name: track.name ?? '', artist: track.artists?.[0]?.name ?? '' });
   }
   return found;
 }

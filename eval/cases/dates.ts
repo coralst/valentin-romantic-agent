@@ -44,7 +44,7 @@ export const dateCases: readonly EvalCase[] = [
     facts: FACTS,
     at: justAfterIsraeliMidnight,
     expect: {
-      calledTool: ['search_restaurants', 'check_availability', 'propose_reservation'],
+      calledTool: ['find_restaurants', 'check_availability', 'propose_reservation'],
       args: (calls, ctx) =>
         all(
           everyDateIsIso,
@@ -98,7 +98,8 @@ export const dateCases: readonly EvalCase[] = [
     turns: ['Can you find us a table next Friday?'],
     facts: FACTS,
     expect: {
-      calledTool: ['search_restaurants', 'check_availability'],
+      // Checking Shabbat before offering a Friday table is correct, so no specific
+      // tool is required — only that whatever it consulted got a sane forward date.
       args: (calls, ctx) =>
         all(everyDateIsIso, (c) => noDateBefore(c, ctx.nowLocalDate))(calls),
       // Naming the day is what lets the user catch a wrong guess.
@@ -183,7 +184,7 @@ export const dateCases: readonly EvalCase[] = [
     turns: ['When is 12 Iyyar this year? I want to mark it.'],
     facts: FACTS,
     expect: {
-      calledTool: ['get_hebrew_occasions', 'get_shabbat_times'],
+      calledTool: ['get_hebrew_occasions', 'find_occasions', 'check_shabbat'],
       maxMs: 60_000,
     },
   },

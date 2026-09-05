@@ -117,7 +117,7 @@ export const robustnessCases: readonly EvalCase[] = [
     ],
     facts: FACTS,
     expect: {
-      replyMatches: [/\S{20,}/],
+      replyMatches: [/(?:\S+\s+){20,}/],
       maxMs: 180_000,
     },
   },

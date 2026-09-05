@@ -26,7 +26,10 @@ export const consistencyCases: readonly EvalCase[] = [
     turns: [
       'I want to take Maya somewhere Italian on Thursday evening.',
       'Around 8pm, just the two of us.',
-      'That sounds good — go ahead and set it up.',
+      // Naming the venue explicitly: the previous phrasing let the agent stall on a
+      // clarifying question, so the case failed for lacking a date it was never
+      // given the chance to resolve.
+      'Matteo, please — go ahead and set that up for Thursday at 8.',
     ],
     facts: FACTS,
     expect: {

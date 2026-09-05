@@ -17,5 +17,5 @@
       "@server/*": ["./src/server/*"]
     }
   },
-  "include": ["src", "e2e", "playwright.config.ts"]
+  "include": ["src", "e2e", "eval", "playwright.config.ts"]
 }

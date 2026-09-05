@@ -56,6 +56,9 @@ export default defineConfig({
     // here the CDK suite fails to load with ERR_MODULE_NOT_FOUND — and it passes
     // locally only because a stray infra/node_modules happens to exist, which is
     // the worst kind of green. Run it with `npm run test:infra`.
-    exclude: [...configDefaults.exclude, 'e2e/**', '.claude/**', 'infra/**'],
+    // `eval/**` is the live bug-hunt corpus: it needs real Bedrock and real
+    // provider credentials and it spends money, so it is run on demand via
+    // `npx tsx eval/run.mts`, never by `npm test`.
+    exclude: [...configDefaults.exclude, 'e2e/**', '.claude/**', 'infra/**', 'eval/**'],
   },
 });

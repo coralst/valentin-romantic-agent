@@ -125,7 +125,7 @@ describe('readiness means callability', () => {
     const empty = Object.entries(readiness)
       .filter(([, ready]) => ready === true)
       .map(([id]) => id)
-      .filter((id) => !services.has(id));
+      .filter((id) => !services.has(id as never));
 
     // `GET /api/integrations` is what the client's status strip renders, so an id
     // reported ready with no tool behind it is a capability claimed to the user

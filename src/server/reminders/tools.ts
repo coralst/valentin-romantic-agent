@@ -47,7 +47,7 @@
  */
 
 import {
-  REMINDER_HOUR_LOCAL,
+  REMINDER_SEND_TIME_LOCAL,
   REMINDER_ZONE,
   customReminderId,
   type Reminder,
@@ -62,6 +62,9 @@ const NOTIFY_EMAIL_FIELD = 'notify_email';
 
 /** `YYYY-MM-DD`, and nothing else. */
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** A 24-hour wall time, `HH:MM`. Kept strict so "8:30am" is refused, not misread. */
+const SEND_TIME = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 /**
  * The longest reminder we will accept, in days out.
@@ -80,9 +83,9 @@ export const setReminderTool: AgentTool = {
   name: 'set_reminder',
   description:
     'Set a reminder for the user about something on a specific date. He gets an ' +
-    'email at 9am Israel time with a link back to this conversation. Use this ' +
-    'whenever he asks to be reminded of something, or accepts your offer to ' +
-    'remind him.\n\n' +
+    'email at 08:30 Israel time with a link back to this conversation, or at a ' +
+    'time he names. Use this whenever he asks to be reminded of something, to be ' +
+    'mailed about it, or accepts your offer to remind him.\n\n' +
     'The date must be absolute (YYYY-MM-DD). Work out "next Tuesday", "the 4th" ' +
     'or "in two weeks" against the current date given at the top of your ' +
     "instructions — never guess a year, and if you cannot tell which date he means, ask.\n\n" +
@@ -116,6 +119,14 @@ export const setReminderTool: AgentTool = {
         description:
           'How many days of warning he wants. Omit for the morning of the date ' +
           'itself, which is the default. 7 for "a week before".',
+      },
+      at_time: {
+        type: 'string',
+        description:
+          'The time of day to send it, as 24-hour HH:MM in Israel time, when he ' +
+          'names one — "mail me at seven that morning" is "07:00". Omit for the ' +
+          'default of 08:30. This is the time the *mail* goes out, not the time ' +
+          'of the thing itself.',
       },
     },
     required: ['title', 'date'],
@@ -175,7 +186,27 @@ export const setReminderTool: AgentTool = {
       };
     }
 
-    const dueAt = dueInstant(date, leadDays);
+    /*
+     * A named time is validated here and refused, rather than silently defaulted.
+     *
+     * `dueInstant` falls back to the default on anything it cannot parse, which is
+     * the right call inside the planner — a malformed hour must not cost a birthday
+     * its reminder. It is the wrong call for a time the user just said out loud: he
+     * would be told "08:30" after asking for something else, or worse, told the time
+     * he asked for while the row carries another. So the tool checks the format
+     * first and hands the refusal back to him.
+     */
+    const atTimeInput = typeof input.at_time === 'string' ? input.at_time.trim() : '';
+    if (atTimeInput && !SEND_TIME.test(atTimeInput)) {
+      return {
+        ok: false,
+        summary:
+          `"${atTimeInput}" is not a time I can send at, so nothing was saved. Ask him ` +
+          'for it as a 24-hour clock time, or offer the usual 08:30.',
+      };
+    }
+
+    const dueAt = dueInstant(date, leadDays, atTimeInput || undefined);
     if (!dueAt) {
       // Belt and braces: `isRealDate` has already caught everything known to reach
       // here, so this is the unparseable case nobody has thought of rather than a
@@ -312,8 +343,12 @@ function normaliseLead(value: unknown): number | null {
  * The send moment as the user's own calendar reads it.
  *
  * In {@link REMINDER_ZONE} rather than UTC, because the summary is quoted back into
- * the conversation and "07:00Z" is not a time anybody recognises as nine in the
- * morning. The hour is a constant, so only the date has to be formatted.
+ * the conversation and "05:30Z" is not a time anybody recognises as half past eight
+ * in the morning.
+ *
+ * The time is read off the instant rather than off {@link REMINDER_SEND_TIME_LOCAL},
+ * because a caller may now have named their own — "mail me at seven" — and quoting
+ * the default back at them would promise the wrong thing.
  */
 function describeInstant(at: Date): string {
   const day = new Intl.DateTimeFormat('en-GB', {
@@ -322,7 +357,13 @@ function describeInstant(at: Date): string {
     day: 'numeric',
     month: 'long',
   }).format(at);
-  return `on ${day} at ${REMINDER_HOUR_LOCAL}am Israel time`;
+  const time = new Intl.DateTimeFormat('en-GB', {
+    timeZone: REMINDER_ZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(at);
+  return `on ${day} at ${time} Israel time`;
 }
 
 /** Registered as one array, the shape `buildToolRegistry` expects of every service. */

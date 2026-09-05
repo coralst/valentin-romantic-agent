@@ -195,6 +195,19 @@ export const FIELD_PAYOFFS: Readonly<Record<string, FieldPayoff>> = {
     rank: 5,
     reason: 'Her sign is a small thing, but some people love a nod to it.',
   },
+  /*
+   * Last, and it should stay last.
+   *
+   * Every other field here is something worth *asking* for. This one is only ever
+   * volunteered — "don't email me about her birthday" — and a rail that opened by
+   * offering to send fewer reminders would be talking the user out of the product.
+   * It is in the table at all because the table must cover the registry, and the
+   * empty value is already the right one.
+   */
+  reminders_muted: {
+    rank: 3,
+    reason: 'Is there a date you would rather I stopped emailing you about?',
+  },
 };
 
 /** Rank for any field id, including one with no entry above. */

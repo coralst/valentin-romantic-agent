@@ -80,6 +80,20 @@ export const PROFILE_FIELD_IDS = [
    * `reminder.no_target`.
    */
   'notify_email',
+  /*
+   * The dates he does *not* want mailed about.
+   *
+   * A mute list rather than a per-date "notify: yes/no" pair for each of the three
+   * date fields. Three booleans would be three profile fields, three registry
+   * entries and three guidance strings for one decision, and they would all default
+   * to "on" — which is the same information as an empty list, said three times.
+   *
+   * Stored as the kinds themselves (`birthday`, `anniversary`, `occasion`) rather
+   * than as dates, because that is what the planner branches on and it survives the
+   * date changing: muting her birthday must stay muted when the birthday is
+   * corrected, which a date-keyed list would silently forget.
+   */
+  'reminders_muted',
 ] as const;
 
 /**
@@ -148,6 +162,47 @@ export const REMINDER_LEAD_DAYS: Readonly<Record<string, number>> = {
 export function leadTimeDays(value: string | null | undefined): number {
   if (!value) return REMINDER_LEAD_DAYS['1 week before'];
   return REMINDER_LEAD_DAYS[value.trim()] ?? REMINDER_LEAD_DAYS['1 week before'];
+}
+
+/**
+ * The occasions that can be muted, which is exactly the set the planner derives.
+ *
+ * Deliberately the same three strings as `PLANNER_KINDS` in
+ * `interfaces/reminder.ts` rather than an import of it: this file is the extraction
+ * vocabulary and that one is the storage contract, and `custom` belongs to the
+ * second and not the first — a reminder the user set by hand is cancelled by asking,
+ * not by muting a category. The overlap is asserted by
+ * `src/shared/__tests__/reminder-mute.test.ts` so the two cannot drift apart.
+ */
+export const MUTABLE_REMINDER_KINDS = ['birthday', 'anniversary', 'occasion'] as const;
+
+export type MutableReminderKind = (typeof MUTABLE_REMINDER_KINDS)[number];
+
+/**
+ * The kinds a stored `reminders_muted` names, ignoring anything it does not.
+ *
+ * Lenient on purpose, and in the safe direction: an unrecognised entry is dropped,
+ * so a model that wrote "her cake day" mutes nothing rather than muting everything
+ * or throwing inside a chat turn. The failure of a mute is a mail he did not want,
+ * which he can say so about; the failure of over-muting is silence he cannot see.
+ *
+ * "next occasion" and "the occasion" both fold onto `occasion`, because that is how
+ * the field reads in conversation and the alternative is a mute the user asked for
+ * out loud that quietly did nothing.
+ */
+export function mutedReminderKinds(
+  value: string | null | undefined,
+): readonly MutableReminderKind[] {
+  if (!value) return [];
+  const muted = new Set<MutableReminderKind>();
+  for (const raw of value.split(',')) {
+    const entry = raw.trim().toLowerCase();
+    if (!entry) continue;
+    if (entry.includes('birthday')) muted.add('birthday');
+    else if (entry.includes('anniversary')) muted.add('anniversary');
+    else if (entry.includes('occasion')) muted.add('occasion');
+  }
+  return [...muted];
 }
 
 /**
@@ -236,6 +291,8 @@ export const PROFILE_FIELD_GUIDANCE: Readonly<Record<ProfileFieldId, string>> = 
     'How far the user is willing to travel for an evening out, as a distance. If he says it in minutes rather than kilometres, pick the nearest distance rather than recording the minutes.',
   notify_email:
     "The user's own email address, the one reminders should be sent to — his address, not hers, and not an address belonging to anyone else he mentions. Record it ONLY when he states an address outright; never assemble one from a name, a company or a domain you have seen, because a reminder sent to an invented address reaches a stranger, which is worse than sending no reminder at all.",
+  reminders_muted:
+    'Which of his dates he does NOT want emailed about, as a comma-separated list of "birthday", "anniversary" and "occasion" — nothing else. Record it only when he says he does not want mail about one of them ("don\'t email me about her birthday, I never forget it"), and take a name back off the list when he asks for those mails again. This silences the reminder, not the date: the date itself stays on her profile and you can still talk about it. An empty or absent value means he is reminded about everything, which is the default.',
 };
 
 /** Type guard: is this string one of the canonical field ids? */

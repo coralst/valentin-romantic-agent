@@ -18,6 +18,16 @@ import { PROFILE_FIELD_REGISTRY } from '../../../client/utils/profile-field-regi
  * runtime — but a test may, and having the two sides in one assertion is the
  * entire value here.
  */
+/**
+ * Fields whose *absence* is their value, and which the fixture therefore must not set.
+ *
+ * `reminders_muted` names the dates he has asked Valentin to stop mailing about, so an
+ * empty list is the ordinary state and the only honest one for a seeded profile: a row
+ * here would have Samantha's dossier claim he silenced a date he never silenced, and
+ * would suppress the very reminder the demo is built to show firing.
+ */
+const UNSET_BY_DESIGN: readonly string[] = ['reminders_muted'];
+
 describe('DEMO_PROFILE_PREFERENCES', () => {
   const resolved = new Map<string, string>();
   for (const pref of DEMO_PROFILE_PREFERENCES) {
@@ -27,7 +37,7 @@ describe('DEMO_PROFILE_PREFERENCES', () => {
 
   it('fills every field in the registry', () => {
     const missing = PROFILE_FIELD_REGISTRY.filter(
-      (field) => !resolved.has(field.id),
+      (field) => !resolved.has(field.id) && !UNSET_BY_DESIGN.includes(field.id),
     ).map((field) => field.id);
 
     expect(missing).toEqual([]);

@@ -81,32 +81,51 @@ describe('planReminders — recurring dates', () => {
 });
 
 describe('planReminders — dueAt', () => {
-  it('pins the send to 09:00 Israel time, lead days before the occasion', () => {
+  it('pins the send to 08:30 Israel time, lead days before the occasion', () => {
     const now = new Date('2026-01-01T08:00:00Z');
     const [reminder] = planReminders({ ...base, birthday: '1988-06-12' }, now);
 
-    // Summer, so Israel is UTC+3: 09:00 local is 06:00Z.
-    expect(wall(reminder.dueAt)).toBe('2026-06-05T09:00');
-    expect(reminder.dueAt).toBe('2026-06-05T06:00:00.000Z');
+    // Summer, so Israel is UTC+3: 08:30 local is 05:30Z.
+    expect(wall(reminder.dueAt)).toBe('2026-06-05T08:30');
+    expect(reminder.dueAt).toBe('2026-06-05T05:30:00.000Z');
   });
 
-  it('still pins 09:00 across the winter offset', () => {
+  it('still pins 08:30 across the winter offset', () => {
     const now = new Date('2026-01-01T08:00:00Z');
     const [reminder] = planReminders({ ...base, birthday: '1988-02-10' }, now);
 
     // Winter is UTC+2, so the same wall clock is a different instant.
-    expect(wall(reminder.dueAt)).toBe('2026-02-03T09:00');
-    expect(reminder.dueAt).toBe('2026-02-03T07:00:00.000Z');
+    expect(wall(reminder.dueAt)).toBe('2026-02-03T08:30');
+    expect(reminder.dueAt).toBe('2026-02-03T06:30:00.000Z');
   });
 
-  it('produces nothing when the send moment has already passed', () => {
+  it('sends at once for a date learned inside the lead window', () => {
     /*
-     * A week's notice and a birthday three days away: the send was due four days
-     * ago. Storing it would have the next sweep mail "her birthday is a week away"
-     * on a day when it is three — so there is no reminder left to make.
+     * A week's notice and a birthday three days away. There is no crossing left to
+     * wait for — the window opened four days ago — so the row is due immediately
+     * rather than dropped, and the next sweep mails it.
+     *
+     * The body cannot misstate the gap: `dispatcher.bodyFor` recomputes it from
+     * `occursOn` at send time, so this mails "three days away".
      */
     const now = new Date('2026-06-09T08:00:00Z');
-    expect(planReminders({ ...base, birthday: '1988-06-12' }, now)).toEqual([]);
+    const [reminder] = planReminders({ ...base, birthday: '1988-06-12' }, now);
+
+    expect(reminder.dueAt).toBe(now.toISOString());
+    expect(reminder.occursOn).toBe('2026-06-12');
+    // The planned notice is still recorded as what the profile asked for.
+    expect(reminder.leadDays).toBe(7);
+  });
+
+  it('produces nothing once the occasion itself has passed', () => {
+    /*
+     * The clamp above must never resurrect something behind us. A one-off occasion
+     * in the past is not projected forward — there is no second promotion dinner.
+     */
+    const now = new Date('2026-06-09T08:00:00Z');
+    expect(
+      planReminders({ ...base, birthday: null, nextOccasion: '2026-06-01@the dinner' }, now),
+    ).toEqual([]);
   });
 
   it('honours a shorter lead time on the same near date', () => {
@@ -116,7 +135,7 @@ describe('planReminders — dueAt', () => {
       now,
     );
 
-    expect(wall(reminder.dueAt)).toBe('2026-06-11T09:00');
+    expect(wall(reminder.dueAt)).toBe('2026-06-11T08:30');
   });
 
   it('defaults to a week when the lead-time field is unset', () => {
@@ -139,6 +158,52 @@ describe('planReminders — dueAt', () => {
     );
 
     expect(reminder.leadDays).toBe(7);
+  });
+});
+
+describe('planReminders — muted dates', () => {
+  const now = new Date('2026-01-01T08:00:00Z');
+  const both = { ...base, birthday: '1988-06-12', anniversary: '2015-03-04' };
+
+  it('plans nothing for a kind he has muted, and everything else as before', () => {
+    const planned = planReminders({ ...both, remindersMuted: 'birthday' }, now);
+
+    expect(planned.map((r) => r.kind)).toEqual(['anniversary']);
+  });
+
+  it('mutes two kinds at once', () => {
+    const planned = planReminders(
+      { ...both, nextOccasion: '2026-02-14@the dinner', remindersMuted: 'birthday, anniversary' },
+      now,
+    );
+
+    expect(planned.map((r) => r.kind)).toEqual(['occasion']);
+  });
+
+  it('reads the occasion mute the way he would say it', () => {
+    const planned = planReminders(
+      { ...base, nextOccasion: '2026-02-14@the dinner', remindersMuted: 'the next occasion' },
+      now,
+    );
+
+    expect(planned).toEqual([]);
+  });
+
+  it('mutes nothing when the value is empty or unrecognisable', () => {
+    // Lenient in the safe direction: an entry nobody can parse must cost a mute, not
+    // a reminder. Over-muting is silence the user cannot see.
+    expect(planReminders({ ...both, remindersMuted: '' }, now)).toHaveLength(2);
+    expect(planReminders({ ...both, remindersMuted: 'her cake day' }, now)).toHaveLength(2);
+  });
+
+  it('keeps muting a kind after its date is corrected', () => {
+    // The list holds kinds, not dates, so fixing the birthday does not un-mute it.
+    const planned = planReminders(
+      { ...base, birthday: '1988-07-04', remindersMuted: 'birthday' },
+      now,
+    );
+
+    expect(planned).toEqual([]);
   });
 });
 

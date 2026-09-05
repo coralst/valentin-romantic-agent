@@ -493,6 +493,23 @@ export const PROFILE_FIELD_REGISTRY: readonly ProfileFieldDefinition[] = [
       { category: 'important_dates', key: 'notification email' },
     ],
   },
+  /*
+   * `list`, so the panel shows the muted dates as removable chips — taking a mute
+   * off is the edit this field exists to make easy, and a text box would make it a
+   * comma-punctuation exercise. Not an `enum`: `enumOptions` is single-select in
+   * every primitive that reads it, and he may well want two of the three silenced.
+   */
+  {
+    id: 'reminders_muted',
+    label: 'Reminders Muted',
+    valueType: 'list',
+    section: 'logistics',
+    mappings: [
+      { category: 'important_dates', key: 'reminders muted' },
+      { category: 'important_dates', key: 'muted reminders' },
+      { category: 'important_dates', key: 'no reminders for' },
+    ],
+  },
 ] as const;
 
 /** Get all fields belonging to a section, in registry order */

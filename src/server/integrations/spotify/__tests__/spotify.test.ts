@@ -4,6 +4,8 @@ import {
   createPlaylist,
   describeTrack,
   formatDuration,
+  getTracks,
+  resetSeenTracks,
   resetSpotifyTokenCache,
   searchTracks,
   spotifyAuthorizeUrl,
@@ -130,6 +132,10 @@ const ORIGINAL = { ...config.integrations };
 
 beforeEach(() => {
   resetSpotifyTokenCache();
+  // Process-lifetime state: without this, a case that searched first would let the
+  // next one resolve ids it never asked the API for, and the batch-endpoint
+  // assertions below would pass for the wrong reason.
+  resetSeenTracks();
   resetFixturePlaylists();
   config.integrations.spotifyClientId = 'test-client';
   config.integrations.spotifyClientSecret = 'test-secret';
@@ -240,6 +246,78 @@ describe('searchTracks', () => {
   it('is unconfigured without an app credential', async () => {
     config.integrations.spotifyClientId = undefined;
     expect(await searchTracks('anything')).toBeNull();
+  });
+});
+
+/*
+ * The live failure these cover: `GET /v1/tracks` answers **403** for this Spotify
+ * application while `/v1/search` answers 200 for the same token in the same
+ * second. It is a restriction on the app, so the request cannot be reshaped into
+ * working — and it broke `propose_playlist` completely, because every id it was
+ * given had just come back from a successful search.
+ */
+describe('getTracks after a search', () => {
+  const ID = '1aBcDeFgHiJkLmNoPqRsTu';
+
+  it('resolves ids a search already returned without asking the API at all', async () => {
+    const calls = stubFetch([
+      { match: /accounts\.spotify\.com/, body: TOKEN_RESPONSE },
+      { match: /api\.spotify\.com\/v1\/search/, body: SEARCH_RESPONSE },
+      ...TRACKS_ROUTES,
+    ]);
+
+    await searchTracks('hebrew folk', 2);
+    const resolved = await getTracks([ID]);
+
+    expect(resolved?.[0]?.name).toBe('Ani Ve Ata');
+    // Neither shape of the endpoint: the round trip is saved, not just the 403.
+    expect(calls.filter((call) => /v1\/tracks/.test(call.url))).toHaveLength(0);
+  });
+
+  it('keeps the order asked for, not the order searched', async () => {
+    stubFetch([
+      { match: /accounts\.spotify\.com/, body: TOKEN_RESPONSE },
+      { match: /api\.spotify\.com\/v1\/search/, body: SEARCH_RESPONSE },
+    ]);
+
+    const found = await searchTracks('hebrew folk', 2);
+    const ids = (found ?? []).map((track) => track.id);
+    const reversed = [...ids].reverse();
+
+    const resolved = await getTracks(reversed);
+    expect(resolved?.map((track) => track?.id)).toEqual(reversed);
+  });
+
+  /*
+   * The cache must not become a way to launder an invented id. Anything unseen
+   * still goes to the API, so "the model made this up" and "Spotify is down" keep
+   * getting the opposite messages they had before.
+   */
+  it('still asks the API about an id no search returned', async () => {
+    const calls = stubFetch([
+      { match: /accounts\.spotify\.com/, body: TOKEN_RESPONSE },
+      { match: /api\.spotify\.com\/v1\/search/, body: SEARCH_RESPONSE },
+      ...TRACKS_ROUTES,
+    ]);
+
+    await searchTracks('hebrew folk', 2);
+    const resolved = await getTracks([ID, 'notATrackTheModelSaw']);
+
+    expect(resolved?.[0]?.id).toBe(ID);
+    expect(resolved?.[1]).toBeNull();
+    // Exactly one lookup, for the unseen id — the cached one is not re-requested.
+    const asked = calls.filter((call) => /v1\/tracks/.test(call.url)).map((call) => call.url);
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toContain('notATrackTheModelSaw');
+  });
+
+  it('reports an unreachable Spotify as unreachable for an unseen id', async () => {
+    stubFetch([
+      { match: /accounts\.spotify\.com/, body: TOKEN_RESPONSE },
+      // A fault, not a 404: "Spotify is down" must not read as "that id is invented".
+      { match: /v1\/tracks\//, status: 500, body: {} },
+    ]);
+    expect(await getTracks(['neverSeenBefore'])).toBeNull();
   });
 });
 

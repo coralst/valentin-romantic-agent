@@ -553,6 +553,9 @@ export function createServer(deps: ServerDeps = {}) {
           sender: resolveSender(config.reminders.channel),
           intervalMs: config.reminders.intervalMs,
           origin: config.publicOrigin,
+          // What turns "her birthday is a week away" into a mail with restaurants in
+          // it: the sweeper scopes this per row, so the composer reads one profile.
+          storeFactory,
         })
       : null;
 

@@ -70,7 +70,19 @@ export type IntegrationId =
    * Deliberately **not** a row in `integration-catalogue.ts`, on the same reasoning
    * as `sharing` and `browser`.
    */
-  | 'reminders';
+  | 'reminders'
+  /**
+   * The open web: `search_web` and `read_webpage`.
+   *
+   * Two tiers behind one id, because readiness is one bit: Tavily when
+   * `TAVILY_API_KEY` is present, keyless server-rendered HTML results
+   * (DuckDuckGo, then Bing) when it is not — so the capability is always
+   * available and the key only changes quality. `direct` transport: every
+   * tier is plain HTTP; the browser is used
+   * only as a last-resort rendered read where Chromium happens to exist, which
+   * is an upgrade path, not a dependency.
+   */
+  | 'web-search';
 
 /** Every id, for iteration. Same order the tool registry registers them in. */
 export const INTEGRATION_IDS: readonly IntegrationId[] = [
@@ -87,6 +99,7 @@ export const INTEGRATION_IDS: readonly IntegrationId[] = [
   'google-places',
   'sharing',
   'reminders',
+  'web-search',
 ] as const;
 
 /**
@@ -136,6 +149,9 @@ export const INTEGRATION_TRANSPORT: Record<IntegrationId, IntegrationTransport> 
   // reasoning as `sharing`: the two transports are HTTP and browser, and of those
   // this is the one that fails cleanly in milliseconds.
   reminders: 'direct',
+  // Both search tiers are plain HTTP calls; a rendered read is an opportunistic
+  // extra where Chromium exists, never what the capability rests on.
+  'web-search': 'direct',
 };
 
 /**
@@ -209,6 +225,7 @@ export const INTEGRATION_LABELS: Record<IntegrationId, string> = {
   'google-places': 'Google Places',
   sharing: 'Shareable links',
   reminders: 'Reminders',
+  'web-search': 'Web search',
 };
 
 /** The ids reached by driving a page, for the panel's relay layout. */

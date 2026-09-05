@@ -193,10 +193,10 @@ export const AWS_NODES: readonly AwsNode[] = [
     service: 'AgentCore Gateway',
     resourceName: 'valentin-gateway-dev',
     // Two targets now, and the count is what the Gateway's benefit looks like
-    // from the outside: 27 tool schemas declared once, in the stack, reached over
+    // from the outside: 29 tool schemas declared once, in the stack, reached over
     // one MCP endpoint with the JWT handled for the agent. Engine A describes the
     // same jobs to Bedrock itself, in its own loop, on every turn.
-    caption: 'MCP · 2 Lambda targets · 27 tools',
+    caption: 'MCP · 2 Lambda targets · 29 tools',
     tier: 'data',
     engine: 'agentcore',
     inAgentCore: true,

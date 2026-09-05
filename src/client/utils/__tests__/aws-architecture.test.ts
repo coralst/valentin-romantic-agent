@@ -473,7 +473,7 @@ describe('engine membership', () => {
 /*
  * The Gateway's caption is a claim about the stack, and the stack is generated.
  *
- * `'MCP · 2 Lambda targets · 27 tools'` is the line a room reads as the Gateway's
+ * `'MCP · 2 Lambda targets · 29 tools'` is the line a room reads as the Gateway's
  * benefit, so it is worth more than a comment: the number is recomputed here from
  * the same JSON `agentcore-stack.ts` spreads into `inlinePayload`, and a tool added
  * to the registry fails this test instead of quietly making the caption a lie.

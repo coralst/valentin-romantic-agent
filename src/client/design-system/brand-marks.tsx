@@ -43,7 +43,8 @@ export type BrandMarkId =
   | 'amadeus'
   | 'gmail'
   | 'whatsapp'
-  | 'hebcal';
+  | 'hebcal'
+  | 'web-search';
 
 /** A monogram tile, for providers whose logo is a wordmark rather than a symbol. */
 function monogram(letter: string, fill: string, rounded: 'square' | 'circle'): ReactNode {
@@ -172,6 +173,23 @@ const MARKS: Record<BrandMarkId, ReactNode> = {
       <path d="M12 11.4l2.6 4.5h-5.2z" strokeWidth="1.2" />
       <path d="M12 18.6l2.6-4.5h-5.2z" strokeWidth="1.2" />
     </g>
+  ),
+
+  // Not a company logo either: the row is the open web, not any one engine —
+  // Tavily and DuckDuckGo are interchangeable behind it. So, a globe with a
+  // magnifier, in our own ink.
+  'web-search': (
+    <>
+      <circle cx="10.5" cy="10.5" r="7" fill="none" stroke={colors.claret} strokeWidth="1.7" />
+      <path d="M3.5 10.5h14" stroke={colors.claret} strokeWidth="1.3" />
+      <path
+        d="M10.5 3.5c-2.2 1.9-3.3 4.3-3.3 7s1.1 5.1 3.3 7c2.2-1.9 3.3-4.3 3.3-7s-1.1-5.1-3.3-7Z"
+        fill="none"
+        stroke={colors.claret}
+        strokeWidth="1.3"
+      />
+      <path d="m15.7 15.7 4.6 4.6" stroke={colors.claret} strokeWidth="2.2" strokeLinecap="round" />
+    </>
   ),
 };
 

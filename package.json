@@ -17,6 +17,7 @@
     "ddb-local:stop": "docker stop valentin-ddb-local",
     "lint": "tsc --noEmit",
     "prove:integrations": "npx tsx scripts/prove-integrations.mts",
+    "verify:reminder-mail": "npx tsx scripts/verify-reminder-mail.ts",
     "generate:tool-schemas": "npx tsx scripts/generate-tool-schemas.mts",
     "verify:local": "bash scripts/verify-local.sh",
     "deck:shots": "npx tsx scripts/deck-slide-shots.ts",

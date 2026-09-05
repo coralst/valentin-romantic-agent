@@ -67,6 +67,25 @@ export const GOOGLE_SCOPES = [
   // had no way to know they existed or to tell the user they had been left out.
   'https://www.googleapis.com/auth/calendar.readonly',
   'https://www.googleapis.com/auth/gmail.send',
+  /*
+   * Read access, and the only thing in this list that exists for *verification*
+   * rather than for a feature.
+   *
+   * A reminder is the one message this app sends with nobody watching, and until this
+   * was added there was no way to answer "did it actually arrive" except by opening
+   * Gmail by hand and taking someone's word for it. `findSentMessages` below is what
+   * uses it, and `scripts/verify-reminder-mail.ts` is the only caller — no request
+   * path reads mail.
+   *
+   * It is deliberately the broadest scope here: `gmail.metadata` cannot see a body,
+   * and there is no scope for "the messages this client sent". Two consequences worth
+   * being explicit about: the account this is connected to should be the demo account
+   * and not a personal mailbox, and **an existing refresh token does not gain this
+   * scope** — Google mints scopes at consent time, so the panel's connect flow has to
+   * be run once more before a read succeeds. `findSentMessages` returns `null` on the
+   * 403 rather than throwing, so nothing else breaks in the meantime.
+   */
+  'https://www.googleapis.com/auth/gmail.readonly',
 ] as const;
 
 /** One calendar the account can read. `primary` is the account's own. */
@@ -414,4 +433,79 @@ export async function sendMessage(input: {
     id: body.id,
     threadId: typeof body.threadId === 'string' ? body.threadId : undefined,
   };
+}
+
+/** One message as the verifier needs it: enough to prove which mail this is. */
+export interface FoundMessage {
+  id: string;
+  subject: string;
+  to: string;
+  /** Gmail's own snippet — the first ~200 characters of the body, as text. */
+  snippet: string;
+  /** When Gmail accepted it, as an ISO instant. */
+  sentAt: string;
+}
+
+function headerOf(payload: unknown, name: string): string {
+  const headers = (payload as { headers?: unknown })?.headers;
+  if (!Array.isArray(headers)) return '';
+  const hit = headers.find(
+    (header: unknown) =>
+      typeof (header as { name?: unknown }).name === 'string' &&
+      ((header as { name: string }).name.toLowerCase() === name),
+  );
+  const value = (hit as { value?: unknown })?.value;
+  return typeof value === 'string' ? value : '';
+}
+
+/**
+ * Messages this account sent that match a Gmail search, newest first.
+ *
+ * The point of it is the demo's own acceptance test: a reminder fires from a timer, and
+ * "the sweeper logged `reminder.sent`" is not the same claim as "the mail is in the
+ * mailbox". This closes that gap by asking Gmail.
+ *
+ * `q` is Gmail's own search syntax, so the caller can narrow by subject and recency —
+ * `in:sent subject:"anniversary" newer_than:1d`. Returns `null` when the token cannot
+ * read mail at all (an older refresh token, minted before `gmail.readonly` was in
+ * {@link GOOGLE_SCOPES}), which a caller should report as "re-consent needed" rather
+ * than as "the mail did not arrive" — the two look identical from an empty array and
+ * mean opposite things.
+ */
+export async function findSentMessages(q: string, limit = 5): Promise<FoundMessage[] | null> {
+  const url = new URL(`${GMAIL_BASE}/users/me/messages`);
+  url.searchParams.set('q', q);
+  url.searchParams.set('maxResults', String(limit));
+
+  const list = await call(url.toString());
+  if (!list) return null;
+
+  const ids = (Array.isArray(list.messages) ? list.messages : [])
+    .map((entry: unknown) => (entry as { id?: unknown }).id)
+    .filter((id: unknown): id is string => typeof id === 'string');
+
+  const found = await Promise.all(
+    ids.map(async (id) => {
+      // `format=metadata` with named headers: the snippet comes back regardless, and
+      // asking for the full body would pull attachments this has no use for.
+      const detail = new URL(`${GMAIL_BASE}/users/me/messages/${id}`);
+      detail.searchParams.set('format', 'metadata');
+      for (const header of ['Subject', 'To', 'Date']) {
+        detail.searchParams.append('metadataHeaders', header);
+      }
+      const body = await call(detail.toString());
+      if (!body) return null;
+
+      const millis = Number(body.internalDate);
+      return {
+        id,
+        subject: headerOf(body.payload, 'subject'),
+        to: headerOf(body.payload, 'to'),
+        snippet: typeof body.snippet === 'string' ? body.snippet : '',
+        sentAt: Number.isFinite(millis) ? new Date(millis).toISOString() : '',
+      } satisfies FoundMessage;
+    }),
+  );
+
+  return found.filter((message): message is FoundMessage => message !== null);
 }

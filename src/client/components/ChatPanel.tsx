@@ -8,6 +8,8 @@ import { TypingIndicator } from './TypingIndicator';
 import { ConnectionBanner } from './ConnectionBanner';
 import { GuidedIntro } from './GuidedIntro';
 import { ShareMenu } from './ShareMenu';
+import { ShowThinkingToggle } from './ShowThinkingToggle';
+import { AgentActivityTrail } from './AgentActivityTrail';
 import { colors, insets, typography } from '../design-system/tokens';
 import { chatMeasureStyle } from './chat-measure';
 import type { ChatMessage } from '../../shared/interfaces/message';
@@ -111,7 +113,11 @@ export function ChatPanel() {
     };
 
     dispatch({ type: 'SEND_MESSAGE', message });
-    sendMessage(content);
+    // The id travels with the turn so the server can file its extracted
+    // preferences against the message the transcript is already rendering — which
+    // is what the permanent "Noted" badge joins on. The server validates it and
+    // mints its own if it is not a v4 uuid.
+    sendMessage(content, { messageId: message.id, showThinking: state.showThinking });
   };
 
   /*
@@ -150,6 +156,11 @@ export function ChatPanel() {
             <em style={headStatusStyle}>{status}</em>
           </div>
           <div style={headControlsStyle} data-testid="chat-header-controls">
+            {/* Beside the header rather than beside the composer: it must not
+                compete with the primary action or change the composer's height,
+                and it must stay reachable when the trail is empty — inside the
+                trail it would vanish exactly when someone wants to switch it on. */}
+            <ShowThinkingToggle />
             {/* Shares *this* conversation, so it belongs beside the header that
                 names it rather than in the rail, which is scoped to the whole app.
                 Renders nothing until there is a session id to share. */}
@@ -168,6 +179,11 @@ export function ChatPanel() {
         onConfirmProposal={handleConfirmProposal}
         onDismissProposal={handleDismissProposal}
       />
+      {/* Shares the typing indicator's slot — a fixed region outside the
+          transcript, so growing it displaces no message. The dots keep showing
+          while the trail is empty, which is every turn with the toggle off and no
+          tool calls. */}
+      <AgentActivityTrail activity={state.activity} showThinking={state.showThinking} />
       <TypingIndicator isVisible={state.isTyping} />
       <MessageInput
         value={state.inputValue}

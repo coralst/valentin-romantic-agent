@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { IntegrationsProvider } from '../../context/integrations-context';
+import { IntegrationReadinessProvider } from '../../context/integration-readiness-context';
 import { IntegrationsPanel } from '../IntegrationsPanel';
 import {
   INTEGRATION_IDS,
@@ -62,7 +63,11 @@ function serverReports(
 async function renderPanel() {
   const result = render(
     <IntegrationsProvider>
-      <IntegrationsPanel isMobile={false} onClose={() => {}} />
+      {/* Readiness is shared with the conversation header's status strip, so the
+          provider has to be here for the panel to see a server answer at all. */}
+      <IntegrationReadinessProvider>
+        <IntegrationsPanel isMobile={false} onClose={() => {}} />
+      </IntegrationReadinessProvider>
     </IntegrationsProvider>,
   );
   await act(async () => {});

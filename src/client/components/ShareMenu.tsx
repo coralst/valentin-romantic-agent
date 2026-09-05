@@ -59,13 +59,29 @@ const wrapperStyle: React.CSSProperties = {
   flexShrink: 0,
 };
 
+/**
+ * The trigger is the share glyph rather than the word "Share".
+ *
+ * Three nodes in a triangle with two links, which is the glyph a phone's share
+ * sheet is reached by and so the one thing here nobody has to read to understand.
+ * Deliberately *not* the rail's `FanOutMark`, which is one node fanning to three:
+ * that mark is the integrations identity, and it now appears a few pixels away on
+ * the status strip's own affordance — two near-identical fans meaning "share this
+ * conversation" and "what Valentin can reach" would be worse than a word.
+ *
+ * The word is not lost: it is the button's `aria-label` and its `title`, so a
+ * screen reader and a hovering pointer both still get "Share".
+ */
 const triggerStyle: React.CSSProperties = {
+  width: 30,
   height: 30,
-  padding: '0 12px',
-  borderRadius: radii.chip,
+  display: 'grid',
+  placeItems: 'center',
+  padding: 0,
+  borderRadius: radii.pill,
   border: `1px solid ${colors.linenShade}`,
   backgroundColor: colors.porcelain,
-  color: colors.inkMuted,
+  color: colors.claret,
   cursor: 'pointer',
   fontFamily: typography.bodyFontFamily,
   fontSize: typography.px.label,
@@ -205,6 +221,29 @@ async function writeClipboard(text: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** Three nodes, two links — the share glyph. Decorative; the button carries the name. */
+function ShareMark() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={15}
+      height={15}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <circle cx="6.5" cy="12" r="2.4" />
+      <circle cx="17.5" cy="5.8" r="2.4" />
+      <circle cx="17.5" cy="18.2" r="2.4" />
+      <path d="M8.7 10.8l6.6-3.7M8.7 13.2l6.6 3.7" />
+    </svg>
+  );
 }
 
 export function ShareMenu({ sessionId }: ShareMenuProps) {
@@ -352,10 +391,12 @@ export function ShareMenu({ sessionId }: ShareMenuProps) {
         style={triggerStyle}
         aria-haspopup="dialog"
         aria-expanded={isOpen}
+        aria-label="Share"
+        title="Share"
         onClick={() => (isOpen ? close() : setOpen(true))}
         data-testid="share-trigger"
       >
-        Share
+        <ShareMark />
       </button>
 
       {isOpen ? (

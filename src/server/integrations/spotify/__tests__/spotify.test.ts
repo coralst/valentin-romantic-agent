@@ -61,13 +61,12 @@ const SEARCH_RESPONSE = {
 /**
  * A `fetch` stub that answers by URL, so call order does not matter.
  *
- * `body` may be a function of the request URL, which the batch-tracks route needs:
- * its response has to mirror the ids actually asked for, including a `null` in the
- * slot of any it does not recognise.
+ * `body` and `status` may be functions of the request URL, which the track route
+ * needs: whether a lookup answers 200 or 404 depends on which id was asked for.
  */
 interface StubRoute {
   match: RegExp;
-  status?: number;
+  status?: number | ((url: string) => number);
   body: unknown | ((url: string) => unknown);
 }
 
@@ -81,9 +80,10 @@ function stubFetch(routes: StubRoute[]) {
     const body = typeof route.body === 'function'
       ? (route.body as (url: string) => unknown)(url)
       : route.body;
+    const status = typeof route.status === 'function' ? route.status(url) : route.status ?? 200;
     return {
-      ok: (route.status ?? 200) < 400,
-      status: route.status ?? 200,
+      ok: status < 400,
+      status,
       json: async () => body,
     } as Response;
   });
@@ -92,23 +92,38 @@ function stubFetch(routes: StubRoute[]) {
 }
 
 /**
- * The batch-tracks route, answering the way Spotify documents it.
+ * The track-lookup routes, answering the way Spotify actually does for this app.
  *
- * `GET /v1/tracks?ids=` returns a `tracks` array positionally matching the ids,
- * with `null` where an id is unknown. Reproducing that is the whole point: it is
- * what lets an invented id be told apart from an unreachable Spotify.
+ * The batch `GET /v1/tracks?ids=` answers **403** here on purpose: that is what
+ * the live API does for this app (a development-mode quota restriction), and it
+ * is why `getTracks` resolves ids one at a time. If the transport ever regresses
+ * to the batch endpoint, these tests fail the same way production did.
+ *
+ * The single-id `GET /v1/tracks/{id}` answers 200 for an id it knows and 404
+ * otherwise — the distinction that lets an invented id be told apart from an
+ * unreachable Spotify.
  */
 const KNOWN_TRACKS = new Map(
   SEARCH_RESPONSE.tracks.items.map((item) => [item.id, item] as const),
 );
 
-const BATCH_TRACKS_ROUTE: StubRoute = {
-  match: /v1\/tracks\?/,
-  body: (url: string) => {
-    const ids = new URL(url).searchParams.get('ids')?.split(',') ?? [];
-    return { tracks: ids.map((id) => KNOWN_TRACKS.get(id) ?? null) };
+function trackIdFromUrl(url: string): string {
+  return decodeURIComponent(new URL(url).pathname.split('/').pop() ?? '');
+}
+
+const TRACKS_ROUTES: StubRoute[] = [
+  {
+    match: /v1\/tracks\?/,
+    status: 403,
+    body: { error: { status: 403, message: 'Forbidden' } },
   },
-};
+  {
+    match: /v1\/tracks\//,
+    status: (url: string) => (KNOWN_TRACKS.has(trackIdFromUrl(url)) ? 200 : 404),
+    body: (url: string) =>
+      KNOWN_TRACKS.get(trackIdFromUrl(url)) ?? { error: { status: 404, message: 'Not Found' } },
+  },
+];
 
 /** Restore every credential this suite moves, so tests cannot leak into each other. */
 const ORIGINAL = { ...config.integrations };
@@ -359,7 +374,7 @@ describe('propose_playlist', () => {
   function stubCatalogue() {
     return stubFetch([
       { match: /accounts\.spotify\.com/, body: TOKEN_RESPONSE },
-      BATCH_TRACKS_ROUTE,
+      ...TRACKS_ROUTES,
       { match: /v1\/search/, body: SEARCH_RESPONSE },
     ]);
   }
@@ -455,7 +470,7 @@ describe('propose_playlist', () => {
           match: /accounts\.spotify\.com/,
           body: { access_token: 'user-token', expires_in: 3600 },
         },
-        BATCH_TRACKS_ROUTE,
+        ...TRACKS_ROUTES,
         { match: /v1\/me$/, body: { id: 'demo-user' } },
         {
           match: /v1\/users\/.*\/playlists/,
@@ -487,7 +502,7 @@ describe('propose_playlist', () => {
           match: /accounts\.spotify\.com/,
           body: { access_token: 'user-token', expires_in: 3600 },
         },
-        BATCH_TRACKS_ROUTE,
+        ...TRACKS_ROUTES,
         { match: /v1\/me$/, body: { id: 'demo-user' } },
         { match: /v1\/users\/.*\/playlists/, body: { id: 'playlist-1' } },
         { match: /v1\/playlists\/.*\/tracks/, status: 403, body: {} },
@@ -634,7 +649,7 @@ describe('what the card promises', () => {
     config.integrations.spotifyRefreshToken = 'refresh-token';
     stubFetch([
       { match: /accounts\.spotify\.com/, body: TOKEN_RESPONSE },
-      BATCH_TRACKS_ROUTE,
+      ...TRACKS_ROUTES,
     ]);
 
     const summary = await cardSummary();
@@ -646,7 +661,7 @@ describe('what the card promises', () => {
   it('promises links, not a save, with no account', async () => {
     stubFetch([
       { match: /accounts\.spotify\.com/, body: TOKEN_RESPONSE },
-      BATCH_TRACKS_ROUTE,
+      ...TRACKS_ROUTES,
     ]);
 
     const summary = await cardSummary();

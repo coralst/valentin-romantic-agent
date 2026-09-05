@@ -85,6 +85,11 @@ function stubFetch(routes: StubRoute[]) {
       ok: status < 400,
       status,
       json: async () => body,
+      // `text()` is not decoration: the transport reads the refusal body to tell
+      // Spotify's "user is not registered for this application" 403 apart from
+      // every other 403, and a stub without it makes that branch untestable —
+      // which is how the branch came to be missing in the first place.
+      text: async () => (typeof body === 'string' ? body : JSON.stringify(body)),
     } as Response;
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -250,13 +255,54 @@ describe('createPlaylist', () => {
     external_urls: { spotify: 'https://open.spotify.com/playlist/playlist-1' },
   };
 
-  it('returns null with no user grant, so the caller can hand over links instead', async () => {
+  it('reports no-grant when there is no refresh token, not a failure', async () => {
     // An app credential is present; a refresh token is not. This is the common
     // deployment, and it must not read as a failure.
     stubFetch([{ match: /accounts\.spotify\.com/, body: TOKEN_RESPONSE }]);
-    expect(
-      await createPlaylist({ name: 'x', description: 'y', trackIds: ['abc'] }),
-    ).toBeNull();
+    expect(await createPlaylist({ name: 'x', description: 'y', trackIds: ['abc'] })).toEqual({
+      ok: false,
+      reason: 'no-grant',
+    });
+  });
+
+  /*
+   * The failure that actually shipped. The refresh token is valid and mints an
+   * access token, and Spotify then refuses `/me` with 403 "The user is not
+   * registered for this application" because the app is in development mode and
+   * the account is not on its user list.
+   *
+   * This must not collapse into the same answer as `no-grant`: it did, and the
+   * user was told to connect an account they had just connected — advice that
+   * cannot possibly work, since the fix is a dashboard entry.
+   */
+  it('distinguishes an account Spotify will not serve from no account at all', async () => {
+    config.integrations.spotifyRefreshToken = 'refresh-token';
+    stubFetch([
+      { match: /accounts\.spotify\.com/, body: { access_token: 'user-token', expires_in: 3600 } },
+      {
+        match: /v1\/me$/,
+        status: 403,
+        body: { error: { status: 403, message: 'The user is not registered for this application.' } },
+      },
+    ]);
+
+    expect(await createPlaylist({ name: 'x', description: 'y', trackIds: ['abc'] })).toEqual({
+      ok: false,
+      reason: 'not-registered',
+    });
+  });
+
+  it('reports a plain refusal when /me fails for any other reason', async () => {
+    config.integrations.spotifyRefreshToken = 'refresh-token';
+    stubFetch([
+      { match: /accounts\.spotify\.com/, body: { access_token: 'user-token', expires_in: 3600 } },
+      { match: /v1\/me$/, status: 500, body: {} },
+    ]);
+
+    expect(await createPlaylist({ name: 'x', description: 'y', trackIds: ['abc'] })).toEqual({
+      ok: false,
+      reason: 'refused',
+    });
   });
 
   it('creates a private playlist and adds the tracks as URIs', async () => {
@@ -275,9 +321,12 @@ describe('createPlaylist', () => {
     });
 
     expect(created).toEqual({
-      id: 'playlist-1',
-      url: 'https://open.spotify.com/playlist/playlist-1',
-      trackCount: 2,
+      ok: true,
+      playlist: {
+        id: 'playlist-1',
+        url: 'https://open.spotify.com/playlist/playlist-1',
+        trackCount: 2,
+      },
     });
 
     const token = calls.find((call) => /accounts/.test(call.url));
@@ -316,8 +365,9 @@ describe('createPlaylist', () => {
     ]);
 
     const created = await createPlaylist({ name: 'x', description: 'y', trackIds: ['abc'] });
-    expect(created?.trackCount).toBe(0);
-    expect(created?.id).toBe('playlist-1');
+    expect(created.ok).toBe(true);
+    expect(created.ok && created.playlist.trackCount).toBe(0);
+    expect(created.ok && created.playlist.id).toBe('playlist-1');
   });
 });
 
@@ -454,6 +504,24 @@ describe('propose_playlist', () => {
     expect((result.proposal?.payload?.trackIds as string[]).length).toBeLessThanOrEqual(30);
   });
 
+  /*
+   * A model asked for more tracks than search could supply pads the list by
+   * repeating ids, and a real card went out offering the same song five times out
+   * of eight. The repeats are dropped, and the model is told the count changed so
+   * it does not go on describing eight songs.
+   */
+  it('drops repeated ids and tells the model the count shrank', async () => {
+    stubCatalogue();
+    const result = await runTool(
+      proposePlaylistTool,
+      { name: 'x', trackIds: [IDS[0], IDS[1], IDS[0], IDS[0], IDS[1]] },
+      CTX,
+    );
+
+    expect(result.proposal?.payload?.trackIds as string[]).toEqual(IDS);
+    expect(result.summary).toMatch(/repeated 3 id\(s\)/i);
+  });
+
   it('gives the card a deadline', async () => {
     stubCatalogue();
     const result = await runTool(proposePlaylistTool, { name: 'x', trackIds: IDS }, CTX);
@@ -476,6 +544,38 @@ describe('propose_playlist', () => {
       expect(result.summary).toMatch(/do not claim it is in their library/i);
       expect((result.data as { saved: boolean }).saved).toBe(false);
       expect((result.data as { urls: string[] }).urls.length).toBe(2);
+    });
+
+    /*
+     * The connected-but-refused case. This previously produced the *same*
+     * sentence as no-account-at-all, which told the user to connect an account
+     * that was already connected — a loop with no exit, since the real fix is a
+     * dashboard entry the app owner has to make. The wording must name that.
+     */
+    it('says the account is connected but not allowed, and does not suggest reconnecting', async () => {
+      stubCatalogue();
+      const proposed = await runTool(proposePlaylistTool, { name: 'x', trackIds: IDS }, CTX);
+
+      config.integrations.spotifyRefreshToken = 'refresh-token';
+      stubFetch([
+        { match: /accounts\.spotify\.com/, body: { access_token: 'user-token', expires_in: 3600 } },
+        {
+          match: /v1\/me$/,
+          status: 403,
+          body: {
+            error: { status: 403, message: 'The user is not registered for this application.' },
+          },
+        },
+      ]);
+
+      const result = await proposePlaylistTool.confirm!(proposed.proposal!, CTX);
+
+      expect(result.ok).toBe(true);
+      expect((result.data as { reason: string }).reason).toBe('not-registered');
+      expect(result.summary).toMatch(/development mode/i);
+      expect(result.summary).toMatch(/reconnecting will not help/i);
+      // The false sentence that shipped. It must not come back.
+      expect(result.summary).not.toMatch(/no spotify account is connected/i);
     });
 
     it('saves a private playlist when an account is connected', async () => {

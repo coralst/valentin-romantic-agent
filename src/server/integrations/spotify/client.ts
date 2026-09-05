@@ -122,6 +122,29 @@ export interface CreatedPlaylist {
   trackCount: number;
 }
 
+/**
+ * Why a playlist write did not happen, when it did not.
+ *
+ * This was a bare `null` for every cause, and the caller — having no way to tell
+ * them apart — said "no Spotify account is connected" to all of them. That
+ * sentence was actively false in the case that actually occurred: an account was
+ * connected, its refresh token minted an access token fine, and Spotify then
+ * refused every user-scoped call because the account is not on the app's
+ * development-mode user list. Telling someone to connect an account they have
+ * already connected sends them round a loop that cannot terminate.
+ *
+ * - `no-grant` — no refresh token at all. The link handoff is correct here.
+ * - `not-registered` — a valid token for an account Spotify will not serve,
+ *   because the app is unpublished and the account is not on its allowlist.
+ *   Only a human with the developer dashboard can clear this.
+ * - `refused` — anything else: a revoked token, an outage, a rejected write.
+ */
+export type PlaylistFailure = 'no-grant' | 'not-registered' | 'refused';
+
+export type CreatePlaylistResult =
+  | { ok: true; playlist: CreatedPlaylist }
+  | { ok: false; reason: PlaylistFailure };
+
 interface TokenCache {
   token: string;
   expiresAt: number;
@@ -234,12 +257,21 @@ export async function userAccessToken(): Promise<string | null> {
   });
 }
 
-/** Call a Spotify endpoint with an already-obtained token. `null` on any fault. */
-async function call(
+/**
+ * Call a Spotify endpoint with an already-obtained token, keeping the status.
+ *
+ * The status is what lets a caller distinguish a 403 "user is not registered for
+ * this application" — which no retry and no reconnect will ever fix — from the
+ * transient faults that share its shape. `status: 0` means the request never
+ * completed.
+ */
+async function callDetailed(
   token: string,
   path: string,
   init?: { method?: string; body?: unknown },
-): Promise<Record<string, unknown> | null> {
+): Promise<
+  { ok: true; body: Record<string, unknown> } | { ok: false; status: number; detail: string }
+> {
   let response: Response;
   try {
     response = await fetch(`${API_BASE}${path}`, {
@@ -253,25 +285,48 @@ async function call(
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch (err) {
-    console.error(`[spotify] ${path} threw:`, err instanceof Error ? err.message : err);
-    return null;
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error(`[spotify] ${path} threw:`, detail);
+    return { ok: false, status: 0, detail };
   }
   if (!response.ok) {
-    console.error(`[spotify] ${path} → ${response.status}`, await refusalDetail(response));
-    return null;
+    const detail = await refusalDetail(response);
+    console.error(`[spotify] ${path} → ${response.status}`, detail);
+    return { ok: false, status: response.status, detail };
   }
 
   // `POST /playlists/{id}/tracks` answers 201 with a body, but a 204 with no body
   // is legal elsewhere in this API and `json()` throws on it.
-  if (response.status === 204) return {};
+  if (response.status === 204) return { ok: true, body: {} };
   try {
     const parsed: unknown = await response.json();
     return typeof parsed === 'object' && parsed !== null
-      ? (parsed as Record<string, unknown>)
-      : null;
+      ? { ok: true, body: parsed as Record<string, unknown> }
+      : { ok: false, status: response.status, detail: 'body was not an object' };
   } catch {
-    return null;
+    return { ok: false, status: response.status, detail: 'body was not JSON' };
   }
+}
+
+/** {@link callDetailed} for the callers that treat every fault alike. */
+async function call(
+  token: string,
+  path: string,
+  init?: { method?: string; body?: unknown },
+): Promise<Record<string, unknown> | null> {
+  const result = await callDetailed(token, path, init);
+  return result.ok ? result.body : null;
+}
+
+/**
+ * Spotify's wording for an account its unpublished app is not allowed to serve.
+ *
+ * Matched on the message rather than the status alone because a 403 also covers
+ * a missing scope, and the two need different advice: one is a dashboard entry,
+ * the other a re-consent.
+ */
+function isNotRegistered(status: number, detail: string): boolean {
+  return status === 403 && /not registered/i.test(detail);
 }
 
 function readTrack(raw: unknown): SpotifyTrack | null {
@@ -419,28 +474,39 @@ export async function getTracks(
  * library, so a failure to add tracks reports the count it managed rather than
  * pretending the whole thing failed.
  *
- * Returns `null` when there is no user grant at all, which the caller turns into
- * the link handoff rather than an error.
+ * Never throws, and never reports success it did not have: see
+ * {@link PlaylistFailure} for the three ways it can decline, which the caller
+ * turns into three different sentences.
  */
 export async function createPlaylist(input: {
   name: string;
   description: string;
   trackIds: readonly string[];
-}): Promise<CreatedPlaylist | null> {
+}): Promise<CreatePlaylistResult> {
   const ids = input.trackIds.slice(0, MAX_TRACKS_PER_REQUEST);
 
   if (spotifyFixtureMode()) {
     const created = fixtureCreatePlaylist(input.name, ids);
-    return { id: created.id, trackCount: ids.length };
+    return { ok: true, playlist: { id: created.id, trackCount: ids.length } };
   }
 
+  // No refresh token at all is the one case that is not a fault: this deployment
+  // simply has no account, and the caller hands over links instead.
+  if (!config.integrations.spotifyRefreshToken) return { ok: false, reason: 'no-grant' };
+
   const token = await userAccessToken();
-  if (!token) return null;
+  if (!token) return { ok: false, reason: 'refused' };
 
-  const me = await call(token, '/me');
-  if (!me || typeof me.id !== 'string') return null;
+  const me = await callDetailed(token, '/me');
+  if (!me.ok) {
+    return {
+      ok: false,
+      reason: isNotRegistered(me.status, me.detail) ? 'not-registered' : 'refused',
+    };
+  }
+  if (typeof me.body.id !== 'string') return { ok: false, reason: 'refused' };
 
-  const playlist = await call(token, `/users/${encodeURIComponent(me.id)}/playlists`, {
+  const playlist = await call(token, `/users/${encodeURIComponent(me.body.id)}/playlists`, {
     method: 'POST',
     body: {
       name: input.name,
@@ -450,7 +516,7 @@ export async function createPlaylist(input: {
       public: false,
     },
   });
-  if (!playlist || typeof playlist.id !== 'string') return null;
+  if (!playlist || typeof playlist.id !== 'string') return { ok: false, reason: 'refused' };
 
   const playlistId = playlist.id;
   const url =
@@ -458,14 +524,17 @@ export async function createPlaylist(input: {
       ? ((playlist.external_urls as { spotify: string }).spotify)
       : `https://open.spotify.com/playlist/${playlistId}`;
 
-  if (ids.length === 0) return { id: playlistId, url, trackCount: 0 };
+  if (ids.length === 0) return { ok: true, playlist: { id: playlistId, url, trackCount: 0 } };
 
   const added = await call(token, `/playlists/${encodeURIComponent(playlistId)}/tracks`, {
     method: 'POST',
     body: { uris: ids.map((id) => `spotify:track:${id}`) },
   });
 
-  return { id: playlistId, url, trackCount: added ? ids.length : 0 };
+  return {
+    ok: true,
+    playlist: { id: playlistId, url, trackCount: added ? ids.length : 0 },
+  };
 }
 
 /**

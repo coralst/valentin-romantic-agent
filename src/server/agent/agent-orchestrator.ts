@@ -440,11 +440,31 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
       if (outing) this.tools.onBooking?.(sessionId, outing);
     }
 
+    /*
+     * `reply`, never `summary`.
+     *
+     * This used to emit `summary`, which is written for the model and reads like
+     * it — "Say so plainly", "Do not claim it is in their library". With no model
+     * on this path those instructions went out as Valentin's own words, and a
+     * user who confirmed a playlist was shown the prompt text verbatim.
+     *
+     * A tool that reaches a confirm with no `reply` is a bug in that tool, so it
+     * is logged as one. The sentence it falls back to admits the uncertainty
+     * rather than guessing at `ok` — `ok: true` here can still mean "nothing was
+     * saved" (see `propose_playlist`), so "done" would sometimes be a lie.
+     */
+    const reply = typeof result.reply === 'string' ? result.reply.trim() : '';
+    if (!reply) {
+      logger.warn('agent.confirm_reply_missing', {
+        integration: pending.proposal.service,
+      });
+    }
+
     return this.say(
       sessionId,
-      result.ok
-        ? result.summary
-        : `I couldn't complete that: ${result.summary} Would you like me to try something else?`,
+      reply ||
+        `I can't tell you clearly how that went, which is my failing rather than ` +
+          `yours. Shall I check it again?`,
     );
   }
 

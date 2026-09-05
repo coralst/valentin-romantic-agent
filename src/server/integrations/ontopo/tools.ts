@@ -671,6 +671,9 @@ export const proposeReservationTool: AgentTool = {
         summary:
           `That reservation is missing the details needed to open Ontopo. Apologise and ` +
           `offer to look the table up again.`,
+        reply:
+          `That reservation has lost the details I need to open Ontopo — I'm sorry. Shall I ` +
+          `look the table up again?`,
       };
     }
 
@@ -685,6 +688,9 @@ export const proposeReservationTool: AgentTool = {
         summary:
           `Ontopo did not answer when I went to open the booking for ${venueName}. ` +
           `Nothing was reserved. Offer to try again.`,
+        reply:
+          `Ontopo didn't answer when I went to open the booking for ${venueName}, so nothing ` +
+          `is reserved. Shall I try again?`,
       };
     }
 
@@ -698,6 +704,10 @@ export const proposeReservationTool: AgentTool = {
           `${formatSlotTime(time)} at ${venueName} was taken before they confirmed. ` +
           `Nothing was reserved. What is free now: ${describeSlots(availability.slots)}. ` +
           `Apologise and offer one of these.`,
+        reply:
+          `${formatSlotTime(time)} at ${venueName} went before you confirmed — nothing is ` +
+          `reserved, I'm afraid. What's free now: ${describeSlots(availability.slots)}. Would ` +
+          `one of those do?`,
       };
     }
 
@@ -714,6 +724,9 @@ export const proposeReservationTool: AgentTool = {
         summary:
           `Ontopo would not open a booking page for ${venueName}. Nothing was reserved. ` +
           `Suggest they try again in a moment.`,
+        reply:
+          `Ontopo wouldn't open a booking page for ${venueName}, so nothing is reserved. Shall ` +
+          `I try again in a moment?`,
       };
     }
 
@@ -760,6 +773,10 @@ export const proposeReservationTool: AgentTool = {
             `Ontopo confirmed it and sends the confirmation and the cancellation link by ` +
             `SMS and email. Tell them it is booked, tell them the name the table is under, ` +
             `and mention they can cancel from that message.`,
+          reply:
+            `Booked — ${venueName}${when} for ${size}, under the name ${outcome.guestName}. ` +
+            `Ontopo sends the confirmation and the cancellation link by SMS and email, so you ` +
+            `can change it from there if you need to.`,
           data: {
             booked: true,
             venue: venueName,
@@ -783,6 +800,10 @@ export const proposeReservationTool: AgentTool = {
           `I could not finish the booking form for ${venueName}${when}, so nothing is ` +
           `booked yet — but the page is open and holding. Give them the link and say they ` +
           `need to complete it themselves. Do not say it is booked.`,
+        reply:
+          `I couldn't finish the booking form for ${venueName}${when}, so nothing is booked ` +
+          `yet — but the page is open and holding it:\n\n${checkout.url}\n\nFinish it there ` +
+          `and the table is yours.`,
         data: {
           booked: false,
           venue: venueName,
@@ -799,6 +820,9 @@ export const proposeReservationTool: AgentTool = {
       summary:
         `Ontopo's booking page is open for ${venueName}${when} for ${size}. Give them the ` +
         `link and be clear that the table is theirs once they finish the form there.`,
+      reply:
+        `Ontopo's booking page is open for ${venueName}${when} for ${size}:\n\n${checkout.url}` +
+        `\n\nThe table is yours once you finish the form there.`,
       data: { booked: false, url: checkout.url, venue: venueName, time: formatSlotTime(time) },
       booking,
     };

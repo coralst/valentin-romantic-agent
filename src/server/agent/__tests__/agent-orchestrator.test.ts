@@ -476,12 +476,14 @@ describe('AgentOrchestrator', () => {
             ],
           },
           text: '',
+          reasoning: '',
           toolUses: [{ toolUseId: 'use-0', name: tool.name, input: {} }],
           stopReason: 'tool_use',
         })
         .mockResolvedValueOnce({
           message: { role: 'assistant', content: [{ text: 'Shall I confirm?' }] },
           text: 'Shall I confirm?',
+          reasoning: '',
           toolUses: [],
           stopReason: 'end_turn',
         });

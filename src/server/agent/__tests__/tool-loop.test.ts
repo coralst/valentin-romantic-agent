@@ -16,6 +16,7 @@ function textTurn(text: string): ToolTurn {
   return {
     message: { role: 'assistant', content: [{ text }] },
     text,
+    reasoning: '',
     toolUses: [],
     stopReason: 'end_turn',
   };
@@ -43,6 +44,7 @@ function toolTurn(
       ),
     },
     text: '',
+    reasoning: '',
     toolUses: calls.map((call, i) => ({
       toolUseId: `use-${i}`,
       name: call.name,

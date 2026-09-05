@@ -79,10 +79,19 @@ function buildSentences(getFieldValue: FieldLookup, name: string | null): string
   const sentences: string[] = [];
 
   const city = read(getFieldValue, 'home_city');
+  if (city) sentences.push(`${her} lives in ${city}.`);
+
+  /*
+   * How they met is quoted, not folded into a clause.
+   *
+   * "You met " + the stored value produced "you met a rainy Sunday pottery
+   * class" — the field holds a *description of the occasion*, not a phrase that
+   * completes the verb, and no preposition works for every value ("through
+   * friends" wants none, "a pottery class" wants "at"). Labelling it sidesteps
+   * the grammar entirely and cannot be wrong for any value.
+   */
   const met = read(getFieldValue, 'how_we_met');
-  if (city && met) sentences.push(`${her} lives in ${city}; you met ${uncapitalize(met)}.`);
-  else if (city) sentences.push(`${her} lives in ${city}.`);
-  else if (met) sentences.push(`You met ${uncapitalize(met)}.`);
+  if (met) sentences.push(`How you met: ${uncapitalize(met)}.`);
 
   const cuisine = read(getFieldValue, 'favorite_cuisine');
   const style = read(getFieldValue, 'restaurant_style');
@@ -115,8 +124,14 @@ function buildSentences(getFieldValue: FieldLookup, name: string | null): string
     sentences.push(`Her week: ${said.join(', and ')}.`);
   }
 
+  /*
+   * Lower-cased whole, not just its first letter: `love_language` is a
+   * Title-Cased enum ("Quality Time"), so `uncapitalize` left "quality Time"
+   * mid-sentence. Safe to flatten because the option list is a closed set of
+   * common nouns — no proper noun can appear here.
+   */
   const love = read(getFieldValue, 'love_language');
-  if (love) sentences.push(`What lands with her is ${uncapitalize(love)}.`);
+  if (love) sentences.push(`What lands with her is ${love.toLowerCase()}.`);
 
   return sentences;
 }

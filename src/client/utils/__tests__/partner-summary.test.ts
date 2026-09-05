@@ -15,8 +15,6 @@ function preference(
     id: `pref-${partial.key}`,
     sessionId: 'session-1',
     category: 'food',
-    key: partial.key,
-    value: partial.value,
     confidence: 0.9,
     sourceMessageId: 'msg-1',
     createdAt: '2026-09-01T10:00:00.000Z',

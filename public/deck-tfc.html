@@ -71,6 +71,17 @@
   .byline i { width: 4px; height: 4px; border-radius: 999px; background: rgba(255,253,251,.45); }
 
   /* ---- agenda ---- */
+  .applink { margin-top: 8px; }
+  .applink a { display: inline-block; text-decoration: none; padding: 18px 34px;
+    border-radius: 999px; background: var(--cream); color: var(--claret);
+    font: 500 30px Outfit; letter-spacing: -.01em; box-shadow: 0 10px 30px rgba(0,0,0,.22); }
+  .applink-sub { margin-top: 12px; font: 400 17px ui-monospace, SFMono-Regular, monospace;
+    color: rgba(255,253,251,.6); }
+  .toc { margin-top: 34px; display: grid; grid-template-columns: 1fr 1fr; gap: 0 56px; }
+  .toc div { display: grid; grid-template-columns: 46px 1fr; gap: 18px; align-items: baseline;
+    padding: 13px 0; border-top: 1px solid rgba(42,34,38,.12); }
+  .toc .n { font-family: Gloock, serif; font-size: 22px; color: var(--claret); line-height: 1; }
+  .toc b { font: 500 21px Outfit; color: var(--ink); }
   .agenda { margin-top: 40px; border-top: 1px solid rgba(42,34,38,.12); }
   .ag { display: grid; grid-template-columns: 130px 1fr; gap: 30px; align-items: baseline;
         padding: 26px 0; border-bottom: 1px solid rgba(42,34,38,.12); }
@@ -420,7 +431,7 @@
 <body>
 
 <nav class="dots" id="dots"></nav>
-<div class="counter" id="counter">01 / 12</div>
+<div class="counter" id="counter">01 / 13</div>
 <div class="mark"><img src="logo.png" alt="Valentin"></div>
 <div class="editbadge">Editing · Esc to stop · ⌘S downloads the edited deck</div>
 
@@ -428,167 +439,150 @@
 <section class="cover" id="cover" data-title="Title">
   <div class="wrap">
     <div class="crest"><img src="logo.png" alt="Valentin"></div>
-    <div class="kicker">Romantic concierge · GenAI TFC project</div>
+    <div class="kicker">GenAI TFC project</div>
     <h1>Valentin</h1>
-    <p class="thesis">He remembers everything she mentioned once —
-      <em>including the date you keep forgetting.</em></p>
+    <p class="thesis">A romantic concierge agent, built twice —
+      <em>once by hand, once on Bedrock AgentCore.</em></p>
     <div class="byline"><b>Coral Magen</b>
-      <span>Technical Account Manager, AWS</span><i></i>
-      <span>Built by six AI agents, on two engines, in us-east-1</span></div>
+      <span>Technical Account Manager, AWS</span></div>
   </div>
   <div class="hint">scroll</div>
 </section>
 
-<!-- ═══ 2 · USE CASE ══════════════════════════════ -->
+<!-- ═══ 2 · AGENDA ════════════════════════════════ -->
+<section id="agenda" data-title="Agenda">
+  <div class="wrap wide">
+    <div class="act"><b>02</b> · Agenda</div>
+    <h2>Agenda</h2>
+    <div class="toc">
+      <div><span class="n">01</span><b>Use case</b></div>
+      <div><span class="n">07</span><b>Comparison — Resilience</b></div>
+      <div><span class="n">02</span><b>What the app can do</b></div>
+      <div><span class="n">08</span><b>Comparison — Security</b></div>
+      <div><span class="n">03</span><b>Architecture</b></div>
+      <div><span class="n">09</span><b>How it was built — the agent team</b></div>
+      <div><span class="n">04</span><b>Live demo</b></div>
+      <div><span class="n">10</span><b>How it was built — the PRs graph</b></div>
+      <div><span class="n">05</span><b>Comparison — Cost</b></div>
+      <div><span class="n">11</span><b>Lessons learned</b></div>
+      <div><span class="n">06</span><b>Comparison — Tool use</b></div>
+      <div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 3 · USE CASE ══════════════════════════════ -->
 <section id="usecase" data-title="Use case">
   <div class="wrap wide">
-    <div class="act"><b>02</b> · Use case</div>
-    <h2>The date isn't the hard part. Remembering is.</h2>
-    <p class="lede" style="max-width: 1060px">You know her anniversary is somewhere in March. You know
-      she mentioned a restaurant once, and that she doesn't eat fish. None of it is written down
-      anywhere, and the gap between caring about someone and actually planning something is pure
-      admin — which is exactly the thing that gets dropped.</p>
+    <div class="act"><b>03</b> · Use case</div>
+    <h2>Use case</h2>
     <div class="loopcards">
       <div class="lp" style="--c: var(--claret)">
         <span class="t">The problem</span>
         <h3>The details arrive in conversation</h3>
-        <p>Nobody fills in an eighteen-field questionnaire about their partner, and the details worth
-          keeping <em>aren't fields anyway</em> — they're mentioned in passing, once, months before
-          they matter.</p>
+        <p>Mentioned once, in passing, months before they matter.</p>
       </div>
       <div class="lp" style="--c: var(--arch)">
-        <span class="t">Why a reminder app doesn't fix it</span>
-        <h3>"Anniversary" on the day is useless</h3>
-        <p>By then every good table is gone. What you needed was <em>lead time you chose</em>, and
-          options you could act on in one tap — not a notification telling you you're already late.</p>
+        <span class="t">Why a reminder app isn't enough</span>
+        <h3>"Anniversary" on the day is too late</h3>
+        <p>You needed lead time you chose, and options you can act on.</p>
       </div>
       <div class="lp" style="--c: var(--olive)">
-        <span class="t">What it actually is</span>
+        <span class="t">The pattern</span>
         <h3>Extract, remember, act later</h3>
-        <p>Long-lived preference extraction, a durable profile, and a <em>time-triggered outbound
-          action</em>. Romance is the demo. The pattern is onboarding, renewals and account-health
-          follow-up.</p>
+        <p>Romance is the demo. The same shape fits onboarding and renewals.</p>
       </div>
     </div>
-    <p class="note">The agent test — why this needs an agent and not a form with a cron job: the input
-      is unstructured and arrives over weeks, the plan needs several tools in an order that depends on
-      what came back (is that Friday a Shabbat? is the table free? is she vegetarian?), and a human has
-      to stay in the loop before anything is booked or sent. No fixed decision tree survives that.</p>
+    <p class="note">Why an agent and not a form with a cron job: unstructured input arriving over weeks,
+      a plan whose next tool depends on what came back, and a human in the loop before anything sends.</p>
   </div>
 </section>
 
-<!-- ═══ 3 · WHAT THE APP CAN DO ═══════════════════ -->
-<section id="what" data-title="What it can do">
+<!-- ═══ 4 · WHAT THE APP CAN DO ═══════════════════ -->
+<section id="what" data-title="What the app can do">
   <div class="wrap wide">
-    <div class="act"><b>03</b> · What the app can do</div>
-    <h2>Conversation in. A booked evening out.</h2>
-    <p class="lede">So the interview is the interface. He asks like a person, the profile fills itself
-      in as you talk, and then he comes back to you before you'd have thought of it yourself.</p>
+    <div class="act"><b>04</b> · What the app can do</div>
+    <h2>What the app can do</h2>
     <div class="flow">
       <div class="step"><div class="num">1</div><b>You talk about her</b>
-        <p>Session-scoped WebSocket to the orchestrator. Claude Sonnet 4.5 on Bedrock, in character,
-          asking rather than interrogating.</p></div>
+        <p>Claude Sonnet 4.5 on Bedrock, in character.</p></div>
       <div class="step"><div class="num">2</div><b>The profile fills itself</b>
-        <p>A <em>second</em> Bedrock call extracts structured preferences off the reply's critical
-          path — eight categories, every entry carrying a confidence score.</p></div>
+        <p>A second Bedrock call extracts preferences into eight categories.</p></div>
       <div class="step"><div class="num">3</div><b>He keeps the dates</b>
-        <p>Important dates land on her file, and <b>you</b> choose the lead time — a month before, a
-          week, a day.</p></div>
+        <p>You choose the lead time — a month, a week, a day.</p></div>
       <div class="step"><div class="num">4</div><b>The reminder arrives</b>
-        <p>Real email, with restaurants near her that match what he learned, a playlist for later, and
-          a link back into the app to confirm.</p></div>
+        <p>Real email: restaurants that match, a playlist, a link to confirm.</p></div>
     </div>
     <div class="chips">
       <span class="chip">Food</span><span class="chip">Hobbies</span><span class="chip">Music</span>
       <span class="chip">Travel</span><span class="chip">Gifts</span><span class="chip">Love language</span>
       <span class="chip">Important dates</span><span class="chip">Personality</span>
     </div>
-    <p class="note">React 19 + TS strict · Express 5 + <code>ws</code> · Bedrock Converse · DynamoDB
-      behind a storage interface · CDK on ECS Fargate · Vitest + Playwright. Honest about the edges:
-      the reminder really does send — <code>REMINDER_CHANNEL=gmail</code> is set on the deployed task —
-      but it falls back to writing the mail into the log if that variable is missing, and the WhatsApp
-      nudge is wired as a tool the guardrail currently blocks by design.</p>
   </div>
 </section>
 
-<!-- ═══ 4 · ARCHITECTURE ══════════════════════════ -->
+<!-- ═══ 5 · ARCHITECTURE ══════════════════════════ -->
 <section id="architecture" data-title="Architecture">
   <div class="wrap wide">
-    <div class="act"><b>04</b> · Architecture</div>
-    <h2>One product, two engines, one diagram.</h2>
+    <div class="act"><b>05</b> · Architecture</div>
+    <h2>Architecture</h2>
     <div class="split board" style="grid-template-columns: 1.95fr 1fr">
       <div class="stage tall">
         <img style="max-height:70vh" src="deck-assets/diagram-two-engines.png"
              alt="Two-lane architecture: browser through CloudFront and one ALB, splitting to engine A's Fargate service and engine B's AgentCore proxy, then to Bedrock, AgentCore Runtime, Memory, Gateway, Lambda, DynamoDB and CloudWatch">
       </div>
       <div>
-        <p class="lede" style="max-width:100%">Same agent, built twice, both running behind one URL and
-          switchable from the UI. Same persona, same model, same reply call — so every difference
-          belongs to the platform.</p>
+        <p class="lede" style="max-width:100%">One URL, two engines, switchable from the UI. Same model,
+          same guardrail, same table — so every difference is the platform.</p>
         <div class="panel" style="--c: var(--claret); margin-top:16px">
-          <span class="t">Engine A · glue code I wrote &nbsp;→&nbsp; Engine B · AgentCore</span>
+          <span class="t">Engine A · my glue code &nbsp;→&nbsp; Engine B · AgentCore</span>
           <ul class="pairs">
             <li><div><b>ECS Fargate</b> → <b>Runtime</b><br><s>one always-on task → one microVM per session</s></div></li>
-            <li><div><b>DynamoDB</b> → <b>Memory</b><br><s>my store and schema → a managed strategy</s></div></li>
+            <li><div><b>DynamoDB</b> → <b>Memory</b><br><s>my store → a managed strategy</s></div></li>
             <li><div><b>A 2nd Bedrock call</b> → <b>Memory</b><br><s>my extraction pass → extraction I don't write</s></div></li>
-            <li><div><b>In-process registry</b> → <b>Gateway</b><br><s>functions in the task → tools over MCP, on Lambda</s></div></li>
+            <li><div><b>In-process registry</b> → <b>Gateway</b><br><s>functions → tools over MCP, on Lambda</s></div></li>
           </ul>
         </div>
-        <p class="note">Every box exists in <code>us-east-1</code>. Bedrock, the guardrail and one
-          DynamoDB table are held <b>fixed across both lanes</b> — that's what makes a delta
-          attributable to the orchestration layer rather than to a different model.</p>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ═══ 5 · LIVE DEMO ═════════════════════════════ -->
+<!-- ═══ 6 · LIVE DEMO ═════════════════════════════ -->
 <section class="demo" id="demo" data-title="Live demo">
   <div class="wrap wide">
-    <div class="act"><b>05</b> · Live demo</div>
-    <h2>Let's just look at it.</h2>
+    <div class="act"><b>06</b> · Live demo</div>
+    <h2>Live demo</h2>
     <div class="split lean">
       <div class="shotbox"><img src="deck-assets/app-live.png" alt="Valentin mid-conversation, the partner profile filling in beside it"></div>
       <div>
-        <p class="lede">Tell him about someone you love. He asks like a person, not a form — and the
-          panel on the right fills itself in as you talk.</p>
-        <p class="cta"><a href="https://d26dwovftfq9oe.cloudfront.net" target="_blank">Open the deployed app ↗</a>
-          <span>CloudFront → ALB → Fargate, us-east-1</span></p>
-        <div class="term">
-          <div><span class="d">$</span> curl -s .../api/health</div>
-          <div class="c">{"status":"healthy","environment":"production"}</div>
-        </div>
-        <ul class="bullets" style="margin-top:18px">
-          <li><b>Watch for.</b> A name and a birthday landing at 100% confidence within four messages;
-            the richer categories arriving a beat later.</li>
-          <li><b>Then.</b> Ask him to plan something — he checks Shabbat times <em>and</em> restaurant
-            availability in the same turn, then offers a card rather than booking.</li>
-          <li><b>The switch.</b> Same conversation, flipped to engine B from the UI.</li>
+        <p class="applink"><a href="https://d26dwovftfq9oe.cloudfront.net" target="_blank" rel="noopener">
+          Open Valentin ↗</a></p>
+        <p class="applink-sub">d26dwovftfq9oe.cloudfront.net</p>
+        <ul class="bullets" style="margin-top:26px">
+          <li><b>Watch the panel.</b> Name and birthday at 100% confidence within four messages.</li>
+          <li><b>Then ask him to plan.</b> Shabbat times and table availability in one turn — then a
+            card to confirm, not a booking.</li>
+          <li><b>The switch.</b> Same conversation, flipped to engine B.</li>
         </ul>
-        <p class="note">Live on real infrastructure: seven CDK stacks the agents wrote from nothing,
-          Fargate behind an ALB autoscaling 1→4, CloudFront + WAF at 2 000 req/IP. There's a demo
-          login on the front door.</p>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ═══ 6 · COMPARISON · COST ═════════════════════ -->
+<!-- ═══ 7 · COMPARISON · COST ═════════════════════ -->
 <section id="cost" data-title="Comparison · Cost">
   <div class="wrap wide">
-    <div class="act"><b>06</b> · Comparison · <b>Cost</b></div>
-    <h2>Two bills, split into what's fixed and what grows.</h2>
-    <p class="lede" style="max-width: 1060px">Every rate from a vendor pricing page, every quantity
-      counted out of this repo. The reply call to Bedrock is identical on both sides, so it's excluded
-      from both.</p>
+    <div class="act"><b>07</b> · Comparison · <b>Cost</b></div>
+    <h2>Comparison — Cost</h2>
     <div class="versus">
       <div class="panel" style="--c: var(--claret)">
         <span class="t">Engine A · glue code</span>
         <h3>$18.02 fixed, $1.386 per user</h3>
         <ul class="ledger">
-          <li><div>AWS Fargate<s>0.5 vCPU · 730 h · never scales below 1</s></div><span class="amt">$18.02</span></li>
-          <li><div>2nd Bedrock extraction<s>104 turns × $0.01332</s></div><span class="amt">$1.385</span></li>
-          <li><div>Amazon DynamoDB<s>on-demand reads, writes, storage</s></div><span class="amt">$0.0006</span></li>
+          <li><div>AWS Fargate<s>never scales below 1</s></div><span class="amt">$18.02</span></li>
+          <li><div>2nd Bedrock extraction<s>104 turns</s></div><span class="amt">$1.385</span></li>
+          <li><div>Amazon DynamoDB<s>on-demand</s></div><span class="amt">$0.0006</span></li>
           <li class="sum"><div>At one user, per month</div><span class="amt">$19.41</span></li>
         </ul>
       </div>
@@ -597,9 +591,9 @@
         <span class="t">Engine B · AgentCore</span>
         <h3>$0.0006 fixed, $0.103 per user</h3>
         <ul class="ledger" style="--c: var(--olive)">
-          <li><div>AgentCore Gateway<s>tools indexed — the only fixed line</s></div><span class="amt">$0.0006</span></li>
-          <li><div>AgentCore Memory<s>1 event + 1 retrieval per turn, extraction included</s></div><span class="amt">$0.098</span></li>
-          <li><div>AgentCore Runtime<s>3 s × 104 turns, per-second billing</s></div><span class="amt">$0.0047</span></li>
+          <li><div>AgentCore Gateway<s>the only fixed line</s></div><span class="amt">$0.0006</span></li>
+          <li><div>AgentCore Memory<s>extraction included</s></div><span class="amt">$0.098</span></li>
+          <li><div>AgentCore Runtime<s>per-second billing</s></div><span class="amt">$0.0047</span></li>
           <li class="sum"><div>At one user, per month</div><span class="amt">$0.10</span></li>
         </ul>
       </div>
@@ -610,46 +604,33 @@
       <tr><td>10,000</td><td>$13,877</td><td>$1,029</td><td>13.5×</td><td class="save">$12,848</td></tr>
       <tr class="peak"><td>1,000,000</td><td>$1.39 M</td><td>$103 k</td><td>13.5×</td><td class="save">$1.28 M</td></tr>
     </table>
-    <p class="note">The last two columns move in opposite directions: the <b>ratio</b> falls from 187× to
-      13.5× as Fargate's fixed $18 amortises, while the <b>money</b> grows without limit — about
-      <b>$15.4 M a year</b> at a million users. AgentCore loses on unit price (Runtime 2.20× dearer per
-      hour, Memory ~124× per turn) and wins on billing granularity. And if Memory meters retrievals per
-      <em>record</em> rather than per call, engine B becomes <b>3.8× worse</b> — confirm with the service
-      team before quoting any of this. <code>scripts/cost-model.mjs</code> reproduces every figure.</p>
+    <p class="note">The ratio falls as Fargate's fixed $18 amortises; the money keeps growing.</p>
   </div>
 </section>
 
-<!-- ═══ 7 · COMPARISON · TOOL USE ═════════════════ -->
+<!-- ═══ 8 · COMPARISON · TOOL USE ═════════════════ -->
 <section id="tooluse" data-title="Comparison · Tool use">
   <div class="wrap wide">
-    <div class="act"><b>07</b> · Comparison · <b>Tool use</b></div>
-    <h2>The same twenty tools, reached two different ways.</h2>
-    <p class="lede" style="max-width: 1060px">This is the part that makes it an agent rather than a
-      chatbot: it can look the world up, and it can offer to act on it. The tool <em>surface</em> is
-      identical on both engines — how the agent is allowed to reach it is not.</p>
+    <div class="act"><b>08</b> · Comparison · <b>Tool use</b></div>
+    <h2>Comparison — Tool use</h2>
     <div class="stats">
       <div class="stat"><div class="v">20</div><b>tools, ten integrations</b>
-        <p>Ontopo · Amadeus · Google Calendar, Gmail and Places · Spotify · web search · a page reader ·
-          Hebcal · Wolt · WhatsApp. Live APIs, not stubs.</p></div>
+        <p>Ontopo, Amadeus, Google, Spotify, Hebcal, Wolt. Live APIs.</p></div>
       <div class="stat"><div class="v">13</div><b>that only look things up</b>
-        <p>Availability, Shabbat times, Hebrew dates, places nearby, music. The agent plans around real
-          constraints instead of inventing them.</p></div>
+        <p>It plans around real constraints instead of inventing them.</p></div>
       <div class="stat"><div class="v">7</div><b>that propose, never act</b>
-        <p>Every <code>propose_*</code> tool returns a card she confirms. It drafts the email and books
-          nothing — a human is in the loop <em>by construction</em>.</p></div>
+        <p>Every write returns a card she confirms.</p></div>
       <div class="stat"><div class="v">5</div><b>model round-trips per turn</b>
-        <p><code>MAX_TOOL_ITERATIONS</code>. It calls a tool, reads the result, and decides again — and
-          it can ask for several at once, resolved concurrently.</p></div>
+        <p>Calls a tool, reads the result, decides again.</p></div>
     </div>
     <div class="versus" style="margin-top:16px">
       <div class="panel" style="--c: var(--claret)">
         <span class="t">Engine A · in-process</span>
         <h3>A registry inside the task</h3>
         <ul class="pairs">
-          <li><div><b>Tools are TypeScript functions</b><br><s>called directly in the Node process</s></div></li>
-          <li><div><b>No authorization boundary</b><br><s>anything in the task can call anything</s></div></li>
+          <li><div><b>TypeScript functions</b><br><s>called in the Node process</s></div></li>
+          <li><div><b>No authorization boundary</b><br><s>anything can call anything</s></div></li>
           <li><div><b>Adding a tool</b><br><s>redeploy the container</s></div></li>
-          <li><div><b>Fast and simple</b><br><s>no network hop, no schema to keep in sync</s></div></li>
         </ul>
       </div>
       <div class="vs"><span>vs</span></div>
@@ -657,36 +638,27 @@
         <span class="t">Engine B · Gateway over MCP</span>
         <h3>A contract the platform owns</h3>
         <ul class="pairs">
-          <li><div><b>Two Lambda targets</b><br><s>3 profile tools + 20 integration tools</s></div></li>
-          <li><div><b>CUSTOM_JWT authorizer</b><br><s>scoped to exactly two machine clients</s></div></li>
+          <li><div><b>Two Lambda targets</b><br><s>behind a CUSTOM_JWT authorizer</s></div></li>
+          <li><div><b>Scoped credentials</b><br><s>the Gateway signs, not the agent</s></div></li>
           <li><div><b>Adding a tool</b><br><s>regenerate schemas, update the stack</s></div></li>
-          <li><div><b>A hop, and a real seam</b><br><s>the tool contract is reviewable, not implicit</s></div></li>
         </ul>
       </div>
     </div>
-    <p class="note">The schemas engine B publishes are <b>generated from the tools themselves</b> by
-      <code>scripts/generate-tool-schemas.mts</code>, so the two engines cannot drift apart — a tool
-      added to engine A and forgotten in the Gateway is a build failure rather than a silently dark
-      integration. That was learned the hard way: twice, a tool merged on main was missing from the
-      Gateway's account. Honest edge — the WhatsApp nudge exists as a tool but the guardrail blocks
-      <code>PHONE</code>, so that one path is deliberately unreachable today.</p>
+    <p class="note">Schemas are generated from the tools, so the two engines cannot drift apart.</p>
   </div>
 </section>
 
-<!-- ═══ 8 · COMPARISON · RESILIENCE ═══════════════ -->
+<!-- ═══ 9 · COMPARISON · RESILIENCE ═══════════════ -->
 <section class="dark" id="resilience" data-title="Comparison · Resilience">
   <div class="wrap wide">
-    <div class="act"><b>08</b> · Comparison · <b>Resilience</b></div>
-    <h2>One fault. Forty sessions.</h2>
-    <p class="lede" style="max-width: 1060px">Cost is not the strongest argument for AgentCore — this is.
-      Both sides are the same forty live sessions, one process-level fault injected into the same
-      session on each.</p>
+    <div class="act"><b>09</b> · Comparison · <b>Resilience</b></div>
+    <h2>Comparison — Resilience</h2>
+    <p class="lede" style="max-width: 1060px">Forty live sessions on each side. One process-level fault.</p>
     <div class="radius">
       <div class="panel" style="--c: var(--claret)">
         <span class="t">Engine A</span>
         <h3>One Node process</h3>
-        <p class="sub">Forty WebSockets in one <code>Set</code>, one heap, one event loop —
-          <code>attach-websocket.ts:31</code>.</p>
+        <p class="sub">Forty WebSockets, one heap, one event loop.</p>
         <div class="vessel shared">
         <i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i>
         <i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i>
@@ -695,14 +667,13 @@
         <i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i><i class="hit"></i>
         </div>
         <div class="tally bad"><span class="n">40</span>
-          <p>of 40 sessions lost<br>every user, and every partner profile in flight</p></div>
+          <p>of 40 sessions lost</p></div>
       </div>
       <div class="vs"><span>vs</span></div>
       <div class="panel" style="--c: var(--olive)">
         <span class="t">Engine B</span>
         <h3>One microVM per session</h3>
-        <p class="sub">Forty sessions, forty isolated execution environments. The fault has
-          nowhere to travel.</p>
+        <p class="sub">Forty isolated execution environments.</p>
         <div class="vessel isolated">
         <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
         <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
@@ -711,95 +682,60 @@
         <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
         </div>
         <div class="tally good"><span class="n">1</span>
-          <p>of 40 sessions lost<br>the other 39 never notice</p></div>
+          <p>of 40 sessions lost</p></div>
       </div>
     </div>
     <div class="faults">
       <div class="fault"><b>Unhandled rejection</b>
-        <p>One turn throws without a handler; Node exits, taking all 40 sockets with it.</p></div>
+        <p>Node exits, taking all 40 sockets with it.</p></div>
       <div class="fault"><b>Out of memory</b>
-        <p>One runaway conversation exhausts the 1 GiB task. The OOM killer doesn't ask whose
-          request it was.</p></div>
+        <p>One runaway conversation exhausts the 1 GiB task.</p></div>
       <div class="fault"><b>Event-loop block</b>
-        <p>One synchronous hot spot stalls the single loop — the other 39 see the app stop.</p></div>
+        <p>One hot spot stalls the single loop.</p></div>
       <div class="fault"><b>Injection that pivots</b>
-        <p>Reaches a process-wide singleton — the Bedrock client, the tool registry — holding
-          everyone's credentials.</p></div>
+        <p>Reaches a singleton holding everyone's credentials.</p></div>
     </div>
-    <p class="note">Two limits, both real. Engine A <em>does</em> isolate per-user <b>state</b>
-      (<code>forUser</code>) — one user's logic bug can't read another's data; what they share is the
-      process. And engine B isn't fully isolated in <em>this</em> deployment either — it still answers
-      through <code>valentin-ac-proxy</code>, one shared Fargate task holding the sockets. The right panel
-      is what AgentCore Runtime gives you, not yet what this repo deploys.</p>
+    <p class="note">Honest: this deployment still answers through one shared proxy task. The right panel
+      is what Runtime gives you, not yet what this repo deploys.</p>
   </div>
 </section>
 
-<!-- ═══ 9 · COMPARISON · SECURITY ═════════════════ -->
+<!-- ═══ 10 · COMPARISON · SECURITY ════════════════ -->
 <section id="security" data-title="Comparison · Security">
   <div class="wrap wide">
-    <div class="act"><b>09</b> · Comparison · <b>Security</b></div>
-    <h2>One guardrail, both engines — and it's tuned, not switched on.</h2>
-    <p class="lede" style="max-width: 1060px">This app asks a stranger for another person's name,
-      birthday and home address, stores them, and then mails them. The interesting security work wasn't
-      turning a guardrail on; it was discovering that the safe default <em>broke the product</em>, and
-      measuring where the line actually belongs.</p>
+    <div class="act"><b>10</b> · Comparison · <b>Security</b></div>
+    <h2>Comparison — Security</h2>
+    <p class="lede" style="max-width: 1060px">One guardrail, both engines. The work was tuning it —
+      the safe default broke the product.</p>
     <div class="stats">
       <div class="stat"><div class="v">6</div><b>content filters, measured</b>
-        <p><code>SEXUAL</code> is MEDIUM on input, HIGH on output — at HIGH it blocked "her ring size is
-          6 and she is 5 foot 4", which is a profile field the agent asks for outright.</p></div>
+        <p>At HIGH, <code>SEXUAL</code> blocked "her ring size is 6" — a field the agent asks for.</p></div>
       <div class="stat"><div class="v">5</div><b>PII entities blocked</b>
-        <p>Card number, SSN, phone, AWS access key, AWS secret key. Nothing about remembering a
-          birthday is a reason to carry a credential.</p></div>
+        <p>Card, SSN, phone, and both AWS key types.</p></div>
       <div class="stat"><div class="v">3</div><b>regexes replacing one entity</b>
-        <p><code>ADDRESS</code> read "she's been saving for Kyoto" as an address. Three
-          residence-shaped patterns block 42 Maple Street and let Paris through.</p></div>
+        <p><code>ADDRESS</code> read "saving for Kyoto" as an address.</p></div>
       <div class="stat"><div class="v">7</div><b>tools that cannot act alone</b>
-        <p>Every write — reservation, email, calendar, gift — is a proposal with an expiry, awaiting a
-          human yes. The agent's own word is never sufficient authority.</p></div>
+        <p>Every write awaits a human yes.</p></div>
     </div>
-    <div class="versus" style="margin-top:16px">
-      <div class="panel" style="--c: var(--claret)">
-        <span class="t">Engine A</span>
-        <h3>Trust inside the process</h3>
-        <p class="sub">The guardrail is applied in my code, tools are function calls, and one
-          compromised turn sits in the same heap as everyone's credentials. Per-user <em>state</em> is
-          scoped by <code>forUser</code>; the process is not.</p>
-      </div>
-      <div class="vs"><span>vs</span></div>
-      <div class="panel" style="--c: var(--olive)">
-        <span class="t">Engine B</span>
-        <h3>Boundaries the platform enforces</h3>
-        <p class="sub">Same guardrail via <code>bedrock:ApplyGuardrail</code>, so the policy can't
-          diverge. Tools sit behind a JWT-scoped Gateway, each session gets its own microVM, and the
-          Gateway signs Lambda calls with its own role rather than the agent's.</p>
-      </div>
-    </div>
-    <div class="faults">
+    <div class="faults" style="margin-top:16px">
       <div class="fault"><b>Known gap · ALB listener is HTTP</b>
-        <p>TLS terminates at CloudFront; the hop to the ALB isn't encrypted. Fine for a demo, not for
-          anything real.</p></div>
+        <p>TLS terminates at CloudFront; the hop to the ALB doesn't.</p></div>
       <div class="fault"><b>Known gap · Cognito isn't enforced</b>
-        <p>The user pool exists and the Gateway uses it for machine auth, but the app's own front door
-          is a demo login, not a real one.</p></div>
+        <p>The front door is a demo login, not a real one.</p></div>
       <div class="fault"><b>Known gap · secrets by hand</b>
-        <p>Google OAuth lives in Secrets Manager deployed and <code>.env</code> locally, and populating
-          it is still a manual step after a deploy.</p></div>
+        <p>Populating Google OAuth is still manual after a deploy.</p></div>
     </div>
-    <p class="note">The judgement call worth defending: <code>NAME</code>, <code>AGE</code>,
-      <code>ADDRESS</code> and <code>EMAIL</code> are deliberately <em>not</em> blocked. They are this
-      agent's subject matter — the first two facts it asks for, and a recipient address is a required
-      argument to <code>propose_email</code> — and each is stored under its own owner's key.
-      Anonymising them made the agent answer "{NAME} — that's lovely" seconds after being told her name.
-      Every one of those decisions is a dated comment in <code>infra/lib/safety-stack.ts</code> with the
-      sentence that failed and the guardrail run that proved it.</p>
+    <p class="note"><code>NAME</code>, <code>AGE</code> and <code>EMAIL</code> are deliberately not
+      blocked — they are this agent's subject matter. Every decision is a dated comment in
+      <code>safety-stack.ts</code>.</p>
   </div>
 </section>
 
-<!-- ═══ 10 · HOW IT WAS BUILT · THE TEAM ══════════ -->
-<section id="team" data-title="How it was built · The team">
+<!-- ═══ 11 · HOW IT WAS BUILT · THE TEAM ══════════ -->
+<section id="team" data-title="How it was built · the agent team">
   <div class="wrap wide">
-    <div class="act"><b>10</b> · How it was built · <b>the team</b></div>
-    <h2>I didn't write it. They did.</h2>
+    <div class="act"><b>11</b> · How it was built · <b>the agent team</b></div>
+    <h2>How it was built — the agent team</h2>
     <div class="tree">
       <div class="tier">
         <div class="node human">
@@ -813,10 +749,7 @@
         <div class="node lead" style="--c:var(--master)">
           <img src="deck-assets/agents/master.svg" alt="">
           <div><b>Master Agent</b> <span class="owns">.kiro/ · .github/</span>
-            <p>Decomposes, delegates, reviews, merges — and posts the last word.</p>
-            <ul><li><s>#37</s> orchestrator-led PR review loop with multi-agent tagging</li>
-              <li><s>#19</s> iterative PR conversations after Ready for Review</li>
-              <li><s>8 hooks</s> plus the pre-merge conversation gate</li></ul></div>
+            <p>Decomposes, delegates, reviews, merges — and posts the last word.</p></div>
         </div>
       </div>
       <div class="stem"></div>
@@ -826,116 +759,79 @@
           <img src="deck-assets/agents/architect.svg" alt="">
           <b>System Architect</b><span class="owns">src/shared/</span>
           <p>Contracts and shared types. Writes the spec before anyone branches.</p>
-          <ul><li><s>#2</s> shared types, validation, persistence, design tokens</li>
-            <li><s>#41</s> category lookup helpers</li>
-            <li><s>#44</s> <code>preferenceCategoryCount</code></li></ul>
         </div>
         <div class="node" style="--c:var(--front)">
           <img src="deck-assets/agents/frontend.svg" alt="">
           <b>Frontend Dev</b><span class="owns">src/client/</span>
           <p>Components, hooks, state. Cannot touch shared types.</p>
-          <ul><li><s>#3</s> chat UI, profile dashboard, state management</li>
-            <li><s>#58</s> Partner Profile Panel — 27 files</li>
-            <li><s>#65</s> Valentin Inspector, a live architecture slide-over</li></ul>
         </div>
         <div class="node" style="--c:var(--back)">
           <img src="deck-assets/agents/backend.svg" alt="">
           <b>Backend Dev</b><span class="owns">src/server/</span>
-          <p>API, Bedrock extraction, persistence. Cannot touch the client.</p>
-          <ul><li><s>#4</s> API layer, orchestrator, preference extractor</li>
-            <li><s>#15</s> real AWS Bedrock SDK integration</li>
-            <li><s>#123</s> the Spotify dev-mode endpoints</li></ul>
+          <p>API, extraction, persistence. Cannot touch the client.</p>
         </div>
         <div class="node" style="--c:var(--design)">
           <img src="deck-assets/agents/design.svg" alt="">
           <b>UI Designer</b><span class="owns">design-system/</span>
-          <p>Tokens, accessibility, and eight real mockups to choose from.</p>
-          <ul><li><s>#16</s> refined palette and gradient accents</li>
-            <li><s>#22</s> polished component pass</li>
-            <li><s>8</s> full mockups, one of them shipped</li></ul>
+          <p>Tokens and accessibility. Eight mockups, one shipped.</p>
         </div>
         <div class="node" style="--c:var(--qa)">
           <img src="deck-assets/agents/qa.svg" alt="">
           <b>QA Agent</b><span class="owns">e2e/</span>
-          <p>Playwright E2E and regression coverage. Cannot touch <code>src</code> at all.</p>
-          <ul><li><s>#8</s> onboarding, responsive, connection-recovery suites</li>
-            <li><s>5 PRs</s> reviewed purely for coverage</li>
-            <li><s>376</s> tests green before any merge</li></ul>
+          <p>Playwright E2E. Cannot touch <code>src</code> at all.</p>
         </div>
       </div>
     </div>
-    <p class="note">Each is a prompt file with a voice exemplar and an explicit do-not-modify list —
-      <b>disjoint ownership is what makes five agents editing at once something other than a
-      merge-conflict generator</b>. Control advances by a <em>call</em>, never by hope: the master
-      reviews, tags the owners in one comment, invokes them, and waits for each to return. My first
-      design was event-led, and nothing moved — the loop had no engine.</p>
+    <p class="note">Disjoint ownership is what makes five agents editing at once something other than a
+      merge-conflict generator.</p>
   </div>
 </section>
 
-<!-- ═══ 11 · HOW IT WAS BUILT · THE PR GRAPH ══════ -->
-<section id="graph" data-title="How it was built · The PRs">
+<!-- ═══ 12 · HOW IT WAS BUILT · THE PR GRAPH ══════ -->
+<section id="graph" data-title="How it was built · the PRs graph">
   <div class="wrap wide">
-    <div class="act"><b>11</b> · How it was built · <b>the pull requests</b></div>
-    <h2>Every node is a real pull request.</h2>
+    <div class="act"><b>12</b> · How it was built · <b>the PRs graph</b></div>
+    <h2>How it was built — the PRs graph</h2>
     <div class="stage">
-      <img style="max-height:38vh" src="deck-assets/agent-contribution-graph.svg" alt="Agent contribution graph: pull requests across seven agent lanes, in the order they were opened, each connected up to the point on main where it merged.">
+      <img style="max-height:44vh" src="deck-assets/agent-contribution-graph.svg" alt="Agent contribution graph: pull requests across seven agent lanes, in the order they were opened, each connected up to the point on main where it merged.">
     </div>
     <div class="stats">
       <div class="stat"><div class="v">57</div><b>pull requests</b>
-        <p>49 merged, 7 closed without merging. At the peak, five were open at once.</p></div>
+        <p>49 merged, 7 closed without merging.</p></div>
       <div class="stat"><div class="v">176</div><b>commits</b>
-        <p>+35,531 lines added, −1,963 removed, across 438 files touched.</p></div>
+        <p>+35,531 lines, 438 files touched.</p></div>
       <div class="stat"><div class="v">93</div><b>review comments</b>
-        <p>The two longest threads run dozens deep — and they argue.</p></div>
+        <p>The two longest threads argue.</p></div>
       <div class="stat"><div class="v">32</div><b>workflow PRs</b>
-        <p>The biggest lane is the methodology itself, not the app.</p></div>
+        <p>The biggest lane is the methodology, not the app.</p></div>
     </div>
-    <div class="quote">"Accept your reasoning — at current scale this is not a performance concern.
-      Non-blocking."<s>Master Agent → Frontend Dev · PR #58, after being pushed back on</s></div>
-    <p class="note">Generated from the repo's PR history, so it can't drift. Node size is files changed;
-      rings mean a genuine multi-agent review thread; hollow dashed nodes were closed <em>without</em>
-      merging. A refused merge is a feature — the gate checks four pure, unit-tested conditions and says
-      no if any fails. Approval is a comment token, because GitHub returns <code>422</code> if you
-      approve your own PR and every agent here is one account.</p>
+    <p class="note">Generated from the repo's PR history, so it can't drift.</p>
   </div>
 </section>
 
-<!-- ═══ 12 · LESSONS LEARNED ══════════════════════ -->
+<!-- ═══ 13 · LESSONS LEARNED ══════════════════════ -->
 <section class="dark" id="lessons" data-title="Lessons learned">
   <div class="wrap wide">
-    <div class="act"><b>12</b> · Conclusions</div>
-    <h2>Four things I didn't know going in.</h2>
+    <div class="act"><b>13</b> · Lessons learned</div>
+    <h2>Lessons learned</h2>
     <div class="lessons">
       <div class="lesson"><div class="n">01</div>
         <b>The workflow cost more than the product</b>
-        <p>32 of 57 PRs and +13,425 lines went into the agents, hooks, router and merge gate — more
-          than the application itself. If you try this, budget for building the process, not just the
-          thing the process makes.</p></div>
+        <p>32 of 57 PRs went into the agents, hooks and merge gate. Budget for building the process.</p></div>
       <div class="lesson"><div class="n">02</div>
         <b>What AgentCore sold me was blast radius, not money</b>
-        <p>The cost table is the loud slide and the weaker argument — the ratio collapses from 187× to
-          13.5× once fixed costs amortise. The durable win is one microVM per session: the same fault
-          that takes out forty sessions on Fargate takes out one.</p></div>
+        <p>187× collapses to 13.5× once fixed costs amortise. The durable win is one microVM per session.</p></div>
       <div class="lesson"><div class="n">03</div>
         <b>Plan with the strong model, execute with the cheap one</b>
-        <p>When an agent got stuck in a loop, more of the same model didn't help — a stronger model
-          writing the plan did, then a weaker one executing each step. Model choice is a per-phase
-          decision, not a per-project one.</p></div>
+        <p>Stuck in a loop, more of the same model didn't help — a stronger planner did. Model choice is
+          per-phase.</p></div>
       <div class="lesson"><div class="n">04</div>
         <b>Don't trust "healthy"</b>
-        <p>Engine B was green for weeks and had never served a turn. <code>CREATE_COMPLETE</code>, a
-          healthy Runtime, and a proxy logging <code>invoke ok: true</code> — while the container
-          returned its failures as a <code>200</code> with an empty body. Four faults, each hiding the next.</p></div>
+        <p>Engine B was green for weeks and had never served a turn. Four faults, each hiding the next.</p></div>
     </div>
-    <p class="note">Honest scope, since it's the part worth trusting: the orchestrator-led loop, the turn
-      router, the eight hooks and the merge gate are real, unit-tested and exercised across the whole PR
-      history. The agent labels are convention applied in a batch, not a wired-up hook. And engine B's
-      isolation is what the Runtime <em>offers</em> — this deployment still answers through one shared
-      proxy task. Every claim here is checkable: the methodology writeup, the generated graph, and all
-      57 PR conversations.</p>
-    <div class="byline" style="margin-top:20px;color:rgba(255,253,251,.55)">
+    <div class="byline" style="margin-top:26px;color:rgba(255,253,251,.55)">
       <span><b>Thank you.</b></span><i></i>
-      <span>Happy to open any PR, walk the turn router, or run the demo on someone you love</span></div>
+      <span>Happy to open any PR or run the demo</span></div>
   </div>
 </section>
 <script>

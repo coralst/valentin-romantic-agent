@@ -1,39 +1,45 @@
 # Valentin — GenAI TFC capstone · run of show
 
-**Slot: 45 minutes, live demo included.** Deck: `public/deck-tfc.html` (12 slides) /
+**Slot: 45 minutes, live demo included.** Deck: `public/deck-tfc.html` (13 slides) /
 `docs/Valentin-TFC.pptx`.
 
-45 minutes is a comfortable budget for these 12 slides, so nothing needs to be cut
+45 minutes is a comfortable budget for these 13 slides, so nothing needs to be cut
 or merged — Resilience and Security stay as separate slides, and the demo gets the
 room it deserves.
+
+The slides carry very little text on purpose. **You are the content** — each card is
+a cue, not a script. The notes below are what you say out loud.
 
 ## The clock
 
 | At | Slide | Min | What you're actually doing |
 |---|---|---|---|
 | 00:00 | 01 · Title | 1.5 | Who you are, what Valentin is, and the one line that sets up the whole talk: he remembers what she said once. |
-| 01:30 | 02 · Use case | 2.5 | The problem, then **the agent test** in the note — why this can't be a form plus a cron job. Do not skip the note; it's the rubric's "why agentic" question. |
-| 04:00 | 03 · What it can do | 2.0 | Four beats, conversation in → booked evening out. Name the honest edges out loud (the mail really sends; the WhatsApp nudge is blocked by the guardrail). |
-| 06:00 | 04 · Architecture | 4.0 | The anchor slide. Walk one request top to bottom, then use the A→B mapping to set up the four comparison slides. |
-| 10:00 | **05 · LIVE DEMO** | **9.0** | See below — measured, not estimated. |
-| 19:00 | 06 · Cost | 3.5 | The ledgers, then the scale table. Lead with the honest read: 187× collapses to 13.5× once Fargate's fixed $18 amortises. |
-| 22:30 | 07 · Tool use | 2.5 | 20 tools, 13 read / 7 propose. The human-in-the-loop-by-construction point lands here. |
-| 25:00 | 08 · Resilience | 3.5 | The 40-dot picture does the work. This is your strongest AgentCore argument — give it more air than Cost. |
-| 28:30 | 09 · Security | 2.5 | One guardrail, both engines, tuned not switched on. Own the three known gaps rather than being asked about them. |
-| 31:00 | 10 · The team | 2.5 | Disjoint ownership is the reason five agents editing at once isn't a merge-conflict generator. |
-| 33:30 | 11 · The PRs | 2.0 | Every node is a real PR. Land the quote, then the 422-self-approve detail. |
-| 35:30 | 12 · Lessons | 2.0 | Four conclusions. End on "don't trust healthy" — it's the one they'll remember. |
-| 37:30 | Q&A | 7.5 | |
+| 01:30 | 02 · Agenda | 0.5 | Read the eleven sections in one breath, flag the demo at 04 so they know it's coming. Don't dwell. |
+| 02:00 | 03 · Use case | 2.5 | The problem, then say **the agent test** out loud — unstructured input over weeks, next tool depends on what came back, human in the loop before anything sends. It's the rubric's "why agentic" question. |
+| 04:30 | 04 · What the app can do | 2.0 | Four beats, conversation in → booked evening out. Name the honest edges out loud (the mail really sends; the WhatsApp nudge is blocked by the guardrail). |
+| 06:30 | 05 · Architecture | 4.0 | The anchor slide. Walk one request top to bottom, then use the A→B mapping to set up the four comparison slides. |
+| 10:30 | **06 · LIVE DEMO** | **9.0** | See below — measured, not estimated. The slide carries the app link if you'd rather click through than run the script. |
+| 19:30 | 07 · Comparison — Cost | 3.5 | The ledgers, then the scale table. Lead with the honest read: 187× collapses to 13.5× once Fargate's fixed $18 amortises. |
+| 23:00 | 08 · Comparison — Tool use | 2.5 | 20 tools, 13 read / 7 propose. The human-in-the-loop-by-construction point lands here. |
+| 25:30 | 09 · Comparison — Resilience | 3.5 | The 40-dot picture does the work. This is your strongest AgentCore argument — give it more air than Cost. |
+| 29:00 | 10 · Comparison — Security | 2.5 | One guardrail, both engines, tuned not switched on. Own the three known gaps rather than being asked about them. |
+| 31:30 | 11 · The agent team | 2.5 | Disjoint ownership is the reason five agents editing at once isn't a merge-conflict generator. |
+| 34:00 | 12 · The PRs graph | 2.0 | Every node is a real PR. Land the 422-self-approve detail — that's why approval is a comment token. |
+| 36:00 | 13 · Lessons learned | 2.0 | Four conclusions. End on "don't trust healthy" — it's the one they'll remember. |
+| 38:00 | Q&A | 7.0 | |
 | 45:00 | — | | |
 
-Content is 37.5 minutes, Q&A 7.5. If you overrun, the two slides that survive
-compression best are **03 · What it can do** (the demo shows it anyway) and
-**11 · The PRs** (the graph reads without narration). Never compress Architecture
-or Resilience.
+Content is 38 minutes, Q&A 7. If you overrun, the two slides that survive
+compression best are **04 · What the app can do** (the demo shows it anyway) and
+**12 · The PRs graph** (the graph reads without narration). Never compress
+Architecture or Resilience.
 
 ## The demo — 9 minutes
 
-Drive it, don't hand-drive it:
+Slide 06 carries a live link to the deployed app
+(`https://d26dwovftfq9oe.cloudfront.net`) — clicking it opens the real thing, past
+the login gate. But drive the demo with the script, don't hand-drive it:
 
 ```bash
 npm run demo:drive -- --base=https://d26dwovftfq9oe.cloudfront.net --to=<your-address>

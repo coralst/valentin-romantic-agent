@@ -340,6 +340,20 @@ describe('find_music', () => {
     expect(result.proposal).toBeUndefined();
   });
 
+  /*
+   * The tool loop hands the model `summary` and nothing else — `data` never
+   * reaches it. So the ids must ride in the summary text, or the instruction to
+   * "use the track ids exactly as given" is asking for ids the model was never
+   * given. That exact gap shipped: propose_playlist failed on production with
+   * "the system isn't providing me with the actual Spotify track IDs" once the
+   * batch-endpoint 403 stopped failing the flow earlier.
+   */
+  it('puts the track ids in the summary, which is all the model reads', async () => {
+    const result = await runTool(findMusicTool, { query: 'x' }, CTX);
+    expect(result.summary).toContain('1aBcDeFgHiJkLmNoPqRsTu');
+    expect(result.summary).toContain('2aBcDeFgHiJkLmNoPqRsTu');
+  });
+
   it('hands back the ids the playlist tool needs', async () => {
     const result = await runTool(findMusicTool, { query: 'x' }, CTX);
     const data = result.data as { tracks: { id: string }[] };

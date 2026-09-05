@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Reminder } from '../../../shared/interfaces/reminder';
+import { config } from '../../config';
 import { InMemoryStoreFactory } from '../../persistence/in-memory-store';
 import { dispatchDue } from '../dispatcher';
 import { failingSender, type ReminderSender } from '../sender';
@@ -142,18 +143,40 @@ describe('dispatchDue', () => {
     expect(second).toEqual({ considered: 0, sent: 0, skipped: 0, failed: 0 });
   });
 
-  it('skips a reminder with no target without sending or claiming it', async () => {
+  /*
+   * The rows that made this necessary were written before the owner default
+   * existed, so `syncReminders` never adopted an address onto them and nothing
+   * re-plans a row until its session changes. Three of them logged
+   * `reminder.no_target` once a minute in production while the default was live.
+   */
+  it('mails the owner for a row that was saved without a target', async () => {
     const factory = await seeded(reminder({ target: null }));
     const sender = recordingSender();
 
     const summary = await dispatchDue(factory, sender, NOW, { origin: ORIGIN });
 
-    expect(summary).toEqual({ considered: 1, sent: 0, skipped: 1, failed: 0 });
-    expect(sender.sent).toHaveLength(0);
-    // Still pending: a row nobody can be mailed about is a visible "I know about
-    // this date", and stamping it sent would hide it.
-    const stored = await factory.forUser('user-1').getRemindersBySession('session-1');
-    expect(stored[0].sentAt).toBeNull();
+    expect(summary).toEqual({ considered: 1, sent: 1, skipped: 0, failed: 0 });
+    expect(sender.sent[0]?.to).toBe(config.reminders.defaultEmail);
+  });
+
+  it('skips without sending or claiming when the deployment names no owner', async () => {
+    const original = config.reminders.defaultEmail;
+    config.reminders.defaultEmail = '';
+    try {
+      const factory = await seeded(reminder({ target: null }));
+      const sender = recordingSender();
+
+      const summary = await dispatchDue(factory, sender, NOW, { origin: ORIGIN });
+
+      expect(summary).toEqual({ considered: 1, sent: 0, skipped: 1, failed: 0 });
+      expect(sender.sent).toHaveLength(0);
+      // Still pending: a row nobody can be mailed about is a visible "I know about
+      // this date", and stamping it sent would hide it.
+      const stored = await factory.forUser('user-1').getRemindersBySession('session-1');
+      expect(stored[0].sentAt).toBeNull();
+    } finally {
+      config.reminders.defaultEmail = original;
+    }
   });
 
   it('sweeps across users, and stays inside the limit', async () => {

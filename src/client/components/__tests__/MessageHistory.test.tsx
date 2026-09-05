@@ -150,8 +150,8 @@ describe('MessageHistory', () => {
    * stays in the store for the profile panel to render.
    */
   it('clears the announcement without unlearning the discovery', () => {
-    renderHistory([message('m1', 'user', 'She surfs')], [
-      preference({ id: 'p1', value: 'surfing' }),
+    renderHistory([message('m1', 'user', 'She surfs'), message('m2', 'agent', 'Noted.')], [
+      preference({ id: 'p1', value: 'surfing', sourceMessageId: 'm1' }),
     ]);
 
     act(() => {
@@ -160,6 +160,9 @@ describe('MessageHistory', () => {
 
     expect(screen.queryByTestId('learned-status')).not.toBeInTheDocument();
     expect(screen.getByTestId('store-probe').textContent).toBe('surfing');
+    // And the transcript still says so. The transient going is the moment ending,
+    // not the record being thrown away — which is what it used to mean.
+    expect(screen.getByTestId('noted-badge-values').textContent).toBe('surfing');
   });
 
   /**
@@ -168,8 +171,9 @@ describe('MessageHistory', () => {
    * re-raised the announcement the line would never actually clear.
    */
   it('does not re-announce a discovery it has already announced', () => {
-    const { rerender } = renderHistory([message('m1', 'user', 'She surfs')], [
-      preference({ id: 'p1', value: 'surfing' }),
+    const transcript = [message('m1', 'user', 'She surfs'), message('m2', 'agent', 'Noted.')];
+    const { rerender } = renderHistory(transcript, [
+      preference({ id: 'p1', value: 'surfing', sourceMessageId: 'm1' }),
     ]);
 
     act(() => {
@@ -177,11 +181,14 @@ describe('MessageHistory', () => {
     });
     rerender(
       <PreferencesProvider>
-        <Harness messages={[message('m1', 'user', 'She surfs')]} preferences={[]} />
+        <Harness messages={transcript} preferences={[]} />
       </PreferencesProvider>,
     );
 
     expect(screen.queryByTestId('learned-status')).not.toBeInTheDocument();
+    // The badge is not an announcement, so re-rendering it is not re-announcing.
+    // It is silent by construction — no live region — precisely so it can persist.
+    expect(screen.getByTestId('noted-badge-values').textContent).toBe('surfing');
   });
 
   it('announces nothing when nothing has been discovered', () => {
@@ -210,6 +217,83 @@ describe('MessageHistory', () => {
     // The facts are still there — it is the announcement that is wrong, not the data.
     expect(screen.getByTestId('store-probe').textContent).toContain('surfing');
   });
+
+  /**
+   * The other half of the split, and the single most important test in the change:
+   * this is exactly where "announcing novelty" and "recording the fact" diverge.
+   *
+   * `LOAD_PREFERENCES` empties `discovered` on purpose, so the transient stays
+   * silent (above). The badge is derived from `preferences` instead, so it is
+   * present on the first paint after a hard reload — which is the whole ask: the
+   * mark must survive the conversation moving on, and survive the page going away.
+   */
+  it('still marks the message a loaded fact came from', () => {
+    renderHistory(
+      [message('m1', 'user', 'She surfs'), message('m2', 'agent', 'Noted.')],
+      [preference({ id: 'p1', value: 'surfing', sourceMessageId: 'm1' })],
+      'hydrated',
+    );
+
+    expect(screen.queryByTestId('learned-status')).not.toBeInTheDocument();
+    expect(screen.getByTestId('noted-badge-values').textContent).toBe('surfing');
+  });
+
+  describe('the permanent marker', () => {
+    it('waits until its message is no longer the tail', () => {
+      // Mid-turn the user's message is the tail and the transient is covering it.
+      // Two markers saying the same thing at once is what the delay prevents.
+      renderHistory([message('m1', 'user', 'She surfs')], [
+        preference({ id: 'p1', value: 'surfing', sourceMessageId: 'm1' }),
+      ]);
+
+      expect(screen.queryByTestId('noted-badge')).not.toBeInTheDocument();
+      expect(screen.getByTestId('learned-status')).toBeInTheDocument();
+    });
+
+    it('appears once the reply lands', () => {
+      const { rerender } = renderHistory([message('m1', 'user', 'She surfs')], [
+        preference({ id: 'p1', value: 'surfing', sourceMessageId: 'm1' }),
+      ]);
+
+      rerender(
+        <PreferencesProvider>
+          <Harness
+            messages={[message('m1', 'user', 'She surfs'), message('m2', 'agent', 'Noted.')]}
+            preferences={[]}
+          />
+        </PreferencesProvider>,
+      );
+
+      expect(screen.getByTestId('noted-badge-values').textContent).toBe('surfing');
+    });
+
+    it('marks nothing under a message that taught Valentin nothing', () => {
+      renderHistory(
+        [message('m1', 'user', 'Hello'), message('m2', 'agent', 'Hi')],
+        [preference({ id: 'p1', value: 'surfing', sourceMessageId: 'some-other-message' })],
+        'hydrated',
+      );
+
+      expect(screen.queryByTestId('noted-badge')).not.toBeInTheDocument();
+    });
+
+    it('puts two facts from one message on one marker', () => {
+      renderHistory(
+        [message('m1', 'user', 'She surfs and dances'), message('m2', 'agent', 'Noted.')],
+        [
+          preference({ id: 'p1', value: 'surfing', sourceMessageId: 'm1' }),
+          preference({ id: 'p2', value: 'salsa dancing', sourceMessageId: 'm1' }),
+        ],
+        'hydrated',
+      );
+
+      expect(screen.getAllByTestId('noted-badge')).toHaveLength(1);
+      expect(screen.getByTestId('noted-badge-values').textContent).toBe(
+        'surfing · salsa dancing',
+      );
+    });
+  });
+
   /*
    * The transcript is at its widest exactly when it is at its shortest — a new
    * session on a wide screen with the architecture drawer open — so an unfilled

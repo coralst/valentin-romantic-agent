@@ -4,11 +4,13 @@ import type { ChatMessage } from '../../shared/interfaces/message';
 import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
 import { MessageBubble } from './MessageBubble';
 import { LearnedStatus, type LearnedAnnouncement } from './LearnedStatus';
+import { NotedBadge } from './NotedBadge';
 import { ProposalCard } from './ProposalCard';
 import { usePreferencesContext } from '../context/preferences-context';
 import { discoveryKey } from '../hooks/use-preferences-state';
 import type { ProposalEntry } from '../hooks/use-chat-state';
-import { insets, typography } from '../design-system/tokens';
+import { buildNotedIndex } from '../utils/noted-index';
+import { insets, layout, typography } from '../design-system/tokens';
 import { chatMeasureStyle } from './chat-measure';
 
 interface MessageHistoryProps {
@@ -80,6 +82,18 @@ const emptyTranscriptCopyStyle: React.CSSProperties = {
   color: 'rgba(42, 34, 38, 0.55)',
 };
 
+/**
+ * Lines up a badge under an agent bubble with the bubble itself.
+ *
+ * The same 44px the transient uses — avatar (32) plus the bubble gap (12) — so the
+ * marker starts where Valentin's bubbles start rather than under their crests.
+ * User turns need no equivalent: they are right-aligned to the same edge as their
+ * bubble, so mirroring the row is enough.
+ */
+const agentBadgeSlotStyle: React.CSSProperties = {
+  marginLeft: layout.messageAvatarSize + 12,
+};
+
 /** Within a bubble's height of the foot counts as "following along". */
 const FOLLOW_THRESHOLD_PX = 120;
 
@@ -95,13 +109,13 @@ export function MessageHistory({
    * The batch announced most recently, handed to `LearnedStatus` which decides
    * how long it stays on screen.
    *
-   * The transcript does not try to pin discoveries to the message that produced
-   * them any more. It used to, and it could only ever guess: `sourceMessageId` is
-   * the *server's* id for the user's message whereas the transcript renders the
-   * optimistic copy under a locally generated uuid, so the anchor was "whatever
-   * was last in the transcript when the fact arrived". A status line that lives
-   * for four seconds needs no anchor at all — it belongs to the moment, not to a
-   * message — which removes the guess rather than improving it.
+   * This line is still deliberately un-anchored: it belongs to the moment, not to
+   * a message, so it sits at the tail where its arrival and departure can displace
+   * nothing. The *permanent* marker is what is anchored, via `notedIndex` below —
+   * possible now that the client sends its uuid with the turn and the server adopts
+   * it, so `sourceMessageId` finally names a message the transcript is holding.
+   * Before that the anchor could only ever have been a guess ("whatever was last
+   * in the transcript when the fact arrived").
    */
   const [announcement, setAnnouncement] = useState<LearnedAnnouncement | null>(null);
 
@@ -120,6 +134,18 @@ export function MessageHistory({
     for (const list of Object.values(preferencesState.preferences)) all.push(...list);
     return all;
   }, [preferencesState.preferences]);
+
+  /**
+   * Which facts are on the record against which message.
+   *
+   * Derived from `preferences` — every known row, including those hydrated by
+   * `LOAD_PREFERENCES` — and never from `discovered`, which is emptied on load by
+   * design. See `noted-index.ts` for why that distinction is the whole feature.
+   */
+  const notedIndex = useMemo(
+    () => buildNotedIndex(preferencesState.preferences),
+    [preferencesState.preferences],
+  );
 
   const lastMessage = messages[messages.length - 1];
 
@@ -221,15 +247,34 @@ export function MessageHistory({
             </p>
           </div>
         )}
-        {messages.map((msg) => (
-          <div key={msg.id}>
-            <MessageBubble
-              message={msg}
-              // Only the newest message animates; earlier ones render fully.
-              animate={msg.id === lastMessage?.id && msg.sender === 'agent'}
-            />
-          </div>
-        ))}
+        {messages.map((msg) => {
+          /*
+           * The badge waits until its message is no longer the tail.
+           *
+           * While the turn is in flight the user's message *is* the tail and the
+           * transient `LearnedStatus` is covering it, so showing both would say
+           * the same thing twice — once to the eye and twice to a screen reader.
+           * Once the reply lands, the reply's append has already run the
+           * unconditional scroll-to-foot below, so mounting the badge in that same
+           * commit costs no perceived movement. This is what keeps the
+           * no-layout-jump guarantee those two effects were written for.
+           */
+          const noted = msg.id === lastMessage?.id ? undefined : notedIndex.get(msg.id);
+          return (
+            <div key={msg.id}>
+              <MessageBubble
+                message={msg}
+                // Only the newest message animates; earlier ones render fully.
+                animate={msg.id === lastMessage?.id && msg.sender === 'agent'}
+              />
+              {noted && (
+                <div style={msg.sender === 'agent' ? agentBadgeSlotStyle : undefined}>
+                  <NotedBadge values={noted} align={msg.sender === 'user' ? 'end' : 'start'} />
+                </div>
+              )}
+            </div>
+          );
+        })}
         {/*
           At the tail of the transcript rather than beside the message that
           produced it: nothing is ever rendered below the line, so its arrival

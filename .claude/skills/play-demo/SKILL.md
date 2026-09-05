@@ -55,6 +55,7 @@ The browser window stays open at the end on purpose. Ctrl-C closes it.
 |---|---|
 | `--to=addr` | Required unless `--no-mail`. Where the reminder goes. |
 | `--speed=1.6` | Rehearse faster. Model reply time does not scale — only the human pacing does. |
+| `--dwell=0.4` | Trim the standing-still pauses only, leaving typing alone. Default `0.62`. |
 | `--no-mail` | Drops the address turn *and* the send turn, so nothing is emailed. |
 | `--no-survey` | Skip the final substituted beat. |
 | `--no-hold` | Exit instead of leaving the window open. For checking the script itself. |

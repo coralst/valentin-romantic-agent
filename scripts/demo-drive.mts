@@ -97,18 +97,37 @@ interface Turn {
 /**
  * The conversation, in the order the rail fills up on camera.
  *
- * The ordering is deliberate and two constraints hold it in place. `notify_email`
- * comes before the beat that discusses timing, so the address is on the profile
- * by the time anyone looks at a reminder — though a sweep landing early is
- * harmless, because `dispatcher.ts` checks for a missing target *before* it
- * claims the row and `adoptTarget` back-fills the address afterwards. And
- * `weekly_rhythm` comes last of the fact-gathering turns because "she finishes
- * work at 17:00" is quoted back verbatim in the mail, so it is the line the
- * audience should still have in mind when the mail appears.
+ * ## Why it is in two halves
+ *
+ * Every line here is fixed, and the model's are not — so a line that does not
+ * *fit* whatever Valentin just asked makes **him** look like the one who lost the
+ * thread. That is what happened on stage: naming the city and the cuisine in the
+ * third breath got him searching restaurants and offering a shortlist, and the
+ * four remaining profile facts then arrived as answers to a question nobody had
+ * asked. He kept politely steering back to Wednesday and the script kept
+ * ignoring him.
+ *
+ * So: **all the facts first, planning second.** Nothing before the halfway line
+ * invites a recommendation — the city, which is what makes a shortlist possible,
+ * is held back and arrives *with* the question that asks for one. The opening
+ * line says outright that the details come before the plan, which is both a real
+ * thing a person would say and the cheapest way to keep him gathering rather than
+ * proposing. Later facts open with a connective ("Also", "One more thing") so
+ * that even if he does end a turn with a question, volunteering the next fact
+ * reads as a person adding to a list rather than as a non-answer.
+ *
+ * Two ordering constraints inside that. `notify_email` comes before anything
+ * about timing, so the address is on the profile before a reminder is discussed —
+ * though a sweep landing early is harmless, because `dispatcher.ts` checks for a
+ * missing target *before* it claims the row and `adoptTarget` back-fills the
+ * address afterwards. And `weekly_rhythm` is the last fact, because "she finishes
+ * work at 17:00" is quoted back verbatim in the mail, so it should still be in the
+ * audience's mind when the mail appears.
  */
 const TURNS: Turn[] = [
   {
-    say: 'Hi! Her name is Maya, and our third anniversary is on 10 September.',
+    say: "Hi! Let me get her details down first, then we'll talk about the evening. " +
+      'Her name is Maya, and our third anniversary is on 10 September.',
     beat: 'Her name and the date — the rail starts counting down',
   },
   {
@@ -116,12 +135,12 @@ const TURNS: Turn[] = [
     beat: 'Her birthday — every deadline in the rail keys off this',
   },
   {
-    say: "We're in Tel Aviv. She loves Mediterranean food — but no shellfish, she's allergic.",
-    beat: 'Where we are, what she eats, and a constraint the shortlist must respect',
+    say: "She loves Mediterranean food — but no shellfish, she's allergic.",
+    beat: 'What she eats, and the constraint any shortlist has to respect',
     stumble: true,
   },
   {
-    say: 'Somewhere quiet and romantic. She hates loud rooms.',
+    say: 'Also, somewhere quiet and romantic. She hates loud rooms.',
     beat: 'The kind of room — atmosphere, kept separate from cuisine',
   },
   {
@@ -129,18 +148,19 @@ const TURNS: Turn[] = [
     beat: 'Her music — this is the row Spotify reads later',
   },
   {
-    say: `Send reminders to ${TO}.`,
-    beat: 'His own address — the one field Valentin will never invent',
-    needsMail: true,
-  },
-  {
-    say: 'She does pottery on Tuesdays, and on Fridays she finishes work at 17:00.',
+    say: 'One more thing — she does pottery on Tuesdays, and on Fridays she finishes work at 17:00.',
     beat: 'Her week — "finishes work at 17:00" is quoted verbatim in the mail',
     stumble: true,
   },
   {
-    say: 'How far in advance do you normally give me a heads-up?',
-    beat: 'The default is a week — and a week out is already now',
+    say: `And send reminders to ${TO}.`,
+    beat: 'His own address — the one field Valentin will never invent',
+    needsMail: true,
+  },
+  {
+    say: "That's her, then. We're in Tel Aviv — how far in advance do you normally " +
+      'give me a heads-up before a date like this?',
+    beat: 'The city arrives with the question — and a week out is already now',
   },
   {
     say: 'Yes — send me the proposal.',
@@ -308,13 +328,20 @@ async function humanClick(page: Page, target: Locator, why: string): Promise<voi
   await sleep(jitter(420, 240));
 }
 
-/** A per-character delay that varies with what was just typed. */
+/**
+ * A per-character delay that varies with what was just typed.
+ *
+ * Tuned to a **fast** typist — around 100–110 wpm — rather than an average one.
+ * The variation is what makes it read as typing at all; a flat delay looks like a
+ * paste even when it is slow, and these numbers are still well clear of the point
+ * where the characters stop being individually visible.
+ */
 function keyDelay(char: string, previous: string): number {
-  if (/[.,!?—]/.test(previous)) return jitter(300, 240); // a beat after punctuation
-  if (previous === ' ') return jitter(70, 60);
-  if (char === ' ') return jitter(85, 70);
-  if (/[A-Z]/.test(char)) return jitter(120, 80); // reaching for shift
-  return jitter(72, 62);
+  if (/[.,!?—]/.test(previous)) return jitter(190, 150); // a beat after punctuation
+  if (previous === ' ') return jitter(48, 40);
+  if (char === ' ') return jitter(58, 46);
+  if (/[A-Z]/.test(char)) return jitter(82, 55); // reaching for shift
+  return jitter(50, 42);
 }
 
 /**
@@ -328,7 +355,7 @@ function keyDelay(char: string, previous: string): number {
 async function typeHuman(page: Page, composer: Locator, turn: Turn): Promise<void> {
   await glideTo(page, composer);
   await composer.click();
-  await sleep(jitter(700, 500)); // gathering the thought
+  await sleep(jitter(420, 300)); // gathering the thought
 
   // Somewhere in the middle of a word, so the correction is visible but the
   // sentence is nowhere near finished.
@@ -352,7 +379,7 @@ async function typeHuman(page: Page, composer: Locator, turn: Turn): Promise<voi
   if (typed !== turn.say) {
     throw new Error(`composer drifted.\n  wanted: ${turn.say}\n  got:    ${typed}`);
   }
-  await sleep(jitter(520, 380)); // re-reading it before sending
+  await sleep(jitter(300, 220)); // re-reading it before sending
 }
 
 /** The whole transcript as text, for growth and settling checks. */
@@ -431,7 +458,14 @@ async function awaitReply(page: Page, before: string, sent: string): Promise<voi
 
   const said = Math.max(0, previous.length - before.length);
   console.log(`  ← replied (${said} chars)`);
-  await sleep(Math.min(paced(11_000), paced(1_400) + said * paced(17)));
+  /*
+   * Long enough to see that a reply landed, not long enough to read all of it.
+   * Was 17ms/char capped at 11s, which on a 900-character restaurant shortlist
+   * meant eleven seconds of nothing happening — across eleven turns, most of the
+   * run's dead air. Someone who wants to read a bubble can pause; someone
+   * watching a demo cannot get the time back.
+   */
+  await sleep(Math.min(paced(4_500), paced(900) + said * paced(8)));
 }
 
 let shotIndex = 0;
@@ -441,10 +475,24 @@ async function shot(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: file });
 }
 
+/**
+ * How much of a written-in dwell to actually take.
+ *
+ * The pauses were each chosen as "long enough to take that in", and eleven of
+ * them in a row still added up to a run that felt slow — the fix belongs in one
+ * place rather than in eleven re-guessed numbers, so the intent stays readable
+ * and the trim stays adjustable. Distinct from `--speed`, which also scales
+ * typing: this is only the standing-still time.
+ */
+const DWELL = Math.max(0.2, Number(flag('dwell') ?? 0.62));
+
+/** A deliberate pause on something already on screen. */
+const hold = (ms: number) => sleep(paced(Math.round(ms * DWELL)));
+
 /** Hold on something worth looking at, with the pointer resting near it. */
 async function linger(page: Page, target: Locator, ms: number): Promise<void> {
   await glideTo(page, target).catch(() => {});
-  await sleep(paced(ms));
+  await hold(ms);
 }
 
 async function main(): Promise<void> {
@@ -513,7 +561,7 @@ async function main(): Promise<void> {
 
     if (onEntrance) {
       await caption(page, 'The entrance — where a first-time visitor lands');
-      await sleep(paced(3_400));
+      await hold(3_400);
       await shot(page, 'entrance-page');
 
       /*
@@ -546,7 +594,7 @@ async function main(): Promise<void> {
           ? 'Create a new profile — he starts knowing nothing'
           : 'In — and straight to a new, empty profile',
       );
-      await sleep(paced(1_800));
+      await hold(1_800);
       await humanClick(
         page,
         page.getByTestId(freshProfileButton ? 'sign-up-button' : 'demo-login-button'),
@@ -558,7 +606,7 @@ async function main(): Promise<void> {
 
     await page.getByTestId('app-layout').waitFor({ timeout: 20_000 });
     await caption(page, 'Everything after this is the real app — real model, real integrations');
-    await sleep(paced(2_600));
+    await hold(2_600);
     await shot(page, 'entrance');
 
     // A clean transcript, so the countdown and the learned rows are visibly
@@ -568,7 +616,7 @@ async function main(): Promise<void> {
       await humanClick(page, newChat, 'start a new profile');
     }
     await caption(page, 'Valentin opens — this greeting is the only code-authored line');
-    await sleep(paced(3_600));
+    await hold(3_600);
     await shot(page, 'welcome');
 
     console.log('\nact 2 — the conversation');
@@ -594,7 +642,7 @@ async function main(): Promise<void> {
     if (await architecture.isVisible().catch(() => false)) {
       await humanClick(page, architecture, 'open the architecture drawer');
       await caption(page, 'The calls that just happened — every one of them real');
-      await sleep(paced(5_000));
+      await hold(5_000);
       await shot(page, 'architecture');
     }
 
@@ -602,7 +650,7 @@ async function main(): Promise<void> {
     if (await integrations.isVisible().catch(() => false)) {
       await humanClick(page, integrations, 'open the integrations panel');
       await caption(page, 'Fourteen tools, registered and reachable');
-      await sleep(paced(5_500));
+      await hold(5_500);
       await shot(page, 'integrations');
       const close = page.getByTestId('integrations-close-button');
       if (await close.isVisible().catch(() => false)) {
@@ -622,7 +670,7 @@ async function main(): Promise<void> {
         await sleep(1_000);
       }
       await caption(page, `Sent by code, not by the model — check ${TO}`);
-      await sleep(paced(4_000));
+      await hold(4_000);
       await shot(page, 'after-sweep');
       console.log(`  mail should now be in ${TO}`);
       console.log('  to prove it arrived from the mailbox side:');
@@ -639,7 +687,7 @@ async function main(): Promise<void> {
           'SUBSTITUTED: a survey needs a date to have passed, and a day cannot pass on stage',
           'substituted',
         );
-        await sleep(paced(4_500));
+        await hold(4_500);
         await humanClick(page, demo, 'open demo controls');
         const seed = page.getByTestId('load-demo-profile-button');
         if (await seed.isVisible().catch(() => false)) {
@@ -649,7 +697,7 @@ async function main(): Promise<void> {
             'Only the passing of time is stood in for — the rating prompt itself is the real path',
             'substituted',
           );
-          await sleep(paced(7_000));
+          await hold(7_000);
         }
         await shot(page, 'survey-seeded');
       }

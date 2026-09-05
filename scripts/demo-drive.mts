@@ -507,6 +507,35 @@ async function main(): Promise<void> {
   }
 
   /*
+   * Refuse to promise a send this server cannot make.
+   *
+   * `REMINDER_CHANNEL` defaults to `log`, and on that channel the dispatcher does
+   * everything except send: the body is rendered, the row is stamped sent, and the
+   * sweep logs `sent: 1`. A run went out saying "check your inbox" on the strength
+   * of that, and no mail existed — a claim about the real world, made from a log
+   * line. Checked before the browser opens, because the honest failure is the run
+   * that does not start.
+   */
+  if (SEND_MAIL) {
+    const runtime = (await fetch(`${BASE}/api/config`)
+      .then((response) => response.json() as Promise<{ reminderChannel?: string }>)
+      .catch(() => null));
+    if (!runtime) {
+      console.error(`demo-drive: ${BASE} is not answering. Start the servers first.`);
+      process.exit(2);
+    }
+    if (runtime.reminderChannel !== 'gmail') {
+      console.error(
+        `demo-drive: this server would send reminders to the ${runtime.reminderChannel ?? 'log'} ` +
+          'channel, not to Gmail.\n' +
+          'Nothing would reach an inbox, and the sweep would still report it as sent.\n' +
+          'Start the backend with REMINDER_CHANNEL=gmail, or pass --no-mail.',
+      );
+      process.exit(2);
+    }
+  }
+
+  /*
    * One run's worth of screenshots, not a pile of them.
    *
    * The numbering is the play order, and the number of beats changes with the

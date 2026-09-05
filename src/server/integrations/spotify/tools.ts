@@ -167,9 +167,14 @@ export const findMusicTool: AgentTool = {
     return {
       ok: true,
       summary: stamp(
-        `${tracks.length} track(s) for "${query}": ${tracks.map(describeTrack).join(' | ')}. ` +
+        // The id rides in the text the model reads, not only in `data`: the tool
+        // loop hands the model `summary` alone, and a model told to "use the track
+        // ids exactly as given" without ever being given one can only fail — which
+        // is exactly what happened once the 403 stopped masking it.
+        `${tracks.length} track(s) for "${query}": ` +
+          `${tracks.map((track) => `${describeTrack(track)} [id: ${track.id}]`).join(' | ')}. ` +
           `Pick from these by name when you build a playlist — use propose_playlist with the ` +
-          `track ids exactly as given.`,
+          `bracketed track ids exactly as given.`,
       ),
       data: {
         query,

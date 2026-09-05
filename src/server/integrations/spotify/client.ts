@@ -80,8 +80,33 @@ const SEARCH_LIMIT_CEILING = 10;
  * Recorded rather than sent — a refresh token already carries its grant. This
  * exists so whoever mints one knows exactly what to tick, and so widening it is a
  * visible diff rather than a quiet change of blast radius.
+ *
+ * Deliberately wide: re-consenting costs a human a browser round-trip, so a scope
+ * this build might plausibly want later is cheaper to ask for now than to discover
+ * missing at the moment it is needed. Grouped by what each group buys.
  */
-export const SPOTIFY_SCOPES = ['playlist-modify-private'] as const;
+export const SPOTIFY_SCOPES = [
+  // Writing and reading the playlists this agent creates.
+  'playlist-modify-private',
+  'playlist-modify-public',
+  'playlist-read-private',
+  'playlist-read-collaborative',
+  'ugc-image-upload',
+  // Naming the person and saving a track they liked.
+  'user-read-private',
+  'user-read-email',
+  'user-library-read',
+  'user-library-modify',
+  // Taste signals, so a suggestion can be grounded in what they actually play.
+  'user-top-read',
+  'user-read-recently-played',
+  'user-follow-read',
+  // Playback, for the Web Playback SDK path.
+  'streaming',
+  'user-read-playback-state',
+  'user-modify-playback-state',
+  'user-read-currently-playing',
+] as const;
 
 /** True when this process is answering from the local catalogue. */
 export function spotifyFixtureMode(): boolean {

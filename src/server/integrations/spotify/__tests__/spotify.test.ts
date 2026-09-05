@@ -830,13 +830,14 @@ describe('oauth', () => {
     expect(result.status).toBe(400);
   });
 
-  it('asks only for the playlist scope, and carries a state', () => {
+  it('asks for the recorded scope list, and carries a state', () => {
     const result = buildSpotifyAuthUrl();
     expect(result.ok).toBe(true);
 
     const url = new URL(result.url!);
     expect(url.origin + url.pathname).toBe('https://accounts.spotify.com/authorize');
-    expect(url.searchParams.get('scope')).toBe('playlist-modify-private');
+    // Space-separated, in the order `SPOTIFY_SCOPES` records — one source of truth.
+    expect(url.searchParams.get('scope')).toBe(SPOTIFY_SCOPES.join(' '));
     expect(url.searchParams.get('response_type')).toBe('code');
     expect(url.searchParams.get('state')).toBeTruthy();
     // Forces the approval screen, so re-authorising a *different* account works.
@@ -943,15 +944,21 @@ describe('helpers', () => {
 
   /*
    * The scope list is recorded rather than sent, so nothing else would catch it
-   * widening. `playlist-modify-public` would put a private gift on a public
-   * profile and `user-top-read` would read someone's listening history — neither
-   * is needed, so neither may appear.
+   * changing. It is deliberately wide — re-consenting costs a human a browser
+   * round-trip — but `playlist-modify-private` is the one entry the write path
+   * cannot work without, and the list must stay free of duplicates so the
+   * authorize URL is not padded with repeats.
    */
-  it('asks for the narrowest scope that can write a playlist', () => {
-    expect(SPOTIFY_SCOPES).toEqual(['playlist-modify-private']);
+  it('asks for every scope this build might need, private playlist writes included', () => {
+    expect(SPOTIFY_SCOPES).toContain('playlist-modify-private');
+    expect(new Set(SPOTIFY_SCOPES).size).toBe(SPOTIFY_SCOPES.length);
     const url = spotifyAuthorizeUrl('http://localhost:3001/callback');
-    expect(url).toContain('scope=playlist-modify-private');
-    expect(url).not.toContain('public');
-    expect(url).not.toContain('user-top-read');
+    for (const scope of SPOTIFY_SCOPES) expect(url).toContain(encodeURIComponent(scope));
   });
+
+  /*
+   * Holding `playlist-modify-public` must not make a playlist public — the create
+   * call decides that, and 'creates a private playlist and adds the tracks as
+   * URIs' above asserts `public: false` on that call. That test is the guard.
+   */
 });

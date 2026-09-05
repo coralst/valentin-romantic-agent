@@ -653,6 +653,27 @@ describe('propose_playlist', () => {
     });
 
     /*
+     * The other half of that summary, and the defect a user actually reported:
+     * the confirm path has no model in it, so whatever this returns as `reply` is
+     * shown verbatim. The instructions above are addressed to the model and must
+     * not appear in it — a user was shown "do not guess at why" as Valentin's own
+     * words. It still has to carry the songs, since that part is always true.
+     */
+    it('speaks to the user in its reply, not to the model', async () => {
+      stubCatalogue();
+      const proposed = await runTool(proposePlaylistTool, { name: 'x', trackIds: IDS }, CTX);
+      const result = await proposePlaylistTool.confirm!(proposed.proposal!, CTX);
+
+      expect(result.reply).toBeTruthy();
+      expect(result.reply).not.toMatch(
+        /do not |don't claim|say so plainly|tell them|give them the/i,
+      );
+      // The links survive, and nothing claims a save.
+      expect(result.reply).toContain('open.spotify.com');
+      expect(result.reply).not.toMatch(/saved|in your (spotify )?library/i);
+    });
+
+    /*
      * The connected-but-refused case. This previously produced the *same*
      * sentence as no-account-at-all, which told the user to connect an account
      * that was already connected — a loop with no exit, since the real fix is a

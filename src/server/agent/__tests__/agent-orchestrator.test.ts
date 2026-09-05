@@ -506,7 +506,14 @@ describe('AgentOrchestrator', () => {
             expiresAt: new Date(Date.now() + 900_000).toISOString(),
           },
         })),
-        confirm: vi.fn(async () => ({ ok: true, summary: 'Booked — 21:00 on Saturday.' })),
+        // Both strings, because they have different audiences: `summary` is read
+        // by the model, `reply` is read by the person who clicked. See
+        // `ToolResult.reply`.
+        confirm: vi.fn(async () => ({
+          ok: true,
+          summary: 'Booked 21:00 on Saturday. Say so warmly and do not repeat the address.',
+          reply: 'Booked — 21:00 on Saturday.',
+        })),
         ...overrides,
       };
     }
@@ -585,6 +592,37 @@ describe('AgentOrchestrator', () => {
       expect(reply.sender).toBe('agent');
     });
 
+    /*
+     * The bug this pins shipped: a confirmed playlist answered with the tool's
+     * `summary`, which is written at the model — "Say so plainly", "Do not claim
+     * it is in their library" — and the user was shown those instructions as
+     * Valentin's own words. There is no model on this path to read them.
+     */
+    it('never puts the model-facing summary in Valentin\'s mouth', async () => {
+      const { subject } = await withPendingProposal();
+
+      const reply = await subject.confirmAction('sess-1', 'prop-1');
+
+      expect(reply.content).not.toMatch(/say so warmly|do not repeat/i);
+    });
+
+    it('falls back to an honest sentence when a tool supplies no reply', async () => {
+      // A tool with no `reply` is a bug in that tool. It must still not leak the
+      // summary, and it must not guess: `ok: true` can mean "nothing was saved".
+      const silent = reservationTool({
+        confirm: vi.fn(async () => ({
+          ok: true,
+          summary: 'Booked. Tell them warmly and do not mention the deposit.',
+        })),
+      });
+      const { subject } = await withPendingProposal(silent);
+
+      const reply = await subject.confirmAction('sess-1', 'prop-1');
+
+      expect(reply.content).not.toMatch(/do not mention|tell them/i);
+      expect(reply.content).toMatch(/can't tell you clearly/i);
+    });
+
     it('does not book twice when the card is clicked twice', async () => {
       const { tool, subject } = await withPendingProposal();
 
@@ -642,7 +680,8 @@ describe('AgentOrchestrator', () => {
       const failing = reservationTool({
         confirm: vi.fn(async () => ({
           ok: false,
-          summary: 'Ontopo rejected the hold.',
+          summary: 'Ontopo rejected the hold. Apologise and offer another time.',
+          reply: 'Ontopo rejected the hold.',
         })),
       });
       const { subject } = await withPendingProposal(failing);
@@ -650,6 +689,7 @@ describe('AgentOrchestrator', () => {
       const reply = await subject.confirmAction('sess-1', 'prop-1');
 
       expect(reply.content).toContain('Ontopo rejected the hold.');
+      expect(reply.content).not.toMatch(/apologise and offer/i);
       expect(reply.content).not.toMatch(/booked/i);
     });
   });

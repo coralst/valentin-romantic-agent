@@ -270,6 +270,7 @@ export const proposeGiftTool: AgentTool = {
         ok: false,
         summary:
           `That gift card is missing the shop link. Apologise and offer to look it up again.`,
+        reply: `I've lost the shop link for that one — sorry. Shall I look it up again?`,
       };
     }
     // No `booking` on purpose, even though this confirm knows a venue name.
@@ -283,6 +284,9 @@ export const proposeGiftTool: AgentTool = {
       summary:
         `Opened ${venueName} on Wolt for them. Tell them to choose what they want there and ` +
         `that Wolt takes the payment — you have not ordered anything.`,
+      reply:
+        `Here's ${venueName} on Wolt:\n\n${url}\n\nChoose what you'd like and Wolt takes the ` +
+        `payment — I haven't ordered anything on your behalf.`,
       data: { url },
     };
   },

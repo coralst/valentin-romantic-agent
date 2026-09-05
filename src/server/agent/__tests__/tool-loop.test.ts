@@ -1,5 +1,9 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { runToolLoop, MAX_TOOL_ITERATIONS } from '../tool-loop';
+import { config } from '../../config';
+import { verifyShareToken } from '../../sharing/share-token';
+import { CONVERSATION_LINK_PLACEHOLDER } from '../../sharing/link-placeholder';
+import { SHARE_PARAM } from '../../../shared/constants/share-link';
 import type {
   BedrockClient,
   LlmContentBlock,
@@ -442,5 +446,93 @@ describe('runToolLoop', () => {
 
       expect(result.text).toBe('Saturday works.');
     });
+  });
+});
+
+/**
+ * The 2026-09-04 live bug, in one place: the model was handed a 250-character
+ * signed URL and asked to copy it into an email body. It got a character wrong,
+ * and the recipient was told the link had expired. Now it writes a placeholder and
+ * the loop substitutes a real token on both paths out — prose and tool input.
+ */
+describe('runToolLoop and the conversation link placeholder', () => {
+  const originalSecret = config.shareTokenSecret;
+  const originalOrigin = config.publicOrigin;
+
+  beforeAll(() => {
+    config.shareTokenSecret = 'test-share-secret';
+    config.publicOrigin = 'https://valentin.example';
+  });
+
+  afterAll(() => {
+    config.shareTokenSecret = originalSecret;
+    config.publicOrigin = originalOrigin;
+  });
+
+  /** Read the token back out the way the guest boot path does. */
+  function verify(url: string) {
+    return verifyShareToken(new URL(url).searchParams.get(SHARE_PARAM) ?? '');
+  }
+
+  function urlIn(text: string): string {
+    const match = text.match(/https:\/\/\S+/);
+    return match?.[0] ?? '';
+  }
+
+  it('substitutes a real, verifying URL into a tool input before the tool runs', async () => {
+    // Typed input, because the assertion below reads the argument the loop passed.
+    const execute = vi.fn(async (_input: Record<string, unknown>) => ({
+      ok: true,
+      summary: 'Ready to send.',
+    }));
+    const email = readTool({ name: 'propose_email', service: 'gmail', execute });
+    const { client } = clientReturning([
+      toolTurn({
+        name: 'propose_email',
+        input: { to: 'her@example.test', body: `Read it: ${CONVERSATION_LINK_PLACEHOLDER}` },
+      }),
+      textTurn('Lined up — say the word.'),
+    ]);
+
+    await run(registryOf(email), client);
+
+    const body = (execute.mock.calls[0]?.[0] as { body: string }).body;
+    expect(body).not.toContain(CONVERSATION_LINK_PLACEHOLDER);
+    expect(verify(urlIn(body))).toMatchObject({ sessionId: 'sess-1', userId: 'user-1' });
+  });
+
+  it('substitutes into the prose the user reads', async () => {
+    const { client } = clientReturning([
+      textTurn(`Here it is: ${CONVERSATION_LINK_PLACEHOLDER}`),
+    ]);
+
+    const result = await run(registryOf(readTool()), client);
+
+    expect(result.text).not.toContain(CONVERSATION_LINK_PLACEHOLDER);
+    expect(verify(urlIn(result.text))).toMatchObject({ sessionId: 'sess-1', userId: 'user-1' });
+  });
+
+  it('leaves a turn that never mentions a link untouched', async () => {
+    const { client } = clientReturning([textTurn('How about Sunday?')]);
+    const result = await run(registryOf(readTool()), client);
+    expect(result.text).toBe('How about Sunday?');
+  });
+
+  it('does not sign a token over an empty owner', async () => {
+    const { client } = clientReturning([
+      textTurn(`Here it is: ${CONVERSATION_LINK_PLACEHOLDER}`),
+    ]);
+
+    const result = await runToolLoop({
+      client,
+      messages: [{ role: 'user', content: [{ text: 'link me' }] }],
+      systemPrompt: 'be Valentin',
+      registry: registryOf(readTool()),
+      sessionId: 'sess-1',
+      userId: '',
+    });
+
+    expect(result.text).not.toContain('https://');
+    expect(result.text).not.toContain(CONVERSATION_LINK_PLACEHOLDER);
   });
 });

@@ -188,6 +188,19 @@ export function buildWelcomeMessage(
  */
 export const MAX_CONTEXT_TOKENS = 4096;
 
+/**
+ * How long to wait before the one retry, and how much to spread it.
+ *
+ * Short enough that a user who is owed a reply is not left watching the typing
+ * indicator — the SDK has already spent its own backoff by the time we get here,
+ * so this is the last pause before the fallback, not the first.
+ */
+const RETRY_BASE_MS = 400;
+const RETRY_JITTER_MS = 600;
+
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
 /** Orchestrates conversation flow between user, Bedrock LLM, and preference extraction */
 export class AgentOrchestrator implements AgentOrchestratorInterface {
   constructor(
@@ -535,7 +548,16 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
     } catch (firstError) {
       console.warn('[orchestrator] Bedrock first attempt failed, retrying:',
         firstError instanceof Error ? firstError.message : firstError);
-      // Retry once
+      // Wait before retrying, rather than immediately.
+      //
+      // The failure worth surviving here is a throttle: several turns in flight
+      // at once — a chat turn and the extractor that follows it — is enough to
+      // trip Bedrock's per-account rate limit during a demo. An immediate second
+      // attempt lands inside the same throttle window and fails for the same
+      // reason, spending the retry for nothing and answering with the fallback.
+      // Jittered, so two turns that were throttled together do not both come
+      // back at the same instant and throttle each other again.
+      await sleep(RETRY_BASE_MS + Math.random() * RETRY_JITTER_MS);
       try {
         return await attempt();
       } catch (secondError) {

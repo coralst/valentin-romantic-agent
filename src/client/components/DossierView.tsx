@@ -20,7 +20,10 @@ import { GiftShortlist } from './dossier/GiftShortlist';
 import { HerWeek } from './dossier/HerWeek';
 import { FourWeekCalendar } from './dossier/FourWeekCalendar';
 import { WhatToDoNext } from './dossier/WhatToDoNext';
-import { OutingHistory } from './dossier/OutingHistory';
+import { PartnerSummary } from './dossier/PartnerSummary';
+import { EventTimeline } from './dossier/EventTimeline';
+import { derivePartnerSummary } from '../utils/partner-summary';
+import { buildEventTimeline } from '../utils/event-timeline';
 import type { OutingVerdict } from '../../shared/interfaces/outing';
 import { DossierIcon, dossierType } from './dossier/dossier-icons';
 import { EverythingIKnow } from './dossier/EverythingIKnow';
@@ -415,6 +418,29 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
    */
   const unmapped = useMemo(() => groupUnmappedPreferences(allPreferences), [allPreferences]);
 
+  /**
+   * Her portrait paragraph and its chips, composed from stored rows only.
+   *
+   * Reads the same `getFieldValue` and the same preferences every other card
+   * here reads, so the paragraph cannot claim a fact the registry below it does
+   * not show — see `utils/partner-summary.ts` on why no model writes this.
+   */
+  const summary = useMemo(
+    () => derivePartnerSummary(getFieldValue, allPreferences, name),
+    [getFieldValue, allPreferences, name],
+  );
+
+  /**
+   * Her dates and his bookings on one spine.
+   *
+   * Built from the same `occasions` the four-week grid is built from, so the two
+   * cannot disagree about when the anniversary is.
+   */
+  const timeline = useMemo(
+    () => buildEventTimeline({ occasions, outings: outingList }),
+    [occasions, outingList],
+  );
+
   const tiles = (
     <>
       <HerSizes getFieldValue={getFieldValue} onAsk={askAbout} />
@@ -460,6 +486,15 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
         </p>
 
         <div style={bandsStyle} data-testid="dossier-bands">
+          {/* Band zero: who she is, in prose, before any of the detail. It is the
+              only card that answers that in one reading, so it goes first and
+              everything below it is a drill-down. */}
+          <PartnerSummary
+            summary={summary}
+            name={name}
+            onAsk={askWhatsMissing}
+          />
+
           {/* Band one. `dossier-pair` is a real class, not an inline style: the
               two halves stack on a container query, which inline styles cannot
               express. On mobile they are one column already. */}
@@ -501,11 +536,14 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
             onAskAboutGap={askAboutPerson}
           />
 
-          {/* Band four. Where he has taken her, with the survey inline on any
-              past row nobody has answered for yet. Below the tree because it is
-              a record of what has already happened, and above `AlsoMentioned`
-              because it is a card with a control on it rather than a footnote. */}
-          <OutingHistory outings={outingList} onRate={rateOuting} />
+          {/* Band four. Her dates and his bookings on one spine, with the survey
+              inline on any past row nobody has answered for yet.
+
+              This replaced the flat `OutingHistory` card, which sorted by
+              `confirmedAt` and so listed a table booked for next Friday *above*
+              an evening you actually had — under a heading reading "where you've
+              been". The spine puts today between the two halves instead. */}
+          <EventTimeline timeline={timeline} onRate={rateOuting} />
 
           {/*
             * Last, and quietest — but not dropped.

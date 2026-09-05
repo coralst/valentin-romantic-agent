@@ -4,6 +4,11 @@ import { InMemoryStoreFactory } from './persistence/in-memory-store';
 import { DynamoDBStoreFactory } from './persistence/dynamodb-store';
 import { InMemoryConversationMemory } from './persistence/conversation-memory';
 import { AwsBedrockClient } from './agent/bedrock-client';
+import {
+  checkBedrockReadiness,
+  describeReadiness,
+  type BedrockReadiness,
+} from './agent/bedrock-preflight';
 import { LocalValentinRuntime } from './agent/valentin-runtime';
 import {
   BedrockAgentCoreRuntime,
@@ -502,6 +507,33 @@ export function createServer(deps: ServerDeps = {}) {
     if (ready) buildToolRegistry();
   });
 
+  /*
+   * Ask once, at boot, whether this process can actually reach the model.
+   *
+   * Same not-awaited shape and the same reasoning as the probes above: the health
+   * check backs the ALB target group, and putting a Converse round trip in front
+   * of `listen()` would let a Bedrock blip stall a deploy. Until it resolves,
+   * `/api/health` reports the model as `checking`.
+   *
+   * The value is entirely in *where the news arrives*. Without this, a process
+   * that cannot invoke the model looks identical to a healthy one until somebody
+   * types into the chat and gets the "having a little trouble" fallback — a
+   * sentence that reads like a transient blip, so the actual cause (usually a
+   * missing AWS_PROFILE or a stray AWS_REGION locally) gets diagnosed live, on
+   * stage. Here it is a labelled banner in the boot log instead.
+   */
+  let bedrockReadiness: BedrockReadiness | null = null;
+  void checkBedrockReadiness(bedrockClient).then((readiness) => {
+    bedrockReadiness = readiness;
+    const banner = describeReadiness(
+      readiness,
+      bedrockClient.getModelId(),
+      process.env.AWS_REGION ?? 'us-east-1',
+    );
+    if (readiness.ok) console.log(banner);
+    else console.error(banner);
+  });
+
   // Register the agent on startup
   runtime.registerAgent().then((agentId) => {
     console.log(`[server] Valentin agent registered: ${agentId}`);
@@ -538,6 +570,12 @@ export function createServer(deps: ServerDeps = {}) {
      * downgrades, and a per-request call would repeat that warning on every hit.
      */
     engine,
+    /**
+     * What the boot-time model probe found, or `null` while it is still in
+     * flight. A getter rather than a value because it resolves after
+     * `createServer` returns.
+     */
+    bedrockReadiness: () => bedrockReadiness,
     httpRoutes: anonymous.httpRoutes,
     orchestrator: anonymous.orchestrator,
     store: anonymous.store,

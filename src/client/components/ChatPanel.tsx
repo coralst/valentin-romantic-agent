@@ -175,6 +175,7 @@ export function ChatPanel() {
       <GuidedIntro />
       <MessageHistory
         messages={state.messages}
+        liveMessageIds={state.liveMessageIds}
         proposals={state.proposals}
         onConfirmProposal={handleConfirmProposal}
         onDismissProposal={handleDismissProposal}

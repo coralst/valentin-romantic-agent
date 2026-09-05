@@ -67,6 +67,20 @@ export interface ShareTokenPayload {
   sessionId: string;
   /** Epoch **seconds**, matching `exp` everywhere else in this codebase. */
   exp: number;
+  /**
+   * When the link was minted, epoch **seconds** — the point the conversation was
+   * shared *at*.
+   *
+   * This is what makes a branch possible. Opening a link continues the
+   * conversation from the moment it was handed over, not from wherever the owner
+   * has since dragged it: a link sent on Tuesday should still open on Tuesday's
+   * conversation on Friday. Without a mark, "the shared point" and "the latest
+   * message" are the same thing and a branch cannot be cut anywhere.
+   *
+   * Optional because tokens minted before this field existed are still valid and
+   * still verify. {@link sharedAtSeconds} supplies the answer for them.
+   */
+  iat?: number;
 }
 
 /** A freshly minted token, plus the expiry in the form the API reports. */
@@ -121,8 +135,9 @@ export function mintShareToken(
   sessionId: string,
   now: number = Date.now(),
 ): MintedShareToken {
-  const exp = Math.floor(now / 1000) + SHARE_TTL_DAYS * DAY_SECONDS;
-  const payload: ShareTokenPayload = { userId, sessionId, exp };
+  const iat = Math.floor(now / 1000);
+  const exp = iat + SHARE_TTL_DAYS * DAY_SECONDS;
+  const payload: ShareTokenPayload = { userId, sessionId, exp, iat };
   const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
 
   return {
@@ -156,8 +171,23 @@ function isShareTokenPayload(value: unknown): value is ShareTokenPayload {
     typeof candidate.sessionId === 'string' &&
     candidate.sessionId.length > 0 &&
     typeof candidate.exp === 'number' &&
-    Number.isFinite(candidate.exp)
+    Number.isFinite(candidate.exp) &&
+    // Absent is fine — see `iat`. Present and nonsense is not: it decides where a
+    // branch gets cut, and a NaN there would silently cut at the beginning.
+    (candidate.iat === undefined ||
+      (typeof candidate.iat === 'number' && Number.isFinite(candidate.iat)))
   );
+}
+
+/**
+ * The instant a link was shared, in epoch seconds.
+ *
+ * Falls back to `exp - SHARE_TTL_DAYS` for tokens minted before `iat` existed,
+ * which is exactly right rather than merely tolerable: `exp` was always derived
+ * from the mint time by adding the TTL, so subtracting it recovers the original.
+ */
+export function sharedAtSeconds(payload: ShareTokenPayload): number {
+  return payload.iat ?? payload.exp - SHARE_TTL_DAYS * DAY_SECONDS;
 }
 
 /**

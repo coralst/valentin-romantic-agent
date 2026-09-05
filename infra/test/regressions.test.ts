@@ -9,6 +9,8 @@
  */
 import { describe, expect, it, beforeAll } from 'vitest';
 import * as cdk from 'aws-cdk-lib';
+import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+import * as s3 from 'aws-cdk-lib/aws-s3';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { applySpringCleanExemption } from '../lib/springclean-exemption';
 import { getConfig } from '../config/environments';
@@ -1311,7 +1313,7 @@ describe('Google credentials reach the deployed task', () => {
       // redirectUri() defaults to http://localhost:5173 when PUBLIC_ORIGIN is
       // unset, which sends a deployed user's OAuth callback to their laptop.
       const origin = containerEnv(engine).PUBLIC_ORIGIN;
-      expect(origin).toBe('https://d26dwovftfq9oe.cloudfront.net');
+      expect(origin).toBe('https://valentin-romantic-agent.coralst.people.aws.dev');
       expect(origin).not.toContain('localhost');
     });
   }
@@ -1607,5 +1609,104 @@ describe('integration credentials survive a task replacement', () => {
     expect(JSON.stringify(computeTemplate.toJSON())).not.toContain(
       'secretsmanager:CreateSecret',
     );
+  });
+});
+
+describe('custom domain wiring', () => {
+  // Synth a second CDN stack with `customDomain` set, so the optional path is
+  // pinned even while every live env still leaves it undefined.
+  let template: Template;
+  const domain = {
+    domainName: 'valentin.example.people.aws.dev',
+    hostedZoneId: 'Z0000000TESTZONE',
+    zoneName: 'example.people.aws.dev',
+  };
+
+  beforeAll(() => {
+    const app = new cdk.App();
+    const stackEnv = { account: '111111111111', region: 'us-east-1' };
+    const host = new cdk.Stack(app, 'CdnDomainHost', { env: stackEnv });
+    const alb = elbv2.ApplicationLoadBalancer.fromApplicationLoadBalancerAttributes(
+      host,
+      'Alb',
+      {
+        loadBalancerArn:
+          'arn:aws:elasticloadbalancing:us-east-1:111111111111:loadbalancer/app/test/0123456789abcdef',
+        loadBalancerDnsName: 'test-alb.us-east-1.elb.amazonaws.com',
+        securityGroupId: 'sg-00000000000000000',
+      },
+    );
+    const cdn = new CdnStack(app, 'CdnWithDomain', {
+      config: { ...getConfig('dev'), customDomain: domain },
+      alb,
+      accessLogBucket: new s3.Bucket(host, 'Logs'),
+      env: stackEnv,
+    });
+    template = Template.fromStack(cdn);
+  });
+
+  it('serves the distribution on the custom domain with the ACM cert', () => {
+    template.hasResourceProperties('AWS::CloudFront::Distribution', {
+      DistributionConfig: Match.objectLike({
+        Aliases: [domain.domainName],
+        ViewerCertificate: Match.objectLike({
+          AcmCertificateArn: Match.anyValue(),
+          MinimumProtocolVersion: 'TLSv1.2_2021',
+        }),
+      }),
+    });
+  });
+
+  it('validates the certificate via DNS in the delegated zone', () => {
+    template.hasResourceProperties('AWS::CertificateManager::Certificate', {
+      DomainName: domain.domainName,
+      ValidationMethod: 'DNS',
+    });
+  });
+
+  it('creates A and AAAA alias records pointing at the distribution', () => {
+    for (const type of ['A', 'AAAA']) {
+      template.hasResourceProperties('AWS::Route53::RecordSet', {
+        Name: `${domain.domainName}.`,
+        Type: type,
+        HostedZoneId: domain.hostedZoneId,
+        AliasTarget: Match.objectLike({
+          // Alias straight at the distribution, not some hand-typed hostname.
+          DNSName: { 'Fn::GetAtt': [Match.stringLikeRegexp('^Distribution'), 'DomainName'] },
+        }),
+      });
+    }
+  });
+
+  it('keeps the default-certificate path unchanged when no domain is set', () => {
+    // Synthesized fresh with customDomain stripped, since live dev now sets it.
+    const app = new cdk.App();
+    const stackEnv = { account: '111111111111', region: 'us-east-1' };
+    const host = new cdk.Stack(app, 'CdnBareHost', { env: stackEnv });
+    const alb = elbv2.ApplicationLoadBalancer.fromApplicationLoadBalancerAttributes(
+      host,
+      'Alb',
+      {
+        loadBalancerArn:
+          'arn:aws:elasticloadbalancing:us-east-1:111111111111:loadbalancer/app/test/0123456789abcdef',
+        loadBalancerDnsName: 'test-alb.us-east-1.elb.amazonaws.com',
+        securityGroupId: 'sg-00000000000000000',
+      },
+    );
+    const bare = Template.fromStack(
+      new CdnStack(app, 'CdnBare', {
+        config: { ...getConfig('dev'), customDomain: undefined },
+        alb,
+        accessLogBucket: new s3.Bucket(host, 'Logs'),
+        env: stackEnv,
+      }),
+    );
+    const dist = Object.values<any>(
+      bare.findResources('AWS::CloudFront::Distribution'),
+    )[0];
+    expect(dist.Properties.DistributionConfig.Aliases).toBeUndefined();
+    expect(
+      dist.Properties.DistributionConfig.ViewerCertificate?.AcmCertificateArn,
+    ).toBeUndefined();
   });
 });

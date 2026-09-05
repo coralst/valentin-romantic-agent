@@ -100,6 +100,27 @@ export interface EnvironmentConfig {
     shareToken?: string;
     spotifyOAuth?: string;
   };
+  /**
+   * Custom domain served by the CloudFront distribution, backed by a
+   * SuperNova-delegated Route 53 hosted zone in this account. When set,
+   * CdnStack requests a DNS-validated ACM certificate (validation records land
+   * in the same zone, so it validates unattended), attaches the alias to the
+   * distribution, and creates the A/AAAA alias records.
+   *
+   * The hosted zone itself is created outside CDK (it must exist before the
+   * SuperNova delegation request can name it), so it is referenced by id, not
+   * constructed. Leave undefined until the zone exists and SuperNova has
+   * delegated to it — deploying before delegation would stall the stack on
+   * certificate validation that can never complete.
+   */
+  customDomain?: {
+    /** FQDN the app is served from, e.g. `valentin-romantic-agent.coralst.people.aws.dev` */
+    domainName: string;
+    /** Route 53 hosted zone id holding the records (Z…) */
+    hostedZoneId: string;
+    /** The zone's apex name, e.g. `coralst.people.aws.dev` */
+    zoneName: string;
+  };
 }
 
 /**
@@ -112,7 +133,12 @@ export interface EnvironmentConfig {
  * `--context siteUrl=https://example.cloudfront.net/` once they exist.
  */
 const siteOrigins: Record<string, string[]> = {
-  dev: ['https://d26dwovftfq9oe.cloudfront.net/'],
+  // Both origins stay registered with Cognito: the custom domain is the one we
+  // hand out, the cloudfront.net one keeps existing links and bookmarks alive.
+  dev: [
+    'https://valentin-romantic-agent.coralst.people.aws.dev/',
+    'https://d26dwovftfq9oe.cloudfront.net/',
+  ],
   staging: [],
   prod: [],
 };
@@ -175,6 +201,15 @@ const baseConfigs: Record<string, Omit<EnvironmentConfig, 'appUrls'>> = {
         'arn:aws:secretsmanager:us-east-1:684394110906:secret:valentin/dev/share-token-XnBnfq',
       spotifyOAuth:
         'arn:aws:secretsmanager:us-east-1:684394110906:secret:valentin/dev/spotify-oauth-Bo59tY',
+    },
+    // Zone created by hand on 2026-09-05 (tagged auto-delete=no so SpringClean
+    // spares it) and delegated by SuperNova. Do NOT deploy the CDN stack before
+    // the SuperNova delegation is live: ACM's DNS validation resolves through
+    // public DNS, so an undelegated zone leaves the cert stuck pending forever.
+    customDomain: {
+      domainName: 'valentin-romantic-agent.coralst.people.aws.dev',
+      hostedZoneId: 'Z02214583RHN9Y6X9DN5D',
+      zoneName: 'coralst.people.aws.dev',
     },
   },
   staging: {

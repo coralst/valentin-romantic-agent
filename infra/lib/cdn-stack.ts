@@ -1,6 +1,9 @@
 import * as cdk from 'aws-cdk-lib';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
+import * as route53 from 'aws-cdk-lib/aws-route53';
+import * as targets from 'aws-cdk-lib/aws-route53-targets';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
@@ -168,6 +171,26 @@ export class CdnStack extends cdk.Stack {
       },
     );
 
+    // --- Custom domain (optional) ---
+    // The zone is SuperNova-delegated and lives in this account, so DNS
+    // validation completes unattended: the validation CNAMEs are written into
+    // the very zone the cert is for. This stack is us-east-1, which is also
+    // the only region CloudFront accepts certificates from.
+    const customDomain = config.customDomain;
+    const siteZone = customDomain
+      ? route53.HostedZone.fromHostedZoneAttributes(this, 'SiteZone', {
+          hostedZoneId: customDomain.hostedZoneId,
+          zoneName: customDomain.zoneName,
+        })
+      : undefined;
+    const siteCertificate =
+      customDomain && siteZone
+        ? new acm.Certificate(this, 'SiteCertificate', {
+            domainName: customDomain.domainName,
+            validation: acm.CertificateValidation.fromDns(siteZone),
+          })
+        : undefined;
+
     // --- CloudFront Distribution ---
     this.distribution = new cloudfront.Distribution(this, 'Distribution', {
       comment: `valentin-${env}`,
@@ -243,10 +266,40 @@ export class CdnStack extends cdk.Stack {
       enableLogging: true,
       logBucket: props.accessLogBucket,
       logFilePrefix: `cloudfront/${env}/`,
-      // minimumProtocolVersion cannot be raised above the default while the
-      // distribution uses the CloudFront default certificate. Requires a
-      // custom domain plus an ACM certificate.
+      // With no custom domain the distribution uses the CloudFront default
+      // certificate, where minimumProtocolVersion cannot be raised above the
+      // default. With one, the ACM cert lets us require TLS 1.2.
+      ...(customDomain && siteCertificate
+        ? {
+            domainNames: [customDomain.domainName],
+            certificate: siteCertificate,
+            minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
+          }
+        : {}),
     });
+
+    // --- Alias records for the custom domain ---
+    if (customDomain && siteZone) {
+      const aliasTarget = route53.RecordTarget.fromAlias(
+        new targets.CloudFrontTarget(this.distribution),
+      );
+      new route53.ARecord(this, 'SiteAliasA', {
+        zone: siteZone,
+        recordName: customDomain.domainName,
+        target: aliasTarget,
+      });
+      new route53.AaaaRecord(this, 'SiteAliasAaaa', {
+        zone: siteZone,
+        recordName: customDomain.domainName,
+        target: aliasTarget,
+      });
+
+      new cdk.CfnOutput(this, 'SiteUrl', {
+        value: `https://${customDomain.domainName}/`,
+        description: 'Custom-domain URL the app is served from',
+        exportName: `valentin-site-url-${env}`,
+      });
+    }
 
     // --- Outputs ---
     new cdk.CfnOutput(this, 'DistributionId', {

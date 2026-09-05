@@ -70,7 +70,73 @@
               margin-right: 4px; }
   .byline i { width: 4px; height: 4px; border-radius: 999px; background: rgba(255,253,251,.45); }
 
+  /* ---- component locator ------------------------------------------------
+     Every comparison slide opens by saying which AgentCore component it is
+     about. `--ac` is the architecture diagram's own TILE.core teal, so a lit
+     chip here reads as the same box the diagram drew. */
+  .locator { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 14px 0 4px;
+             --ac: linear-gradient(135deg,#3FD9BE,#01A88D); }
+  .locator .lk { font: 500 11px Outfit; letter-spacing: .2em; text-transform: uppercase;
+                 color: var(--ink-3); margin-right: 4px; }
+  .locator i { font-style: normal; font: 500 14px Outfit; padding: 7px 15px; border-radius: 999px;
+               color: var(--ink-3); background: rgba(42,34,38,.05); }
+  .locator i.on { background: var(--ac); color: #06312B; font-weight: 600;
+                  box-shadow: 0 6px 18px rgba(1,168,141,.3); }
+  .locator .arw { color: var(--ink-3); font-size: 15px; }
+  .locator .repl { font: 400 14px Outfit; color: var(--ink-3); }
+  .locator .repl b { font-weight: 500; color: var(--ink-2); }
+  .dark .locator .lk, .dark .locator .repl { color: rgba(255,253,251,.45); }
+  .dark .locator i { color: rgba(255,253,251,.5); background: rgba(255,253,251,.08); }
+  /* must out-specify the rule above it, or the lit chip goes grey on dark slides */
+  .dark .locator i.on { background: var(--ac); color: #06312B; }
+  .dark .locator .repl b { color: rgba(255,253,251,.75); }
+
+  /* ---- comparison overview matrix --------------------------------------
+     One row per dimension: the component, what each engine does, who wins.
+     Deliberately not a .scale table — the cells are prose, not numbers. */
+  .matrix { width: 100%; margin-top: 18px; border-collapse: collapse; }
+  .matrix th { font: 500 11px Outfit; letter-spacing: .16em; text-transform: uppercase;
+               color: var(--ink-3); text-align: left; padding: 0 14px 10px 0; }
+  .matrix td { padding: 13px 14px 13px 0; border-top: 1px solid rgba(42,34,38,.1);
+               font-size: 15.5px; line-height: 1.4; vertical-align: top; }
+  .matrix .dim { font: 500 17px Outfit; white-space: nowrap; }
+  .matrix .cmp { font-family: ui-monospace, monospace; font-size: 13.5px; color: #01766A;
+                 background: rgba(1,168,141,.1); border-radius: 999px; padding: 5px 11px;
+                 display: inline-block; white-space: nowrap; }
+  .matrix .a { color: var(--ink-2); }
+  .matrix .b { color: var(--ink); }
+  .matrix .won { font: 500 14px Outfit; white-space: nowrap; }
+  .matrix .won.b { color: #01766A; }
+  .matrix .won.a { color: var(--claret); }
+  .matrix .won.tie { color: var(--ink-3); }
+
+  /* ---- per-layer ledger: which layer AgentCore actually wins ------------
+     Four compute/memory/model/tool layers, each with both prices and a
+     verdict, because three of the four go the other way. */
+  .layers { display: grid; gap: 8px; margin-top: 16px; }
+  .layer { background: var(--cream); border-radius: var(--r-sm); padding: 13px 20px;
+           display: grid; grid-template-columns: 210px 1fr 130px 130px 128px; gap: 16px;
+           align-items: center; box-shadow: 0 1px 3px rgba(42,34,38,.05), 0 8px 22px rgba(42,34,38,.05); }
+  .layer .lname { font: 500 16px Outfit; }
+  .layer .lname s { display: block; text-decoration: none; font-family: ui-monospace, monospace;
+                    font-size: 12.5px; color: #01766A; margin-top: 3px; }
+  .layer .lwhy { font-size: 14.5px; line-height: 1.4; color: var(--ink-2); }
+  .layer .amt { font-family: Gloock, serif; font-size: 18px; text-align: right;
+                font-variant-numeric: tabular-nums; }
+  .layer .amt s { display: block; text-decoration: none; font: 400 12px Outfit;
+                  color: var(--ink-3); margin-top: 3px; }
+  .layer .amt.a { color: var(--claret); }
+  .layer .amt.b { color: #01766A; }
+  .layer .flag { font: 500 13px Outfit; text-align: right; }
+  .layer .flag.b { color: #01766A; }
+  .layer .flag.a { color: var(--claret); }
+  .layer.decisive { border-left: 3px solid #01A88D; }
+
   /* ---- agenda ---- */
+  .toc .sub { grid-column: 2; padding: 0; border: none; display: flex; flex-wrap: wrap; gap: 7px;
+              margin-top: 9px; }
+  .toc .sub span { font: 400 15px Outfit; color: var(--ink-2); background: rgba(42,34,38,.05);
+                   border-radius: 999px; padding: 4px 12px; }
   .applink { margin-top: 8px; }
   .applink a { display: inline-block; text-decoration: none; padding: 18px 34px;
     border-radius: 999px; background: var(--cream); color: var(--claret);
@@ -414,6 +480,8 @@
     section { padding: 48px 20px; }
     .flow, .split, .split.lean, .stats, .lessons, .crew, .loopcards { grid-template-columns: 1fr; }
     .versus, .radius, .faults, .kits, .split.board { grid-template-columns: 1fr; gap: 12px; }
+    .layer { grid-template-columns: 1fr 1fr; }
+    .toc { grid-template-columns: 1fr; }
     .an { grid-template-columns: 30px 1fr; }
     .an p { grid-column: 2; }
     .stage.tall img { max-height: none; }
@@ -440,9 +508,8 @@
   <div class="wrap">
     <div class="crest"><img src="logo.png" alt="Valentin"></div>
     <div class="kicker">GenAI TFC project</div>
-    <h1>Valentin</h1>
-    <p class="thesis">A romantic concierge agent, built twice —
-      <em>once by hand, once on Bedrock AgentCore.</em></p>
+    <h1>Valentin<br>Romantic Agent</h1>
+    <p class="thesis">Built twice — <em>once by hand, once on Bedrock AgentCore.</em></p>
     <div class="byline"><b>Coral Magen</b>
       <span>Technical Account Manager, AWS</span></div>
   </div>
@@ -454,78 +521,52 @@
   <div class="wrap wide">
     <div class="act"><b>02</b> · Agenda</div>
     <h2>Agenda</h2>
-    <div class="toc">
-      <div><span class="n">01</span><b>Use case</b></div>
-      <div><span class="n">07</span><b>Comparison — Resilience</b></div>
-      <div><span class="n">02</span><b>What the app can do</b></div>
-      <div><span class="n">08</span><b>Comparison — Security</b></div>
-      <div><span class="n">03</span><b>Architecture</b></div>
-      <div><span class="n">09</span><b>How it was built — the agent team</b></div>
-      <div><span class="n">04</span><b>Live demo</b></div>
-      <div><span class="n">10</span><b>How it was built — the PRs graph</b></div>
-      <div><span class="n">05</span><b>Comparison — Cost</b></div>
-      <div><span class="n">11</span><b>Lessons learned</b></div>
-      <div><span class="n">06</span><b>Comparison — Tool use</b></div>
-      <div></div>
+    <div class="toc" style="grid-template-columns:1fr; max-width:1000px">
+      <div><span class="n">01</span><b>Use case and what the app can do</b></div>
+      <div><span class="n">02</span><b>Architecture — diagram</b></div>
+      <div><span class="n">03</span><b>Live demo</b></div>
+      <div><span class="n">04</span><b>Comparison</b>
+        <div class="sub"><span>Cost</span><span>Tool use</span><span>Resilience</span><span>Security</span></div>
+      </div>
+      <div><span class="n">05</span><b>How it was built — the agent team</b></div>
+      <div><span class="n">06</span><b>How it was built — the PRs graph</b></div>
+      <div><span class="n">07</span><b>Lessons learned</b></div>
     </div>
   </div>
 </section>
 
-<!-- ═══ 3 · USE CASE ══════════════════════════════ -->
-<section id="usecase" data-title="Use case">
+<!-- ═══ 3 · USE CASE AND WHAT THE APP CAN DO ══════ -->
+<section id="usecase" data-title="Use case and what the app can do">
   <div class="wrap wide">
-    <div class="act"><b>03</b> · Use case</div>
-    <h2>Use case</h2>
-    <div class="loopcards">
-      <div class="lp" style="--c: var(--claret)">
-        <span class="t">The problem</span>
-        <h3>The details arrive in conversation</h3>
-        <p>Mentioned once, in passing, months before they matter.</p>
-      </div>
-      <div class="lp" style="--c: var(--arch)">
-        <span class="t">Why a reminder app isn't enough</span>
-        <h3>"Anniversary" on the day is too late</h3>
-        <p>You needed lead time you chose, and options you can act on.</p>
-      </div>
-      <div class="lp" style="--c: var(--olive)">
-        <span class="t">The pattern</span>
-        <h3>Extract, remember, act later</h3>
-        <p>Romance is the demo. The same shape fits onboarding and renewals.</p>
-      </div>
-    </div>
-    <p class="note">Why an agent and not a form with a cron job: unstructured input arriving over weeks,
-      a plan whose next tool depends on what came back, and a human in the loop before anything sends.</p>
-  </div>
-</section>
-
-<!-- ═══ 4 · WHAT THE APP CAN DO ═══════════════════ -->
-<section id="what" data-title="What the app can do">
-  <div class="wrap wide">
-    <div class="act"><b>04</b> · What the app can do</div>
-    <h2>What the app can do</h2>
+    <div class="act"><b>03</b> · Use case and what the app can do</div>
+    <h2>Use case and what the app can do</h2>
+    <p class="lede" style="max-width:1080px">The details arrive in conversation, months before they
+      matter — and "anniversary" on the day is too late. So: extract, remember, act early.</p>
     <div class="flow">
       <div class="step"><div class="num">1</div><b>You talk about her</b>
         <p>Claude Sonnet 4.5 on Bedrock, in character.</p></div>
       <div class="step"><div class="num">2</div><b>The profile fills itself</b>
-        <p>A second Bedrock call extracts preferences into eight categories.</p></div>
+        <p>Preferences extracted into eight categories.</p></div>
       <div class="step"><div class="num">3</div><b>He keeps the dates</b>
         <p>You choose the lead time — a month, a week, a day.</p></div>
       <div class="step"><div class="num">4</div><b>The reminder arrives</b>
-        <p>Real email: restaurants that match, a playlist, a link to confirm.</p></div>
+        <p>Real email: restaurants, a playlist, a link to confirm.</p></div>
     </div>
     <div class="chips">
       <span class="chip">Food</span><span class="chip">Hobbies</span><span class="chip">Music</span>
       <span class="chip">Travel</span><span class="chip">Gifts</span><span class="chip">Love language</span>
       <span class="chip">Important dates</span><span class="chip">Personality</span>
     </div>
+    <p class="note">Why an agent and not a form with a cron job: unstructured input over weeks, a plan
+      whose next tool depends on what came back, and a human in the loop before anything sends.</p>
   </div>
 </section>
 
-<!-- ═══ 5 · ARCHITECTURE ══════════════════════════ -->
+<!-- ═══ 4 · ARCHITECTURE ══════════════════════════ -->
 <section id="architecture" data-title="Architecture">
   <div class="wrap wide">
-    <div class="act"><b>05</b> · Architecture</div>
-    <h2>Architecture</h2>
+    <div class="act"><b>04</b> · Architecture</div>
+    <h2>Architecture — diagram</h2>
     <div class="split board" style="grid-template-columns: 1.95fr 1fr">
       <div class="stage tall">
         <img style="max-height:70vh" src="deck-assets/diagram-two-engines.png"
@@ -541,17 +582,19 @@
             <li><div><b>DynamoDB</b> → <b>Memory</b><br><s>my store → a managed strategy</s></div></li>
             <li><div><b>A 2nd Bedrock call</b> → <b>Memory</b><br><s>my extraction pass → extraction I don't write</s></div></li>
             <li><div><b>In-process registry</b> → <b>Gateway</b><br><s>functions → tools over MCP, on Lambda</s></div></li>
+            <li><div><b>span-bridge.ts</b> → <b>Observability</b><br><s>hand-wired spans → OTEL, no wiring</s></div></li>
           </ul>
         </div>
+        <p class="note" style="margin-top:14px">The next four slides each light up one of these boxes.</p>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ═══ 6 · LIVE DEMO ═════════════════════════════ -->
+<!-- ═══ 5 · LIVE DEMO ═════════════════════════════ -->
 <section class="demo" id="demo" data-title="Live demo">
   <div class="wrap wide">
-    <div class="act"><b>06</b> · Live demo</div>
+    <div class="act"><b>05</b> · Live demo</div>
     <h2>Live demo</h2>
     <div class="split lean">
       <div class="shotbox"><img src="deck-assets/app-live.png" alt="Valentin mid-conversation, the partner profile filling in beside it"></div>
@@ -570,32 +613,102 @@
   </div>
 </section>
 
+<!-- ═══ 6 · COMPARISON · OVERVIEW ═════════════════ -->
+<section id="comparison" data-title="Comparison">
+  <div class="wrap wide">
+    <div class="act"><b>06</b> · Comparison</div>
+    <h2>Comparison</h2>
+    <p class="lede" style="max-width:1080px">Five AgentCore components replaced five things I had
+      written. Each row below is one of them — and the next four slides take one row each.</p>
+    <div class="locator">
+      <span class="lk">AgentCore</span>
+      <i class="on">Runtime</i><i class="on">Memory</i><i class="on">Gateway</i>
+      <i class="on">Identity</i><i class="on">Observability</i>
+    </div>
+    <table class="matrix">
+      <tr><th>Dimension</th><th>Component</th><th>Engine A — my glue code</th><th>Engine B — AgentCore</th><th>Who wins</th></tr>
+      <tr>
+        <td class="dim">Cost</td>
+        <td><span class="cmp">Memory</span></td>
+        <td class="a">A 2nd Bedrock call per turn to extract preferences</td>
+        <td class="b">Extraction inside the Memory rate — no model call of mine</td>
+        <td class="won b">B · 13.5×</td>
+      </tr>
+      <tr>
+        <td class="dim">Tool use</td>
+        <td><span class="cmp">Gateway</span></td>
+        <td class="a">20 TypeScript functions called in-process; no authorization boundary</td>
+        <td class="b">Same 20 over MCP, two Lambda targets behind a <code>CUSTOM_JWT</code> authorizer</td>
+        <td class="won b">B · boundary</td>
+      </tr>
+      <tr>
+        <td class="dim">Resilience</td>
+        <td><span class="cmp">Runtime</span></td>
+        <td class="a">One Node process holds every session — one heap, one event loop</td>
+        <td class="b">One microVM per session, per-second billed</td>
+        <td class="won b">B · blast radius</td>
+      </tr>
+      <tr>
+        <td class="dim">Security</td>
+        <td><span class="cmp">Identity</span></td>
+        <td class="a">One task role does everything; the guardrail is applied by my code</td>
+        <td class="b">Workload identity per runtime, two scoped machine clients, same guardrail</td>
+        <td class="won tie">Tie on policy, B on identity</td>
+      </tr>
+      <tr>
+        <td class="dim">Observability</td>
+        <td><span class="cmp">Observability</span></td>
+        <td class="a"><code>span-bridge.ts</code> — spans I emit by hand</td>
+        <td class="b">OTEL traces, sessions and trajectories with no wiring</td>
+        <td class="won b">B · minus one manual switch</td>
+      </tr>
+    </table>
+    <p class="note">The model, the guardrail and the DynamoDB table are identical on both sides. If any
+      of the three differed, none of these rows would mean anything.</p>
+  </div>
+</section>
+
 <!-- ═══ 7 · COMPARISON · COST ═════════════════════ -->
 <section id="cost" data-title="Comparison · Cost">
   <div class="wrap wide">
     <div class="act"><b>07</b> · Comparison · <b>Cost</b></div>
     <h2>Comparison — Cost</h2>
-    <div class="versus">
-      <div class="panel" style="--c: var(--claret)">
-        <span class="t">Engine A · glue code</span>
-        <h3>$18.02 fixed, $1.386 per user</h3>
-        <ul class="ledger">
-          <li><div>AWS Fargate<s>never scales below 1</s></div><span class="amt">$18.02</span></li>
-          <li><div>2nd Bedrock extraction<s>104 turns</s></div><span class="amt">$1.385</span></li>
-          <li><div>Amazon DynamoDB<s>on-demand</s></div><span class="amt">$0.0006</span></li>
-          <li class="sum"><div>At one user, per month</div><span class="amt">$19.41</span></li>
-        </ul>
+    <div class="locator">
+      <span class="lk">AgentCore</span>
+      <i class="on">Runtime</i><i class="on">Memory</i><i class="on">Gateway</i>
+      <i>Identity</i><i>Observability</i>
+      <span class="arw">·</span><span class="repl">all three bill; <b>Memory</b> decides the number</span>
+    </div>
+    <p class="lede" style="max-width:1080px">AgentCore is <em>more expensive</em> on three of the four
+      layers. It still cuts the bill 13.5×, because the fourth layer is 99.9% of what a turn costs.</p>
+    <div class="layers">
+      <div class="layer">
+        <div class="lname">1 · Compute<s>Fargate → Runtime</s></div>
+        <div class="lwhy">Runtime costs 2.2× more per vCPU-hour — but a turn buys 3 seconds, not 730 hours.</div>
+        <div class="amt a">$0.0247<s>per hour, always on</s></div>
+        <div class="amt b">$0.0542<s>per hour, 3 s per turn</s></div>
+        <div class="flag a">A cheaper per hour</div>
       </div>
-      <div class="vs"><span>vs</span></div>
-      <div class="panel" style="--c: var(--olive)">
-        <span class="t">Engine B · AgentCore</span>
-        <h3>$0.0006 fixed, $0.103 per user</h3>
-        <ul class="ledger" style="--c: var(--olive)">
-          <li><div>AgentCore Gateway<s>the only fixed line</s></div><span class="amt">$0.0006</span></li>
-          <li><div>AgentCore Memory<s>extraction included</s></div><span class="amt">$0.098</span></li>
-          <li><div>AgentCore Runtime<s>per-second billing</s></div><span class="amt">$0.0047</span></li>
-          <li class="sum"><div>At one user, per month</div><span class="amt">$0.10</span></li>
-        </ul>
+      <div class="layer">
+        <div class="lname">2 · Memory store<s>DynamoDB → Memory</s></div>
+        <div class="lwhy">Event plus retrieval, every turn. DynamoDB does the same job for a rounding error.</div>
+        <div class="amt a">$0.0000061<s>per turn</s></div>
+        <div class="amt b">$0.00075<s>per turn</s></div>
+        <div class="flag a">A cheaper, 124×</div>
+      </div>
+      <div class="layer decisive">
+        <div class="lname">3 · Extraction<s>2nd Bedrock call → Memory</s></div>
+        <div class="lwhy">My extractor resends the whole history to Sonnet every turn. <b>Memory includes it.</b></div>
+        <div class="amt a">$0.01332<s>per turn · 2,940 in / 300 out</s></div>
+        <div class="amt b">$0<s>inside the Memory rate</s></div>
+        <div class="flag b">B wins — 99.9% of A's turn</div>
+      </div>
+      <div class="layer">
+        <div class="lname">4 · Tool execution<s>in-process → Gateway</s></div>
+        <div class="lwhy">Engine A's tools run inside a task already paid for; the Gateway bills per invoke.</div>
+        <div class="amt a">$0<s>already in the task</s></div>
+        <div class="amt b">$0.00001<s>per turn · 2 invokes</s></div>
+        <div class="flag a">A cheaper</div>
       </div>
     </div>
     <table class="scale">
@@ -604,7 +717,9 @@
       <tr><td>10,000</td><td>$13,877</td><td>$1,029</td><td>13.5×</td><td class="save">$12,848</td></tr>
       <tr class="peak"><td>1,000,000</td><td>$1.39 M</td><td>$103 k</td><td>13.5×</td><td class="save">$1.28 M</td></tr>
     </table>
-    <p class="note">The ratio falls as Fargate's fixed $18 amortises; the money keeps growing.</p>
+    <p class="note">187× is Fargate's fixed $18 with nobody using it; 13.5× is the real number. And the
+      honest risk: if Memory billed retrieval per record instead of per call, engine B would be
+      <b>3.8× worse</b> — one line item, opposite conclusion.</p>
   </div>
 </section>
 
@@ -613,6 +728,13 @@
   <div class="wrap wide">
     <div class="act"><b>08</b> · Comparison · <b>Tool use</b></div>
     <h2>Comparison — Tool use</h2>
+    <div class="locator">
+      <span class="lk">AgentCore</span>
+      <i>Runtime</i><i>Memory</i><i class="on">Gateway</i><i class="on">Identity</i><i>Observability</i>
+      <span class="arw">·</span><span class="repl">replaces <b>my in-process tool registry</b></span>
+    </div>
+    <p class="lede" style="max-width:1080px">The same 20 tools, reached two ways. Engine B's version
+      can answer a question mine cannot: <em>did the model do this, or did the app?</em></p>
     <div class="stats">
       <div class="stat"><div class="v">20</div><b>tools, ten integrations</b>
         <p>Ontopo, Amadeus, Google, Spotify, Hebcal, Wolt. Live APIs.</p></div>
@@ -620,31 +742,33 @@
         <p>It plans around real constraints instead of inventing them.</p></div>
       <div class="stat"><div class="v">7</div><b>that propose, never act</b>
         <p>Every write returns a card she confirms.</p></div>
-      <div class="stat"><div class="v">5</div><b>model round-trips per turn</b>
-        <p>Calls a tool, reads the result, decides again.</p></div>
+      <div class="stat"><div class="v">2</div><b>Lambda targets, one endpoint</b>
+        <p>Profile tools and integrations, both over MCP.</p></div>
     </div>
     <div class="versus" style="margin-top:16px">
       <div class="panel" style="--c: var(--claret)">
-        <span class="t">Engine A · in-process</span>
-        <h3>A registry inside the task</h3>
+        <span class="t">Engine A · in-process registry</span>
+        <h3>A function call inside the task</h3>
         <ul class="pairs">
-          <li><div><b>TypeScript functions</b><br><s>called in the Node process</s></div></li>
-          <li><div><b>No authorization boundary</b><br><s>anything can call anything</s></div></li>
+          <li><div><b>No authorization boundary</b><br><s>anything in the process can call anything</s></div></li>
+          <li><div><b>One identity</b><br><s>the task role is the agent and the app at once</s></div></li>
           <li><div><b>Adding a tool</b><br><s>redeploy the container</s></div></li>
         </ul>
       </div>
       <div class="vs"><span>vs</span></div>
-      <div class="panel" style="--c: var(--olive)">
+      <div class="panel" style="--c: #01A88D">
         <span class="t">Engine B · Gateway over MCP</span>
-        <h3>A contract the platform owns</h3>
+        <h3>A contract the platform holds</h3>
         <ul class="pairs">
-          <li><div><b>Two Lambda targets</b><br><s>behind a CUSTOM_JWT authorizer</s></div></li>
-          <li><div><b>Scoped credentials</b><br><s>the Gateway signs, not the agent</s></div></li>
-          <li><div><b>Adding a tool</b><br><s>regenerate schemas, update the stack</s></div></li>
+          <li><div><b><code>CUSTOM_JWT</code>, the only inbound mode</b><br><s>allowedClients scoped to two machine clients — a signed-in visitor's token opens nothing</s></div></li>
+          <li><div><b>Two callers, two credentials</b><br><s>the agent's client and the app's, so the access log separates them</s></div></li>
+          <li><div><b><code>confirm_*</code> hidden from the model</b><br><s>only the proxy can spend money</s></div></li>
         </ul>
       </div>
     </div>
-    <p class="note">Schemas are generated from the tools, so the two engines cannot drift apart.</p>
+    <p class="note">Schemas are generated from the tools and a unit test fails on drift, so the two
+      engines cannot disagree about what a tool accepts. <code>exceptionLevel: DEBUG</code> passes the
+      tool's own validation error back to the model instead of a generic failure.</p>
   </div>
 </section>
 
@@ -653,10 +777,15 @@
   <div class="wrap wide">
     <div class="act"><b>09</b> · Comparison · <b>Resilience</b></div>
     <h2>Comparison — Resilience</h2>
-    <p class="lede" style="max-width: 1060px">Forty live sessions on each side. One process-level fault.</p>
+    <div class="locator">
+      <span class="lk">AgentCore</span>
+      <i class="on">Runtime</i><i>Memory</i><i>Gateway</i><i>Identity</i><i>Observability</i>
+      <span class="arw">·</span><span class="repl">replaces <b>my one always-on Fargate task</b></span>
+    </div>
+    <p class="lede" style="max-width:1060px">Forty live sessions on each side. One process-level fault.</p>
     <div class="radius">
       <div class="panel" style="--c: var(--claret)">
-        <span class="t">Engine A</span>
+        <span class="t">Engine A · ECS Fargate</span>
         <h3>One Node process</h3>
         <p class="sub">Forty WebSockets, one heap, one event loop.</p>
         <div class="vessel shared">
@@ -670,10 +799,10 @@
           <p>of 40 sessions lost</p></div>
       </div>
       <div class="vs"><span>vs</span></div>
-      <div class="panel" style="--c: var(--olive)">
-        <span class="t">Engine B</span>
+      <div class="panel" style="--c: #01A88D">
+        <span class="t">Engine B · AgentCore Runtime</span>
         <h3>One microVM per session</h3>
-        <p class="sub">Forty isolated execution environments.</p>
+        <p class="sub">Forty isolated execution environments, ARM64, billed per second.</p>
         <div class="vessel isolated">
         <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
         <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
@@ -695,8 +824,8 @@
       <div class="fault"><b>Injection that pivots</b>
         <p>Reaches a singleton holding everyone's credentials.</p></div>
     </div>
-    <p class="note">Honest: this deployment still answers through one shared proxy task. The right panel
-      is what Runtime gives you, not yet what this repo deploys.</p>
+    <p class="note">Honest: a Runtime cannot be an ALB target, so this deployment still fronts it with
+      one shared proxy task. The right panel is what Runtime gives you — not yet what this repo deploys.</p>
   </div>
 </section>
 
@@ -705,25 +834,44 @@
   <div class="wrap wide">
     <div class="act"><b>10</b> · Comparison · <b>Security</b></div>
     <h2>Comparison — Security</h2>
-    <p class="lede" style="max-width: 1060px">One guardrail, both engines. The work was tuning it —
-      the safe default broke the product.</p>
-    <div class="stats">
+    <div class="locator">
+      <span class="lk">AgentCore</span>
+      <i>Runtime</i><i class="on">Memory</i><i class="on">Gateway</i><i class="on">Identity</i><i>Observability</i>
+      <span class="arw">·</span><span class="repl">replaces <b>one task role doing everything</b></span>
+    </div>
+    <p class="lede" style="max-width:1080px">One guardrail, applied by both engines — that is what makes
+      the comparison mean anything. What AgentCore added was <em>identity</em>, not policy.</p>
+    <div class="versus">
+      <div class="panel" style="--c: var(--claret)">
+        <span class="t">Engine A · one role</span>
+        <h3>The task is the boundary</h3>
+        <ul class="pairs">
+          <li><div><b>One task role</b><br><s>model, table and every integration secret</s></div></li>
+          <li><div><b>Guardrail in my code path</b><br><s>if I forget the call, there is no guardrail</s></div></li>
+          <li><div><b>Profile lives until deleted</b><br><s>no expiry by construction</s></div></li>
+        </ul>
+      </div>
+      <div class="vs"><span>vs</span></div>
+      <div class="panel" style="--c: #01A88D">
+        <span class="t">Engine B · Identity + Gateway + Memory</span>
+        <h3>Four boundaries the platform holds</h3>
+        <ul class="pairs">
+          <li><div><b>Workload identity per runtime</b><br><s>scoped to <code>workload-identity/valentin_agent_*</code></s></div></li>
+          <li><div><b>Secret never in a template</b><br><s>the agent reads its own client secret at cold start</s></div></li>
+          <li><div><b><code>ApplyGuardrail</code> granted separately</b><br><s>from <code>InvokeModel</code> — the policy is its own permission</s></div></li>
+          <li><div><b>Memory expires in 90 days</b><br><s>namespaced per session, so two partners never blend</s></div></li>
+        </ul>
+      </div>
+    </div>
+    <div class="stats" style="margin-top:16px">
       <div class="stat"><div class="v">6</div><b>content filters, measured</b>
         <p>At HIGH, <code>SEXUAL</code> blocked "her ring size is 6" — a field the agent asks for.</p></div>
-      <div class="stat"><div class="v">5</div><b>PII entities blocked</b>
-        <p>Card, SSN, phone, and both AWS key types.</p></div>
       <div class="stat"><div class="v">3</div><b>regexes replacing one entity</b>
         <p><code>ADDRESS</code> read "saving for Kyoto" as an address.</p></div>
       <div class="stat"><div class="v">7</div><b>tools that cannot act alone</b>
         <p>Every write awaits a human yes.</p></div>
-    </div>
-    <div class="faults" style="margin-top:16px">
-      <div class="fault"><b>Known gap · ALB listener is HTTP</b>
-        <p>TLS terminates at CloudFront; the hop to the ALB doesn't.</p></div>
-      <div class="fault"><b>Known gap · Cognito isn't enforced</b>
-        <p>The front door is a demo login, not a real one.</p></div>
-      <div class="fault"><b>Known gap · secrets by hand</b>
-        <p>Populating Google OAuth is still manual after a deploy.</p></div>
+      <div class="stat"><div class="v">3</div><b>known gaps, owned</b>
+        <p>ALB listener is HTTP · Cognito not enforced · secrets populated by hand.</p></div>
     </div>
     <p class="note"><code>NAME</code>, <code>AGE</code> and <code>EMAIL</code> are deliberately not
       blocked — they are this agent's subject matter. Every decision is a dated comment in

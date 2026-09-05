@@ -171,19 +171,22 @@ describe('MessageBubble', () => {
     });
 
     /**
-     * The registry lives in module scope, so it dies with the page — a reload would
-     * otherwise re-type the last reply, which is the same defect one refresh later.
+     * A hydrated message is told not to animate, and its age is no longer part of
+     * the decision — `MessageHistory` answers "did this arrive or was it loaded?"
+     * from `ChatState.liveMessageIds`. A seconds-old timestamp used to be enough
+     * to trigger the reveal on its own, which is what made the replay
+     * intermittent; the bubble must obey `animate` and nothing else.
      */
-    it('renders a message restored from storage in full, however new the page is', () => {
+    it('renders a not-animating message in full however fresh its timestamp is', () => {
       const msg: ChatMessage = {
         id: 'restored',
         sessionId: 's1',
         sender: 'agent',
-        content: 'Said an hour ago, and read long since.',
-        timestamp: new Date(Date.now() - 3_600_000).toISOString(),
+        content: 'Said a moment ago, but loaded rather than delivered.',
+        timestamp: new Date().toISOString(),
       };
 
-      render(<MessageBubble message={msg} animate />);
+      render(<MessageBubble message={msg} animate={false} />);
 
       expect(revealed()).toBe(msg.content);
     });

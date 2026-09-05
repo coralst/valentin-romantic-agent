@@ -228,4 +228,68 @@ describe('MessageHistory', () => {
       expect(screen.queryByTestId('transcript-empty')).not.toBeInTheDocument();
     });
   });
+
+  /**
+   * THE USER'S REPRO: "the gradual typing of last message when enter to it … (the
+   * behavior is good as reaction to you send something)".
+   *
+   * "Newest agent message" was the whole condition for the reveal, and it is true
+   * of a conversation being opened as much as of a reply arriving — so entering
+   * one re-typed Valentin's last line at the user, which reads as the app
+   * rewriting what he had already said. Which of the two it is cannot be read off
+   * the message; it comes from `ChatState.liveMessageIds`.
+   */
+  describe('the reveal on the newest reply', () => {
+    /** The presentational span — the one the typewriter drives. */
+    function revealed(): string {
+      const bubbles = screen.getAllByTestId('message-bubble');
+      const last = bubbles[bubbles.length - 1];
+      return last.querySelector('[aria-hidden="true"]')?.textContent ?? '';
+    }
+
+    const line = 'A reply long enough that a re-type would be unmistakable.';
+
+    it('does not replay it for a transcript that was loaded', () => {
+      // No live ids at all: this is the entry case, whatever the timestamps say.
+      render(
+        <PreferencesProvider>
+          <MessageHistory messages={[message('entry-user', 'user', 'Hi'), message('entry-agent', 'agent', line)]} />
+        </PreferencesProvider>,
+      );
+
+      expect(revealed()).toBe(line);
+    });
+
+    it('still plays it for a reply that just arrived', () => {
+      render(
+        <PreferencesProvider>
+          <MessageHistory
+            messages={[message('live-user', 'user', 'Hi'), message('live-agent', 'agent', line)]}
+            liveMessageIds={new Set(['live-agent'])}
+          />
+        </PreferencesProvider>,
+      );
+
+      // Mid-reveal, so the presentational text is still empty — the behaviour the
+      // user explicitly asked to keep for messages sent in front of them.
+      expect(revealed()).toBe('');
+    });
+
+    it('leaves an older reply alone even while a new one is revealing', () => {
+      render(
+        <PreferencesProvider>
+          <MessageHistory
+            messages={[
+              message('earlier-agent', 'agent', 'Said earlier.'),
+              message('newest-agent', 'agent', line),
+            ]}
+            liveMessageIds={new Set(['newest-agent'])}
+          />
+        </PreferencesProvider>,
+      );
+
+      const first = screen.getAllByTestId('message-bubble')[0];
+      expect(first.querySelector('[aria-hidden="true"]')?.textContent).toBe('Said earlier.');
+    });
+  });
 });

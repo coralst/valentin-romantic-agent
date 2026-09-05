@@ -13,6 +13,12 @@ import { chatMeasureStyle } from './chat-measure';
 
 interface MessageHistoryProps {
   messages: ChatMessage[];
+  /**
+   * Ids that arrived while this transcript was mounted — see `ChatState`. Only
+   * these may animate; omitting it means "none of them did", which is the right
+   * default for a transcript being rendered from stored messages.
+   */
+  liveMessageIds?: ReadonlySet<string>;
   /** Proposals awaiting a yes, plus the ones already answered. */
   proposals?: ProposalEntry[];
   onConfirmProposal?: (proposalId: string) => void;
@@ -85,6 +91,7 @@ const FOLLOW_THRESHOLD_PX = 120;
 
 export function MessageHistory({
   messages,
+  liveMessageIds,
   proposals = [],
   onConfirmProposal,
   onDismissProposal,
@@ -225,8 +232,17 @@ export function MessageHistory({
           <div key={msg.id}>
             <MessageBubble
               message={msg}
-              // Only the newest message animates; earlier ones render fully.
-              animate={msg.id === lastMessage?.id && msg.sender === 'agent'}
+              /*
+               * Only the newest message animates, and only if it arrived rather
+               * than being loaded. Without the second half, opening a
+               * conversation re-types Valentin's last reply at you — which reads
+               * as the app rewriting what he already said.
+               */
+              animate={
+                msg.id === lastMessage?.id &&
+                msg.sender === 'agent' &&
+                liveMessageIds?.has(msg.id) === true
+              }
             />
           </div>
         ))}

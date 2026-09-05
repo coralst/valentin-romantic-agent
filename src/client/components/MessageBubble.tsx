@@ -210,24 +210,15 @@ const userBubbleStyle: React.CSSProperties = {
  */
 const revealedMessageIds = new Set<string>();
 
-/**
- * How recently a message must have been said for its arrival to be worth animating.
- *
- * The id registry above cannot help across a page load — module state dies with the
- * page — so a reload would type the last reply out again, which is the same
- * complaint one refresh later. Age is the signal that survives: a reply the socket
- * has just delivered is seconds old, and anything restored from storage is not.
- * Generous on purpose, because this compares a server timestamp against the
- * browser's clock and the two need not agree.
+/*
+ * Age used to stand in for "this arrived just now": a reply under a minute old
+ * was treated as live, because module state dies with the page and a reload had
+ * nothing else to go on. It was the wrong signal, and it is what made the replay
+ * intermittent — open a conversation within a minute of the last reply and it
+ * re-typed itself, come back an hour later and it did not. `animate` now carries
+ * the real answer (`ChatState.liveMessageIds`, recorded when the socket delivers
+ * the message), so this component no longer guesses.
  */
-const FRESH_MESSAGE_MS = 60_000;
-
-function saidJustNow(timestamp: string): boolean {
-  const at = new Date(timestamp).getTime();
-  // An unparseable timestamp is treated as fresh: the reveal is the nicer failure.
-  if (Number.isNaN(at)) return true;
-  return Date.now() - at < FRESH_MESSAGE_MS;
-}
 
 export function MessageBubble({ message, animate = false }: MessageBubbleProps) {
   const isAgent = message.sender === 'agent';
@@ -243,8 +234,7 @@ export function MessageBubble({ message, animate = false }: MessageBubbleProps) 
     seenBeforeRef.current = revealedMessageIds.has(message.id);
   }
 
-  const reveal =
-    isAgent && animate && !seenBeforeRef.current && saidJustNow(message.timestamp);
+  const reveal = isAgent && animate && !seenBeforeRef.current;
 
   useEffect(() => {
     if (reveal) revealedMessageIds.add(message.id);

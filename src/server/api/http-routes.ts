@@ -48,6 +48,7 @@ import {
   touchesReminders,
 } from '../reminders/reminder-sync';
 import { buildConversationEmail } from '../reminders/conversation-email';
+import { looksLikeEmail } from '../reminders/notify-email';
 import { resolveSender } from '../reminders/sender';
 import { mintShareToken } from '../sharing/share-token';
 import { shareLink } from '../../shared/constants/share-link';
@@ -355,19 +356,6 @@ async function fillConversation(
 
 /** The profile field holding where outbound mail for this user goes. */
 const NOTIFY_EMAIL_FIELD = 'notify_email';
-
-/**
- * Roughly an address, which is all this can honestly check.
- *
- * Not a validator — there is no useful client-side test for deliverability, and
- * RFC 5322 in a regex is a famous waste of a day. This exists only to separate "the
- * user has not told us where to write" from "the user typed something that cannot be
- * an address", because both are the same fixable state and both should get the same
- * answer: go and set it in the panel.
- */
-function looksLikeEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-}
 
 /**
  * Creates HTTP route handlers bound to the given storage.

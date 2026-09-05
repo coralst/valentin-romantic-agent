@@ -7,6 +7,7 @@ import {
   sendMessage,
   type CalendarEvent,
 } from './client';
+import { looksLikeEmail } from '../../reminders/notify-email';
 
 /**
  * Calendar and Gmail — the two tools that touch someone's own account.
@@ -363,11 +364,6 @@ export const proposeCalendarEventTool: AgentTool = {
     };
   },
 };
-
-/** A very loose sanity check — enough to catch a mangled address, not a validator. */
-function looksLikeEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-}
 
 /** Trim a body down for the card while keeping it recognisable. */
 function preview(body: string, limit = 400): string {

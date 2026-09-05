@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { IntegrationsProvider } from '../../context/integrations-context';
+import { IntegrationReadinessProvider } from '../../context/integration-readiness-context';
 import { IntegrationsPanel, nodeLayout, connectionLabel } from '../IntegrationsPanel';
 import { INTEGRATION_CATALOGUE } from '../../utils/integration-catalogue';
 import {
@@ -45,7 +46,14 @@ function serverReports(configured: Partial<Record<string, boolean>>) {
 async function renderPanel({ isMobile = false, onClose = () => {} } = {}) {
   const result = render(
     <IntegrationsProvider>
-      <IntegrationsPanel isMobile={isMobile} onClose={onClose} />
+      {/* The panel reads readiness from the shared context now, because the
+          conversation header shows the same answer and a connect made here has to
+          move both. Without the provider its fallback stays `loading`, which the
+          panel honestly renders as "can't tell" — so the provider is what gives
+          these assertions a server answer to check. */}
+      <IntegrationReadinessProvider>
+        <IntegrationsPanel isMobile={isMobile} onClose={onClose} />
+      </IntegrationReadinessProvider>
     </IntegrationsProvider>,
   );
   await act(async () => {});

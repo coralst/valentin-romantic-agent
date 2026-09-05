@@ -30,6 +30,8 @@ function makeState(messages: ChatMessage[], inputValue: string): ChatState {
     connectionStatus: 'connected',
     inputValue,
     proposals: [],
+    activity: [],
+    showThinking: false,
     liveMessageIds: new Set<string>(),
   };
 }
@@ -306,6 +308,137 @@ describe('chatReducer — proposals', () => {
     // nothing to come back to — a leftover card would offer to act on a proposal
     // the orchestrator has already forgotten.
     expect(next.proposals).toEqual([]);
+  });
+});
+
+/**
+ * The live trail of what Valentin is doing.
+ *
+ * Two properties carry the feature: a start frame and its end frame are *one*
+ * row, and frames belonging to a conversation the user has left are dropped.
+ */
+describe('chatReducer — agent activity', () => {
+  function stateOn(sessionId: string | null): ChatState {
+    return { ...makeState([], ''), sessionId };
+  }
+
+  const start = {
+    kind: 'tool_start' as const,
+    sessionId: 'sess-1',
+    id: 'use-0',
+    iteration: 1,
+    tool: 'search_tracks',
+    service: 'spotify',
+    inputSummary: 'query: heavy metal',
+  };
+
+  const end = {
+    kind: 'tool_end' as const,
+    sessionId: 'sess-1',
+    id: 'use-0',
+    iteration: 1,
+    tool: 'search_tracks',
+    service: 'spotify',
+    durationMs: 820,
+    ok: true,
+    outcome: 'Found 12 tracks.',
+  };
+
+  it('completes the row it already drew instead of adding a second one', () => {
+    let state = chatReducer(stateOn('sess-1'), { type: 'RECEIVE_ACTIVITY', activity: start });
+    expect(state.activity).toHaveLength(1);
+    expect(state.activity[0]).toMatchObject({
+      kind: 'tool',
+      inputSummary: 'query: heavy metal',
+    });
+    // In flight: nothing claimed about the outcome yet.
+    expect(state.activity[0]).not.toHaveProperty('ok');
+
+    state = chatReducer(state, { type: 'RECEIVE_ACTIVITY', activity: end });
+
+    expect(state.activity).toHaveLength(1);
+    expect(state.activity[0]).toMatchObject({
+      kind: 'tool',
+      inputSummary: 'query: heavy metal',
+      durationMs: 820,
+      ok: true,
+      outcome: 'Found 12 tracks.',
+    });
+  });
+
+  it('keeps an outcome whose start frame never arrived', () => {
+    // Defensive rather than expected: the row carries the outcome and the only
+    // measured duration in the trail, so dropping it would lose both.
+    const state = chatReducer(stateOn('sess-1'), { type: 'RECEIVE_ACTIVITY', activity: end });
+
+    expect(state.activity).toHaveLength(1);
+    expect(state.activity[0]).toMatchObject({ ok: true, durationMs: 820 });
+  });
+
+  it('drops a frame addressed to another conversation', () => {
+    const state = stateOn('sess-other');
+
+    expect(chatReducer(state, { type: 'RECEIVE_ACTIVITY', activity: start })).toBe(state);
+  });
+
+  it('keeps one row per reasoning block', () => {
+    const thinking = {
+      kind: 'thinking' as const,
+      sessionId: 'sess-1',
+      id: 'thinking:1',
+      iteration: 1,
+      text: 'She said peonies, so the florist matters more than the restaurant.',
+    };
+    let state = chatReducer(stateOn('sess-1'), { type: 'RECEIVE_ACTIVITY', activity: thinking });
+    state = chatReducer(state, {
+      type: 'RECEIVE_ACTIVITY',
+      activity: { ...thinking, text: 'Revised.' },
+    });
+
+    expect(state.activity).toHaveLength(1);
+    expect(state.activity[0]).toMatchObject({ kind: 'thinking', text: 'Revised.' });
+  });
+
+  it('survives typing_stop and clears when the reply lands', () => {
+    const running = chatReducer(stateOn('sess-1'), { type: 'RECEIVE_ACTIVITY', activity: start });
+
+    // typing_stop arrives *before* agent_message, so clearing there would blank
+    // the trail a beat early.
+    const stopped = chatReducer(running, { type: 'SET_TYPING', isTyping: false });
+    expect(stopped.activity).toHaveLength(1);
+
+    const answered = chatReducer(stopped, {
+      type: 'RECEIVE_MESSAGE',
+      message: {
+        id: 'm1',
+        sessionId: 'sess-1',
+        sender: 'agent',
+        content: 'Here you go.',
+        timestamp: new Date().toISOString(),
+      },
+    });
+    expect(answered.activity).toEqual([]);
+  });
+
+  it('clears the trail on a session switch', () => {
+    const running = chatReducer(stateOn('sess-1'), { type: 'RECEIVE_ACTIVITY', activity: start });
+    const next = chatReducer(running, {
+      type: 'SWITCH_SESSION',
+      sessionId: 'sess-2',
+      messages: [],
+    });
+
+    expect(next.activity).toEqual([]);
+  });
+
+  it('carries the thinking preference without touching anything else', () => {
+    const next = chatReducer(stateOn('sess-1'), {
+      type: 'SET_SHOW_THINKING',
+      showThinking: true,
+    });
+
+    expect(next.showThinking).toBe(true);
+    expect(next.messages).toEqual([]);
   });
 });
 

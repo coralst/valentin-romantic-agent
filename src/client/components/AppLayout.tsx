@@ -23,6 +23,7 @@ import {
 } from '../context/architecture-drawer-context';
 import { useSessionContext } from '../context/session-context';
 import { IntegrationsProvider } from '../context/integrations-context';
+import { IntegrationReadinessProvider } from '../context/integration-readiness-context';
 import { IntegrationsPanel } from './IntegrationsPanel';
 import { breakpoints, layout } from '../design-system/tokens';
 
@@ -115,7 +116,13 @@ export function AppLayout() {
             lives on the rail, and the panel that changes the count is mounted
             beside the chat. */}
         <IntegrationsProvider>
-          <AppLayoutContent />
+          {/* Beside the grants for the same reason, and one level in: the panel
+              changes readiness by handing over credentials, and the conversation
+              header's status strip reads it. One instance, or the header goes
+              stale after the very action that changes it. */}
+          <IntegrationReadinessProvider>
+            <AppLayoutContent />
+          </IntegrationReadinessProvider>
         </IntegrationsProvider>
       </ArchitectureDrawerProvider>
     </ProfileStoreProvider>
@@ -346,7 +353,7 @@ function AppLayoutContent() {
                   {isDossier ? (
                     <DossierView isMobile />
                   ) : activePanel === 'chat' ? (
-                    <ChatPanel />
+                    <ChatPanel onOpenIntegrations={toggleIntegrations} />
                   ) : (
                     profilePanel
                   )}
@@ -428,7 +435,7 @@ function AppLayoutContent() {
               )}
             >
               <div style={windowCellStyle}>
-                {isDossier ? <DossierView /> : <ChatPanel />}
+                {isDossier ? <DossierView /> : <ChatPanel onOpenIntegrations={toggleIntegrations} />}
               </div>
               <div style={windowCellStyle}>{profilePanel}</div>
             </div>

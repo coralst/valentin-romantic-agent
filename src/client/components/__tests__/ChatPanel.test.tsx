@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
@@ -145,6 +145,69 @@ describe('MessageInput', () => {
     );
     const button = screen.getByLabelText('Send message');
     expect(button).toBeDisabled();
+  });
+});
+
+describe('ChatPanel — what a turn carries', () => {
+  // The reasoning toggle persists app-wide, so a test that presses it would
+  // otherwise change the default the next test starts from.
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  /** Reports the id the transcript actually holds for the newest message. */
+  function LastMessageId() {
+    const { state } = useChatContext();
+    return (
+      <span data-testid="last-message-id">
+        {state.messages[state.messages.length - 1]?.id ?? ''}
+      </span>
+    );
+  }
+
+  it('sends the id the transcript is already rendering', async () => {
+    const user = userEvent.setup();
+    ws.sendMessage.mockClear();
+    renderWithProviders(
+      <>
+        <ChatPanel />
+        <LastMessageId />
+      </>,
+    );
+
+    await user.type(screen.getByLabelText('Type a message'), "She's obsessed with peonies");
+    await user.click(screen.getByLabelText('Send message'));
+
+    const [content, options] = ws.sendMessage.mock.calls[0];
+    expect(content).toBe("She's obsessed with peonies");
+    // Same id as the optimistic message in the transcript: this is the join the
+    // permanent "Noted" badge is drawn from, and the server files its extracted
+    // preference rows against it.
+    expect(options.messageId).toBe(screen.getByTestId('last-message-id').textContent);
+  });
+
+  it('leaves thinking off unless the toggle is pressed', async () => {
+    const user = userEvent.setup();
+    ws.sendMessage.mockClear();
+    renderWithProviders(<ChatPanel />);
+
+    await user.type(screen.getByLabelText('Type a message'), 'Hello');
+    await user.click(screen.getByLabelText('Send message'));
+    expect(ws.sendMessage.mock.calls[0][1].showThinking).toBe(false);
+
+    await user.click(screen.getByTestId('show-thinking-toggle'));
+    await user.type(screen.getByLabelText('Type a message'), 'Again');
+    await user.click(screen.getByLabelText('Send message'));
+
+    expect(ws.sendMessage.mock.calls[1][1].showThinking).toBe(true);
+  });
+
+  it('shows the dots and no trail region between turns', () => {
+    renderWithProviders(<ChatPanel />);
+
+    // The default case has to be byte-for-byte today's UI: no empty group, no
+    // placeholder implying content that was never requested.
+    expect(screen.queryByTestId('agent-activity-trail')).not.toBeInTheDocument();
   });
 });
 

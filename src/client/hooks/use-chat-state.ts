@@ -1,6 +1,9 @@
 import { useReducer } from 'react';
 import type { ChatMessage } from '../../shared/interfaces/message';
-import type { ActionProposalPayload } from '../../shared/interfaces/ws-events';
+import type {
+  ActionProposalPayload,
+  AgentActivityPayload,
+} from '../../shared/interfaces/ws-events';
 
 /** Connection status for the WebSocket link */
 export type ConnectionStatus = 'connected' | 'reconnecting' | 'disconnected';
@@ -20,6 +23,38 @@ export interface ProposalEntry {
   status: ProposalStatus;
 }
 
+/**
+ * One line in the trail of what Valentin is doing right now.
+ *
+ * The server's two tool frames (`tool_start`, `tool_end`) collapse into a *single*
+ * entry here, completed in place when the call returns. Drawing a second row on
+ * completion would reflow the trail under the reader's eyes mid-sentence, and the
+ * two frames describe one event.
+ */
+export type AgentActivityEntry =
+  | {
+      kind: 'thinking';
+      /** `thinking:<iteration>` — see `AgentActivityBase.id`. */
+      id: string;
+      iteration: number;
+      /** Verbatim from a `reasoningContent` block. Never synthesised. */
+      text: string;
+    }
+  | {
+      kind: 'tool';
+      /** Bedrock's `toolUseId`, which is what lets the end frame find this row. */
+      id: string;
+      iteration: number;
+      tool: string;
+      service: string;
+      /** Already redacted by `activity-summary.ts`; never raw arguments. */
+      inputSummary: string;
+      /** All three absent while the call is still in flight. */
+      durationMs?: number;
+      ok?: boolean;
+      outcome?: string;
+    };
+
 /** Full chat state managed by the reducer */
 export interface ChatState {
   sessionId: string | null;
@@ -29,6 +64,24 @@ export interface ChatState {
   inputValue: string;
   /** Open and resolved proposals for the conversation on screen, oldest first. */
   proposals: ProposalEntry[];
+  /**
+   * What Valentin is doing in the turn that is running *now*, oldest first.
+   *
+   * Emptied when the reply lands rather than kept under it: `ChatMessage` is five
+   * fields and `saveMessage` persists exactly those, so there is no per-message
+   * slot to restore a trail from. A trail present live and gone after a reload
+   * would look like durable provenance that is not — the thing
+   * `client/utils/provenance.ts` exists to refuse.
+   */
+  activity: AgentActivityEntry[];
+  /**
+   * Whether the *next* message asks Bedrock for its reasoning.
+   *
+   * App-wide rather than per-session, and restored from `localStorage` by
+   * `use-show-thinking.ts`. Off by default: thinking forces `temperature: 1`,
+   * which retunes the persona voice, and costs thinking tokens on every turn.
+   */
+  showThinking: boolean;
   /**
    * Ids of messages that *arrived* while this transcript was on screen, as
    * opposed to being loaded with it.
@@ -57,7 +110,9 @@ export type ChatAction =
   | { type: 'SET_INPUT'; value: string }
   | { type: 'CLEAR_INPUT' }
   | { type: 'RECEIVE_PROPOSAL'; proposal: ActionProposalPayload }
-  | { type: 'RESOLVE_PROPOSAL'; proposalId: string; status: ProposalStatus };
+  | { type: 'RESOLVE_PROPOSAL'; proposalId: string; status: ProposalStatus }
+  | { type: 'RECEIVE_ACTIVITY'; activity: AgentActivityPayload }
+  | { type: 'SET_SHOW_THINKING'; showThinking: boolean };
 
 /** Sort messages ascending by ISO timestamp */
 function sortByTimestamp(messages: ChatMessage[]): ChatMessage[] {
@@ -73,6 +128,8 @@ const initialState: ChatState = {
   connectionStatus: 'disconnected',
   inputValue: '',
   proposals: [],
+  activity: [],
+  showThinking: false,
   liveMessageIds: new Set<string>(),
 };
 
@@ -141,6 +198,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
          * to act on a proposal the orchestrator has forgotten.
          */
         proposals: [],
+        activity: [],
       };
 
     case 'SEND_MESSAGE':
@@ -148,16 +206,23 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         ...state,
         messages: sortByTimestamp([...state.messages, action.message]),
         inputValue: '',
+        // Clear on send, not on receive alone: the trail describes one turn, and
+        // the previous turn's rows must not sit above the new one's.
+        activity: [],
       };
 
     case 'RECEIVE_MESSAGE':
       return {
         ...state,
         messages: sortByTimestamp([...state.messages, action.message]),
+        activity: [],
         liveMessageIds: new Set([...state.liveMessageIds, action.message.id]),
       };
 
     case 'SET_TYPING':
+      // Deliberately leaves `activity` alone. `typing_stop` arrives *before*
+      // `agent_message`, so clearing here would blank the trail a beat early and
+      // leave an empty gap where the reply is about to appear.
       return { ...state, isTyping: action.isTyping };
 
     case 'SET_CONNECTION':
@@ -203,9 +268,91 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         ),
       };
 
+    case 'RECEIVE_ACTIVITY': {
+      const frame = action.activity;
+
+      /*
+       * Addressed to the conversation on screen, or dropped — the same hazard
+       * `RECEIVE_PROPOSAL` guards. A turn started before a session switch keeps
+       * narrating itself, and those rows describe work nobody on screen asked for.
+       */
+      if (state.sessionId !== null && state.sessionId !== frame.sessionId) {
+        return state;
+      }
+
+      if (frame.kind === 'thinking') {
+        const entry: AgentActivityEntry = {
+          kind: 'thinking',
+          id: frame.id,
+          iteration: frame.iteration,
+          text: frame.text,
+        };
+        // Replace rather than append on a repeated id: one model turn produces one
+        // block of reasoning, and two rows would read as two thoughts.
+        return { ...state, activity: replaceOrAppend(state.activity, entry) };
+      }
+
+      if (frame.kind === 'tool_start') {
+        const entry: AgentActivityEntry = {
+          kind: 'tool',
+          id: frame.id,
+          iteration: frame.iteration,
+          tool: frame.tool,
+          service: frame.service,
+          inputSummary: frame.inputSummary,
+        };
+        return { ...state, activity: replaceOrAppend(state.activity, entry) };
+      }
+
+      const existing = state.activity.find((row) => row.id === frame.id);
+      if (!existing) {
+        // Defensive: a dropped or reordered start frame must not lose the row that
+        // carries the outcome and the only measured duration in the trail.
+        return {
+          ...state,
+          activity: [
+            ...state.activity,
+            {
+              kind: 'tool',
+              id: frame.id,
+              iteration: frame.iteration,
+              tool: frame.tool,
+              service: frame.service,
+              inputSummary: '',
+              durationMs: frame.durationMs,
+              ok: frame.ok,
+              outcome: frame.outcome,
+            },
+          ],
+        };
+      }
+
+      return {
+        ...state,
+        activity: state.activity.map((row) =>
+          row.id === frame.id && row.kind === 'tool'
+            ? { ...row, durationMs: frame.durationMs, ok: frame.ok, outcome: frame.outcome }
+            : row,
+        ),
+      };
+    }
+
+    case 'SET_SHOW_THINKING':
+      return { ...state, showThinking: action.showThinking };
+
     default:
       return state;
   }
+}
+
+/** Put an entry in its existing slot if the id is already drawn, else at the end. */
+function replaceOrAppend(
+  activity: AgentActivityEntry[],
+  entry: AgentActivityEntry,
+): AgentActivityEntry[] {
+  return activity.some((row) => row.id === entry.id)
+    ? activity.map((row) => (row.id === entry.id ? entry : row))
+    : [...activity, entry];
 }
 
 /** Hook wrapping useReducer with the chat reducer */

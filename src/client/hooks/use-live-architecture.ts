@@ -99,6 +99,10 @@ const EVENT_STORY: Readonly<Record<string, { actor: string; action: string }>> =
   typing_start: { actor: 'Valentin', action: 'writes a reply' },
   typing_stop: { actor: 'Valentin', action: 'writes a reply' },
   agent_message: { actor: 'Valentin', action: 'writes a reply' },
+  // Folded into the reply beat on purpose. Several arrive per turn — reasoning
+  // plus two frames per tool call — and each is part of composing the one answer,
+  // so a beat of their own would push every other row off the feed.
+  agent_activity: { actor: 'Valentin', action: 'writes a reply' },
   preference_update: { actor: 'Valentin', action: 'learns something new' },
   // No `ping`/`pong`: they are dropped before a story is looked up. See the note in
   // `EVENT_ENDPOINTS`.

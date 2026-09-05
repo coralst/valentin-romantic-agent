@@ -19,17 +19,20 @@ import type { Preference } from '../../shared/interfaces/preference';
  * trust — the same `.src` provenance the saved-ideas card uses at `:141`.
  *
  * ---
- * THE `sourceMessageId` MISMATCH
+ * THE `sourceMessageId` LOOKUP
  *
- * `sourceMessageId` holds the *server's* id for the user's turn, while the
- * transcript renders the optimistic copy `ChatPanel` created with a locally
- * generated uuid (see the note at `MessageHistory.tsx:45`). The two never match,
- * so a transcript lookup keyed on it misses every time.
+ * `sourceMessageId` used to hold the *server's* id for the user's turn while the
+ * transcript rendered the optimistic copy `ChatPanel` minted with its own uuid, so
+ * a lookup keyed on it missed every time. The client now sends that uuid with the
+ * turn and the server adopts it once validated, so for anything said since, step 1
+ * below hits — and the badge in `noted-index.ts` joins on the same field.
  *
- * Rather than show a wrong date, this degrades in three steps:
+ * The graceful degradation stays, because rows written before adoption (and rows
+ * whose id was rejected as malformed) still point at a server id that matches
+ * nothing on screen:
  *
- *   1. Look the message up anyway. It is the most precise answer available and
- *      it starts working for free the day the ids are reconciled server-side.
+ *   1. Look the message up. The most precise answer available, and now the usual
+ *      one rather than the one that never fires.
  *   2. Fall back to `Preference.createdAt` — the moment the extraction was
  *      recorded, which is within a second or two of the turn that produced it.
  *      Different provenance, but *true*, which is the whole point.
@@ -39,8 +42,13 @@ import type { Preference } from '../../shared/interfaces/preference';
  * never said by anyone, so claiming a conversation happened would be a lie.
  */
 
-/** The synthetic id `demo-profile.ts` stamps on seeded preferences. */
-const DEMO_SEED_SOURCE_MESSAGE_ID = 'demo-seed';
+/**
+ * The synthetic id `demo-profile.ts` stamps on seeded preferences.
+ *
+ * Exported because `noted-index.ts` has to skip the same rows for the same
+ * reason, and two copies of a sentinel is one copy too many.
+ */
+export const DEMO_SEED_SOURCE_MESSAGE_ID = 'demo-seed';
 
 /** "11 Aug" — the mockup's compact provenance date (`full-profile.html:297`). */
 const PROVENANCE_DATE = new Intl.DateTimeFormat('en-GB', {

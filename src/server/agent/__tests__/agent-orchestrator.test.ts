@@ -423,6 +423,62 @@ describe('AgentOrchestrator', () => {
   });
 
   /**
+   * Adopting the client's id for the user's turn.
+   *
+   * Why it matters beyond tidiness: `Preference.sourceMessageId` is the join the
+   * permanent "Noted" badge is drawn from, and the transcript renders an
+   * optimistic copy the client minted. Unless the server writes the row against
+   * the id the client is already showing, the join misses every time.
+   *
+   * Why it is validated: the id lands in a DynamoDB sort key via
+   * `msgSk(timestamp, id)`, so an unbounded client string is key injection with a
+   * `#` in it.
+   */
+  describe('message id adoption', () => {
+    const CLIENT_ID = '3f6d1f0e-8c2a-4b71-9f2e-1d0a5b7c8e91';
+
+    beforeEach(() => {
+      vi.mocked(bedrock.generateResponse).mockResolvedValue({ content: 'Noted.' });
+    });
+
+    /** The message handed to the extractor is the one its rows will point at. */
+    async function extractedFrom(messageId: unknown): Promise<ChatMessage> {
+      await orchestrator.handleMessage('sess-1', 'She loves peonies', {
+        messageId: messageId as string | undefined,
+      });
+      await new Promise((r) => setTimeout(r, 10));
+      return vi.mocked(extractor.extract).mock.calls[0][0];
+    }
+
+    it('files the preference against the id the client is already rendering', async () => {
+      const message = await extractedFrom(CLIENT_ID);
+
+      // `preference-extractor.ts` writes `sourceMessageId: message.id`, so this
+      // is the server-side end of the badge's join.
+      expect(message.id).toBe(CLIENT_ID);
+      expect(vi.mocked(memory.addMessage).mock.calls[0][1].id).toBe(CLIENT_ID);
+    });
+
+    it.each([
+      ['not a uuid', 'x'],
+      ['a sort-key separator', 'a#b'],
+      ['an unbounded string', 'a'.repeat(500)],
+      ['a v1 uuid', '2c5ea4c0-4067-11e9-8bad-9b1deb4d3b7d'],
+      ['a non-string', 42],
+      ['nothing at all', undefined],
+    ])('mints its own id when given %s', async (_label, candidate) => {
+      const message = await extractedFrom(candidate);
+
+      expect(message.id).not.toBe(candidate);
+      // Rejection is not an error path — it is exactly the behaviour every
+      // caller had before the field existed.
+      expect(message.id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      );
+    });
+  });
+
+  /**
    * The confirmation half of the propose/confirm contract.
    *
    * Every case here is a way for the click to fail, because the success path is
@@ -476,12 +532,14 @@ describe('AgentOrchestrator', () => {
             ],
           },
           text: '',
+          reasoning: '',
           toolUses: [{ toolUseId: 'use-0', name: tool.name, input: {} }],
           stopReason: 'tool_use',
         })
         .mockResolvedValueOnce({
           message: { role: 'assistant', content: [{ text: 'Shall I confirm?' }] },
           text: 'Shall I confirm?',
+          reasoning: '',
           toolUses: [],
           stopReason: 'end_turn',
         });

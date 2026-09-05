@@ -20,6 +20,7 @@
     "verify:reminder-mail": "npx tsx scripts/verify-reminder-mail.ts",
     "generate:tool-schemas": "npx tsx scripts/generate-tool-schemas.mts",
     "verify:local": "bash scripts/verify-local.sh",
+    "demo:drive": "npx tsx scripts/demo-drive.mts",
     "deck:shots": "npx tsx scripts/deck-slide-shots.ts",
     "deck:pptx": "npm run deck:shots && python3 scripts/build-pptx.py",
     "deploy:dev": "bash scripts/deploy.sh dev",

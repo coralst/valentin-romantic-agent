@@ -218,9 +218,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // than showing a login page that could not work. This is what keeps the
       // Playwright specs and rehearsal.mjs running unchanged.
       if (runtime.authDisabled) {
-        const id = devUserId();
-        setDevSession(id);
-        adopt(`dev:${id}`, false);
+        /*
+         * `?landing` holds the entrance page on screen anyway.
+         *
+         * Only for showing the app to someone: a demo that opens mid-session has
+         * skipped the first thing a visitor actually sees. `LoginScreen` already
+         * handles this case — `signIn` restores the development user rather than
+         * reaching for a Cognito that is not there — so the page works, and the
+         * button is a real button.
+         *
+         * What it is *not* is a credential check: the email and password fields
+         * are inert under the bypass, because `handleLogin` never reads them.
+         * Anyone narrating this screen should say so. Opt-in by query param, and
+         * deliberately not an env var, so no test run and no ordinary `npx vite`
+         * can land on it by accident.
+         */
+        if (!new URLSearchParams(window.location.search).has('landing')) {
+          const id = devUserId();
+          setDevSession(id);
+          adopt(`dev:${id}`, false);
+          return;
+        }
+        setStatus('signed-out');
         return;
       }
 

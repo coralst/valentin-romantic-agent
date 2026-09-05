@@ -1,0 +1,679 @@
+/**
+ * Drives the whole demo through the real UI at human speed, for an audience.
+ *
+ * ## Why this is not `drive-chat.ts`
+ *
+ * `drive-chat.ts` exists to make screenshots have content in them: it runs
+ * headless, `fill()`s two turns instantly and waits a flat 14 seconds. That is
+ * correct for its job and useless for this one. This script is meant to be
+ * *watched* — so it runs headed, moves a visible pointer along an eased path,
+ * types one character at a time with the pauses a person makes, and waits for
+ * Valentin to actually finish talking before reading his answer and replying.
+ * Neither script should grow into the other; they are optimising for opposite
+ * things (throughput vs. legibility).
+ *
+ * ## What is real here
+ *
+ * All of it, with one marked exception. The conversation goes through the live
+ * websocket to the live model; extraction writes real rows; the reminder is armed
+ * by the real planner and swept by the real 60-second scheduler; **the email is
+ * really sent** by `gmailSender`.
+ *
+ * The exception is the day-after survey, and the script says so on screen while
+ * it happens rather than letting it pass as real. A survey exists because a date
+ * went by and nobody can make a day pass during a demo — so the last beat seeds
+ * the demo fixture, whose outings are already in the past, and the *real*
+ * `unratedOutings` path raises the prompt. Only the passage of time is stood in
+ * for. See `CAPTION_SUBSTITUTED`.
+ *
+ * ## The address
+ *
+ * `--to` is required and is never defaulted or assembled. This script sends mail
+ * to a real inbox; guessing which one is the single mistake here that reaches a
+ * stranger, and it cannot be un-sent.
+ *
+ * Usage:
+ *   npm run demo:drive -- --to=you@example.com
+ *   npm run demo:drive -- --to=you@example.com --speed=1.6   # rehearse faster
+ *   npm run demo:drive -- --to=you@example.com --no-mail     # skip the send beat
+ */
+import { chromium, type Page, type Locator } from '@playwright/test';
+import { mkdir, rm } from 'node:fs/promises';
+import path from 'node:path';
+
+function flag(name: string): string | undefined {
+  const hit = process.argv.find((arg) => arg.startsWith(`--${name}=`));
+  return hit?.slice(name.length + 3);
+}
+const has = (name: string) => process.argv.includes(`--${name}`);
+
+const BASE = flag('base') ?? 'http://localhost:5273';
+const TO = flag('to') ?? '';
+/** Everything human-paced divides by this. 1 is presentation speed. */
+const SPEED = Math.max(0.2, Number(flag('speed') ?? 1));
+const SEND_MAIL = !has('no-mail');
+const DO_SURVEY = !has('no-survey');
+const SHOT_DIR = path.resolve('screenshots/demo');
+
+/** How long to wait for one model turn before giving up on the whole run. */
+const REPLY_TIMEOUT_MS = 90_000;
+/** The scheduler's sweep interval, plus room for the send itself. */
+const SWEEP_WAIT_MS = 95_000;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+/** Scale a duration by `--speed`. */
+const paced = (ms: number) => Math.round(ms / SPEED);
+/** `base` ± half of `spread`, scaled. Keeps every pause from being identical. */
+const jitter = (base: number, spread: number) =>
+  paced(base + Math.random() * spread - spread / 2);
+
+interface Turn {
+  /** Exactly what gets typed. Asserted against the composer before sending. */
+  say: string;
+  /** The on-screen caption while this turn is in flight. */
+  beat: string;
+  /**
+   * Type a wrong character and correct it partway through this line.
+   *
+   * Only on lines where a stumble reads as natural, and never near the end —
+   * the composer is checked against `say` before Enter, so a correction that
+   * failed to land stops the run instead of sending mangled text at the model.
+   */
+  stumble?: boolean;
+  /**
+   * Drop this turn under `--no-mail`.
+   *
+   * Load-bearing on the address turn, not just the "send it" turn. The reminder
+   * is armed by the *facts* — an anniversary five days out is inside the lead
+   * window the moment it is learned — so skipping only the "yes, send me the
+   * proposal" line would still leave a due reminder with a real target on it,
+   * and the sweeper would mail it within the minute. `--no-mail` has to withhold
+   * `notify_email` to mean anything, and then `dispatcher.ts` skips the row on a
+   * missing target *without* claiming it, so nothing is burned.
+   */
+  needsMail?: boolean;
+}
+
+/**
+ * The conversation, in the order the rail fills up on camera.
+ *
+ * The ordering is deliberate and two constraints hold it in place. `notify_email`
+ * comes before the beat that discusses timing, so the address is on the profile
+ * by the time anyone looks at a reminder — though a sweep landing early is
+ * harmless, because `dispatcher.ts` checks for a missing target *before* it
+ * claims the row and `adoptTarget` back-fills the address afterwards. And
+ * `weekly_rhythm` comes last of the fact-gathering turns because "she finishes
+ * work at 17:00" is quoted back verbatim in the mail, so it is the line the
+ * audience should still have in mind when the mail appears.
+ */
+const TURNS: Turn[] = [
+  {
+    say: 'Hi! Her name is Maya, and our third anniversary is on 10 September.',
+    beat: 'Her name and the date — the rail starts counting down',
+  },
+  {
+    say: 'Her birthday is 2 March.',
+    beat: 'Her birthday — every deadline in the rail keys off this',
+  },
+  {
+    say: "We're in Tel Aviv. She loves Mediterranean food — but no shellfish, she's allergic.",
+    beat: 'Where we are, what she eats, and a constraint the shortlist must respect',
+    stumble: true,
+  },
+  {
+    say: 'Somewhere quiet and romantic. She hates loud rooms.',
+    beat: 'The kind of room — atmosphere, kept separate from cuisine',
+  },
+  {
+    say: "She's obsessed with Nina Simone — jazz generally, really.",
+    beat: 'Her music — this is the row Spotify reads later',
+  },
+  {
+    say: `Send reminders to ${TO}.`,
+    beat: 'His own address — the one field Valentin will never invent',
+    needsMail: true,
+  },
+  {
+    say: 'She does pottery on Tuesdays, and on Fridays she finishes work at 17:00.',
+    beat: 'Her week — "finishes work at 17:00" is quoted verbatim in the mail',
+    stumble: true,
+  },
+  {
+    say: 'How far in advance do you normally give me a heads-up?',
+    beat: 'The default is a week — and a week out is already now',
+  },
+  {
+    say: 'Yes — send me the proposal.',
+    beat: 'Arming the reminder',
+    needsMail: true,
+  },
+  {
+    say: "Don't email me about her birthday though, I never forget that one.",
+    beat: 'Per-date control: silences the mail, keeps the date',
+  },
+  {
+    say: 'Can you put together a playlist for the evening?',
+    beat: 'Spotify, live',
+  },
+];
+
+/**
+ * Overlay chrome: a pointer that follows the real mouse, and a caption pill.
+ *
+ * Added as an init script so it survives a reload, and driven by listening to
+ * `mousemove` rather than by being told where to go — there is then exactly one
+ * source of truth for where the pointer is, and it is the browser's own.
+ */
+const OVERLAY = `() => {
+  const install = () => {
+    if (document.getElementById('__demo_pointer')) return;
+
+    const pointer = document.createElement('div');
+    pointer.id = '__demo_pointer';
+    pointer.style.cssText = [
+      'position:fixed','left:0','top:0','width:24px','height:24px',
+      'z-index:2147483647','pointer-events:none','will-change:transform',
+      'filter:drop-shadow(0 2px 3px rgba(0,0,0,.45))',
+      'transform:translate(-100px,-100px)',
+    ].join(';');
+    pointer.innerHTML =
+      '<svg width="24" height="24" viewBox="0 0 24 24">' +
+      '<path d="M4 2 L4 18 L8.5 13.5 L11.5 21 L14.5 19.5 L11.5 12.5 L18 12 Z" ' +
+      'fill="#fff" stroke="#111" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+    document.body.appendChild(pointer);
+
+    addEventListener('mousemove', (event) => {
+      pointer.style.transform = 'translate(' + event.clientX + 'px,' + event.clientY + 'px)';
+    }, { passive: true, capture: true });
+
+    // A click you can see. Without this the pointer sits still at the exact
+    // moment the audience needs to know something was pressed.
+    addEventListener('mousedown', (event) => {
+      const ring = document.createElement('div');
+      ring.style.cssText = [
+        'position:fixed','z-index:2147483646','pointer-events:none',
+        'left:' + (event.clientX - 6) + 'px','top:' + (event.clientY - 6) + 'px',
+        'width:12px','height:12px','border-radius:50%',
+        'border:2px solid rgba(255,255,255,.9)','box-shadow:0 0 0 2px rgba(0,0,0,.35)',
+        'transition:transform 420ms ease-out, opacity 420ms ease-out','opacity:1',
+      ].join(';');
+      document.body.appendChild(ring);
+      requestAnimationFrame(() => {
+        ring.style.transform = 'scale(3.2)';
+        ring.style.opacity = '0';
+      });
+      setTimeout(() => ring.remove(), 480);
+    }, { passive: true, capture: true });
+
+    const caption = document.createElement('div');
+    caption.id = '__demo_caption';
+    caption.style.cssText = [
+      'position:fixed','left:50%','bottom:26px','transform:translateX(-50%) translateY(14px)',
+      'z-index:2147483646','pointer-events:none','max-width:74vw',
+      'padding:10px 18px','border-radius:999px',
+      'font:500 15px/1.35 ui-sans-serif,system-ui,sans-serif',
+      'color:#fff','background:rgba(17,17,20,.88)',
+      'border:1px solid rgba(255,255,255,.14)',
+      'box-shadow:0 8px 30px rgba(0,0,0,.4)','backdrop-filter:blur(6px)',
+      'opacity:0','transition:opacity 260ms ease, transform 260ms ease',
+      'text-align:center',
+    ].join(';');
+    document.body.appendChild(caption);
+
+    window.__demoCaption = (text, tone) => {
+      if (!text) {
+        caption.style.opacity = '0';
+        caption.style.transform = 'translateX(-50%) translateY(14px)';
+        return;
+      }
+      caption.textContent = text;
+      caption.style.background = tone === 'substituted'
+        ? 'rgba(120,72,10,.94)'
+        : 'rgba(17,17,20,.88)';
+      caption.style.borderColor = tone === 'substituted'
+        ? 'rgba(255,190,90,.55)'
+        : 'rgba(255,255,255,.14)';
+      caption.style.opacity = '1';
+      caption.style.transform = 'translateX(-50%) translateY(0)';
+    };
+  };
+  if (document.body) install();
+  else addEventListener('DOMContentLoaded', install);
+}`;
+
+/** Where the virtual mouse currently is, so a glide can start from it. */
+let pointer = { x: 40, y: 40 };
+
+async function caption(page: Page, text: string, tone?: 'substituted'): Promise<void> {
+  await page
+    .evaluate(
+      ([value, kind]) =>
+        (window as unknown as { __demoCaption?: (t: string, k?: string) => void }).__demoCaption?.(
+          value as string,
+          kind as string | undefined,
+        ),
+      [text, tone] as const,
+    )
+    .catch(() => {
+      /* An overlay that failed to install must not stop the demo. */
+    });
+  if (text) console.log(`  · ${tone === 'substituted' ? '🔶 ' : ''}${text}`);
+}
+
+/** Ease-in-out, so the pointer accelerates and settles like a hand does. */
+const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+
+/**
+ * Move the pointer to a point along a curved, eased path.
+ *
+ * The sideways bow is what stops it looking like a machine: a straight line
+ * between two buttons is the one path a hand never takes. Scaled by distance so
+ * a short hop stays a short hop.
+ */
+async function glide(page: Page, x: number, y: number): Promise<void> {
+  const from = { ...pointer };
+  const distance = Math.hypot(x - from.x, y - from.y);
+  const steps = Math.max(12, Math.min(48, Math.round(distance / 16)));
+  const bow = (Math.random() - 0.5) * Math.min(90, distance * 0.22);
+
+  for (let step = 1; step <= steps; step++) {
+    const t = ease(step / steps);
+    // A half-sine across the path puts the bow's peak in the middle and zero at
+    // both ends, so the pointer still lands exactly where it was asked to.
+    const arc = Math.sin((step / steps) * Math.PI) * bow;
+    await page.mouse.move(from.x + (x - from.x) * t, from.y + (y - from.y) * t + arc);
+    await sleep(paced(9 + Math.random() * 7));
+  }
+  pointer = { x, y };
+}
+
+async function glideTo(page: Page, target: Locator): Promise<void> {
+  await target.scrollIntoViewIfNeeded().catch(() => {});
+  const box = await target.boundingBox();
+  if (!box) throw new Error('cannot glide to an element with no box');
+  // Aim off-centre. Dead-centre on every button is another machine tell.
+  await glide(
+    page,
+    box.x + box.width * (0.4 + Math.random() * 0.2),
+    box.y + box.height * (0.42 + Math.random() * 0.16),
+  );
+}
+
+/** Glide, hesitate the way a person does before committing, then click. */
+async function humanClick(page: Page, target: Locator, why: string): Promise<void> {
+  console.log(`  → click: ${why}`);
+  await glideTo(page, target);
+  await sleep(jitter(260, 180));
+  await target.click();
+  await sleep(jitter(420, 240));
+}
+
+/** A per-character delay that varies with what was just typed. */
+function keyDelay(char: string, previous: string): number {
+  if (/[.,!?—]/.test(previous)) return jitter(300, 240); // a beat after punctuation
+  if (previous === ' ') return jitter(70, 60);
+  if (char === ' ') return jitter(85, 70);
+  if (/[A-Z]/.test(char)) return jitter(120, 80); // reaching for shift
+  return jitter(72, 62);
+}
+
+/**
+ * Type into the composer one key at a time, optionally fumbling once.
+ *
+ * The composer's value is checked against `text` before this returns, so a
+ * stumble whose backspace did not land, or a dropped keystroke, fails the run
+ * rather than sending something the model then has to interpret. Being fussy
+ * here is what makes it safe to be playful above.
+ */
+async function typeHuman(page: Page, composer: Locator, turn: Turn): Promise<void> {
+  await glideTo(page, composer);
+  await composer.click();
+  await sleep(jitter(700, 500)); // gathering the thought
+
+  // Somewhere in the middle of a word, so the correction is visible but the
+  // sentence is nowhere near finished.
+  const stumbleAt = turn.stumble
+    ? Math.floor(turn.say.length * (0.3 + Math.random() * 0.25))
+    : -1;
+
+  for (let index = 0; index < turn.say.length; index++) {
+    const char = turn.say[index];
+    if (index === stumbleAt && /[a-z]/.test(char)) {
+      await page.keyboard.type(char === 'e' ? 'r' : 'e');
+      await sleep(jitter(340, 220)); // noticing
+      await page.keyboard.press('Backspace');
+      await sleep(jitter(260, 180));
+    }
+    await page.keyboard.type(char);
+    await sleep(keyDelay(char, index > 0 ? turn.say[index - 1] : ' '));
+  }
+
+  const typed = await composer.inputValue();
+  if (typed !== turn.say) {
+    throw new Error(`composer drifted.\n  wanted: ${turn.say}\n  got:    ${typed}`);
+  }
+  await sleep(jitter(520, 380)); // re-reading it before sending
+}
+
+/** The whole transcript as text, for growth and settling checks. */
+const transcriptOf = (page: Page) =>
+  page.getByTestId('chat-panel').innerText().catch(() => '');
+
+/**
+ * Wait for the turn to genuinely finish before the composer is touched again.
+ *
+ * ## Why this is careful
+ *
+ * The first version of this settled as soon as the transcript text held still
+ * for 1.8 seconds, and that is not the same thing as Valentin having finished.
+ * One turn can produce several bubbles — he says something, calls a tool, then
+ * comes back with the result — and in the gap between them the transcript is
+ * perfectly still. So the driver typed the next line into a composer that was
+ * still mid-turn, and the message was accepted by the server but never rendered:
+ * the transcript ended up showing two of his bubbles back to back with the
+ * user's line missing from between them. It looked like an app bug and was not.
+ *
+ * Three things fixed it, and all three are load-bearing:
+ *
+ * 1. **`typing-indicator` is the real busy signal.** `MessageInput` is only
+ *    disabled on `!isValid`, never while a reply is in flight, so there is no
+ *    back-pressure from the composer to lean on. The indicator is the one thing
+ *    the app renders that means "still working".
+ * 2. **Absent *continuously*.** The indicator comes back between the parts of a
+ *    multi-part turn, so a single "is it gone?" check is exactly the trap that
+ *    caused the bug. It has to stay gone, and the transcript has to stay still,
+ *    for {@link QUIET_MS} together.
+ * 3. **The sent line has to appear.** If our own text is not in the transcript
+ *    shortly after Enter, that *is* the dropped-message failure, and the run
+ *    stops and says so rather than carrying on producing a transcript that
+ *    misrepresents the product.
+ */
+const QUIET_MS = 3_500;
+
+async function awaitReply(page: Page, before: string, sent: string): Promise<void> {
+  const typing = page.getByTestId('typing-indicator');
+  const deadline = Date.now() + REPLY_TIMEOUT_MS;
+
+  // Matched on a slice, not the whole line: it sidesteps any whitespace or
+  // punctuation normalising the renderer might do to a long sentence.
+  const fingerprint = sent.slice(0, 24);
+  let landed = false;
+  const sendDeadline = Date.now() + 20_000;
+  while (Date.now() < sendDeadline) {
+    if ((await transcriptOf(page)).includes(fingerprint)) {
+      landed = true;
+      break;
+    }
+    await sleep(400);
+  }
+  if (!landed) {
+    throw new Error(
+      `the message was sent but never rendered — this is the dropped-turn bug.\n` +
+        `  line: ${sent}`,
+    );
+  }
+
+  let previous = await transcriptOf(page);
+  let quietFor = 0;
+  while (Date.now() < deadline) {
+    await sleep(500);
+    const busy = await typing.isVisible().catch(() => false);
+    const now = await transcriptOf(page);
+
+    if (busy || now !== previous) {
+      quietFor = 0; // still going, or another part of the turn just arrived
+    } else {
+      quietFor += 500;
+      if (quietFor >= QUIET_MS && now.length > before.length) break;
+    }
+    previous = now;
+  }
+
+  const said = Math.max(0, previous.length - before.length);
+  console.log(`  ← replied (${said} chars)`);
+  await sleep(Math.min(paced(11_000), paced(1_400) + said * paced(17)));
+}
+
+let shotIndex = 0;
+async function shot(page: Page, name: string): Promise<void> {
+  shotIndex += 1;
+  const file = path.join(SHOT_DIR, `${String(shotIndex).padStart(2, '0')}-${name}.png`);
+  await page.screenshot({ path: file });
+}
+
+/** Hold on something worth looking at, with the pointer resting near it. */
+async function linger(page: Page, target: Locator, ms: number): Promise<void> {
+  await glideTo(page, target).catch(() => {});
+  await sleep(paced(ms));
+}
+
+async function main(): Promise<void> {
+  if (SEND_MAIL && !TO) {
+    console.error(
+      'demo-drive: --to=<address> is required.\n' +
+        'This run sends a real reminder email. The address is never guessed —\n' +
+        'a reminder to an invented address reaches a stranger and cannot be un-sent.\n' +
+        'Pass --no-mail instead to rehearse the conversation with nothing sent.',
+    );
+    process.exit(2);
+  }
+
+  /*
+   * One run's worth of screenshots, not a pile of them.
+   *
+   * The numbering is the play order, and the number of beats changes with the
+   * flags — so a shorter run leaves the tail of a longer one behind, and the
+   * folder then reads as one impossible demo. Emptied rather than appended to.
+   * Safe because the path is fixed, gitignored, and holds nothing else.
+   */
+  await rm(SHOT_DIR, { recursive: true, force: true });
+  await mkdir(SHOT_DIR, { recursive: true });
+  console.log(
+    `demo-drive: ${BASE} · speed ${SPEED}× · mail ${SEND_MAIL ? `→ ${TO}` : 'skipped'}\n`,
+  );
+
+  const browser = await chromium.launch({ headless: false, args: ['--window-size=1680,1020'] });
+  const context = await browser.newContext({
+    viewport: { width: 1600, height: 960 },
+    // A real pointer is the point of this script; a device scale of 2 makes the
+    // overlay crisp on a retina screen being mirrored to a projector.
+    deviceScaleFactor: 2,
+  });
+  await context.addInitScript(`(${OVERLAY})()`);
+  const page = await context.newPage();
+
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  page.on('console', (message) => message.type() === 'error' && errors.push(message.text()));
+
+  try {
+    console.log('act 1 — the entrance');
+    /*
+     * `?landing` is what keeps the entrance page on screen under the local dev
+     * bypass, which would otherwise sign straight in and skip it — see the step-4
+     * comment in `auth-context.tsx`. On a deployment with real auth the page shows
+     * without it and the parameter is ignored.
+     */
+    await page.goto(`${BASE}/?landing`, { waitUntil: 'domcontentloaded' });
+
+    /*
+     * A real wait, not `isVisible()`.
+     *
+     * `isVisible()` answers immediately and ignores a `timeout` passed to it, so
+     * asking it one moment after `goto` is asking React whether it has rendered
+     * yet — and the answer is no. That returned "already signed in", skipped the
+     * entrance beat, and then hung for twenty seconds waiting for an app that was
+     * never coming because the entrance page was on screen the whole time.
+     */
+    const login = page.getByTestId('login-screen');
+    const onEntrance = await login
+      .waitFor({ state: 'visible', timeout: 15_000 })
+      .then(() => true)
+      .catch(() => false);
+
+    if (onEntrance) {
+      await caption(page, 'The entrance — where a first-time visitor lands');
+      await sleep(paced(3_400));
+      await shot(page, 'entrance-page');
+
+      /*
+       * Which button opens an *empty* profile depends on the deployment, so ask.
+       *
+       * Where a demo endpoint exists, the two buttons differ in exactly the thing
+       * this demo is about: `handleLogin` opens the pre-seeded Samantha persona
+       * with 32 fields already filled, and `handleSignUp` opens the `fresh` one
+       * with none — "Valentin knows nothing and opens by asking". So there,
+       * "Create an Account" is the right button and Login would silently start
+       * the demo with someone else's answers already in the rail.
+       *
+       * Under the local dev bypass it is the other way round: `signUp` returns
+       * immediately when `authDisabled`, so "Create an Account" does nothing at
+       * all, and Login is the only button that enters. The empty profile then
+       * comes from "+ New conversation" a moment later instead.
+       *
+       * The email and password fields are left alone either way. Under the bypass
+       * `handleLogin` never reads them, so typing into them would be miming a
+       * credential check that is not happening.
+       */
+      const runtime = (await page
+        .evaluate(() => fetch('/api/config').then((response) => response.json()))
+        .catch(() => ({}))) as { demoAvailable?: boolean };
+
+      const freshProfileButton = runtime.demoAvailable === true;
+      await caption(
+        page,
+        freshProfileButton
+          ? 'Create a new profile — he starts knowing nothing'
+          : 'In — and straight to a new, empty profile',
+      );
+      await sleep(paced(1_800));
+      await humanClick(
+        page,
+        page.getByTestId(freshProfileButton ? 'sign-up-button' : 'demo-login-button'),
+        freshProfileButton ? 'create a new profile' : 'enter',
+      );
+    } else {
+      console.log('  (no entrance page — already signed in)');
+    }
+
+    await page.getByTestId('app-layout').waitFor({ timeout: 20_000 });
+    await caption(page, 'Everything after this is the real app — real model, real integrations');
+    await sleep(paced(2_600));
+    await shot(page, 'entrance');
+
+    // A clean transcript, so the countdown and the learned rows are visibly
+    // built by this conversation rather than left over from the last run.
+    const newChat = page.getByRole('button', { name: /new (chat|conversation)/i });
+    if (await newChat.isVisible().catch(() => false)) {
+      await humanClick(page, newChat, 'start a new profile');
+    }
+    await caption(page, 'Valentin opens — this greeting is the only code-authored line');
+    await sleep(paced(3_600));
+    await shot(page, 'welcome');
+
+    console.log('\nact 2 — the conversation');
+    const composer = page.getByRole('textbox', { name: /type a message/i });
+
+    const turns = TURNS.filter((turn) => SEND_MAIL || !turn.needsMail);
+    for (const [index, turn] of turns.entries()) {
+      console.log(`\nturn ${index + 1}/${turns.length}: ${turn.beat}`);
+      await caption(page, turn.beat);
+      const before = await transcriptOf(page);
+      await typeHuman(page, composer, turn);
+      await composer.press('Enter');
+      await awaitReply(page, before, turn.say);
+      await shot(page, `turn-${String(index + 1).padStart(2, '0')}`);
+    }
+
+    console.log('\nact 3 — what it learned');
+    await caption(page, 'Every row on the right was extracted from what he just said');
+    await linger(page, page.getByTestId('brief-rail'), 4_500);
+    await shot(page, 'brief-rail');
+
+    const architecture = page.getByTestId('architecture-toggle');
+    if (await architecture.isVisible().catch(() => false)) {
+      await humanClick(page, architecture, 'open the architecture drawer');
+      await caption(page, 'The calls that just happened — every one of them real');
+      await sleep(paced(5_000));
+      await shot(page, 'architecture');
+    }
+
+    const integrations = page.getByTestId('rail-integrations-button');
+    if (await integrations.isVisible().catch(() => false)) {
+      await humanClick(page, integrations, 'open the integrations panel');
+      await caption(page, 'Fourteen tools, registered and reachable');
+      await sleep(paced(5_500));
+      await shot(page, 'integrations');
+      const close = page.getByTestId('integrations-close-button');
+      if (await close.isVisible().catch(() => false)) {
+        await humanClick(page, close, 'close integrations');
+      }
+    }
+
+    if (SEND_MAIL) {
+      console.log('\nact 4 — the mail');
+      await caption(page, 'The scheduler sweeps every 60 seconds. Waiting for it to fire…');
+      // Nothing to click here and that is the point: no button was pressed to
+      // make this happen. Wait it out on screen so the audience sees that.
+      const until = Date.now() + SWEEP_WAIT_MS;
+      while (Date.now() < until) {
+        const left = Math.ceil((until - Date.now()) / 1000);
+        await caption(page, `Waiting for the 60-second sweep — ${left}s`);
+        await sleep(1_000);
+      }
+      await caption(page, `Sent by code, not by the model — check ${TO}`);
+      await sleep(paced(4_000));
+      await shot(page, 'after-sweep');
+      console.log(`  mail should now be in ${TO}`);
+      console.log('  to prove it arrived from the mailbox side:');
+      console.log(`    npm run verify:reminder-mail -- --to=${TO}`);
+      console.log('  (needs one Google Disconnect→Connect first, or it exits 2)');
+    }
+
+    if (DO_SURVEY) {
+      console.log('\nact 5 — the day-after survey (substituted)');
+      const demo = page.getByTestId('rail-demo-button');
+      if (await demo.isVisible().catch(() => false)) {
+        await caption(
+          page,
+          'SUBSTITUTED: a survey needs a date to have passed, and a day cannot pass on stage',
+          'substituted',
+        );
+        await sleep(paced(4_500));
+        await humanClick(page, demo, 'open demo controls');
+        const seed = page.getByTestId('load-demo-profile-button');
+        if (await seed.isVisible().catch(() => false)) {
+          await humanClick(page, seed, 'seed the demo session');
+          await caption(
+            page,
+            'Only the passing of time is stood in for — the rating prompt itself is the real path',
+            'substituted',
+          );
+          await sleep(paced(7_000));
+        }
+        await shot(page, 'survey-seeded');
+      }
+    }
+
+    await caption(page, '');
+    console.log(`\nscreenshots → ${SHOT_DIR}`);
+    if (errors.length) {
+      console.error(`\n${errors.length} browser error(s) during the run:`);
+      for (const error of errors.slice(0, 12)) console.error(`  ${error}`);
+    }
+
+    // Leave it on screen. Closing the window the instant the last beat ends is
+    // the wrong ending for something someone is watching. `--no-hold` is for
+    // rehearsing the script itself, where an exit code is the whole point.
+    if (has('no-hold')) return;
+    console.log('\ndone — window stays open, Ctrl-C to close');
+    await sleep(600_000);
+  } finally {
+    await browser.close().catch(() => {});
+  }
+}
+
+main().catch((error) => {
+  console.error('demo-drive failed:', error);
+  process.exit(1);
+});

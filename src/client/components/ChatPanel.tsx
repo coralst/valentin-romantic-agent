@@ -47,6 +47,22 @@ const headInnerStyle: React.CSSProperties = {
   gap: 11,
 };
 
+/**
+ * The per-conversation controls, pushed to the far end of the header row.
+ *
+ * A cluster rather than a single control: this row is where anything scoped to
+ * *this* conversation belongs, as opposed to the rail, which is scoped to the app.
+ * `ShareMenu` carries a `marginLeft: 'auto'` of its own from when it was the only
+ * one here; harmless as the first item of a fit-content cluster, and left alone so
+ * this stays a pure move.
+ */
+const headControlsStyle: React.CSSProperties = {
+  marginLeft: 'auto',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 10,
+};
+
 const headNameStyle: React.CSSProperties = {
   fontFamily: typography.headingFontFamily,
   fontSize: typography.px.headingMd,
@@ -133,10 +149,12 @@ export function ChatPanel() {
             <b style={headNameStyle}>{partnerName ?? 'Someone special'}</b>
             <em style={headStatusStyle}>{status}</em>
           </div>
-          {/* Shares *this* conversation, so it belongs beside the header that names
-              it rather than in the rail, which is scoped to the whole app. Renders
-              nothing until there is a session id to share. */}
-          <ShareMenu sessionId={state.sessionId} />
+          <div style={headControlsStyle} data-testid="chat-header-controls">
+            {/* Shares *this* conversation, so it belongs beside the header that
+                names it rather than in the rail, which is scoped to the whole app.
+                Renders nothing until there is a session id to share. */}
+            <ShareMenu sessionId={state.sessionId} />
+          </div>
         </div>
       </div>
       <div style={separatorStyle} />

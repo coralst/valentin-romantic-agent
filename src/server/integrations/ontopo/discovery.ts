@@ -1,5 +1,6 @@
 import { logger } from '../../logging';
 import { fetchRendered } from '../browser/session';
+import { USER_AGENT } from './client';
 import { CURATED_VENUES, type CuratedVenue } from './venues';
 
 /**
@@ -162,7 +163,10 @@ function prettyCity(citySlug: string): string {
 async function nameFromVenuePage(slug: string, citySlug: string): Promise<string | null> {
   try {
     const response = await fetch(`https://ontopo.com/en/il/${citySlug}/page/${slug}`, {
-      headers: { 'user-agent': 'Mozilla/5.0' },
+      // Shared with the API client on purpose: it is the same host behind the same
+      // edge, and a bare `Mozilla/5.0` with no platform detail is itself the kind of
+      // agent string a bot rule looks for.
+      headers: { 'user-agent': USER_AGENT },
       signal: AbortSignal.timeout(8000),
     });
     if (!response.ok) return null;

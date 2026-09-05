@@ -876,6 +876,111 @@ describe('GET /api/share/:token', () => {
     expect(raw).not.toContain('alice');
   });
 
+  /**
+   * The same middleware-ordering fact, for the route that *writes*.
+   *
+   * Below the gate this one is worse than a broken read: it is the route whose whole
+   * job is to hand a visitor the token they do not yet have, so a 401 here means no
+   * share link can ever be continued.
+   */
+  it('continues into a conversation of the visitor’s own, with no token', async () => {
+    // Its own server, because the shared one deliberately has no demo account and a
+    // visitor credential has to come from somewhere.
+    const store = new InMemoryStoreFactory();
+    const { forUser, gateway } = createServer({ store, verifier });
+    const app = createExpressApp({
+      verifier,
+      forUser,
+      connectionCount: () => gateway.connectionCount,
+      log: () => {},
+      demoLogin: {
+        login: async () => ({ status: 200, body: {} }),
+        isConfigured: true,
+        // The stub verifier reads a token *as* a user id, so this token is also the
+        // partition the fork must land in.
+        issueVisitorCredentials: async () => ({
+          accessToken: 'visitor-1',
+          refreshToken: 'visitor-refresh',
+          expiresIn: 3600,
+          visitorId: '22222222-2222-4222-8222-222222222222',
+          storageUserId: 'visitor-1',
+        }),
+      },
+    });
+    const shareServer = createHttpServer(app);
+    await new Promise<void>((resolve) => shareServer.listen(0, resolve));
+    const url = `http://127.0.0.1:${(shareServer.address() as AddressInfo).port}`;
+
+    try {
+      const created = (await (
+        await fetch(`${url}/api/session`, {
+          method: 'POST',
+          headers: { authorization: 'Bearer alice' },
+        })
+      ).json()) as { sessionId: string };
+      await fetch(`${url}/api/session/${created.sessionId}`, {
+        method: 'PATCH',
+        headers: { authorization: 'Bearer alice', 'content-type': 'application/json' },
+        body: JSON.stringify({ title: 'Her birthday' }),
+      });
+      const { url: link } = (await (
+        await fetch(`${url}/api/session/${created.sessionId}/share`, {
+          method: 'POST',
+          headers: { authorization: 'Bearer alice' },
+        })
+      ).json()) as { url: string };
+      const shareToken = decodeURIComponent(new URL(link).searchParams.get('share') ?? '');
+
+      const res = await fetch(`${url}/api/share/${encodeURIComponent(shareToken)}/continue`, {
+        method: 'POST',
+      });
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        accessToken: string;
+        sessionId: string;
+        title: string;
+      };
+      // A fork, not the original — the owner's session id must not come back.
+      expect(body.sessionId).not.toBe(created.sessionId);
+      expect(body.title).toBe('Her birthday (continued)');
+
+      // And the credential it issued really opens the fork.
+      const opened = await fetch(`${url}/api/session/${body.sessionId}`, {
+        headers: { authorization: `Bearer ${body.accessToken}` },
+      });
+      expect(opened.status).toBe(200);
+
+      // While the owner's own conversation is untouched and still theirs alone.
+      const owners = (await (
+        await fetch(`${url}/api/sessions`, { headers: { authorization: 'Bearer alice' } })
+      ).json()) as { sessions: { id: string }[] };
+      expect(owners.sessions.map((s) => s.id)).toEqual([created.sessionId]);
+    } finally {
+      await new Promise<void>((resolve) => shareServer.close(() => resolve()));
+    }
+  });
+
+  it('404s a continue on a link that cannot resolve, rather than 401ing', async () => {
+    const res = await fetch(`${baseUrl}/api/share/nonsense/continue`, { method: 'POST' });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toMatchObject({
+      error: 'This link has expired or is not valid',
+    });
+  });
+
+  it('503s a continue when the deployment has no account to lend', async () => {
+    // The shared app under test has no `demoLogin`, which is the state of any
+    // deployment without the demo secret. The link is fine; the server cannot honour
+    // it, and the client falls back to the read-only view.
+    const { shareToken } = await mintLinkFor('alice');
+    const res = await fetch(
+      `${baseUrl}/api/share/${encodeURIComponent(shareToken)}/continue`,
+      { method: 'POST' },
+    );
+    expect(res.status).toBe(503);
+  });
+
   it('404s on garbage, rather than 401ing or 500ing', async () => {
     // An unauthenticated caller must not learn from the status whether they hold a
     // forgery or something that used to work.
@@ -970,6 +1075,16 @@ describe('POST /api/demo/login', () => {
         login: async () => ({
           status: 200,
           body: { accessToken: 'demo-token', sessionId: 's1' },
+        }),
+        // Unused by this test, which only exercises the login route; present
+        // because the share-continue route shares the same dependency.
+        isConfigured: true,
+        issueVisitorCredentials: async () => ({
+          accessToken: 'demo-token',
+          refreshToken: 'demo-refresh',
+          expiresIn: 3600,
+          visitorId: '00000000-0000-4000-8000-000000000000',
+          storageUserId: 'demo#00000000-0000-4000-8000-000000000000',
         }),
       },
     });

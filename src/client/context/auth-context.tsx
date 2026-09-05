@@ -15,6 +15,7 @@ import {
   revokeRefreshToken,
 } from '../auth/cognito-oauth';
 import { demoLogin } from '../auth/demo-login';
+import { takeClaimedSession } from '../auth/claimed-session';
 import { rememberSignInSession } from '../auth/initial-session';
 import { describeToken } from '../auth/identity';
 import {
@@ -152,6 +153,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setError('Your session ended. Sign in again to continue.');
         },
       });
+
+      /*
+       * 0. A session this page load already obtained for itself.
+       *
+       * Today that means one thing: a share link was opened and `ShareEntry`
+       * traded it for a visitor credential before rendering this provider. It is
+       * checked first because none of the four candidates below can recognise it,
+       * and candidate 4 would actively replace it with the development user on a
+       * local server — stranding the fork the visitor was just handed.
+       *
+       * The token is already in the store; all that is left is to adopt it.
+       */
+      const claimed = takeClaimedSession();
+      if (claimed) {
+        adopt(claimed.accessToken, claimed.demo, claimed.label);
+        return;
+      }
 
       // 1. A redirect coming back from the Hosted UI.
       try {

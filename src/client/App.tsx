@@ -10,7 +10,7 @@ import { OutingsProvider } from './context/outings-context';
 import { ArchitectureEngineProvider } from './context/architecture-engine-context';
 import { flattenPreferences, useSessionPersistence } from './hooks/use-session-persistence';
 import { AppLayout } from './components/AppLayout';
-import { SharedConversationView } from './components/SharedConversationView';
+import { ShareEntry } from './components/ShareEntry';
 import { takeShareToken } from './auth/share-view';
 import { colors, typography, spacing } from './design-system/tokens';
 
@@ -253,28 +253,17 @@ function HerRecordsProviders({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function App() {
-  /*
-   * A guest on a share link gets a different app, decided before anything else.
-   *
-   * `takeShareToken` read `window.location` at module-eval time, which is the only
-   * moment guaranteed to be before `cognito-oauth.ts` wipes the query string. The
-   * branch has to be *here*, above `AuthProvider`, because that provider renders
-   * `LoginScreen` for anyone not signed in — and a guest never will be. Returning
-   * early also means `SessionProvider` and the socket never mount, so nothing below
-   * fires an authenticated request there is no token for.
-   */
-  const shareToken = takeShareToken();
-  if (shareToken) {
-    return (
-      <ErrorBoundary>
-        <SharedConversationView token={shareToken} />
-      </ErrorBoundary>
-    );
-  }
-
+/**
+ * The app for somebody who has a session — which, since share links became
+ * continuable, includes a visitor who arrived on one.
+ *
+ * Extracted from `App` for exactly that reason: this tree used to be reachable only
+ * by the ordinary route, and `ShareEntry` needs to render the *same* tree rather
+ * than a second, drifting copy of it once it has traded a link for a token.
+ */
+function AuthenticatedApp() {
   return (
-    <ErrorBoundary>
+    <>
       {/*
         AuthProvider sits inside the boundary (so a failed sign-in still renders
         the error card) and above SessionProvider, which it renders only once
@@ -306,6 +295,32 @@ export function App() {
           </ChatProvider>
         </SessionProvider>
       </AuthProvider>
+    </>
+  );
+}
+
+export function App() {
+  /*
+   * A share link takes a different route in, decided before anything else.
+   *
+   * `takeShareToken` read `window.location` at module-eval time, which is the only
+   * moment guaranteed to be before `cognito-oauth.ts` wipes the query string. The
+   * branch has to be *here*, above `AuthProvider`, because that provider renders
+   * `LoginScreen` for anyone not signed in — and a visitor arriving on a link has no
+   * account to sign in with. `ShareEntry` trades the token for one and then renders
+   * the same tree, so the app below never learns how the session was obtained.
+   */
+  const shareToken = takeShareToken();
+
+  return (
+    <ErrorBoundary>
+      {shareToken ? (
+        <ShareEntry token={shareToken}>
+          <AuthenticatedApp />
+        </ShareEntry>
+      ) : (
+        <AuthenticatedApp />
+      )}
     </ErrorBoundary>
   );
 }

@@ -181,15 +181,69 @@ export class DemoLoginService {
    *   default rather than erroring — see `resolvePersona`.
    */
   async login(persona?: unknown): Promise<HttpResponse> {
+    const issued = await this.issueVisitorCredentials();
+    if ('error' in issued) return issued.error;
+
+    // Resolved here rather than inside `seedSession` so the id we report back is
+    // the one that was actually seeded.
+    const resolved = resolvePersona(persona);
+
+    const storage = this.deps.storeFor(issued.storageUserId);
+    // Only ever this visitor's own store, which is now always empty — kept
+    // because a returning visitor may reuse an id, and it costs one query.
+    await this.reapStaleSessions(storage);
+    const sessionId = await this.deps.seedSession(storage, resolved.id);
+
+    return {
+      status: 200,
+      body: {
+        accessToken: issued.accessToken,
+        refreshToken: issued.refreshToken,
+        expiresIn: issued.expiresIn,
+        sessionId,
+        persona: resolved.id,
+        visitorId: issued.visitorId,
+      } satisfies DemoLoginBody,
+    };
+  }
+
+  /**
+   * Sign the shared account in and carve out a fresh corner of it, seeding nothing.
+   *
+   * Extracted from {@link login} so a share link can be continued in the app: that
+   * flow needs exactly the credential half — a real token and a private storage
+   * scope — and none of the persona half, because it seeds the *shared
+   * conversation* into the new session instead of a fixture profile. Duplicating
+   * the Cognito call there would have meant two places to keep the rate limit, the
+   * challenge handling and the `sub` lookup correct.
+   *
+   * Returns `{ error }` rather than throwing for the same reason `login` does: both
+   * callers are HTTP routes and the failures are answers, not faults.
+   */
+  async issueVisitorCredentials(): Promise<
+    | {
+        accessToken: string;
+        refreshToken: string;
+        expiresIn: number;
+        visitorId: string;
+        /** Already scoped — pass straight to `storeFor`. */
+        storageUserId: string;
+      }
+    | { error: HttpResponse }
+  > {
     if (!this.isConfigured) {
       return {
-        status: 503,
-        body: { error: 'The demo account is not configured on this deployment' },
+        error: {
+          status: 503,
+          body: { error: 'The demo account is not configured on this deployment' },
+        },
       };
     }
 
     if (!this.bucket.tryConsume()) {
-      return { status: 429, body: { error: 'Too many demo logins, try again shortly' } };
+      return {
+        error: { status: 429, body: { error: 'Too many demo logins, try again shortly' } },
+      };
     }
 
     const { username, password } = await this.readCredentials();
@@ -216,8 +270,10 @@ export class DemoLoginService {
       // A challenge (NEW_PASSWORD_REQUIRED, MFA) means the seed script did not
       // set the password as permanent. Nothing the caller can do about it.
       return {
-        status: 502,
-        body: { error: 'The demo account could not be signed in' },
+        error: {
+          status: 502,
+          body: { error: 'The demo account could not be signed in' },
+        },
       };
     }
 
@@ -227,10 +283,6 @@ export class DemoLoginService {
     // user later, looking like a broken endpoint.
     const { userId } = await this.deps.verifier.verify(result.AccessToken);
 
-    // Resolved here rather than inside `seedSession` so the id we report back is
-    // the one that was actually seeded.
-    const resolved = resolvePersona(persona);
-
     // A fresh corner of the shared account per login. This is what makes Login
     // and Create an Account two separate users rather than two views of one
     // pile: without it `listSessions` returns every demo visitor's
@@ -238,22 +290,12 @@ export class DemoLoginService {
     // the sidebar.
     const visitorId = randomUUID();
 
-    const storage = this.deps.storeFor(scopeToVisitor(userId, visitorId));
-    // Only ever this visitor's own store, which is now always empty — kept
-    // because a returning visitor may reuse an id, and it costs one query.
-    await this.reapStaleSessions(storage);
-    const sessionId = await this.deps.seedSession(storage, resolved.id);
-
     return {
-      status: 200,
-      body: {
-        accessToken: result.AccessToken,
-        refreshToken: result.RefreshToken,
-        expiresIn: result.ExpiresIn ?? 3600,
-        sessionId,
-        persona: resolved.id,
-        visitorId,
-      } satisfies DemoLoginBody,
+      accessToken: result.AccessToken,
+      refreshToken: result.RefreshToken,
+      expiresIn: result.ExpiresIn ?? 3600,
+      visitorId,
+      storageUserId: scopeToVisitor(userId, visitorId),
     };
   }
 

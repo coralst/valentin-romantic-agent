@@ -11,6 +11,16 @@ import type { RecordedCall } from './recording-registry';
 const DATE_KEY = /(^|_)date$|^check_in$|^check_out$|^when$/;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * Date arguments that are *supposed* to be in the past.
+ *
+ * `get_hebrew_occasions` needs the original Gregorian anniversary or birthday to
+ * convert it to a Hebrew date and project it forward; 2019-06-14 is the correct
+ * value to pass and flagging it as "booked the past" is the harness being wrong,
+ * not the agent. Anything else must resolve forward.
+ */
+const HISTORICAL_KEY = /^(anniversary|birth)_?date$|^birthday$/;
+
 export interface DateArg {
   readonly tool: string;
   readonly key: string;
@@ -58,7 +68,9 @@ export function everyDateIsIso(calls: readonly RecordedCall[]): true | string {
 
 /** Assert no date passed is before `floor` — the "never books the past" rule. */
 export function noDateBefore(calls: readonly RecordedCall[], floor: string): true | string {
-  const past = datesPassed(calls).filter((date) => date.value < floor);
+  const past = datesPassed(calls).filter(
+    (date) => date.value < floor && !HISTORICAL_KEY.test(date.key),
+  );
   if (past.length === 0) return true;
   return `passed a date before ${floor}: ${past
     .map((date) => `${date.tool}.${date.key}=${date.value}`)

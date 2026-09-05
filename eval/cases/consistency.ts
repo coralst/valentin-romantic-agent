@@ -36,11 +36,16 @@ export const consistencyCases: readonly EvalCase[] = [
       args: (calls) => {
         const dates = datesPassed(calls);
         if (dates.length === 0) return 'no date reached any tool across three turns';
-        const distinct = new Set(dates.map((date) => date.value));
-        if (distinct.size === 1) return true;
-        return `the date changed mid-conversation: ${dates
-          .map((date) => `${date.tool}.${date.key}=${date.value}`)
-          .join(', ')}`;
+
+        // Drift is *ending* somewhere other than where you started, not probing a
+        // neighbouring night on the way. One run checked Thursday, then Friday at
+        // both venues, then came back to Thursday and named Thursday to the user —
+        // wasteful (28s for the case) but not wrong, and failing it as drift would
+        // have reported correct behaviour as a bug.
+        const first = dates[0];
+        const last = dates[dates.length - 1];
+        if (first.value === last.value) return true;
+        return `the date the conversation ended on is not the one it started on: ${first.tool}.${first.key}=${first.value} → ${last.tool}.${last.key}=${last.value}`;
       },
       replyRejects: [CLAIMED_DONE],
       maxMs: 300_000,
@@ -106,8 +111,14 @@ export const consistencyCases: readonly EvalCase[] = [
         // A URL is trusted only if a tool produced it. Fetching it instead would
         // pass an invented-but-live domain, which is the case that matters.
         const fromTools = JSON.stringify(outcome.calls);
+        // The share link is the one URL the model is told *not* to write: it emits
+        // `{{conversation_link}}` and the tool loop substitutes a signed URL that
+        // therefore never appears in any recorded call. Treating it as invented was
+        // the harness failing to model its own seam.
+        const shared = outcome.calls.some((call) => call.name === 'create_conversation_link');
         const invented = urls.filter((url) => {
           const bare = url.replace(/[.,;]$/, '');
+          if (shared && /[?&]share=/.test(bare)) return false;
           return !fromTools.includes(bare) && !fromTools.includes(new URL(bare).hostname);
         });
 

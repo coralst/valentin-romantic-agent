@@ -97,10 +97,16 @@ export const playlistCases: readonly EvalCase[] = [
     group: 'playlist',
     severity: 'high',
     why: 'The artists named in the prose must be the artists on the ids in the card. Naming a real song and attaching a different track is invisible until she plays it.',
-    turns: ['Three songs for Maya — tell me which artists you picked and why.'],
+    // Two turns because a single "tell me which artists" is legitimately answered
+    // with an offer rather than a card — the agent did exactly that, and asserting
+    // on one turn tested the harness's patience rather than the app.
+    turns: [
+      'Three songs for Maya — tell me which artists you picked and why.',
+      'Those are good. Put those three in a playlist for her.',
+    ],
     facts: FACTS,
     expect: {
-      maxMs: 120_000,
+      maxMs: 150_000,
       oracle: async (outcome) => {
         const { ids } = idsGivenToPlaylist(outcome.calls);
         if (ids.length === 0) return 'no ids were passed, so nothing could be cross-checked';
@@ -111,8 +117,11 @@ export const playlistCases: readonly EvalCase[] = [
         // Every artist actually attached should be one the prose mentioned. The
         // reverse is not required — the model may discuss an artist it chose not
         // to include.
+        // Across all turns: the artists are named when they are proposed, which is
+        // a turn before the card is built.
+        const said = outcome.replies.join('\n').toLowerCase();
         const unmentioned = [...found.values()].filter(
-          (track) => !outcome.reply.toLowerCase().includes(track.artist.toLowerCase()),
+          (track) => !said.includes(track.artist.toLowerCase()),
         );
         if (unmentioned.length === 0) return true;
         return `the card contains tracks by artists the reply never names: ${unmentioned
@@ -178,6 +187,43 @@ export const playlistCases: readonly EvalCase[] = [
             `transcription corruption: ${invented.join(', ')}`;
       },
       maxMs: 150_000,
+    },
+  },
+  {
+    id: 'PLAY-07',
+    group: 'playlist',
+    severity: 'medium',
+    why: 'find_music is the entry point for every playlist, and the natural first query — the two artists the user actually named — returns nothing at all. Observed: query "Fleetwood Mac Norah Jones warm melodic folk rock" → "Spotify has nothing for …", and a mood-only retry returned two copies of a German-language track by an unrelated artist. The agent recovers by searching each artist separately, which costs three extra calls, but a request that names a mood rather than an artist has nothing to fall back on. This is the other half of "ask for a playlist and it doesn\'t work".',
+    turns: ['Find me a few songs with a warm, mellow late-evening mood for Maya.'],
+    facts: FACTS,
+    expect: {
+      calledTool: ['find_music'],
+      args: (calls) => {
+        const searches = calls.filter((call) => call.name === 'find_music');
+        if (searches.length === 0) return 'find_music was never called';
+
+        const empty = searches.filter((call) => /has nothing for/i.test(call.summary));
+        if (empty.length === searches.length) {
+          return `every find_music query came back empty: ${searches
+            .map((call) => JSON.stringify(call.args.query))
+            .join(', ')}`;
+        }
+
+        // A single search returning the same track twice under different ids is
+        // what later lets a playlist be padded with duplicates.
+        const dupes = searches.filter((call) => {
+          const titles = [...call.summary.matchAll(/([^|:]+?) — ([^(]+?) \(\d+:\d\d\)/g)].map(
+            (match) => `${match[1].trim()} — ${match[2].trim()}`,
+          );
+          return new Set(titles).size !== titles.length;
+        });
+        return dupes.length === 0
+          ? true
+          : `find_music returned the same track twice under different ids: ${dupes
+              .map((call) => JSON.stringify(call.args.query))
+              .join(', ')}`;
+      },
+      maxMs: 120_000,
     },
   },
   {

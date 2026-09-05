@@ -81,7 +81,13 @@ export const dateCases: readonly EvalCase[] = [
         const truth = await hebrewDateFor(ctx.nowLocalDate);
         // The agent may render the month as Elul or Elul 5786; the day number is
         // the part that goes wrong, so that is what is asserted.
-        const claimed = /(\d{1,2})\s+([A-Z][a-z']+)/.exec(outcome.reply);
+        // Anchored on the Hebrew month names, not on "a number then a word" — the
+        // looser form matched the civil "6 September" sitting in the same sentence
+        // and reported a mismatch that was the harness's, not the agent's.
+        const claimed =
+          /(\d{1,2})\s+(Tishrei|Cheshvan|Marcheshvan|Kislev|Tevet|Sh'?vat|Shevat|Adar(?:\s*I{1,2})?|Nisan|Iyy?ar|Sivan|Tamuz|Av|Elul)/i.exec(
+            outcome.reply,
+          );
         if (!claimed) return `the reply named no Hebrew date at all: ${outcome.reply.slice(0, 200)}`;
 
         const claimedDay = Number(claimed[1]);
@@ -159,14 +165,24 @@ export const dateCases: readonly EvalCase[] = [
     id: 'DATE-08',
     group: 'dates',
     severity: 'medium',
-    why: 'A relative offset from a known anniversary must become remind_days_before, not a hand-computed date that ignores the recurrence.',
+    why: 'A recurring anniversary reminder is already handled from her profile, and set_reminder\'s own description says so ("do not duplicate those here"). So the honest answer is either a set_reminder with remind_days_before: 7 or a plain statement that the anniversary is already covered — never an invented limitation, and never a duplicate one-off.',
     turns: ['Remind me a week before our anniversary every year.'],
     facts: FACTS,
     expect: {
-      calledTool: ['set_reminder'],
+      // The prose defect this case exists to catch: the agent volunteered that
+      // "the reminder system I have can only set one reminder at a time for a
+      // specific date, not a recurring annual one", which contradicts the tool
+      // description it was handed, and then offered exactly the duplicate that
+      // description forbids.
+      replyRejects: [
+        /\b(?:can(?:not|'t)|only)\b[^.]{0,60}\brecurring\b/i,
+        /\bdon'?t have\b[^.]{0,40}\b(?:recurring|annual)\b/i,
+      ],
       args: (calls) => {
         const reminder = calls.find((call) => call.name === 'set_reminder');
-        if (!reminder) return 'set_reminder was not called';
+        // Not calling it is defensible here — the profile already covers the
+        // anniversary. If it *is* called, the lead time must be the one asked for.
+        if (!reminder) return true;
         const before = reminder.args.remind_days_before;
         if (before === 7) return true;
         return `remind_days_before was ${JSON.stringify(before)}, not 7; args: ${JSON.stringify(

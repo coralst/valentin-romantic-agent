@@ -106,10 +106,23 @@ function stubFetch(responder: (call: { body: Record<string, unknown> }) => unkno
         headers: init.headers as Record<string, string>,
       });
       const result = responder({ body });
+      // `text` matters as much as `json`: the client reads the body of a refusal to
+      // log the status and a snippet, and a stub without it turned a 400 into a
+      // TypeError — the mock disagreeing with `Response`, not the code being wrong.
       if (result === null) {
-        return { ok: false, status: 400, json: async () => ({}) } as unknown as Response;
+        return {
+          ok: false,
+          status: 400,
+          json: async () => ({}),
+          text: async () => '{"status":400,"message":"{}"}',
+        } as unknown as Response;
       }
-      return { ok: true, status: 200, json: async () => result } as unknown as Response;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => result,
+        text: async () => JSON.stringify(result),
+      } as unknown as Response;
     }),
   );
 }

@@ -1,0 +1,74 @@
+/* aws-retint.css — maps the deck-v2 (Valentin) palette onto the AWS presentation
+   template used by docs/Valentin-Presentation-v4.pptx, so HTML-rendered slides sit
+   in the same deck as the native ones without looking like a different document.
+
+   Injected at render time (see render-aws-slides.mjs); public/deck-v2.html is never
+   edited, so the live deck keeps its own identity. */
+
+:root {
+  /* AWS template palette — navy / orange / green on white */
+  --ink: #16191F;
+  --ink-2: #545B64;
+  --ink-3: #8D959E;
+  --claret: #232F3E;   /* engine A + primary accent  (was #8C2F45) */
+  --claret-2: #FF9900; /* emphasis                   (was #B14A62) */
+  --blush: #FFEFD6;    /* faint tint                 (was #F6DEE2) */
+  --olive: #1E7C3C;    /* engine B / wins            (was #7C8464) */
+  --cream: #F7F8FA;    /* card surface               (was #FFFDFB) */
+  --bg: #FFFFFF;       /* slide ground               (was #EFE7E1) */
+  --r: 8px;            /* AWS template uses a tight radius, not a pill */
+  --r-sm: 6px;
+}
+
+/* One typeface for the whole deck. Amazon Ember is installed; the serif display
+   face is what read as "a different template" more than any single colour.
+   Blanket rule, because the serif leaks into money and stat figures too. */
+body, section, section * {
+  font-family: "Amazon Ember", "Helvetica Neue", Arial, sans-serif !important;
+}
+code, .owns, .kit li, .node li s, pre, kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important;
+}
+h1, h2, h3, .thesis, .ag .n, .ag b, .stat .v, .lp h3, .fig .n { font-weight: 700 !important; }
+h1 { letter-spacing: -.02em; }
+h2 { letter-spacing: -.01em; color: #232F3E; }
+
+body { background: #FFFFFF; }
+section { background: #FFFFFF; }
+
+/* Kickers become AWS orange — the template's only bright colour. */
+.act, .kicker { color: #FF9900 !important; }
+.act b { color: #232F3E; }
+code { color: #C7500F; }
+
+/* The template's signature: a 1.5in orange rule under the title. */
+section > .wrap > h2::after {
+  content: ''; display: block; width: 108px; height: 4px;
+  background: #FF9900; margin: 15px 0 2px; border-radius: 0;
+}
+
+/* Cards: AWS uses a flat #F7F8FA panel with a hairline, not a drop shadow. */
+.panel, .node, .who, .stat, .kit, .an, .lp, .ag {
+  box-shadow: none !important;
+  border: 1px solid #E4E7EA;
+}
+
+/* Dark sections go navy, not near-black. #1E7C3C is too dark to read on navy, so
+   the engine-B green brightens inside them; --c inherits it automatically. */
+.dark { background: #232F3E !important; color: #FFFFFF !important; --olive: #5FBF7A; }
+.dark h2, .dark h1, .dark h3 { color: #FFFFFF !important; }
+.dark .act, .dark .kicker { color: #FF9900 !important; }
+.dark .lede, .dark .note, .dark p { color: #D5DBE1 !important; }
+.dark .panel, .dark .node, .dark .who, .dark .stat, .dark .kit, .dark .an, .dark .lp {
+  background: rgba(255, 255, 255, .06) !important;
+  border: 1px solid rgba(255, 255, 255, .14) !important;
+}
+.dark code { color: #FFB84D; }
+.dark .an .i { background: rgba(255, 153, 0, .18) !important; color: #FF9900 !important; }
+
+/* Agent role chips: the six saturated hues read as a different deck. Fold them
+   into the template's navy/orange/green so the team slide matches. */
+:root {
+  --master: #FF9900; --arch: #232F3E; --front: #0972D3;
+  --back: #1E7C3C;  --design: #7D3C98; --qa: #C7500F;
+}

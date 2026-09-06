@@ -1,0 +1,313 @@
+"""lens_slides.py — the v7 lens-major comparison slides.
+
+The v6 comparison walked the four AgentCore components; v7 pivots to the six
+questions the audience actually asks (cost, resilience, security, ownership,
+debuggability, latency) and carries a persistent strip of four component chips.
+The strip sits at the same coordinates on every slide, so flipping slides reads
+as toggling chips on and off.
+"""
+
+import aws_slides as T
+from aws_slides import (W, H, NAVY, ORANGE, GREEN, INK, GREY, CARD, BORDER,
+                        WHITE, DARK_GREY, chrome, heading, pill)
+
+COMPONENTS = ['Runtime', 'Memory', 'Gateway', 'Observability']
+
+# Which chips light up per lens — the toggle map.
+TOGGLES = {
+    'cost':      {'Runtime', 'Memory', 'Gateway', 'Observability'},
+    'resil':     {'Runtime', 'Gateway'},
+    'security':  {'Runtime', 'Gateway'},
+    'ownership': {'Memory', 'Gateway'},
+    'debug':     {'Observability'},
+    'latency':   {'Runtime', 'Gateway'},
+}
+
+
+def chip_strip(active, y=1.92):
+    """Four component chips, fixed position on every lens slide."""
+    ops = []
+    x, w, h, gap = 0.62, 2.92, 0.42, 0.14
+    for i, name in enumerate(COMPONENTS):
+        cx = x + i * (w + gap)
+        on = name in active
+        if on:
+            ops.append(('rect', cx, y, w, h, NAVY, None, 0.21))
+            ops.append(('oval', cx + 0.22, y + h / 2 - 0.055, 0.11, 0.11, ORANGE, None))
+            ops.append(('text', cx + 0.44, y, w - 0.56, h,
+                        f'AgentCore {name}', 11.5, WHITE, True, 'l', 'm'))
+        else:
+            ops.append(('rect', cx, y, w, h, None, BORDER, 0.21))
+            ops.append(('text', cx + 0.44, y, w - 0.56, h,
+                        f'AgentCore {name}', 11.5, DARK_GREY, False, 'l', 'm'))
+    return ops
+
+
+def engine_card(x, title, fill, points):
+    """One engine column: header bar + two lead/body pairs. Kept airy on purpose."""
+    w, y, h = 5.90, 2.62, 3.30
+    ops = [
+        ('rect', x, y, w, h, CARD, BORDER, 0.06),
+        ('rect', x, y, w, 0.46, fill, None, 0),
+        ('text', x + 0.22, y, w - 0.44, 0.46, title, 11.5, WHITE, True, 'l', 'm'),
+    ]
+    py = y + 0.68
+    for lead, body in points:
+        ops += [
+            ('text', x + 0.22, py, w - 0.44, 0.34, lead, 13, NAVY, True, 'l', 't'),
+            ('text', x + 0.22, py + 0.36, w - 0.44, 0.86, body, 11.5, INK, False, 'l', 't'),
+        ]
+        py += 1.32
+    return ops
+
+
+def verdict_band(num, caption, winner, giveup=None):
+    """The single number that settles the lens, template-banner style."""
+    y, h = 6.14, 0.62
+    won_green = winner == 'AGENTCORE'
+    ops = [
+        ('rect', 0.62, y, 12.10, h, FAINT if not won_green else FAINT, None, 0.10),
+        ('text', 0.88, y, 2.30, h, num, 24, ORANGE, True, 'l', 'm'),
+    ]
+    ops += pill(10.90, y + 0.17, 1.56, 0.28, winner, GREEN if won_green else NAVY)
+    cap_w = 7.40
+    if giveup:
+        ops.append(('text', 3.30, y + 0.08, cap_w, 0.26, caption, 12, NAVY, True, 'l', 'm'))
+        ops.append(('text', 3.30, y + 0.34, cap_w, 0.24,
+                    [('Give up:  ', True, GREY), (giveup, False, GREY)],
+                    9.5, GREY, False, 'l', 'm'))
+    else:
+        ops.append(('text', 3.30, y, cap_w, h, caption, 12, NAVY, True, 'l', 'm'))
+    return ops
+
+
+FAINT = T.FAINT
+
+
+def slide_lens(page, total, badge, title, subtitle, key,
+               a_points, b_points, num, caption, winner, giveup=None):
+    ops = chrome(page, total, badge)
+    ops += heading(title, subtitle)
+    ops += chip_strip(TOGGLES[key])
+    ops += engine_card(0.62, 'ENGINE A · GLUE CODE', GREY, a_points)
+    ops += engine_card(6.82, 'ENGINE B · AGENTCORE', NAVY, b_points)
+    ops += verdict_band(num, caption, winner, giveup)
+    return ops
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# The matrix slide — six lenses, the toggle map, one upside, one trade-off.
+# ─────────────────────────────────────────────────────────────────────────────
+
+MATRIX = [
+    dict(lens='Cost', key='cost', win='AGENTCORE',
+         up='The $18/mo idle floor disappears — pay per second of real agent work.',
+         down='Unit price is 2.20× dearer per vCPU-hour; it wins on granularity, not rate.'),
+    dict(lens='Resilience', key='resil', win='AGENTCORE',
+         up='A microVM per session and a Lambda per tool: one fault loses 1 session, not 40.',
+         down='The container stops being yours — no sidecars, no in-process cache.'),
+    dict(lens='Security', key='security', win='AGENTCORE',
+         up='Auth resolves per tool; a hijacked session reaches only its own tokens.',
+         down='The isolation boundary is managed — you trust it, you cannot inspect it.'),
+    dict(lens='Ownership & velocity', key='ownership', win='AGENTCORE',
+         up='Extraction becomes the service’s prompt; adding a tool stops being a deploy.',
+         down='You lose the extraction schema you designed — and the fields only it had.'),
+    dict(lens='Debuggability', key='debug', win='GLUE CODE',
+         up='Hand-wired OTEL emits exactly the fields that decide an incident at 2am.',
+         down='You write and maintain the span plumbing, plus a CloudWatch bill.'),
+    dict(lens='Latency', key='latency', win='GLUE CODE',
+         up='In-process tools on a warm task — a turn never waits on a hop.',
+         down='Engine B cold-starts an idle session and pays a Gateway hop per tool call.'),
+]
+
+MCOLS = dict(lens=(0.62, 1.86), dots=(2.48, 2.08), up=(4.66, 3.94),
+             down=(8.70, 2.86), win=(11.66, 1.06))
+
+
+def slide_matrix(page, total, badge):
+    ops = chrome(page, total, badge)
+    ops += heading(
+        'Two engines, six lenses',
+        'Each lens toggles on the components that decide it. One upside, one '
+        'trade-off, one winner per row.')
+
+    hy, rh, top = 1.86, 0.70, 2.32
+    ops.append(('rect', 0.62, hy, 12.10, 0.40, NAVY, None, 0.06))
+    heads = [('lens', 'THE LENS', ORANGE, 'l'), ('up', 'THE UPSIDE', WHITE, 'l'),
+             ('down', 'THE TRADE-OFF', WHITE, 'l'), ('win', 'WINNER', WHITE, 'l')]
+    for k, lab, col, al in heads:
+        cx, cw = MCOLS[k]
+        ops.append(('text', cx + 0.10, hy, cw - 0.20, 0.40, lab, 10, col, True, al, 'm'))
+    # component initials above the dot columns
+    dx, dw = MCOLS['dots']
+    step = dw / 4
+    initials = ['RUN', 'MEM', 'GTW', 'OBS']
+    for i, ini in enumerate(initials):
+        ops.append(('text', dx + i * step, hy, step, 0.40,
+                    ini, 8, WHITE, True, 'c', 'm'))
+
+    for r, row in enumerate(MATRIX):
+        y = top + r * rh
+        if r % 2 == 0:
+            ops.append(('rect', 0.62, y, 12.10, rh, CARD, None, 0))
+        ops.append(('rect', 0.62, y + rh - 0.01, 12.10, 0.01, BORDER, None, 0))
+
+        cx, cw = MCOLS['lens']
+        ops.append(('text', cx + 0.10, y, cw - 0.20, rh, row['lens'], 12.5,
+                    NAVY, True, 'l', 'm'))
+        active = TOGGLES[row['key']]
+        for i, name in enumerate(COMPONENTS):
+            ccx = dx + i * step + step / 2
+            if name in active:
+                ops.append(('oval', ccx - 0.085, y + rh / 2 - 0.085, 0.17, 0.17,
+                            ORANGE, None))
+            else:
+                ops.append(('oval', ccx - 0.06, y + rh / 2 - 0.06, 0.12, 0.12,
+                            None, BORDER))
+        for k, txt in (('up', row['up']), ('down', row['down'])):
+            cx, cw = MCOLS[k]
+            ops.append(('text', cx + 0.10, y + 0.08, cw - 0.20, rh - 0.16, txt,
+                        10, INK, False, 'l', 'm'))
+        cx, cw = MCOLS['win']
+        won_green = row['win'] == 'AGENTCORE'
+        ops += pill(cx, y + rh / 2 - 0.12, cw, 0.24, row['win'],
+                    GREEN if won_green else NAVY, size=8)
+
+    banner = ('4–2 to AgentCore — and the two it loses are the honest half. '
+              'Latency stays on this slide: it does not change the decision.')
+    ops += [
+        ('rect', 0.62, 6.58, 12.10, 0.42, ORANGE, None, 0.10),
+        ('text', 0.82, 6.58, 11.70, 0.42, banner, 11.5, NAVY, True, 'l', 'm'),
+    ]
+    return ops
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# The five deep-dive lens slides (latency deliberately has none).
+# ─────────────────────────────────────────────────────────────────────────────
+
+def all_lens_slides(total, pages, badges):
+    """pages/badges: dicts keyed by lens key."""
+    S = []
+    S.append(slide_lens(
+        pages['cost'], total, badges['cost'],
+        'Cost — every component on the bill',
+        'What each engine costs at one user, before the identical Bedrock reply call.',
+        'cost',
+        a_points=[
+            ('$18.02 a month before the first turn.',
+             'One Fargate task, 0.5 vCPU, billed 730 h whether anyone talks to '
+             'Valentin or not.'),
+            ('Plus a second model call every turn.',
+             'Preference extraction is its own Bedrock invocation — $1.385 per '
+             'user per month.'),
+        ],
+        b_points=[
+            ('$0.10 a month, all of it usage.',
+             'Compute $0.0047 + Memory $0.098 + Gateway $0.0006. The idle floor '
+             'disappears entirely.'),
+            ('The honest part: unit price is worse.',
+             'Runtime is 2.20× dearer per vCPU-hour. It wins on billing '
+             'granularity, and only on that.'),
+        ],
+        num='14×', caption='cheaper per user, per month — the bill is itemised on the next slide',
+        winner='AGENTCORE',
+        giveup='if Memory retrievals meter per record, not per call, this reverses — confirm before quoting'))
+
+    S.append(slide_lens(
+        pages['resil'], total, badges['resil'],
+        'Resilience — what one fault takes down',
+        'The blast radius of a crash, in each engine.',
+        'resil',
+        a_points=[
+            ('Forty sessions, one Node process.',
+             'One heap, one event loop, one crash — a fault anywhere travels '
+             'everywhere.'),
+            ('Tools crash in-process too.',
+             'A misbehaving integration takes the whole agent with it, '
+             'mid-conversation.'),
+        ],
+        b_points=[
+            ('One microVM per session.',
+             'A process-level fault has nowhere to travel; thirty-nine '
+             'conversations never notice.'),
+            ('One Lambda per tool behind Gateway.',
+             'A crashed tool is a failed call, not a dead agent.'),
+        ],
+        num='40 → 1', caption='sessions lost to one process fault — measured, next slide',
+        winner='AGENTCORE',
+        giveup='container control: no sidecars, no long-lived in-process cache'))
+
+    S.append(slide_lens(
+        pages['security'], total, badges['security'],
+        'Security — what one breach reaches',
+        'Same two components as resilience; the question is what leaks, not what crashes.',
+        'security',
+        a_points=[
+            ('Every credential in one heap.',
+             'A process-wide registry holds every user’s tokens next to '
+             'every live session.'),
+            ('One shared IAM role.',
+             'An injection that pivots to the registry reaches the shared '
+             'Bedrock client and everyone’s tokens.'),
+        ],
+        b_points=[
+            ('Auth resolves per tool.',
+             'Each tool is its own Lambda with its own role; credentials never '
+             'share a heap with sessions.'),
+            ('Isolation is the boundary, twice.',
+             'A hijacked session is walled into its own microVM — it reaches '
+             'its own tokens and nothing else.'),
+        ],
+        num='all → one', caption='users’ tokens reachable from a single compromised session',
+        winner='AGENTCORE',
+        giveup='the boundary is managed — you trust it rather than inspect it'))
+
+    S.append(slide_lens(
+        pages['ownership'], total, badges['ownership'],
+        'Ownership & velocity — what you maintain forever',
+        'The code you keep owning after launch, and how fast the agent can grow.',
+        'ownership',
+        a_points=[
+            ('The extraction prompt is mine forever.',
+             'A second prompt to version, test and babysit — on top of the '
+             'agent’s own.'),
+            ('Adding a tool is a deploy.',
+             'Registry change, build, rolling ECS deploy — growth at the speed '
+             'of the pipeline.'),
+        ],
+        b_points=[
+            ('Extraction is the service’s problem.',
+             'One event in, one retrieval out. One fewer prompt to own.'),
+            ('The tool list is data.',
+             'Adding or revoking a tool via Gateway is a config change, not a '
+             'release.'),
+        ],
+        num='−1 prompt', caption='to own, version and regression-test — and tool changes stop being releases',
+        winner='AGENTCORE',
+        giveup='the extraction schema you designed — preferenceCategoryCount is gone'))
+
+    S.append(slide_lens(
+        pages['debug'], total, badges['debug'],
+        'Debuggability — the lens the glue code wins',
+        'What you can actually see when a turn goes wrong at two in the morning.',
+        'debug',
+        a_points=[
+            ('Exactly the fields that decide an incident.',
+             'Hand-wired OTEL spans: turn id, tool name, extraction latency, '
+             'which reminder fired.'),
+            ('The cost is real, not rhetorical.',
+             'I wrote the span plumbing and now maintain it — and CloudWatch is '
+             'another bill.'),
+        ],
+        b_points=[
+            ('Traces for free — on its schema.',
+             'Session-level traces arrive with zero work, but the 2am fields '
+             'are not the ones it emits.'),
+            ('Where I actually landed.',
+             'AgentCore’s traces as the floor, my spans kept for the two '
+             'or three fields that decide an incident.'),
+        ],
+        num='1 of 6', caption='the lens DIY keeps — a 6–0 comparison would be a sales pitch',
+        winner='GLUE CODE'))
+    return S

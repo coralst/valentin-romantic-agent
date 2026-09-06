@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Valentin — deep-dive slides (deck-v2 template)</title>
+<link href="https://fonts.googleapis.com/css2?family=Gloock&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="deck-v2-theme.css">
+<style>
+  /* Deep-dive additions. Every value below is taken from the deck-v2 scale —
+     no new colours, radii or fonts are introduced. */
+  .dims { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 22px; }
+  .dim { border-radius: var(--r-sm); padding: 13px 16px; background: rgba(255,253,251,.06);
+         border-left: 3px solid var(--olive); }
+  .dim.loses { border-left-color: var(--claret); }
+  .dim b { font: 500 17px Outfit; display: block; }
+  .dim span { font: 500 12px Outfit; letter-spacing: .18em; text-transform: uppercase;
+              color: var(--olive); }
+  .dim.loses span { color: var(--claret-2); }
+
+  /* one hero figure per engine panel, in the .tally idiom */
+  .fig { display: flex; align-items: center; gap: 13px; margin-top: 14px;
+         padding-top: 13px; border-top: 1px solid rgba(42,34,38,.10); }
+  .dark .fig { border-top-color: rgba(255,253,251,.14); }
+  .fig .n { font-family: Gloock, serif; font-size: clamp(30px, 3.4vw, 46px); line-height: 1;
+            color: var(--c, var(--claret)); }
+  .fig .n small { font-size: .48em; }
+  .fig p { font-size: 14.5px; line-height: 1.4; color: var(--ink-3); max-width: 260px; }
+  .panel .bullets li::before { color: var(--c, var(--claret)); }
+  .dark .stat { background: rgba(255,253,251,.06); box-shadow: none; }
+  .dark .stat b { color: var(--cream); }
+  .verdict { font-family: Gloock, serif; font-size: clamp(22px, 2.5vw, 33px); line-height: 1.22;
+             margin-top: 14px; max-width: 1280px; }
+  .verdict em { font-style: normal; color: var(--olive); }
+  .verdict em.a { color: var(--claret); }
+  /* colour follows the outcome, not the engine — so Observability visibly reverses */
+  .panel .won { float: right; font: 500 11.5px Outfit; letter-spacing: .18em;
+                text-transform: uppercase; color: var(--c, var(--olive)); }
+</style>
+</head>
+<body>
+
+<!-- ═══ A · THE SCORECARD (intro) ══════════════════ -->
+<section class="dark" id="scorecard" data-title="Two engines, scored">
+  <div class="wrap wide">
+    <div class="act"><b>Part 1</b> · What I built</div>
+    <h2>Two engines, scored on four dimensions.</h2>
+    <p class="lede" style="max-width:1060px">Same product, same model, same tools — only the platform
+      underneath changes. Everything above and below the agent is shared, so these four rows are the
+      entire argument.</p>
+
+    <div class="stats">
+      <div class="stat"><div class="v">62×</div><b>cheaper at 500 turns / month</b>
+        <p>An always-on Fargate task runs at 0.057% utilisation. AgentCore bills per second instead.</p></div>
+      <div class="stat"><div class="v">1 of 40</div><b>tools lost when one fails</b>
+        <p>In-process, one failing target takes all forty with it. Behind MCP, it takes itself.</p></div>
+      <div class="stat"><div class="v">656</div><b>lines of memory code deleted</b>
+        <p>Extraction glue and the second Claude call per turn stop being ours to maintain.</p></div>
+    </div>
+
+    <div class="versus">
+      <div class="panel" style="--c: var(--olive)">
+        <span class="t">What it bought</span>
+        <ul class="bullets">
+          <li><b>~62× cheaper</b> at 500 turns/mo — with the Memory billing caveat</li>
+          <li>Blast radius <b>1-of-40</b> instead of 40-of-40 tools</li>
+          <li>A tool trust boundary that is <b>enumerable outside the model</b></li>
+          <li><b>Physical</b> session isolation — a microVM per session</li>
+          <li><b>656 lines</b> of extraction code stop being ours</li>
+        </ul>
+      </div>
+      <div class="vs"><span>vs</span></div>
+      <div class="panel" style="--c: var(--claret)">
+        <span class="t">What it cost</span>
+        <ul class="bullets">
+          <li>Latency: an extra network hop, and <b>no streaming</b> today</li>
+          <li>Observability: <b>no token counts</b>, no alarms, manual setup</li>
+          <li>Contradictory naming rules · <b>untaggable</b> resources</li>
+          <li>Memory retrieval pricing <b>unresolved</b> — it could flip the cost win</li>
+          <li>"Deployed &amp; green" served <b>zero turns for weeks</b></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="dims">
+      <div class="dim"><span>Engine B</span><b>Runtime</b></div>
+      <div class="dim"><span>Engine B</span><b>Memory</b></div>
+      <div class="dim"><span>Engine B</span><b>Gateway</b></div>
+      <div class="dim loses"><span>Engine A</span><b>Observability</b></div>
+    </div>
+
+    <p class="note">Identity is left out on purpose — AgentCore wins it, but the argument is the same
+      shape as Gateway's and it costs a slide to make the point twice.</p>
+  </div>
+</section>
+
+<div id="dives"></div>
+
+<script>
+const DIMS = [
+ {
+  id:"runtime", title:"Runtime — where the agent runs",
+  lede:"An always-on container versus a microVM that exists only while a turn is running.",
+  verdict:"An always-on task at <em class='a'>0.057% utilisation</em> is <em>62× the bill</em> for the same 500 turns.",
+  a:{h:"ECS Fargate task — always on", sub:"One container, one shared process, billed for every second of the month.",
+     n:"0.057<small>%</small>", c:"Task utilisation at 500 turns/month. The other 99.94% is billed too.",
+     pts:["One task, one container, <b>always paying</b>","Every session shares one process — isolation is <b>logical</b>","Simple to deploy, expensive at low load"]},
+  b:{h:"AgentCore Runtime — per-session microVM", sub:"Each turn gets its own microVM, and between turns there is nothing to pay for.",
+     n:"2.2<small>×</small>", c:"Dearer per vCPU-second — but billed only while a turn actually runs.", won:true,
+     pts:["Each session gets its <b>own isolated compute</b>","Per-second billing, 1-second minimum","Isolation goes <b>logical → physical</b>"]},
+  note:"AgentCore Runtime cannot be an ALB target, so a Fargate proxy stays in front. Compute is displaced, not deleted — the same caveat as the blast-radius slide."
+ },
+ {
+  id:"memory", title:"Memory — how the agent remembers",
+  lede:"A second Claude call on every single turn versus a managed extraction strategy.",
+  verdict:"<em class='a'>99.95% of Engine A's per-turn cost</em> is a second model call that exists only to remember things.",
+  a:{h:"DynamoDB + a 2nd Claude call every turn", sub:"The conversation is cheap. The remembering is not.",
+     n:"99.95<small>%</small>", c:"…of per-turn cost is that extraction call — not the reply, the extraction.",
+     pts:["DynamoDB holds conversation and profile items","A second Bedrock call fires on <b>every</b> turn","<b>656 lines</b> of extraction and memory glue to own"]},
+  b:{h:"AgentCore Memory — managed strategy", sub:"Configure <code>userPreferenceMemoryStrategy</code> and extraction stops being your code.",
+     n:"656", c:"Lines deleted. Extraction is included in the Memory price.", won:true,
+     pts:["No per-turn extraction call from you","Extraction is <b>async</b> → the profile trails by one message","Expires at 90 days — DynamoDB stays source of truth"]},
+  note:"Retrieval is $0.50 per 1k. Billed per call this is the biggest win in the deck; billed per <em>record</em> it makes AgentCore 3.8× dearer. Confirm with AWS before quoting it."
+ },
+ {
+  id:"gateway", title:"Gateway — how the agent uses tools",
+  lede:"Tools inside the agent process versus Lambdas behind an authenticated MCP endpoint.",
+  verdict:"One failing tool target costs you <em class='a'>40 of 40 tools</em> in-process — or <em>1 of 40</em> behind the gateway.",
+  a:{h:"TypeScript tool registry — in-process", sub:"They share a process, so they share a fate.",
+     n:"40<small>/40</small>", c:"Tools lost when one target fails.",
+     pts:["21 tools live <b>inside</b> the agent process","One IAM role for all of them — the task's role","Prompt injection runs with the <b>agent's own credentials</b>"]},
+  b:{h:"AgentCore Gateway — MCP + CUSTOM_JWT", sub:"Each tool is a Lambda with its own execution role, reached over an authenticated endpoint.",
+     n:"1<small>/40</small>", c:"Blast radius per failing tool.", won:true,
+     pts:["Tools are Lambdas behind an <b>MCP endpoint</b>","<b>Per-tool</b> execution role — scoped blast radius","CUSTOM_JWT required — <b>no anonymous access</b>"]},
+  note:"This is the architectural argument, not the cost one: the trust boundary finally sits outside the model instead of inside its prompt."
+ },
+ {
+  id:"observability", title:"Observability — what you can see",
+  lede:"Hand-wired OpenTelemetry versus managed traces — and this is where the argument reverses.",
+  verdict:"The platform I'm recommending reports <em class='a'>zero token usage</em> today. Better to say it than be asked it.",
+  a:{h:"Hand-wired OpenTelemetry — full-fat", sub:"You maintain it, but you can query anything.",
+     n:"4<small> + 1</small>", c:"CloudWatch alarms plus a dashboard, on real durations and real per-turn token counts.", won:true,
+     pts:["Real token counts on <b>every</b> turn","Custom <code>span-bridge.ts</code>, wired by hand","Four alarms and a dashboard that already exist"]},
+  b:{h:"AgentCore Observability — managed, incomplete", sub:"The counter renders, and it is empty.",
+     n:"0", c:"Tokens reported by Runtime today.",
+     pts:["Traces and sessions land in CloudWatch GenAI","Needs <b>manual CLI enablement</b> (Transaction Search)","<code>monitoring-stack.ts</code> covers Engine B <b>not at all</b>"]},
+  note:"AgentCore will close this gap and I'm not waiting for it — but today the platform I recommend has the weaker instrumentation. This is the one row Engine A wins."
+ },
+];
+
+document.getElementById('dives').innerHTML = DIMS.map(d=>{
+  const li = p => p.map(x=>`<li>${x}</li>`).join('');
+  const won = e => e.won ? '<span class="won">wins</span>' : '';
+  // the winning column is olive on every slide, whichever engine it happens to be
+  const ca = d.a.won ? 'var(--olive)' : 'var(--claret)';
+  const cb = d.b.won ? 'var(--olive)' : 'var(--claret)';
+  return `
+<section id="${d.id}" data-title="${d.title.split(' —')[0]}">
+  <div class="wrap wide">
+    <div class="act"><b>Part 1</b> · What I built</div>
+    <h2>${d.title}</h2>
+    <p class="lede" style="max-width:1060px">${d.lede}</p>
+    <p class="verdict">${d.verdict}</p>
+    <div class="versus">
+      <div class="panel" style="--c: ${ca}">
+        ${won(d.a)}<span class="t">Engine A · Fargate + DynamoDB</span>
+        <h3>${d.a.h}</h3>
+        <p class="sub">${d.a.sub}</p>
+        <div class="fig"><span class="n">${d.a.n}</span><p>${d.a.c}</p></div>
+        <ul class="bullets">${li(d.a.pts)}</ul>
+      </div>
+      <div class="vs"><span>vs</span></div>
+      <div class="panel" style="--c: ${cb}">
+        ${won(d.b)}<span class="t">Engine B · AgentCore</span>
+        <h3>${d.b.h}</h3>
+        <p class="sub">${d.b.sub}</p>
+        <div class="fig"><span class="n">${d.b.n}</span><p>${d.b.c}</p></div>
+        <ul class="bullets">${li(d.b.pts)}</ul>
+      </div>
+    </div>
+    <p class="note">${d.note}</p>
+  </div>
+</section>`;
+}).join('');
+</script>
+</body></html>

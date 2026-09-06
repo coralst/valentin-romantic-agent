@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Valentin — two engines, one ALB (slide board, left-to-right)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+<style>
+  /* Slide-only restatement of public/agentcore-compare.html. Same fourteen
+     components, same edges, same identifiers — re-laid-out left-to-right and
+     stripped of page furniture so it survives being 12in wide on a slide.
+
+     Three differences from the reference board, all deliberate:
+       1. Flow runs LEFT to RIGHT, not top to bottom. A slide is 16:9; a tall
+          board has to shrink to ~7in wide to fit and its 11px type dies.
+       2. The two engines are DASHED BANDS, one above and one below a shared
+          middle strip. That is the slide's whole argument — the outer bands are
+          the two architectures, the middle strip is what they hold fixed.
+       3. Canvas is white and the palette is AWS category colour, not the app's
+          claret/beige. This diagram is read on a projector, not inside the app.
+     Card heights are FIXED, not minimums: every connector below is authored
+     against these exact edges. */
+  :root {
+    --surface: #FFFFFF;
+    --hairline: #D5D9DF;
+    --ink: #16191F;
+    --dim: #5F6B7A;
+    --muted: #879196;
+    --request: #16191F;
+    --vpc: #8C4FFF;
+    --mirror: #01A88D;
+    --engine-a: #ED7100;
+    --engine-b: #01A88D;
+    --shared: #527FFF;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #fff; color: var(--ink);
+    font-family: 'Inter', 'Helvetica Neue', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .board { position: relative; width: 3100px; height: 1070px; background: #fff; }
+  /* Direct child only — the connector layer. A descendant selector here also
+     caught the icon glyphs and the legend swatches and pinned them to their
+     nearest positioned ancestor's origin. */
+  .board > svg { position: absolute; left: 0; top: 0; overflow: visible; }
+
+  /* --- node card ------------------------------------------------------- */
+  .card {
+    position: absolute; background: var(--surface); border: 2px solid var(--hairline);
+    border-radius: 12px; display: flex; gap: 13px; align-items: flex-start;
+    padding: 15px 16px;
+  }
+  .card.dimmed { opacity: 0.5; }
+  .tile { width: 42px; height: 42px; border-radius: 8px; flex-shrink: 0; }
+  .body { min-width: 0; flex: 1; }
+  .service { font-size: 21px; font-weight: 700; line-height: 1.2; letter-spacing: -0.01em; }
+  .resource { font-size: 18px; font-weight: 600; color: var(--dim); line-height: 1.25; margin-top: 3px; overflow-wrap: break-word; }
+  .caption { font-size: 16px; color: var(--muted); line-height: 1.35; margin-top: 4px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+
+  .chip {
+    display: inline-block; font-size: 14px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.05em; border-radius: 4px; padding: 1px 7px; white-space: nowrap;
+  }
+  .chip-waf       { color: #DD344C; border: 1.5px solid #F3C0C6; }
+  .chip-agentcore { color: #01A88D; border: 1.5px solid #A8E5DA; }
+  .chip-unchanged { color: #7D8998; border: 1.5px solid #DCE0E6; }
+  .chip-yours     { color: #ED7100; border: 1.5px solid #FBD9BB; }
+  .chip-new       { color: #01A88D; border: 1.5px solid #A8E5DA; }
+  .chip-shared    { color: #527FFF; border: 1.5px solid #C2D2FF; }
+
+  /* --- dashed groups ---------------------------------------------------- */
+  .group { position: absolute; border: 2.5px dashed; border-radius: 16px; }
+  .group.a      { border-color: var(--engine-a); }
+  .group.b      { border-color: var(--engine-b); }
+  .group.shared { border-color: var(--shared); }
+  .group.vpc    { border: 2px dashed var(--vpc); border-radius: 12px; }
+
+  /* Labels are painted over the dashed group borders they interrupt, so they
+     need to outrank the boxes regardless of DOM order. */
+  .glabel, .vlabel, .edge-label { z-index: 2; }
+  .glabel {
+    position: absolute; background: #fff; padding: 0 12px; white-space: nowrap;
+    font-size: 22px; font-weight: 700; letter-spacing: -0.005em;
+  }
+  .glabel .tag {
+    font-size: 15px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em;
+    padding: 3px 8px; border-radius: 4px; margin-left: 10px; vertical-align: 2px; color: #fff;
+  }
+  .glabel .note {
+    display: block; font-size: 17px; font-weight: 400; color: var(--muted);
+    letter-spacing: 0; margin-top: 2px;
+  }
+  .vlabel {
+    position: absolute; background: #fff; padding: 0 9px; white-space: nowrap;
+    font-size: 15px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--vpc);
+  }
+
+  .edge-label {
+    position: absolute; font-size: 18px; font-weight: 600; color: var(--dim);
+    background: #fff; padding: 0 7px; white-space: nowrap; transform: translateX(-50%);
+  }
+  .edge-label.left { transform: none; }
+  .edge-label.mirror { color: var(--mirror); }
+
+  .aside {
+    position: absolute; font-size: 18px; font-weight: 500; color: var(--muted);
+    font-style: italic; line-height: 1.45;
+  }
+
+  /* --- legend ----------------------------------------------------------- */
+  .legend { position: absolute; display: grid; grid-template-columns: auto auto; gap: 12px 34px; }
+  .litem { display: flex; align-items: center; gap: 11px; font-size: 18px; color: var(--dim); }
+  .litem svg, .litem .chip { flex: 0 0 auto; }
+</style>
+</head>
+<body>
+<div class="board" id="board"></div>
+
+<script>
+  const CANVAS = { w: 3100, h: 1070 };
+
+  /* AWS category colours, straight off the architecture-icon palette. */
+  const TILE = {
+    ink:     '#232F3E',
+    network: 'linear-gradient(135deg,#A16BFF,#8C4FFF)',
+    storage: 'linear-gradient(135deg,#8FBF2A,#7AA116)',
+    compute: 'linear-gradient(135deg,#FF9A3E,#ED7100)',
+    ml:      'linear-gradient(135deg,#21C8AC,#01A88D)',
+    core:    'linear-gradient(135deg,#3FD9BE,#01A88D)',
+    db:      'linear-gradient(135deg,#7A9DFF,#527FFF)',
+    mgmt:    'linear-gradient(135deg,#F5559B,#E7157B)',
+  };
+
+  /* Glyphs stroked white on a 24x24 viewBox — same contract as AWS_NODE_VISUALS. */
+  const GLYPH = {
+    browser: '<rect x="2.5" y="4" width="19" height="13" rx="1.5" /><path d="M8 20h8M12 17v3" />',
+    cloudfront: '<circle cx="12" cy="12" r="8.2" /><ellipse cx="12" cy="12" rx="3.4" ry="8.2" /><path d="M3.9 9.4h16.2M3.9 14.6h16.2" />',
+    s3: '<path d="M4.5 5.5h15l-1.7 13a1.4 1.4 0 0 1-1.4 1.2H7.6a1.4 1.4 0 0 1-1.4-1.2L4.5 5.5Z" /><path d="M3.4 5.5h17.2" />',
+    alb: '<circle cx="5" cy="12" r="2.1" /><circle cx="19" cy="6.5" r="2.1" /><circle cx="19" cy="17.5" r="2.1" /><path d="M7.1 11.2 16.9 7.2M7.1 12.8l9.8 4" />',
+    fargate: '<rect x="3" y="3.5" width="7.5" height="7.5" rx="1" /><rect x="13.5" y="3.5" width="7.5" height="7.5" rx="1" /><rect x="3" y="13" width="7.5" height="7.5" rx="1" /><rect x="13.5" y="13" width="7.5" height="7.5" rx="1" />',
+    bedrock: '<path d="M12 3 3.2 7.6 12 12.2l8.8-4.6L12 3Z" /><path d="M3.2 12.3 12 16.9l8.8-4.6M3.2 16.6 12 21.2l8.8-4.6" />',
+    dynamodb: '<ellipse cx="12" cy="5.8" rx="7.4" ry="2.9" /><path d="M4.6 5.8v12.4c0 1.6 3.3 2.9 7.4 2.9s7.4-1.3 7.4-2.9V5.8" /><path d="M4.6 12c0 1.6 3.3 2.9 7.4 2.9s7.4-1.3 7.4-2.9" />',
+    cloudwatch: '<circle cx="12" cy="12" r="8.5" /><path d="M6.5 12.4h2.4l1.7-3.6 2.1 6.3 1.5-2.7h3.3" />',
+    runtime: '<rect x="2.8" y="4" width="18.4" height="16" rx="2.6" /><path d="M2.8 9.2h18.4M8.6 14.6h6.8" /><circle cx="6" cy="6.6" r="0.85" />',
+    memory: '<path d="M11.4 4.6c-2.5 0-4.4 1.9-4.4 4.2 0 .8.2 1.5.6 2.1-.6.7-1 1.6-1 2.6 0 2.3 1.9 4.1 4.2 4.1h.6V4.6Z" /><path d="M12.6 4.6c2.5 0 4.4 1.9 4.4 4.2 0 .8-.2 1.5-.6 2.1.6.7 1 1.6 1 2.6 0 2.3-1.9 4.1-4.2 4.1h-.6M12 4.6v13.1M12 20.4v-2.7" />',
+    gateway: '<path d="M8.2 4 4 8.2v7.6L8.2 20M15.8 4 20 8.2v7.6L15.8 20" /><circle cx="12" cy="12" r="2.5" /><path d="M12 4v5M12 15v5" />',
+    lambda: '<path d="M3.6 20 11.7 4h3.1" /><path d="M10.1 20 14.9 10.2 20.4 20" />',
+  };
+
+  const CHIP = {
+    waf:       { cls: 'chip-waf',       text: 'AWS WAF' },
+    unchanged: { cls: 'chip-unchanged', text: 'unchanged' },
+    agentcore: { cls: 'chip-agentcore', text: 'agentcore' },
+    yours:     { cls: 'chip-yours',     text: 'your code' },
+    fresh:     { cls: 'chip-new',       text: 'new' },
+    shared:    { cls: 'chip-shared',    text: 'both engines' },
+  };
+
+  /* ---- topology ---------------------------------------------------------
+     The front door (x < 1110) serves both engines and is unchanged, so it sits
+     outside both dashed bands rather than being drawn twice.
+
+       Engine A band   y   40.. 320
+       Shared strip    y  348.. 568   (x 1600..2640 only)
+       Engine B band   y  598..1038
+
+     Card heights are FIXED. render-arch-lr.mts fails loudly if content
+     outgrows one, because every path below is authored against these edges.
+     ---------------------------------------------------------------------- */
+  const NODES = [
+    // --- shared front door -------------------------------------------------
+    { x: 20,   y: 370, w: 250, h: 175, tile: TILE.ink, glyph: GLYPH.browser,
+      service: 'Browser', resource: 'React 19 SPA',
+      caption: 'one bundle · picks its /ws path', chips: ['unchanged'] },
+    { x: 320,  y: 370, w: 320, h: 175, tile: TILE.network, glyph: GLYPH.cloudfront,
+      service: 'Amazon CloudFront', resource: 'E6OHMQWNEQL6M',
+      caption: 'd26dwovftfq9oe.cloudfront.net', chips: ['waf', 'unchanged'] },
+    { x: 690,  y: 370, w: 340, h: 190, tile: TILE.network, glyph: GLYPH.alb,
+      service: 'Application Load Balancer', resource: 'valentin-alb-dev',
+      caption: 'one listener :80 · 3 new rules · sticky 1 h', chips: ['shared'] },
+    { x: 320,  y: 700, w: 320, h: 160, tile: TILE.storage, glyph: GLYPH.s3,
+      service: 'Amazon S3', resource: 'valentin-frontend-dev',
+      caption: 'OAC · CACHING_OPTIMIZED', chips: ['unchanged'], dimmed: true },
+
+    // --- engine A band -----------------------------------------------------
+    { x: 1150, y: 88,  w: 360, h: 165, tile: TILE.compute, glyph: GLYPH.fargate,
+      service: 'Fargate · engine A', resource: 'valentin-service-dev',
+      caption: 'AGENT_ENGINE=valentin · :3001', chips: ['unchanged', 'yours'] },
+    { x: 2650, y: 88,  w: 370, h: 165, tile: TILE.mgmt, glyph: GLYPH.cloudwatch,
+      service: 'Amazon CloudWatch', resource: 'Valentin-dev dashboard',
+      caption: 'span-bridge.ts · hand-wired', chips: ['unchanged'] },
+
+    // --- shared strip ------------------------------------------------------
+    { x: 1650, y: 378, w: 350, h: 165, tile: TILE.ml, glyph: GLYPH.bedrock,
+      service: 'Amazon Bedrock', resource: 'Claude Sonnet 4.5',
+      caption: 'same modelId · same guardrail', chips: ['shared'] },
+    { x: 2200, y: 378, w: 390, h: 165, tile: TILE.db, glyph: GLYPH.dynamodb,
+      service: 'Amazon DynamoDB', resource: 'ValentinTable-dev',
+      caption: 'source of truth · pk/sk · GSI1 · engine-tagged', chips: ['shared'] },
+
+    // --- engine B band -----------------------------------------------------
+    { x: 1150, y: 666, w: 360, h: 165, tile: TILE.compute, glyph: GLYPH.fargate,
+      service: 'Fargate · engine B proxy', resource: 'valentin-ac-proxy-dev',
+      caption: 'same image · AGENT_ENGINE=agentcore', chips: ['fresh', 'yours'] },
+    { x: 1650, y: 666, w: 380, h: 165, tile: TILE.core, glyph: GLYPH.runtime,
+      service: 'AgentCore Runtime', resource: 'valentin_agent_dev',
+      caption: 'Strands · ARM64 · microVM per session', chips: ['fresh', 'agentcore'] },
+    { x: 2170, y: 666, w: 340, h: 165, tile: TILE.core, glyph: GLYPH.memory,
+      service: 'AgentCore Memory', resource: 'valentin_memory_dev',
+      caption: 'userPreferenceMemoryStrategy', chips: ['fresh', 'agentcore'] },
+    { x: 2650, y: 666, w: 370, h: 165, tile: TILE.mgmt, glyph: GLYPH.cloudwatch,
+      service: 'AgentCore Observability', resource: 'CloudWatch GenAI',
+      caption: 'traces · sessions · trajectories', chips: ['fresh', 'agentcore'] },
+    { x: 2170, y: 866, w: 340, h: 150, tile: TILE.core, glyph: GLYPH.gateway,
+      service: 'AgentCore Gateway', resource: 'MCP · CUSTOM_JWT',
+      caption: '3 profile tools', chips: ['fresh', 'agentcore'] },
+    { x: 2650, y: 866, w: 370, h: 150, tile: TILE.compute, glyph: GLYPH.lambda,
+      service: 'AWS Lambda', resource: 'valentin-profile-tools-dev',
+      caption: 'get / save / list preference', chips: ['fresh', 'yours'] },
+  ];
+
+  /* Connectors. Every elbow turns in a gap between rows, never over a card. */
+  const EDGES = [
+    // --- front door -------------------------------------------------------
+    { kind: 'request', path: 'M270,457 H314', head: '320,457 311,451 311,463',
+      label: 'HTTPS', lx: 295, ly: 414 },
+    { kind: 'request', path: 'M640,457 H684', head: '690,457 681,451 681,463',
+      label: '/api/* · /ws · /ws/agentcore', lx: 860, ly: 334 },
+    { kind: 'request', path: 'M480,545 V694', head: '480,700 474,691 486,691',
+      label: 'static · OAC', lx: 480, ly: 610 },
+
+    // --- ALB fans out to the two engines ----------------------------------
+    { kind: 'request', path: 'M1030,420 H1070 V170 H1144', head: '1150,170 1141,164 1141,176',
+      label: 'default → valentin-tg-dev', lx: 1076, ly: 334, align: 'left' },
+    { kind: 'request', path: 'M1030,490 H1070 V748 H1144', head: '1150,748 1141,742 1141,754',
+      label: 'rules 10/20/30 → valentin-tg-ac-dev', lx: 1076, ly: 556, align: 'left' },
+
+    // --- engine A: straight to Bedrock and the table ----------------------
+    { kind: 'request', path: 'M1400,253 V356 H1825 V372', head: '1825,378 1819,369 1831,369',
+      label: 'Converse', lx: 1500, ly: 330 },
+    { kind: 'request', path: 'M1270,253 V334 H2375 V372', head: '2375,378 2369,369 2381,369',
+      label: 'PutItem · Query GSI1', lx: 1290, ly: 292, align: 'left' },
+
+    // --- engine B: proxy -> runtime, crossing the VPC edge ----------------
+    { kind: 'request', path: 'M1510,748 H1644', head: '1650,748 1641,742 1641,754',
+      label: 'InvokeAgentRuntime · SigV4', lx: 1560, ly: 840, align: 'left' },
+
+    // --- runtime -> the three managed services ---------------------------
+    { kind: 'request', path: 'M1825,666 V549', head: '1825,543 1819,552 1831,552',
+      label: 'Converse · same modelId', lx: 1555, ly: 608, align: 'left' },
+    { kind: 'request', path: 'M2030,748 H2164', head: '2170,748 2161,742 2161,754',
+      label: 'CreateEvent · Retrieve', lx: 2100, ly: 608 },
+    { kind: 'request', path: 'M1900,831 V848 H2340 V860', head: '2340,866 2334,857 2346,857',
+      label: 'MCP', lx: 2000, ly: 838 },
+
+    // --- gateway -> its Lambda target -> the same table -------------------
+    { kind: 'request', path: 'M2510,941 H2644', head: '2650,941 2641,935 2641,947',
+      label: 'target', lx: 2580, ly: 916 },
+    { kind: 'request', path: 'M2650,941 H2570 V549', head: '2570,543 2564,552 2576,552',
+      label: 'same table, same keys', lx: 2582, ly: 840, align: 'left' },
+
+    // --- the write-behind mirror, off the request path --------------------
+    { kind: 'mirror', path: 'M1350,666 V583 H2280 V549', head: '2280,543 2274,552 2286,552',
+      /* Sits on the y=583 run, right of the Engine B band label — at x≈1620 it
+         landed on that band's "this change" tag. */
+      label: 'mirror engine=agentcore', lx: 2060, ly: 571 },
+
+    // --- telemetry, off the request path ---------------------------------
+    { kind: 'telemetry', path: 'M1510,170 H2644', head: '2650,170 2641,164 2641,176',
+      label: 'span-bridge.ts · hand-wired spans', lx: 2080, ly: 138 },
+    { kind: 'telemetry', path: 'M1900,666 V640 H2835 V660', head: '2835,666 2829,657 2841,657',
+      label: 'OTEL · no wiring', lx: 2760, ly: 608 },
+  ];
+
+  const STROKE = {
+    request:   { color: '#16191F', width: 3,   dash: '10 7', opacity: 0.8 },
+    mirror:    { color: '#01A88D', width: 3,   dash: '3 6',  opacity: 1   },
+    telemetry: { color: '#B9C0C9', width: 2.5, dash: '4 6',  opacity: 1   },
+  };
+
+  const GROUPS = [
+    { cls: 'a',      x: 1110, y: 40,  w: 1950, h: 280,
+      label: 'Engine A — your orchestrator', tag: 'deployed', tagBg: '#ED7100',
+      note: 'ECS Fargate · Bedrock Converse · DynamoDB is memory and profile',
+      lx: 1150, ly: 16 },
+    { cls: 'shared', x: 1600, y: 348, w: 1040, h: 220,
+      label: 'Shared — held fixed', tag: 'both engines', tagBg: '#527FFF',
+      note: 'one model, one guardrail, one table',
+      lx: 1640, ly: 326 },
+    { cls: 'b',      x: 1110, y: 598, w: 1950, h: 440,
+      label: 'Engine B — AgentCore', tag: 'this change', tagBg: '#01A88D',
+      note: 'Runtime · Memory · Gateway · Observability',
+      lx: 1150, ly: 574 },
+    { cls: 'vpc',    x: 1120, y: 62,  w: 420, h: 210,
+      vpcLabel: 'valentin-vpc-dev · 2 AZ · private subnets', lx: 1150, ly: 262 },
+    { cls: 'vpc',    x: 1120, y: 638, w: 420, h: 212,
+      vpcLabel: 'valentin-vpc-dev · 2 AZ · private subnets', lx: 1150, ly: 840 },
+  ];
+
+  const ASIDES = [
+    { x: 1620, y: 206, w: 900,
+      text: 'Engine A has no agent-runtime tier — the Fargate task <em>is</em> the runtime.' },
+    { x: 1620, y: 880, w: 500,
+      text: 'AgentCore Runtime is not an ALB target and not in your VPC — it is a Bedrock API reached by <em>InvokeAgentRuntime</em>. Hence the proxy: it can response-stream where a Lambda target could not.' },
+  ];
+
+  const LEGEND = { x: 34, y: 900 };
+  const LEGEND_ITEMS = [
+    { swatch: 'line', color: '#16191F', dash: '10 7', width: 3,   text: 'request path' },
+    { swatch: 'chip', cls: 'chip-unchanged', chipText: 'unchanged',    text: 'already deployed, untouched' },
+    { swatch: 'line', color: '#01A88D', dash: '3 6',  width: 3,   text: 'write-behind mirror' },
+    { swatch: 'chip', cls: 'chip-new',       chipText: 'new',          text: 'added by this change' },
+    { swatch: 'line', color: '#B9C0C9', dash: '4 6',  width: 2.5, text: 'telemetry, off the request path' },
+    { swatch: 'chip', cls: 'chip-agentcore', chipText: 'agentcore',    text: 'managed by AWS' },
+    { swatch: 'line', color: '#8C4FFF', dash: '6 5',  width: 2,   text: 'your VPC' },
+    { swatch: 'chip', cls: 'chip-yours',     chipText: 'your code',    text: 'you write and own' },
+  ];
+
+  /* ---- view ------------------------------------------------------------- */
+
+  function tileSvg(glyph) {
+    return '<svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7">' + glyph + '</svg>';
+  }
+
+  function cardHtml(n) {
+    const chips = (n.chips || []).map((k) =>
+      '<span class="chip ' + CHIP[k].cls + '">' + CHIP[k].text + '</span>').join('');
+    return '<div class="card' + (n.dimmed ? ' dimmed' : '') + '"'
+      + ' style="left:' + n.x + 'px;top:' + n.y + 'px;width:' + n.w + 'px;height:' + n.h + 'px">'
+      + '<div class="tile" style="background:' + n.tile + '">' + tileSvg(n.glyph) + '</div>'
+      + '<div class="body">'
+      + '<div class="service">' + n.service + '</div>'
+      + '<div class="resource">' + n.resource + '</div>'
+      + '<div class="caption">' + n.caption + '</div>'
+      + (chips ? '<div class="chips">' + chips + '</div>' : '')
+      + '</div></div>';
+  }
+
+  function edgesSvg() {
+    // Telemetry and the mirror go down first so the request path sits on top
+    // wherever they cross — the request path is what the eye should follow.
+    const body = ['telemetry', 'mirror', 'request'].map((kind) =>
+      EDGES.filter((e) => e.kind === kind).map((e) => {
+        const s = STROKE[kind];
+        return '<path d="' + e.path + '" fill="none" stroke="' + s.color + '"'
+          + ' stroke-width="' + s.width + '" stroke-dasharray="' + s.dash + '"'
+          + ' stroke-linejoin="round" stroke-linecap="round" opacity="' + s.opacity + '" />'
+          + '<polygon points="' + e.head + '" fill="' + s.color + '" />';
+      }).join('')).join('');
+    return '<svg width="' + CANVAS.w + '" height="' + CANVAS.h + '">' + body + '</svg>';
+  }
+
+  function labelsHtml() {
+    return EDGES.filter((e) => e.label).map((e) =>
+      '<div class="edge-label' + (e.kind === 'mirror' ? ' mirror' : '')
+      + (e.align === 'left' ? ' left' : '') + '"'
+      + ' style="left:' + e.lx + 'px;top:' + e.ly + 'px">' + e.label + '</div>').join('');
+  }
+
+  function groupsHtml() {
+    return GROUPS.map((g) => {
+      const box = '<div class="group ' + g.cls + '" style="left:' + g.x + 'px;top:' + g.y
+        + 'px;width:' + g.w + 'px;height:' + g.h + 'px"></div>';
+      if (g.vpcLabel) {
+        return box + '<div class="vlabel" style="left:' + g.lx + 'px;top:' + g.ly + 'px">'
+          + g.vpcLabel + '</div>';
+      }
+      return box + '<div class="glabel" style="left:' + g.lx + 'px;top:' + g.ly + 'px">'
+        + g.label + '<span class="tag" style="background:' + g.tagBg + '">' + g.tag + '</span>'
+        + '<span class="note">' + g.note + '</span></div>';
+    }).join('');
+  }
+
+  function asidesHtml() {
+    return ASIDES.map((a) =>
+      '<div class="aside" style="left:' + a.x + 'px;top:' + a.y + 'px;width:' + a.w + 'px">'
+      + a.text + '</div>').join('');
+  }
+
+  function legendHtml() {
+    const items = LEGEND_ITEMS.map((i) => {
+      const swatch = i.swatch === 'line'
+        ? '<svg width="44" height="10"><line x1="0" y1="5" x2="44" y2="5" stroke="' + i.color
+          + '" stroke-width="' + i.width + '" stroke-dasharray="' + i.dash + '" /></svg>'
+        : '<span class="chip ' + i.cls + '">' + i.chipText + '</span>';
+      return '<span class="litem">' + swatch + i.text + '</span>';
+    }).join('');
+    return '<div class="legend" style="left:' + LEGEND.x + 'px;top:' + LEGEND.y + 'px">' + items + '</div>';
+  }
+
+  document.getElementById('board').innerHTML =
+    edgesSvg() + groupsHtml() + asidesHtml() + NODES.map(cardHtml).join('')
+    + labelsHtml() + legendHtml();
+</script>
+</body>
+</html>

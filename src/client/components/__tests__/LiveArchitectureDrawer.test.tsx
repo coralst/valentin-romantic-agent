@@ -44,6 +44,17 @@ async function openDrawer(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByTestId('architecture-toggle'));
 }
 
+/**
+ * Unfold every action in the feed.
+ *
+ * The feed opens folded — captions only — so any assertion about the *rows* has to
+ * ask for them first. Kept as one helper so the reason lives in one place rather
+ * than in a dozen clicks.
+ */
+async function expandFeed(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByTestId('aws-feed-fold-all'));
+}
+
 describe('LiveArchitectureDrawer', () => {
   afterEach(() => {
     resetWsObservers();
@@ -292,6 +303,7 @@ describe('LiveArchitectureDrawer', () => {
       const user = userEvent.setup();
       renderDrawer();
       await openDrawer(user);
+      await expandFeed(user);
 
       expect(screen.getAllByTestId('aws-feed-row')).toHaveLength(FLOW.steps.length);
       const current = () =>
@@ -413,6 +425,7 @@ describe('LiveArchitectureDrawer', () => {
       act(() => {
         publishInboundWsEvent(makeSpan());
       });
+      await expandFeed(user);
 
       expect(screen.getAllByTestId('aws-feed-row')).toHaveLength(1);
       expect(screen.getByTestId('aws-duration-dynamodb')).toHaveTextContent('18 ms');
@@ -420,6 +433,26 @@ describe('LiveArchitectureDrawer', () => {
       await waitFor(() =>
         expect(screen.getByTestId('aws-node-dynamodb')).toHaveAttribute('data-state', 'lit'),
       );
+    });
+
+    /**
+     * A real beat gets a real clock time.
+     *
+     * Asserted as a shape rather than a value: the time is `Date.now()` at arrival,
+     * and pinning it would only be pinning the fake timer.
+     */
+    it('timestamps an arriving span', async () => {
+      const user = userEvent.setup();
+      renderDrawer();
+      await openDrawer(user);
+      await user.click(screen.getByRole('button', { name: DRAWER_COPY.liveMode }));
+
+      act(() => {
+        publishInboundWsEvent(makeSpan());
+      });
+      await expandFeed(user);
+
+      expect(screen.getByTestId('aws-feed-row-time')).toHaveTextContent(/^\d{2}:\d{2}:\d{2}$/);
     });
 
     it('counts spans and model calls honestly', async () => {
@@ -607,6 +640,9 @@ describe('LiveArchitectureDrawer', () => {
         'a[href],button,input,select,textarea,[tabindex]:not([tabindex="-1"])',
       ).length;
       let escaped = false;
+      // The feed now carries a fold control per action plus an expand-all, so the
+      // number of stops grows with the flow — which is exactly why the bound is
+      // measured off the DOM rather than written down.
       for (let i = 0; i < stops + 2 && !escaped; i += 1) {
         await user.tab();
         const active = document.activeElement;
@@ -632,6 +668,9 @@ describe('LiveArchitectureDrawer', () => {
 
       // A live event must never yank focus away mid-sentence.
       expect(input).toHaveFocus();
+      // Unfolded afterwards, deliberately: clicking anything in the feed moves focus,
+      // so the beat has to be shown to have arrived without touching the composer.
+      await expandFeed(user);
       expect(screen.getAllByTestId('aws-feed-row')).toHaveLength(1);
     });
 
@@ -842,6 +881,7 @@ describe('replaying a chosen action', () => {
 
     await user.click(topGroupHeader());
     expect(screen.queryByTestId('architecture-replay-chip')).not.toBeInTheDocument();
+    await expandFeed(user);
     expect(screen.getAllByTestId('aws-feed-row')).toHaveLength(FLOW.steps.length);
   });
 

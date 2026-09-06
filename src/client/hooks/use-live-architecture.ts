@@ -409,7 +409,10 @@ export function useLiveArchitecture(
       }
 
       if (!beat) return;
-      const queued = beat;
+      // Stamped on arrival rather than taken from the event: the WS protocol carries
+      // no client-comparable clock, and the moment the browser saw it is what the
+      // feed's timestamp claims to be.
+      const queued: LiveBeat = { ...beat, at: Date.now() };
 
       setBeats((current) => [...current, queued].slice(-LIVE_BEAT_LIMIT));
       setQueue((current) => {

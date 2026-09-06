@@ -51,20 +51,20 @@ NOTES = [
     (75, 'Short demo. Watch two things: it opens with an occasion I never typed, '
          'and by the end it has written something into her file that changes '
          'what it says next time.'),
-    (25, 'Now the real content. Same product, built twice: engine A is glue '
-         'code I own on Fargate; engine B is the same model on AgentCore. '
+    (25, 'Now the real content. Same product, built twice: engine A is the DIY '
+         'build I own on Fargate; engine B is the same model on AgentCore. '
          'Everything from here judges those two engines through six lenses.'),
     (50, 'The whole section in one slide. Six lenses down the side; the four '
          'AgentCore components across the top, lit when they matter to that '
          'lens. Cost lights everything. Security is Runtime plus Gateway. '
-         'Debuggability and latency go to the glue code — four-two, and the '
-         'two it loses are why this is a comparison and not a sales pitch.'),
-    (35, 'Cost first, every component in play. Engine A never scales to zero — '
-         'eighteen dollars a month before anyone says a word, plus a second '
-         'model call every turn to extract preferences. Engine B pays per '
-         'second of real work. The honest part: its unit price is worse, two '
-         'point two times dearer per vCPU-hour. It wins on granularity, not '
-         'on rate.'),
+         'Debuggability and latency go to DIY — four-two, and the two it '
+         'loses are why this is a comparison and not a sales pitch.'),
+    (35, 'Cost, at four scales. At one user the story is the floor: engine A '
+         'bills eighteen dollars before anyone speaks; B bills a dime. At a '
+         'million users the story is the meter: both bills are per-user, and '
+         'B settles at eighteen times cheaper because extraction is part of '
+         'the service, not a second model call. And A’s floor is not '
+         'even fixed — it steps up with every forty concurrent sessions.'),
     (20, 'The bill, itemised — every rate from a pricing page, every quantity '
          'counted out of this repo. The reply call to Bedrock is identical on '
          'both sides, so I excluded it from both.'),
@@ -72,8 +72,9 @@ NOTES = [
          'one Node process, one heap, one crash. A microVM per session and a '
          'Lambda per tool means a fault has nowhere to travel: one session '
          'lost, not forty.'),
-    (25, 'That experiment, drawn to scale: the blast radius of one fault in '
-         'each engine.'),
+    (25, 'The same fault, injected on both engines. Engine A loses all forty '
+         'sessions — the process is the blast radius. Engine B loses exactly '
+         'one: the caller. Three fault classes, same outcome every time.'),
     (30, 'Security — same two components, different question: not what '
          'crashes, but what leaks. Engine A holds every user’s '
          'credentials in one heap behind one shared IAM role; an injection '
@@ -84,7 +85,7 @@ NOTES = [
          'a deploy. On B, extraction is the service’s problem and the '
          'tool list is data. The give-up is real: I lose the extraction '
          'schema I designed.'),
-    (30, 'Debuggability the glue code wins, and I will not skip it. '
+    (30, 'Debuggability the DIY build wins, and I will not skip it. '
          'Hand-wired OTEL emits exactly the fields that decide an incident at '
          'two in the morning. AgentCore’s traces are free, but on its '
          'schema. Where I landed: its traces as the floor, my spans on top.'),
@@ -217,20 +218,21 @@ def main():
     new = [add_ops_slide(prs, layout, L.slide_matrix(6, TOTAL, 5))]
     new += [add_ops_slide(prs, layout, ops)
             for ops in L.all_lens_slides(TOTAL, PAGES, BADGES)]
+    blast = add_ops_slide(prs, layout, L.slide_blast(10, TOTAL, 9))
 
     sld_lst = prs.slides._sldIdLst
     ids = list(sld_lst)
     keep = {i: ids[i] for i in range(17)}
-    matrix, cost, resil, sec, own, debug = ids[17:]
+    matrix, cost, resil, sec, own, debug, blast_id = ids[17:]
 
     order = [keep[0], keep[1], keep[2], keep[3], keep[4],   # 1-5
              matrix,                                        # 6
              cost, keep[6],                                 # 7, 8 (bill pic)
-             resil, keep[9],                                # 9, 10 (blast pic)
+             resil, blast_id,                               # 9, 10 (native blast)
              sec, own, debug,                               # 11-13
              keep[13], keep[14], keep[15], keep[16]]        # 14-17
 
-    for i in (5, 7, 8, 10, 11, 12):                         # drop old block
+    for i in (5, 7, 8, 9, 10, 11, 12):                      # drop old block
         prs.part.drop_rel(keep[i].rId)
         sld_lst.remove(keep[i])
 
@@ -250,16 +252,29 @@ def main():
     emit_pptx.render(final[4], [('text', 11.30, 7.05, 1.50, 0.35,
                                  f'5 / {TOTAL}', 10, A.GREY, False, 'r', 'm')])
     fix_chrome(final[7], 8, badge=7)        # cost.png
-    fix_chrome(final[9], 10, badge=9)       # blast.png
     fix_chrome(final[13], 14, badge=13)     # team.png
     fix_chrome(final[14], 15, badge=14)     # graph.png
     fix_chrome(final[15], 16, badge=15)     # lessons
+
+    # house rule: nothing below 10pt anywhere in the deck
+    from pptx.util import Pt
+    bumped = 0
+    for s in final:
+        for sh in s.shapes:
+            if not sh.has_text_frame:
+                continue
+            for p in sh.text_frame.paragraphs:
+                for r in p.runs:
+                    if r.font.size is not None and r.font.size < Pt(10):
+                        r.font.size = Pt(10)
+                        bumped += 1
 
     for i, s in enumerate(final):
         set_notes(s, i)
 
     prs.save(OUT)
     print(f'fixed {typo_fixes} typo runs on the workflow slide')
+    print(f'bumped {bumped} sub-10pt runs to 10pt')
     print(f'wrote {OUT}: {len(prs.slides._sldIdLst)} slides')
 
 

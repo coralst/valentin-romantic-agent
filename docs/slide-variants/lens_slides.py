@@ -5,11 +5,14 @@ questions the audience actually asks (cost, resilience, security, ownership,
 debuggability, latency) and carries a persistent strip of four component chips.
 The strip sits at the same coordinates on every slide, so flipping slides reads
 as toggling chips on and off.
+
+House rules from review: engine A is called DIY (never "glue code"), and no
+text anywhere renders below 10pt.
 """
 
 import aws_slides as T
 from aws_slides import (W, H, NAVY, ORANGE, GREEN, INK, GREY, CARD, BORDER,
-                        WHITE, DARK_GREY, chrome, heading, pill)
+                        WHITE, DARK_GREY, FAINT, chrome, heading, pill)
 
 COMPONENTS = ['Runtime', 'Memory', 'Gateway', 'Observability']
 
@@ -22,6 +25,9 @@ TOGGLES = {
     'debug':     {'Observability'},
     'latency':   {'Runtime', 'Gateway'},
 }
+
+A_LABEL = 'ENGINE A · DIY'
+B_LABEL = 'ENGINE B · AGENTCORE'
 
 
 def chip_strip(active, y=1.92):
@@ -43,9 +49,9 @@ def chip_strip(active, y=1.92):
     return ops
 
 
-def engine_card(x, title, fill, points):
+def engine_card(x, title, fill, points, y=2.62, h=3.30):
     """One engine column: header bar + two lead/body pairs. Kept airy on purpose."""
-    w, y, h = 5.90, 2.62, 3.30
+    w = 5.90
     ops = [
         ('rect', x, y, w, h, CARD, BORDER, 0.06),
         ('rect', x, y, w, 0.46, fill, None, 0),
@@ -66,22 +72,20 @@ def verdict_band(num, caption, winner, giveup=None):
     y, h = 6.14, 0.62
     won_green = winner == 'AGENTCORE'
     ops = [
-        ('rect', 0.62, y, 12.10, h, FAINT if not won_green else FAINT, None, 0.10),
+        ('rect', 0.62, y, 12.10, h, FAINT, None, 0.10),
         ('text', 0.88, y, 2.30, h, num, 24, ORANGE, True, 'l', 'm'),
     ]
-    ops += pill(10.90, y + 0.17, 1.56, 0.28, winner, GREEN if won_green else NAVY)
+    ops += pill(10.90, y + 0.17, 1.56, 0.28, winner,
+                GREEN if won_green else NAVY, size=10)
     cap_w = 7.40
     if giveup:
-        ops.append(('text', 3.30, y + 0.08, cap_w, 0.26, caption, 12, NAVY, True, 'l', 'm'))
-        ops.append(('text', 3.30, y + 0.34, cap_w, 0.24,
+        ops.append(('text', 3.30, y + 0.07, cap_w, 0.26, caption, 12, NAVY, True, 'l', 'm'))
+        ops.append(('text', 3.30, y + 0.33, cap_w, 0.26,
                     [('Give up:  ', True, GREY), (giveup, False, GREY)],
-                    9.5, GREY, False, 'l', 'm'))
+                    10, GREY, False, 'l', 'm'))
     else:
         ops.append(('text', 3.30, y, cap_w, h, caption, 12, NAVY, True, 'l', 'm'))
     return ops
-
-
-FAINT = T.FAINT
 
 
 def slide_lens(page, total, badge, title, subtitle, key,
@@ -89,8 +93,8 @@ def slide_lens(page, total, badge, title, subtitle, key,
     ops = chrome(page, total, badge)
     ops += heading(title, subtitle)
     ops += chip_strip(TOGGLES[key])
-    ops += engine_card(0.62, 'ENGINE A · GLUE CODE', GREY, a_points)
-    ops += engine_card(6.82, 'ENGINE B · AGENTCORE', NAVY, b_points)
+    ops += engine_card(0.62, A_LABEL, GREY, a_points)
+    ops += engine_card(6.82, B_LABEL, NAVY, b_points)
     ops += verdict_band(num, caption, winner, giveup)
     return ops
 
@@ -112,10 +116,10 @@ MATRIX = [
     dict(lens='Ownership & velocity', key='ownership', win='AGENTCORE',
          up='Extraction becomes the service’s prompt; adding a tool stops being a deploy.',
          down='You lose the extraction schema you designed — and the fields only it had.'),
-    dict(lens='Debuggability', key='debug', win='GLUE CODE',
+    dict(lens='Debuggability', key='debug', win='DIY',
          up='Hand-wired OTEL emits exactly the fields that decide an incident at 2am.',
          down='You write and maintain the span plumbing, plus a CloudWatch bill.'),
-    dict(lens='Latency', key='latency', win='GLUE CODE',
+    dict(lens='Latency', key='latency', win='DIY',
          up='In-process tools on a warm task — a turn never waits on a hop.',
          down='Engine B cold-starts an idle session and pays a Gateway hop per tool call.'),
 ]
@@ -144,7 +148,7 @@ def slide_matrix(page, total, badge):
     initials = ['RUN', 'MEM', 'GTW', 'OBS']
     for i, ini in enumerate(initials):
         ops.append(('text', dx + i * step, hy, step, 0.40,
-                    ini, 8, WHITE, True, 'c', 'm'))
+                    ini, 10, WHITE, True, 'c', 'm'))
 
     for r, row in enumerate(MATRIX):
         y = top + r * rh
@@ -170,8 +174,8 @@ def slide_matrix(page, total, badge):
                         10, INK, False, 'l', 'm'))
         cx, cw = MCOLS['win']
         won_green = row['win'] == 'AGENTCORE'
-        ops += pill(cx, y + rh / 2 - 0.12, cw, 0.24, row['win'],
-                    GREEN if won_green else NAVY, size=8)
+        ops += pill(cx, y + rh / 2 - 0.13, cw, 0.26, row['win'],
+                    GREEN if won_green else NAVY, size=10)
 
     banner = ('4–2 to AgentCore — and the two it loses are the honest half. '
               'Latency stays on this slide: it does not change the decision.')
@@ -183,36 +187,141 @@ def slide_matrix(page, total, badge):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# The five deep-dive lens slides (latency deliberately has none).
+# Cost — the deep-dive: fixed floor vs. usage meter at 1 / 10 / 1k / 1M users.
+# ─────────────────────────────────────────────────────────────────────────────
+# Engine A: $18.02/mo per Fargate task (one task per 40 concurrent sessions,
+# the deck's own capacity number) + $1.385/user/mo extraction calls.
+# Engine B: $0.0006/mo Gateway (the only fixed line) + $0.1027/user/mo
+# (compute $0.0047 + Memory $0.098). Identical Bedrock reply call excluded.
+
+COST_ROWS = [
+    ('1',         '$18.02', '$1.39',  '$19.41',  '$0.10',  '189×'),
+    ('10',        '$18.02', '$13.85', '$31.87',  '$1.03',  '31×'),
+    ('1,000',     '$450',   '$1,385', '$1,836',  '$103',   '18×'),
+    ('1,000,000', '$450K',  '$1.4M',  '$1.84M',  '$103K',  '18×'),
+]
+
+CCOLS = dict(users=(0.62, 1.55), a=(2.27, 5.05), b=(7.42, 3.10), gap=(10.62, 2.10))
+
+
+def slide_cost_scaling(page, total, badge):
+    ops = chrome(page, total, badge)
+    ops += heading(
+        'Cost — the floor vs. the meter',
+        'Fixed versus usage as users grow. Extraction and compute in; the '
+        'identical Bedrock reply call excluded from both.')
+    ops += chip_strip(TOGGLES['cost'])
+
+    hy, top, rh = 2.52, 2.94, 0.60
+    ops.append(('rect', 0.62, hy, 12.10, 0.40, NAVY, None, 0.06))
+    for k, lab, col in (('users', 'USERS', ORANGE),
+                        ('a', f'{A_LABEL}  —  FLOOR + USAGE = TOTAL', WHITE),
+                        ('b', f'{B_LABEL}', WHITE),
+                        ('gap', 'GAP', WHITE)):
+        cx, cw = CCOLS[k]
+        ops.append(('text', cx + 0.12, hy, cw - 0.24, 0.40, lab, 10, col, True, 'l', 'm'))
+
+    for r, (users, floor, usage, total_a, total_b, gap) in enumerate(COST_ROWS):
+        y = top + r * rh
+        if r % 2 == 0:
+            ops.append(('rect', 0.62, y, 12.10, rh, CARD, None, 0))
+        ops.append(('rect', 0.62, y + rh - 0.01, 12.10, 0.01, BORDER, None, 0))
+        cx, cw = CCOLS['users']
+        ops.append(('text', cx + 0.12, y, cw - 0.24, rh, users, 13, NAVY, True, 'l', 'm'))
+        cx, cw = CCOLS['a']
+        ops.append(('text', cx + 0.12, y, cw - 0.24, rh,
+                    [(f'{floor}', True, GREY), ('  floor  +  ', False, GREY),
+                     (f'{usage}', True, GREY), ('  usage   =   ', False, GREY),
+                     (total_a, True, NAVY)], 12, INK, False, 'l', 'm'))
+        cx, cw = CCOLS['b']
+        ops.append(('text', cx + 0.12, y, cw - 0.24, rh,
+                    [('no floor   =   ', False, GREY), (total_b, True, GREEN)],
+                    12, INK, False, 'l', 'm'))
+        cx, cw = CCOLS['gap']
+        ops.append(('text', cx + 0.12, y, cw - 0.24, rh, gap, 15, ORANGE, True, 'l', 'm'))
+
+    insight = ('The floor decides at one user; the meter decides at a million. '
+               'Engine A’s “fixed” cost is not even fixed — it steps up one task '
+               'per 40 concurrent sessions — and its $1.39/user extraction meter '
+               'never catches B’s $0.10. Engine B has no floor at any scale.')
+    ops.append(('text', 0.62, 5.44, 12.10, 0.60, insight, 11, GREY, False, 'l', 't'))
+
+    ops += verdict_band(
+        '18×', 'cheaper at scale — 189× at one user, where only B has no floor',
+        'AGENTCORE',
+        giveup='if Memory retrievals meter per record, not per call, this narrows — confirm before quoting')
+    return ops
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Resilience — the experiment, rebuilt native (replaces the off-template
+# dark raster): the same fault injected on each engine, 40 dots per side.
+# ─────────────────────────────────────────────────────────────────────────────
+
+FAULTS = [
+    ('Unhandled rejection', 'one turn throws; the shared process exits.'),
+    ('Out of memory', 'one runaway conversation exhausts the one heap.'),
+    ('Injection that pivots', 'reaches the registry and every user’s tokens.'),
+]
+
+
+def _dot_grid(x, y, lost, safe_color=GREEN, lost_color=ORANGE, lost_first=40):
+    """40 sessions as a 10×4 grid; `lost` of them marked."""
+    ops = []
+    d, sx, sy = 0.17, 0.315, 0.30
+    for i in range(40):
+        col, row = i % 10, i // 10
+        c = lost_color if i < lost else safe_color
+        ops.append(('oval', x + col * sx, y + row * sy, d, d, c, None))
+    return ops
+
+
+def slide_blast(page, total, badge):
+    ops = chrome(page, total, badge)
+    ops += heading(
+        'One fault, forty sessions',
+        'The same process-level fault, injected into one live session on each engine.')
+    ops += chip_strip(TOGGLES['resil'])
+
+    y, h, w = 2.62, 2.70, 5.90
+    for x, title, fill, lost, cap in (
+            (0.62, A_LABEL, GREY, 40,
+             '40 / 40 sessions lost — every user, every partner profile in flight.'),
+            (6.82, B_LABEL, NAVY, 1,
+             '1 / 40 sessions lost — the caller. Thirty-nine never notice.')):
+        ops += [
+            ('rect', x, y, w, h, CARD, BORDER, 0.06),
+            ('rect', x, y, w, 0.46, fill, None, 0),
+            ('text', x + 0.22, y, w - 0.44, 0.46, title, 11.5, WHITE, True, 'l', 'm'),
+        ]
+        ops += _dot_grid(x + 1.35, y + 0.78, lost)
+        ops += [('text', x + 0.22, y + 2.08, w - 0.44, 0.52, cap, 11.5, NAVY,
+                 True, 'l', 'm')]
+
+    fy, fw, gap = 5.50, 3.92, 0.17
+    for i, (lead, body) in enumerate(FAULTS):
+        fx = 0.62 + i * (fw + gap)
+        ops += [
+            ('rect', fx, fy, fw, 0.52, CARD, BORDER, 0.06),
+            ('text', fx + 0.16, fy, fw - 0.32, 0.52,
+             [(lead + ' — ', True, NAVY), (body, False, INK)], 10, INK,
+             False, 'l', 'm'),
+        ]
+
+    ops += verdict_band(
+        '40 → 1', 'sessions lost to the same fault, on the same code — '
+        'the whole argument in one number', 'AGENTCORE')
+    return ops
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# The remaining deep-dive lens slides (latency deliberately has none).
 # ─────────────────────────────────────────────────────────────────────────────
 
 def all_lens_slides(total, pages, badges):
     """pages/badges: dicts keyed by lens key."""
     S = []
-    S.append(slide_lens(
-        pages['cost'], total, badges['cost'],
-        'Cost — every component on the bill',
-        'What each engine costs at one user, before the identical Bedrock reply call.',
-        'cost',
-        a_points=[
-            ('$18.02 a month before the first turn.',
-             'One Fargate task, 0.5 vCPU, billed 730 h whether anyone talks to '
-             'Valentin or not.'),
-            ('Plus a second model call every turn.',
-             'Preference extraction is its own Bedrock invocation — $1.385 per '
-             'user per month.'),
-        ],
-        b_points=[
-            ('$0.10 a month, all of it usage.',
-             'Compute $0.0047 + Memory $0.098 + Gateway $0.0006. The idle floor '
-             'disappears entirely.'),
-            ('The honest part: unit price is worse.',
-             'Runtime is 2.20× dearer per vCPU-hour. It wins on billing '
-             'granularity, and only on that.'),
-        ],
-        num='14×', caption='cheaper per user, per month — the bill is itemised on the next slide',
-        winner='AGENTCORE',
-        giveup='if Memory retrievals meter per record, not per call, this reverses — confirm before quoting'))
+    S.append(slide_cost_scaling(pages['cost'], total, badges['cost']))
 
     S.append(slide_lens(
         pages['resil'], total, badges['resil'],
@@ -289,7 +398,7 @@ def all_lens_slides(total, pages, badges):
 
     S.append(slide_lens(
         pages['debug'], total, badges['debug'],
-        'Debuggability — the lens the glue code wins',
+        'Debuggability — the lens DIY wins',
         'What you can actually see when a turn goes wrong at two in the morning.',
         'debug',
         a_points=[
@@ -309,5 +418,5 @@ def all_lens_slides(total, pages, badges):
              'or three fields that decide an incident.'),
         ],
         num='1 of 6', caption='the lens DIY keeps — a 6–0 comparison would be a sales pitch',
-        winner='GLUE CODE'))
+        winner='DIY'))
     return S

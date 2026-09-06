@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Proposal A — Verdict Spine</title>
+<link rel="stylesheet" href="deck.css">
+<style>
+/* ---- the spine: one bar per slide, the marker moves as the story moves ---- */
+.spine{position:absolute; left:52px; top:150px; width:1176px; height:64px}
+.spine .track{
+  position:absolute; left:0; right:0; top:26px; height:12px; border-radius:6px;
+  background:linear-gradient(90deg,var(--a) 0%,#CDD3D9 44%,#CDD3D9 56%,var(--b) 100%);
+  opacity:.42;
+}
+.spine .mid{position:absolute; left:50%; top:18px; width:1px; height:28px; background:#B9BFC6}
+.spine .knob{
+  position:absolute; top:14px; transform:translateX(-50%);
+  display:flex; align-items:center; gap:8px; padding:6px 14px 6px 10px;
+  border-radius:20px; color:#fff; font-size:13px; font-weight:800; white-space:nowrap;
+  box-shadow:0 4px 14px rgba(35,47,62,.28);
+}
+.spine .knob.b{background:var(--b)} .spine .knob.a{background:var(--a)}
+.spine .knob .arrow{font-size:15px; opacity:.85}
+.spine .end{position:absolute; top:0; font-size:10px; font-weight:800; letter-spacing:1.2px; color:var(--grey2)}
+.spine .end.l{left:0} .spine .end.r{right:0}
+
+/* ---- two engine panels: one hero number each, three short lines ---- */
+.col{position:absolute; top:242px; width:576px; height:318px; border-radius:14px; padding:20px 24px}
+.col.a{left:52px; background:var(--aBg); border:1px solid var(--edge)}
+.col.b{left:652px; background:var(--bBg); border:1px solid #CFE6D8}
+.col .eng{font-size:10px; font-weight:800; letter-spacing:1.4px; text-transform:uppercase}
+.col.a .eng{color:var(--a)} .col.b .eng{color:var(--b)}
+.col h3{font-size:20px; font-weight:800; color:var(--navy); letter-spacing:-.4px; margin-top:6px; line-height:1.15}
+
+.hero{margin-top:18px; padding-bottom:16px; border-bottom:1px solid rgba(35,47,62,.10)}
+.hero .v{font-size:56px; font-weight:800; letter-spacing:-3px; line-height:.92}
+.col.a .hero .v{color:var(--a)} .col.b .hero .v{color:var(--b)}
+.hero .v small{font-size:24px; font-weight:800; letter-spacing:-.5px}
+.hero .l{font-size:13px; color:var(--grey); line-height:1.35; margin-top:8px; max-width:470px}
+
+ul{list-style:none; margin-top:15px}
+li{position:relative; padding-left:20px; font-size:13.5px; color:var(--navy2); line-height:1.4; margin-bottom:11px}
+li::before{
+  content:""; position:absolute; left:2px; top:6px; width:7px; height:7px; border-radius:2px;
+}
+.col.a li::before{background:var(--a); opacity:.45}
+.col.b li::before{background:var(--b); opacity:.55}
+li b{color:var(--navy); font-weight:700}
+
+/* ---- the catch: a margin note, not a full-width slab ---- */
+.catch{
+  position:absolute; left:52px; top:582px; width:1176px; padding:14px 20px 14px 56px;
+  border-radius:10px; background:#FFFBF3; border:1px solid #F2DFBC;
+}
+.catch .ico{
+  position:absolute; left:18px; top:50%; transform:translateY(-50%);
+  width:24px; height:24px; border-radius:50%; background:var(--orange); color:#fff;
+  font-size:15px; font-weight:800; display:flex; align-items:center; justify-content:center;
+}
+.catch .k{font-size:9.5px; font-weight:800; letter-spacing:1.4px; color:var(--amber); text-transform:uppercase}
+.catch .t{font-size:13.5px; color:var(--navy); line-height:1.4; margin-top:3px}
+</style></head>
+<body>
+
+<div class="banner"><div class="box">
+  <div class="k">PROPOSAL A</div>
+  <h2>Verdict Spine — same five slides, but each one <em>takes a position</em></h2>
+  <p>Every dimension keeps its two columns, but the bullets shrink to three and each side leads with
+  one hero number. Above them a spine shows which engine the dimension favours. The knob walks right
+  for four slides and then snaps left on Observability — the audience feels the reversal instead of
+  reading it in a red stripe.</p>
+</div></div>
+<div id="out"></div>
+
+<script>
+const DIMS = [
+  {
+    n:5, page:6, title:"Runtime", what:"where the agent runs",
+    sub:"An always-on task versus a per-session microVM",
+    tilt:58, verdict:"AgentCore wins at low load",
+    a:{ head:"ECS Fargate task — always on",
+        hero:"0.057<small>%</small>", heroL:"Task utilisation at 500 turns/month. You pay for the other 99.94% too.",
+        pts:["One task, one container, <b>always paying</b>","All sessions share one process — isolation is <b>logical only</b>","Simple to deploy, expensive at low load"] },
+    b:{ head:"AgentCore Runtime — per-session microVM",
+        hero:"2.2<small>×</small>", heroL:"Dearer per vCPU-second — but it only bills while a turn is actually running.",
+        pts:["Each session gets its <b>own isolated compute</b>","Per-second billing, 1-second minimum","Isolation goes <b>logical → physical</b>"] },
+    catch:"AgentCore Runtime cannot be an ALB target, so a Fargate proxy stays in front. No compute is deleted — it is displaced."
+  },
+  {
+    n:6, page:7, title:"Memory", what:"how the agent remembers",
+    sub:"A DIY extraction call every turn versus a managed memory strategy",
+    tilt:72, verdict:"Biggest single cost win",
+    a:{ head:"DynamoDB + a 2nd Claude call every turn",
+        hero:"99.95<small>%</small>", heroL:"…of Engine A's per-turn cost is that second Bedrock call, made purely to extract preferences.",
+        pts:["DynamoDB holds conversation + profile items","A second model call fires on <b>every</b> turn","<b>656 lines</b> of extraction and memory glue to own"] },
+    b:{ head:"AgentCore Memory — managed strategy",
+        hero:"656", heroL:"Lines of glue code deleted. Configure userPreferenceMemoryStrategy and extraction is someone else's job.",
+        pts:["No per-turn extraction call from you","Extraction is <b>async</b> → profile trails by one message","Memory expires at 90 days — DynamoDB stays source of truth"] },
+    catch:"Retrieval is $0.50 per 1k. Priced per call it is the biggest win in the deck; priced per record it makes AgentCore 3.8× more expensive. Unresolved."
+  },
+  {
+    n:7, page:8, title:"Gateway", what:"how the agent uses tools",
+    sub:"Tools running in-process versus tools behind an authenticated API",
+    tilt:88, verdict:"Strongest architectural argument",
+    a:{ head:"TypeScript tool registry — in-process",
+        hero:"40<small>/40</small>", heroL:"Tools lost when one tool target fails. They share a process, so they share a fate.",
+        pts:["21 tools live <b>inside</b> the agent process","One IAM role for all of them — the task's role","Prompt injection runs with the <b>agent's credentials</b>"] },
+    b:{ head:"AgentCore Gateway — MCP + CUSTOM_JWT",
+        hero:"1<small>/40</small>", heroL:"Blast radius per failing tool. Each one is a Lambda with its own execution role.",
+        pts:["Tools are Lambdas behind an <b>MCP endpoint</b>","Per-tool execution role — <b>scoped blast radius</b>","confirm_* tools deployed but hidden from the model"] },
+    catch:"CUSTOM_JWT is mandatory — there is no anonymous path in. The trust boundary finally sits outside the model rather than inside its prompt."
+  },
+  {
+    n:8, page:9, title:"Identity", what:"who the agent acts as",
+    sub:"One shared task role versus per-session workload identity",
+    tilt:76, verdict:"AgentCore wins on identity",
+    a:{ head:"Task role — one identity for everything",
+        hero:"1", heroL:"IAM role for every user, every session, every tool call. Auditing can only ever be coarse.",
+        pts:["The whole Fargate task shares one role","No per-user or per-session identity","No workload identity for tool calls"] },
+    b:{ head:"AgentCore Identity — per-session actor",
+        hero:"1<small>:1</small>", heroL:"One actor per user session. Identity is issued by the platform, not asserted by the model.",
+        pts:["actorId per user, workload identity via <b>JWT</b>","user_id and session_id <b>stripped</b> from the tool schema","Injected server-side — the model <b>can't spoof</b> it"] },
+    catch:"You now carry two identifiers per user, actorId and userId. A '#' in actorId breaks Memory silently — sanitise on the way in."
+  },
+  {
+    n:9, page:10, title:"Observability", what:"what you can see",
+    sub:"Hand-wired spans versus managed OTEL — and here the argument reverses",
+    tilt:-64, verdict:"Engine A wins — today", flip:true,
+    a:{ head:"Hand-wired OpenTelemetry — full-fat",
+        hero:"4<small> + 1</small>", heroL:"CloudWatch alarms plus a dashboard, on real durations and real per-turn token counts.",
+        pts:["Real token counts on every turn","Custom span-bridge.ts, wired by hand","You maintain it — but you can query <b>anything</b>"] },
+    b:{ head:"AgentCore Observability — managed, incomplete",
+        hero:"0", heroL:"Tokens reported by Runtime today. The counter renders, and it is blank.",
+        pts:["Traces and sessions land in CloudWatch GenAI","Needs manual CLI enablement (Transaction Search)","monitoring-stack.ts covers Engine B <b>not at all</b>"] },
+    catch:"State this one plainly: the platform we are recommending has the weaker instrumentation right now. AgentCore will close the gap — we are not waiting for it."
+  },
+];
+
+document.getElementById('out').innerHTML = DIMS.map(d=>{
+  const pos = 50 + d.tilt/2.35;               // keep the knob inside the track
+  const side = d.tilt >= 0 ? 'b' : 'a';
+  const arrow = d.tilt >= 0 ? '▶' : '◀';
+  const li = p => p.map(x=>`<li>${x}</li>`).join('');
+  return `
+<div class="slide">
+  <div class="num">${d.n}</div>
+  <h1>${d.title} <span style="color:var(--grey2);font-weight:600">· ${d.what}</span></h1>
+  <div class="sub">${d.sub}</div>
+  <div class="rule"></div>
+  <div class="stamp">PROPOSAL A · VERDICT SPINE</div>
+
+  <div class="spine">
+    <div class="end l">ENGINE A · FARGATE + DYNAMODB</div>
+    <div class="end r">ENGINE B · AGENTCORE</div>
+    <div class="track"></div><div class="mid"></div>
+    <div class="knob ${side}" style="left:${pos}%">
+      ${d.tilt<0?`<span class="arrow">${arrow}</span>${d.verdict}`:`${d.verdict}<span class="arrow">${arrow}</span>`}
+    </div>
+  </div>
+
+  <div class="col a">
+    <div class="eng">Engine A · Fargate + DynamoDB</div>
+    <h3>${d.a.head}</h3>
+    <div class="hero"><div class="v">${d.a.hero}</div><div class="l">${d.a.heroL}</div></div>
+    <ul>${li(d.a.pts)}</ul>
+  </div>
+
+  <div class="col b">
+    <div class="eng">Engine B · AgentCore</div>
+    <h3>${d.b.head}</h3>
+    <div class="hero"><div class="v">${d.b.hero}</div><div class="l">${d.b.heroL}</div></div>
+    <ul>${li(d.b.pts)}</ul>
+  </div>
+
+  <div class="catch">
+    <div class="ico">!</div>
+    <div class="k">The catch</div>
+    <div class="t">${d.catch}</div>
+  </div>
+
+  <div class="foot">Valentin · GenAI TFC Capstone Deep-Dive</div>
+  <div class="pg">${d.page} / 12</div>
+</div>`;
+}).join('');
+</script>
+</body></html>

@@ -1,0 +1,41 @@
+/* Shared chrome for the HTML deep-dive slide proposals. 1280x720 @ 1x. */
+:root{
+  --navy:#232F3E; --navy2:#3A4859; --orange:#FF9900; --amber:#B26A00;
+  --grey:#5A626C; --grey2:#8A929C; --card:#F7F8FA; --edge:#E3E7EB; --white:#fff;
+  --a:#2B3A4B;            /* Engine A ink */
+  --b:#1B7F4C;            /* Engine B ink */
+  --bBg:#F1F8F3; --aBg:#F4F6F8;
+  --win:#1B7F4C; --warn:#B26A00; --lose:#B02A2A;
+}
+*{box-sizing:border-box; margin:0; padding:0}
+body{
+  background:#8E959C; padding:28px 20px 60px;
+  font-family:"Inter","Segoe UI",Calibri,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.slide{
+  position:relative; width:1280px; height:720px; background:#fff; margin:0 auto 30px;
+  box-shadow:0 12px 40px rgba(0,0,0,.30); overflow:hidden;
+}
+.num{
+  position:absolute; left:52px; top:38px; width:60px; height:60px; border-radius:50%;
+  background:var(--navy); color:var(--orange); font-size:26px; font-weight:800;
+  display:flex; align-items:center; justify-content:center; letter-spacing:-1px;
+}
+h1{position:absolute; left:130px; top:44px; font-size:37px; font-weight:800; color:var(--navy); letter-spacing:-.7px}
+.sub{position:absolute; left:130px; top:88px; font-size:15px; color:var(--grey); letter-spacing:.1px}
+.rule{position:absolute; left:52px; top:118px; width:1176px; height:1px; background:var(--edge)}
+.rule::after{content:""; position:absolute; left:0; top:-1.5px; width:112px; height:4px; background:var(--orange)}
+.foot{position:absolute; left:52px; bottom:20px; font-size:11px; font-weight:700; color:var(--grey2); letter-spacing:1.1px; text-transform:uppercase}
+.pg{position:absolute; right:52px; bottom:20px; font-size:11px; font-weight:700; color:var(--grey2); letter-spacing:.6px}
+.stamp{position:absolute; right:52px; top:46px; font-size:10.5px; font-weight:800; color:#C6CBD1; letter-spacing:1.6px}
+
+.tag{font-size:10px; font-weight:800; letter-spacing:1.3px; text-transform:uppercase}
+.mono{font-family:"SF Mono",Menlo,Consolas,monospace}
+
+/* proposal separator banner */
+.banner{width:1280px; margin:0 auto 18px; color:#fff}
+.banner h2{font-size:22px; font-weight:800; letter-spacing:-.3px}
+.banner p{font-size:13.5px; color:#D9DEE3; margin-top:5px; max-width:900px; line-height:1.45}
+.banner .k{font-size:10.5px; font-weight:800; color:var(--orange); letter-spacing:1.6px; margin-bottom:7px}
+.banner .box{background:var(--navy); border-left:5px solid var(--orange); padding:20px 26px; border-radius:3px}

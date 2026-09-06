@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Proposal C — Draw the Difference</title>
+<link rel="stylesheet" href="deck.css">
+<style>
+.stage{position:absolute; left:52px; top:158px; width:1176px; height:404px}
+.half{position:absolute; top:0; width:576px; height:404px; border-radius:14px; padding:18px 22px}
+.half.a{left:0; background:var(--aBg); border:1px solid var(--edge)}
+.half.b{left:600px; background:var(--bBg); border:1px solid #CFE6D8}
+.half .eng{font-size:10px; font-weight:800; letter-spacing:1.4px; text-transform:uppercase}
+.half.a .eng{color:var(--a)} .half.b .eng{color:var(--b)}
+.half h3{font-size:18px; font-weight:800; color:var(--navy); letter-spacing:-.3px; margin-top:5px}
+.half .cap{
+  position:absolute; left:22px; right:22px; bottom:16px; font-size:12.5px; line-height:1.4; color:var(--navy2);
+  padding-top:11px; border-top:1px solid rgba(35,47,62,.10);
+}
+.half .cap b{color:var(--navy)}
+.art{position:absolute; left:0; right:0; top:74px; height:236px}
+
+.readout{
+  position:absolute; left:52px; top:582px; width:1176px; height:52px;
+  display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px;
+}
+.stat{background:var(--card); border:1px solid var(--edge); border-radius:10px; padding:8px 15px; display:flex; align-items:center; gap:12px}
+.stat .v{font-size:22px; font-weight:800; letter-spacing:-1px; color:var(--navy); white-space:nowrap}
+.stat .v em{font-style:normal; color:var(--orange)}
+.stat .l{font-size:11px; color:var(--grey); line-height:1.3}
+.catchline{
+  position:absolute; left:52px; bottom:48px; width:1176px; font-size:13px; color:var(--amber);
+  font-weight:700; line-height:1.35;
+}
+.catchline span{color:var(--grey2); font-weight:600}
+</style></head>
+<body>
+
+<div class="banner"><div class="box">
+  <div class="k">PROPOSAL C</div>
+  <h2>Draw the Difference — the diagram carries the point, the words annotate it</h2>
+  <p>Bullets describing a shape are always duller than the shape. Two samples below: Runtime, where
+  the picture is <em>paid time you don't use</em>, and Gateway, where it's <em>blast radius</em>.
+  Highest impact, and the most work — one bespoke drawing per dimension.</p>
+</div></div>
+
+<!-- ============================ RUNTIME ============================ -->
+<div class="slide">
+  <div class="num">5</div>
+  <h1>Runtime <span style="color:var(--grey2);font-weight:600">· where the agent runs</span></h1>
+  <div class="sub">The picture is the idle time. Orange is a turn actually being served; grey is a turn you paid for anyway.</div>
+  <div class="rule"></div>
+  <div class="stamp">PROPOSAL C · DRAW THE DIFFERENCE</div>
+
+  <div class="stage">
+    <div class="half a">
+      <div class="eng">Engine A · Fargate + DynamoDB</div>
+      <h3>One task, running all month</h3>
+      <div class="art"><svg id="rtA" width="532" height="236"></svg></div>
+      <div class="cap">One container, one shared process, <b>billed for every second of the month</b>. Session isolation is logical — a bug in one turn is in the same memory space as the next.</div>
+    </div>
+    <div class="half b">
+      <div class="eng">Engine B · AgentCore</div>
+      <h3>A microVM per turn, then nothing</h3>
+      <div class="art"><svg id="rtB" width="532" height="236"></svg></div>
+      <div class="cap">Each turn gets its <b>own microVM</b>, billed per second with a 1s floor. Isolation becomes physical — and between turns there is nothing to pay for.</div>
+    </div>
+  </div>
+
+  <div class="readout">
+    <div class="stat"><div class="v"><em>0.057%</em></div><div class="l">Engine A task utilisation<br>at 500 turns / month</div></div>
+    <div class="stat"><div class="v"><em>2.2×</em></div><div class="l">AgentCore price per vCPU-second<br>— paid only while running</div></div>
+    <div class="stat"><div class="v">1 <span style="font-size:13px;font-weight:700">proxy</span></div><div class="l">Fargate task that stays<br>either way</div></div>
+  </div>
+  <div class="catchline">The catch: AgentCore Runtime can't be an ALB target. <span>The proxy survives the migration — compute is displaced, not deleted.</span></div>
+
+  <div class="foot">Valentin · GenAI TFC Capstone Deep-Dive</div>
+  <div class="pg">6 / 12</div>
+</div>
+
+<!-- ============================ GATEWAY ============================ -->
+<div class="slide">
+  <div class="num">7</div>
+  <h1>Gateway <span style="color:var(--grey2);font-weight:600">· how the agent uses tools</span></h1>
+  <div class="sub">The picture is the blast radius. One failing tool target, and how much of the toolbox goes with it.</div>
+  <div class="rule"></div>
+  <div class="stamp">PROPOSAL C · DRAW THE DIFFERENCE</div>
+
+  <div class="stage">
+    <div class="half a">
+      <div class="eng">Engine A · Fargate + DynamoDB</div>
+      <h3>Tools in-process — one fate, one key</h3>
+      <div class="art"><svg id="gwA" width="532" height="236"></svg></div>
+      <div class="cap">21 tools inside the agent process on <b>one IAM role</b>. One failing target takes all 40 with it, and a prompt injection runs with the agent's own credentials.</div>
+    </div>
+    <div class="half b">
+      <div class="eng">Engine B · AgentCore</div>
+      <h3>Tools behind MCP — one fails alone</h3>
+      <div class="art"><svg id="gwB" width="532" height="236"></svg></div>
+      <div class="cap">Each tool is a Lambda with <b>its own execution role</b>, reached over an authenticated MCP endpoint. The trust boundary is outside the model, not inside its prompt.</div>
+    </div>
+  </div>
+
+  <div class="readout">
+    <div class="stat"><div class="v"><em>40/40 → 1/40</em></div><div class="l">Tools lost when one<br>tool target fails</div></div>
+    <div class="stat"><div class="v"><em>1 → 40</em></div><div class="l">Execution roles<br>— scoped per tool</div></div>
+    <div class="stat"><div class="v">CUSTOM_JWT</div><div class="l">Required on every call<br>— no anonymous path in</div></div>
+  </div>
+  <div class="catchline">The strongest architectural argument for AgentCore. <span>Not cost — containment.</span></div>
+
+  <div class="foot">Valentin · GenAI TFC Capstone Deep-Dive</div>
+  <div class="pg">8 / 12</div>
+</div>
+
+<script>
+const NS='http://www.w3.org/2000/svg';
+const el=(t,a={})=>{const n=document.createElementNS(NS,t);for(const k in a)n.setAttribute(k,a[k]);return n};
+const txt=(x,y,s,a={})=>{const n=el('text',Object.assign({x,y,'font-size':10.5,'font-weight':700,fill:'#5A626C','font-family':'Inter,Segoe UI,sans-serif'},a));n.textContent=s;return n};
+
+/* turns land at these fractions of the month */
+const TURNS=[0.06,0.14,0.23,0.31,0.40,0.52,0.58,0.67,0.79,0.86,0.94];
+
+/* ---------- Runtime A: one continuous paid bar ---------- */
+(()=>{
+  const s=document.getElementById('rtA'), W=532, x0=14, x1=W-14, w=x1-x0;
+  s.append(txt(x0,18,'ONE MONTH OF BILLING',{'font-size':9.5,'letter-spacing':1.3,fill:'#8A929C'}));
+  s.append(el('rect',{x:x0,y:32,width:w,height:62,rx:8,fill:'#2B3A4B',opacity:.13}));
+  s.append(el('rect',{x:x0,y:32,width:w,height:62,rx:8,fill:'none',stroke:'#2B3A4B','stroke-width':1.5,opacity:.5}));
+  s.append(txt(x0+14,68,'ECS Fargate task — running, billed, mostly idle',{'font-size':12,fill:'#2B3A4B'}));
+  TURNS.forEach(t=>{const x=x0+t*w; s.append(el('rect',{x:x-2.5,y:36,width:5,height:54,rx:2.5,fill:'#FF9900'}))});
+  s.append(txt(x0,118,'ACTUAL WORK',{'font-size':9.5,'letter-spacing':1.3,fill:'#B26A00'}));
+  s.append(el('rect',{x:x0,y:128,width:w,height:34,rx:6,fill:'#fff',stroke:'#E3E7EB'}));
+  TURNS.forEach(t=>{const x=x0+t*w; s.append(el('rect',{x:x-2.5,y:134,width:5,height:22,rx:2.5,fill:'#FF9900'}))});
+  s.append(txt(x0+300,152,'11 turns · a few seconds each',{'font-size':11,fill:'#B26A00'}));
+  s.append(el('path',{d:`M${x0+w*0.455},98 L${x0+w*0.455},126`,stroke:'#B02A2A','stroke-width':1.5,'stroke-dasharray':'4 3'}));
+  s.append(txt(x0+w*0.455+8,116,'you pay the grey too',{'font-size':11,fill:'#B02A2A'}));
+  s.append(el('rect',{x:x0,y:182,width:w,height:36,rx:8,fill:'#fff',stroke:'#E3E7EB'}));
+  s.append(txt(x0+14,205,'Isolation: LOGICAL — every session shares this one process',{'font-size':11.5,fill:'#2B3A4B'}));
+})();
+
+/* ---------- Runtime B: a microVM per turn, nothing between ---------- */
+(()=>{
+  const s=document.getElementById('rtB'), W=532, x0=14, x1=W-14, w=x1-x0;
+  s.append(txt(x0,18,'ONE MONTH OF BILLING',{'font-size':9.5,'letter-spacing':1.3,fill:'#8A929C'}));
+  s.append(el('rect',{x:x0,y:32,width:w,height:62,rx:8,fill:'none',stroke:'#1B7F4C','stroke-width':1.5,
+    'stroke-dasharray':'6 5',opacity:.45}));
+  TURNS.forEach(t=>{
+    const x=x0+t*w;
+    s.append(el('rect',{x:x-9,y:38,width:18,height:50,rx:4,fill:'#1B7F4C',opacity:.92}));
+    s.append(el('rect',{x:x-9,y:38,width:18,height:50,rx:4,fill:'none',stroke:'#fff','stroke-width':1}));
+  });
+  s.append(txt(x0+w/2,112,'nothing running between turns — nothing billed',
+    {'font-size':11.5,fill:'#1B7F4C','text-anchor':'middle'}));
+
+  s.append(txt(x0,140,'ACTUAL WORK',{'font-size':9.5,'letter-spacing':1.3,fill:'#1B7F4C'}));
+  s.append(el('rect',{x:x0,y:150,width:w,height:34,rx:6,fill:'#fff',stroke:'#CFE6D8'}));
+  TURNS.forEach(t=>{const x=x0+t*w; s.append(el('rect',{x:x-2.5,y:156,width:5,height:22,rx:2.5,fill:'#1B7F4C'}))});
+  s.append(txt(x0+296,174,'11 microVMs · 1s minimum each',{'font-size':11,fill:'#1B7F4C'}));
+
+  s.append(el('rect',{x:x0,y:196,width:w,height:32,rx:8,fill:'#fff',stroke:'#CFE6D8'}));
+  s.append(txt(x0+14,217,'Isolation: PHYSICAL — one microVM cannot see another',{'font-size':11.5,fill:'#1B7F4C'}));
+})();
+
+/* ---------- Gateway A: 40 tools, one box, one key, one fate ---------- */
+(()=>{
+  const s=document.getElementById('gwA'), x0=14;
+  s.append(el('rect',{x:x0,y:10,width:504,height:150,rx:10,fill:'#2B3A4B',opacity:.07}));
+  s.append(el('rect',{x:x0,y:10,width:504,height:150,rx:10,fill:'none',stroke:'#2B3A4B','stroke-width':1.5,opacity:.45}));
+  s.append(txt(x0+16,32,'AGENT PROCESS',{'font-size':9.5,'letter-spacing':1.3,fill:'#2B3A4B'}));
+  for(let i=0;i<40;i++){
+    const c=i%10, r=Math.floor(i/10);
+    s.append(el('rect',{x:x0+22+c*47,y:44+r*26,width:38,height:18,rx:4,
+      fill:'#B02A2A',opacity:.30,stroke:'#B02A2A','stroke-width':.8}));
+  }
+  s.append(el('path',{d:`M${x0+150},20 L${x0+360},150 M${x0+360},20 L${x0+150},150`,
+    stroke:'#B02A2A','stroke-width':3,opacity:.85,'stroke-linecap':'round'}));
+  s.append(el('rect',{x:x0+186,y:72,width:132,height:26,rx:13,fill:'#B02A2A'}));
+  s.append(txt(x0+252,89,'40 / 40 lost',{'font-size':12.5,fill:'#fff','text-anchor':'middle'}));
+
+  s.append(el('rect',{x:x0,y:178,width:504,height:44,rx:9,fill:'#fff',stroke:'#E3E7EB'}));
+  s.append(el('circle',{cx:x0+30,cy:200,r:9,fill:'none',stroke:'#B26A00','stroke-width':2.5}));
+  s.append(el('path',{d:`M${x0+39},200 L${x0+62},200 M${x0+54},200 L${x0+54},207 M${x0+61},200 L${x0+61},206`,
+    stroke:'#B26A00','stroke-width':2.5,'stroke-linecap':'round'}));
+  s.append(txt(x0+78,205,"ONE IAM role for all 40 — injection inherits it",{'font-size':12,fill:'#2B3A4B'}));
+})();
+
+/* ---------- Gateway B: 40 Lambdas behind MCP, 40 keys, one fails alone ---------- */
+(()=>{
+  const s=document.getElementById('gwB'), x0=14;
+  s.append(el('rect',{x:x0,y:10,width:504,height:30,rx:8,fill:'#1B7F4C'}));
+  s.append(txt(x0+16,30,'AGENTCORE GATEWAY  ·  MCP  ·  CUSTOM_JWT REQUIRED',
+    {'font-size':10.5,'letter-spacing':.8,fill:'#fff'}));
+  for(let i=0;i<10;i++){
+    const x=x0+40+i*49;
+    s.append(el('path',{d:`M${x0+252},40 L${x},58`,stroke:'#1B7F4C','stroke-width':1,opacity:.35}));
+  }
+  for(let i=0;i<40;i++){
+    const c=i%10, r=Math.floor(i/10), bad=(i===23);
+    s.append(el('rect',{x:x0+22+c*47,y:60+r*26,width:38,height:18,rx:4,
+      fill:bad?'#B02A2A':'#1B7F4C', opacity:bad?.85:.22,
+      stroke:bad?'#B02A2A':'#1B7F4C','stroke-width':bad?1.6:.8}));
+  }
+  s.append(el('rect',{x:x0+300,y:112,width:118,height:24,rx:12,fill:'#B02A2A'}));
+  s.append(txt(x0+359,129,'1 / 40 lost',{'font-size':12,fill:'#fff','text-anchor':'middle'}));
+  s.append(txt(x0+22,180,'39 tools keep serving',{'font-size':11.5,fill:'#1B7F4C'}));
+
+  s.append(el('rect',{x:x0,y:190,width:504,height:32,rx:9,fill:'#fff',stroke:'#CFE6D8'}));
+  for(let i=0;i<12;i++){
+    const x=x0+18+i*15;
+    s.append(el('circle',{cx:x,cy:206,r:4,fill:'none',stroke:'#1B7F4C','stroke-width':1.6}));
+    s.append(el('path',{d:`M${x+4},206 L${x+10},206`,stroke:'#1B7F4C','stroke-width':1.6}));
+  }
+  s.append(txt(x0+206,211,'40 execution roles — one per tool',{'font-size':12,fill:'#1B7F4C'}));
+})();
+</script>
+</body></html>

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Valentin — slide variants</title>
+<style>
+body{background:#131C2B; color:#fff; font-family:"Inter",Segoe UI,Helvetica,Arial,sans-serif;
+  padding:56px 48px; max-width:900px; margin:0 auto; line-height:1.5}
+h1{font-size:34px; font-weight:800; letter-spacing:-1px}
+p.lede{color:#9BA6B4; margin-top:10px; font-size:15px}
+h2{font-size:12px; font-weight:800; letter-spacing:1.6px; text-transform:uppercase;
+  color:#FF9900; margin-top:42px}
+a.card{display:block; text-decoration:none; margin-top:14px; padding:18px 22px; border-radius:14px;
+  background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.12)}
+a.card:hover{background:rgba(255,255,255,.09); border-color:#FF9900}
+a.card .t{font-size:19px; font-weight:800; color:#fff; letter-spacing:-.4px}
+a.card .d{font-size:13.5px; color:#9BA6B4; margin-top:5px}
+a.card .n{font-size:11px; font-weight:800; letter-spacing:1.2px; color:#FF9900; text-transform:uppercase}
+.rec{border-color:#12A65B !important}
+.rec .n{color:#5EDA9B}
+</style></head><body>
+<h1>Valentin — deep-dive slide variants</h1>
+<p class="lede">HTML replacements for the five bullet-and-banner deep-dive slides in
+<code>Valentin-Presentation-v3.pptx</code>. Print to PDF at 1280&times;720 for the deck, or present the
+HTML directly.</p>
+
+<h2>Current direction</h2>
+<a class="card rec" href="deep-dive-v2.html">
+  <div class="n">v2 · recommended</div>
+  <div class="t">Intro scorecard + four dimensions</div>
+  <div class="d">Opens with a dark summary slide carrying the three headline numbers (62&times;, 1-of-40,
+  656 lines) and the bought/cost lists, then four dives: Runtime, Memory, Gateway, Observability.
+  Identity is dropped. Engine&nbsp;A is a dark card, Engine&nbsp;B a light one, and the winner is
+  framed &mdash; so Observability visibly reverses.</div>
+</a>
+
+<h2>Earlier proposals (kept for reference)</h2>
+<a class="card" href="deep-dive-a-verdict.html">
+  <div class="n">Proposal A</div>
+  <div class="t">Verdict spine</div>
+  <div class="d">Five slides kept, but each leads with one hero number per engine and a spine showing
+  which engine the dimension favours.</div>
+</a>
+<a class="card" href="deep-dive-b-matrix.html">
+  <div class="n">Proposal B</div>
+  <div class="t">One scorecard</div>
+  <div class="d">All five dimensions collapsed into a single scannable table.</div>
+</a>
+<a class="card" href="deep-dive-c-diagram.html">
+  <div class="n">Proposal C</div>
+  <div class="t">Draw the difference</div>
+  <div class="d">Diagram-led. Two samples: idle paid time (Runtime) and blast radius (Gateway).</div>
+</a>
+
+<h2>Older</h2>
+<a class="card" href="agentic-workflow-1.html"><div class="t">Agentic workflow — ring &amp; rail</div></a>
+<a class="card" href="agentic-workflow-2.html"><div class="t">Agentic workflow — variant 2</div></a>
+</body></html>

@@ -1,0 +1,47 @@
+:root{
+  --navy:#232F3E; --navy2:#3A4859; --orange:#FF9900; --amber:#C07000;
+  --grey:#545B64; --card:#F7F8FA; --edge:#E4E7EA; --white:#fff;
+}
+*{box-sizing:border-box; margin:0; padding:0}
+body{background:#9aa0a6; font-family:Calibri,"Segoe UI",Helvetica,Arial,sans-serif; padding:24px}
+.slide{
+  position:relative; width:1280px; height:720px; background:#fff; margin:0 auto 28px;
+  box-shadow:0 10px 34px rgba(0,0,0,.28); overflow:hidden;
+}
+.num{
+  position:absolute; left:53px; top:38px; width:62px; height:62px; border-radius:50%;
+  background:var(--navy); color:var(--orange); font-size:27px; font-weight:700;
+  display:flex; align-items:center; justify-content:center;
+}
+h1{position:absolute; left:134px; top:44px; font-size:39px; font-weight:700; color:var(--navy); letter-spacing:-.4px}
+.rule{position:absolute; left:53px; top:110px; width:144px; height:4px; background:var(--orange)}
+.sub{position:absolute; left:53px; top:124px; width:1180px; font-size:15.5px; color:var(--grey); line-height:1.35}
+.tag{font-size:11px; font-weight:700; color:var(--amber); letter-spacing:.9px; text-transform:uppercase}
+.foot{position:absolute; left:53px; bottom:18px; font-size:12px; font-weight:700; color:var(--grey); letter-spacing:.4px}
+.pg{position:absolute; right:53px; bottom:18px; font-size:12px; color:var(--grey)}
+.kicker{position:absolute; left:0; right:0; bottom:44px; text-align:center; font-size:14px; font-weight:700; color:var(--navy)}
+.variant{position:absolute; right:53px; top:52px; font-size:11px; font-weight:700; color:#b9bec4; letter-spacing:1.2px}
+
+/* ---------- pillars ---------- */
+.pill{display:inline-flex; align-items:center; gap:6px; background:var(--navy); color:#fff;
+  border-radius:20px; padding:4px 12px; font-size:11px; font-weight:700; letter-spacing:.8px}
+.pill.o{background:var(--orange); color:var(--navy)}
+.pillrow{display:flex; gap:8px}
+
+/* ---------- tool chips ---------- */
+.chip{display:inline-block; background:#fff; border:1px solid var(--edge); border-radius:14px;
+  padding:3px 9px; font-size:10.5px; color:var(--navy); font-family:Menlo,Consolas,monospace; margin:2px 3px 2px 0}
+.chip.hot{border-color:#ffd08a; background:#FFF7EC; color:var(--amber)}
+
+/* ---------- timeline rail ---------- */
+.rail{position:absolute; left:53px; right:53px;}
+.railline{position:absolute; left:0; right:0; height:5px; background:var(--navy); border-radius:3px}
+.ev{position:absolute; transform:translateX(-50%); text-align:center; width:150px}
+.dot{width:15px; height:15px; border-radius:50%; background:var(--orange); border:3px solid #fff;
+  box-shadow:0 0 0 2px var(--navy); margin:0 auto}
+.evd{font-size:10.5px; font-weight:700; color:var(--amber); letter-spacing:.6px; margin-top:7px}
+.evt{font-size:12.5px; font-weight:700; color:var(--navy); line-height:1.15; margin-top:2px}
+.card{background:var(--card); border:1px solid var(--edge); border-radius:12px}
+.cardtop{height:5px; background:var(--orange); border-radius:12px 12px 0 0}
+.h{font-size:14px; font-weight:700; color:var(--navy); line-height:1.2}
+.p{font-size:11px; color:var(--grey); line-height:1.3}

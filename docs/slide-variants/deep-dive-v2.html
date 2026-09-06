@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Valentin — Deep-Dive v2 (intro + 4 dimensions)</title>
+<style>
+:root{
+  --navy:#131C2B; --navy2:#1E2A3D; --slate:#3C4A5E; --ink:#0C121C;
+  --orange:#FF9900; --amber:#B26A00;
+  --green:#12A65B; --greenD:#0B6E3C; --greenBg:#EAF8F0;
+  --red:#D8452B;
+  --grey:#5A626C; --grey2:#98A0AA; --edge:#E1E6EB; --card:#F6F8FA;
+}
+*{box-sizing:border-box; margin:0; padding:0}
+body{
+  background:#7E858D; padding:30px 20px 60px;
+  font-family:"Inter","Helvetica Neue",Segoe UI,Arial,sans-serif; -webkit-font-smoothing:antialiased;
+}
+.slide{position:relative; width:1280px; height:720px; background:#fff; margin:0 auto 30px;
+  box-shadow:0 14px 44px rgba(0,0,0,.34); overflow:hidden}
+.slide.dark{background:var(--navy); color:#fff}
+
+/* ---------------- shared chrome ---------------- */
+.num{position:absolute; left:56px; top:40px; width:56px; height:56px; border-radius:16px;
+  background:var(--orange); color:var(--ink); font-size:24px; font-weight:800;
+  display:flex; align-items:center; justify-content:center; letter-spacing:-1px}
+h1{position:absolute; left:130px; top:44px; font-size:40px; font-weight:800; letter-spacing:-1.1px; color:var(--navy)}
+.dark h1{color:#fff}
+h1 span{font-weight:500; color:var(--grey2)}
+.sub{position:absolute; left:130px; top:92px; font-size:15px; color:var(--grey); letter-spacing:.05px}
+.dark .sub{color:#9BA6B4}
+.foot{position:absolute; left:56px; bottom:22px; font-size:10.5px; font-weight:800; letter-spacing:1.3px;
+  text-transform:uppercase; color:var(--grey2)}
+.pg{position:absolute; right:56px; bottom:22px; font-size:10.5px; font-weight:800; color:var(--grey2); letter-spacing:.6px}
+.dark .foot,.dark .pg{color:#5D6879}
+
+/* ---------------- INTRO (dark) ---------------- */
+.hero3{position:absolute; left:56px; top:172px; width:1168px; display:grid; grid-template-columns:1fr 1fr 1fr; gap:20px}
+.big{background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.11); border-radius:16px; padding:22px 24px 20px;
+  position:relative; overflow:hidden}
+.big .v{font-size:74px; font-weight:800; letter-spacing:-4px; line-height:.9; color:var(--orange)}
+.big .v small{font-size:28px; letter-spacing:-1px}
+.big .l{font-size:15px; font-weight:700; color:#fff; margin-top:12px; line-height:1.25}
+.big .n{font-size:12px; color:#8D99A9; margin-top:6px; line-height:1.35}
+.big .glow{position:absolute; right:-40px; top:-40px; width:150px; height:150px; border-radius:50%;
+  background:var(--orange); opacity:.09; filter:blur(6px)}
+
+.lists{position:absolute; left:56px; top:388px; width:1168px; display:grid; grid-template-columns:1fr 1fr; gap:24px}
+.lst{border-radius:16px; padding:18px 22px 16px}
+.lst.won{background:rgba(18,166,91,.11); border:1px solid rgba(18,166,91,.34)}
+.lst.paid{background:rgba(216,69,43,.10); border:1px solid rgba(216,69,43,.30)}
+.lst .hd{display:flex; align-items:center; gap:10px}
+.lst .hd .b{width:22px; height:22px; border-radius:7px; display:flex; align-items:center; justify-content:center;
+  font-size:13px; font-weight:800; color:#fff}
+.lst.won .hd .b{background:var(--green)} .lst.paid .hd .b{background:var(--red)}
+.lst .hd .t{font-size:12px; font-weight:800; letter-spacing:1.4px; text-transform:uppercase}
+.lst.won .hd .t{color:#5EDA9B} .lst.paid .hd .t{color:#FF9179}
+.lst ul{list-style:none; margin-top:12px}
+.lst li{font-size:13.5px; color:#D3DAE3; line-height:1.32; padding-left:15px; position:relative; margin-bottom:8px}
+.lst li::before{content:""; position:absolute; left:0; top:7px; width:5px; height:5px; border-radius:50%}
+.lst.won li::before{background:var(--green)} .lst.paid li::before{background:var(--red)}
+.lst li b{color:#fff; font-weight:700}
+
+.upnext{position:absolute; left:56px; bottom:56px; width:1168px; display:flex; align-items:center; gap:10px}
+.upnext .k{font-size:10.5px; font-weight:800; letter-spacing:1.4px; color:#5D6879; text-transform:uppercase; margin-right:6px}
+.dchip{display:flex; align-items:center; gap:7px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.13);
+  border-radius:11px; padding:7px 13px}
+.dchip .i{width:17px; height:17px; border-radius:5px; background:var(--orange); color:var(--ink);
+  font-size:10.5px; font-weight:800; display:flex; align-items:center; justify-content:center}
+.dchip .t{font-size:13px; font-weight:700; color:#fff}
+.dchip .w{font-size:10.5px; font-weight:800; letter-spacing:.5px; padding:2px 7px; border-radius:8px}
+.dchip .w.b{background:rgba(18,166,91,.22); color:#5EDA9B}
+.dchip .w.a{background:rgba(216,69,43,.22); color:#FF9179}
+
+/* ---------------- DIMENSION SLIDES ---------------- */
+.rail{position:absolute; right:56px; top:52px; display:flex; align-items:center; gap:6px}
+.rail .d{display:flex; align-items:center; gap:6px; padding:5px 10px; border-radius:9px;
+  background:#F1F4F7; font-size:11px; font-weight:800; color:var(--grey2); letter-spacing:.3px; white-space:nowrap}
+.rail .d .i{font-size:10px; opacity:.75}
+.rail .d.on{background:var(--navy); color:#fff}
+.rail .d.on .i{color:var(--orange); opacity:1}
+.rail .sep{width:8px; height:1.5px; background:var(--edge); border-radius:1px}
+
+.take{position:absolute; left:56px; top:164px; width:1168px}
+.take .k{font-size:10.5px; font-weight:800; letter-spacing:1.5px; text-transform:uppercase; color:var(--amber)}
+.take .t{font-size:30px; font-weight:800; letter-spacing:-1px; color:var(--navy); line-height:1.14; margin-top:7px; max-width:1080px}
+.take .t em{font-style:normal; color:var(--green)}
+.take .t em.a{color:var(--red)}
+
+.pair{position:absolute; left:56px; top:274px; width:1168px; display:grid; grid-template-columns:1fr 1fr; gap:22px}
+.eng{border-radius:16px; padding:22px 24px 20px; position:relative; min-height:278px}
+.eng.a{background:var(--navy); color:#fff}
+.eng.b{background:#fff; border:2px solid var(--edge)}
+.eng.b.won{border-color:var(--green)}
+/* a losing Engine B must not wear the winner's colours */
+.eng.b:not(.won) .stat .v{color:var(--red)}
+.eng.b:not(.won) .stat{border-bottom-color:var(--edge)}
+.eng.b:not(.won) li::before{background:var(--grey2); opacity:.8}
+.eng.b:not(.won) .lbl{color:var(--grey)}
+.eng .lbl{font-size:10.5px; font-weight:800; letter-spacing:1.4px; text-transform:uppercase}
+.eng.a .lbl{color:#8D99A9} .eng.b .lbl{color:var(--greenD)}
+.eng h3{font-size:19px; font-weight:800; letter-spacing:-.4px; margin-top:5px; line-height:1.15}
+.eng.a h3{color:#fff} .eng.b h3{color:var(--navy)}
+.eng .stat{display:flex; align-items:baseline; gap:10px; margin-top:14px; padding-bottom:13px}
+.eng.a .stat{border-bottom:1px solid rgba(255,255,255,.14)}
+.eng.b .stat{border-bottom:1px solid #DCEEE4}
+.eng .stat .v{font-size:46px; font-weight:800; letter-spacing:-2.6px; line-height:.9}
+.eng.a .stat .v{color:var(--orange)} .eng.b .stat .v{color:var(--green)}
+.eng .stat .v small{font-size:20px; letter-spacing:-.5px}
+.eng .stat .c{font-size:12.5px; line-height:1.3; max-width:250px}
+.eng.a .stat .c{color:#9BA6B4} .eng.b .stat .c{color:var(--grey)}
+.eng ul{list-style:none; margin-top:13px}
+.eng li{font-size:13px; line-height:1.35; padding-left:16px; position:relative; margin-bottom:9px}
+.eng.a li{color:#C3CCD8} .eng.b li{color:var(--slate)}
+.eng li::before{content:""; position:absolute; left:0; top:6px; width:6px; height:6px; border-radius:2px}
+.eng.a li::before{background:var(--orange); opacity:.65}
+.eng.b li::before{background:var(--green); opacity:.7}
+.eng li b{font-weight:700} .eng.a li b{color:#fff} .eng.b li b{color:var(--navy)}
+.eng .win{position:absolute; right:18px; top:18px; font-size:10.5px; font-weight:800; letter-spacing:.6px;
+  padding:4px 10px; border-radius:9px}
+.eng.b .win{background:var(--greenBg); color:var(--greenD)}
+.eng.a .win{background:rgba(255,153,0,.16); color:var(--orange)}
+
+.catch{position:absolute; left:56px; bottom:50px; width:1168px; padding:12px 18px 12px 16px;
+  border-left:4px solid var(--orange); background:#FFFAF1; border-radius:0 9px 9px 0}
+.catch .k{font-size:9.5px; font-weight:800; letter-spacing:1.4px; color:var(--amber); text-transform:uppercase}
+.catch .t{font-size:13px; color:var(--navy); line-height:1.4; margin-top:2px}
+</style></head>
+<body>
+
+<!-- ==================== SLIDE 5 · INTRO / SCORECARD ==================== -->
+<div class="slide dark">
+  <div class="num">4</div>
+  <h1>Two engines <span>· what AgentCore bought, and what it cost</span></h1>
+  <div class="sub">Same product, same model, same tools. Only the platform underneath changes — and here is the whole argument in one slide.</div>
+
+  <div class="hero3">
+    <div class="big"><div class="glow"></div>
+      <div class="v">62<small>×</small></div>
+      <div class="l">Cheaper at 500 turns / month</div>
+      <div class="n">An always-on Fargate task runs at 0.057% utilisation. AgentCore bills per second instead.</div>
+    </div>
+    <div class="big"><div class="glow"></div>
+      <div class="v">1<small> of 40</small></div>
+      <div class="l">Tools lost when one tool fails</div>
+      <div class="n">In-process, one failing target takes all 40 with it. Behind MCP, it takes itself.</div>
+    </div>
+    <div class="big"><div class="glow"></div>
+      <div class="v">656</div>
+      <div class="l">Lines of memory code deleted</div>
+      <div class="n">Extraction glue and the second Claude call per turn stop being ours to maintain.</div>
+    </div>
+  </div>
+
+  <div class="lists">
+    <div class="lst won">
+      <div class="hd"><div class="b">✓</div><div class="t">What it bought</div></div>
+      <ul>
+        <li><b>~62× cheaper</b> at 500 turns/mo — with the Memory billing caveat</li>
+        <li>Blast radius <b>1-of-40</b> instead of 40-of-40 tools</li>
+        <li>A tool trust boundary that is <b>enumerable outside the model</b></li>
+        <li><b>Physical</b> session isolation — a microVM per session</li>
+        <li><b>656 lines</b> of extraction code stop being ours</li>
+      </ul>
+    </div>
+    <div class="lst paid">
+      <div class="hd"><div class="b">✕</div><div class="t">What it cost</div></div>
+      <ul>
+        <li>Latency: an extra network hop, and <b>no streaming</b> today</li>
+        <li>Observability: <b>no token counts</b>, no alarms, manual setup</li>
+        <li>Contradictory naming rules · <b>untaggable</b> resources</li>
+        <li>Memory retrieval pricing <b>unresolved</b> — could flip the cost win</li>
+        <li>"Deployed &amp; green" served <b>zero turns for weeks</b></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="upnext">
+    <div class="k">The four dimensions</div>
+    <div class="dchip"><div class="i">1</div><div class="t">Runtime</div><div class="w b">B</div></div>
+    <div class="dchip"><div class="i">2</div><div class="t">Memory</div><div class="w b">B</div></div>
+    <div class="dchip"><div class="i">3</div><div class="t">Gateway</div><div class="w b">B</div></div>
+    <div class="dchip"><div class="i">4</div><div class="t">Observability</div><div class="w a">A</div></div>
+  </div>
+
+  <div class="foot">Valentin · GenAI TFC Capstone Deep-Dive</div>
+  <div class="pg">5 / 11</div>
+</div>
+
+<div id="dives"></div>
+
+<script>
+const DIMS=[
+ {
+  n:5, page:6, idx:1, title:"Runtime", what:"where the agent runs",
+  sub:"An always-on container versus a microVM that exists only while a turn is running",
+  takeK:"The verdict", take:"An always-on task at <em class='a'>0.057% utilisation</em> is <em>62× the bill</em> for the same 500 turns.",
+  a:{h:"ECS Fargate task — always on", v:"0.057<small>%</small>",
+     c:"Task utilisation at 500 turns/month. The other 99.94% is billed too.",
+     pts:["One task, one container, <b>always paying</b>","Every session shares one process — isolation is <b>logical</b>","Simple to deploy, expensive at low load"]},
+  b:{h:"AgentCore Runtime — per-session microVM", v:"2.2<small>×</small>", win:"WINS",
+     c:"Dearer per vCPU-second — but billed only while a turn actually runs.",
+     pts:["Each session gets its <b>own isolated compute</b>","Per-second billing, 1-second minimum","Isolation goes <b>logical → physical</b>"]},
+  catch:"AgentCore Runtime cannot be an ALB target, so a Fargate proxy stays in front. Compute is displaced, not deleted."
+ },
+ {
+  n:6, page:7, idx:2, title:"Memory", what:"how the agent remembers",
+  sub:"A second Claude call on every single turn versus a managed extraction strategy",
+  takeK:"The verdict", take:"<em class='a'>99.95% of Engine A's per-turn cost</em> is a second model call that exists only to remember things.",
+  a:{h:"DynamoDB + a 2nd Claude call every turn", v:"99.95<small>%</small>",
+     c:"…of per-turn cost is that extraction call. Not the conversation — the remembering.",
+     pts:["DynamoDB holds conversation and profile items","A second Bedrock call fires on <b>every</b> turn","<b>656 lines</b> of extraction and memory glue to own"]},
+  b:{h:"AgentCore Memory — managed strategy", v:"656", win:"WINS",
+     c:"Lines deleted. Configure userPreferenceMemoryStrategy and extraction is not your code.",
+     pts:["No per-turn extraction call from you","Extraction is <b>async</b> → the profile trails by one message","Expires at 90 days — DynamoDB stays source of truth"]},
+  catch:"Retrieval is $0.50 per 1k. Billed per call this is the biggest win in the deck; billed per record it makes AgentCore 3.8× dearer. Still unresolved."
+ },
+ {
+  n:7, page:8, idx:3, title:"Gateway", what:"how the agent uses tools",
+  sub:"21 tools inside the agent process versus Lambdas behind an authenticated MCP endpoint",
+  takeK:"The strongest argument in the deck", take:"One failing tool target costs you <em class='a'>40 of 40 tools</em> in-process — or <em>1 of 40</em> behind the gateway.",
+  a:{h:"TypeScript tool registry — in-process", v:"40<small>/40</small>",
+     c:"Tools lost when one target fails. They share a process, so they share a fate.",
+     pts:["21 tools live <b>inside</b> the agent process","One IAM role for all of them — the task's role","Prompt injection runs with the <b>agent's own credentials</b>"]},
+  b:{h:"AgentCore Gateway — MCP + CUSTOM_JWT", v:"1<small>/40</small>", win:"WINS",
+     c:"Blast radius per failing tool. Each tool is a Lambda with its own execution role.",
+     pts:["Tools are Lambdas behind an <b>MCP endpoint</b>","<b>Per-tool</b> execution role — scoped blast radius","CUSTOM_JWT required — <b>no anonymous access</b>"]},
+  catch:"This is the architectural argument, not the cost one: the trust boundary finally sits outside the model instead of inside its prompt."
+ },
+ {
+  n:8, page:9, idx:4, title:"Observability", what:"what you can see",
+  sub:"Hand-wired OpenTelemetry versus managed traces — and this is where the argument reverses",
+  takeK:"The one dimension Engine A wins", take:"The platform we are recommending reports <em class='a'>zero token usage</em> today. Say it out loud before someone asks.",
+  a:{h:"Hand-wired OpenTelemetry — full-fat", v:"4<small> + 1</small>", win:"WINS",
+     c:"CloudWatch alarms plus a dashboard, on real durations and real per-turn token counts.",
+     pts:["Real token counts on <b>every</b> turn","Custom span-bridge.ts, wired by hand","You maintain it — but you can query <b>anything</b>"]},
+  b:{h:"AgentCore Observability — managed, incomplete", v:"0",
+     c:"Tokens reported by Runtime today. The counter renders, and it is empty.",
+     pts:["Traces and sessions land in CloudWatch GenAI","Needs <b>manual CLI enablement</b> (Transaction Search)","monitoring-stack.ts covers Engine B <b>not at all</b>"]},
+  catch:"AgentCore will close this gap, and we are not waiting for it — but today the recommended platform has the weaker instrumentation."
+ },
+];
+
+const NAMES=["Runtime","Memory","Gateway","Observability"];
+document.getElementById('dives').innerHTML = DIMS.map(d=>{
+  const li=p=>p.map(x=>`<li>${x}</li>`).join('');
+  const rail=NAMES.map((nm,i)=>
+    `<div class="d ${i+1===d.idx?'on':''}"><span class="i">${i+1}</span>${nm}</div>`
+  ).join('<div class="sep"></div>');
+  const win=e=>e.win?`<div class="win">${e.win}</div>`:'';
+  return `
+<div class="slide">
+  <div class="num">${d.n}</div>
+  <h1>${d.title} <span>· ${d.what}</span></h1>
+  <div class="sub">${d.sub}</div>
+
+  <div class="rail">${rail}</div>
+
+  <div class="take"><div class="k">${d.takeK}</div><div class="t">${d.take}</div></div>
+
+  <div class="pair">
+    <div class="eng a${d.a.win?' won':''}">${win(d.a)}
+      <div class="lbl">Engine A · Fargate + DynamoDB</div>
+      <h3>${d.a.h}</h3>
+      <div class="stat"><div class="v">${d.a.v}</div><div class="c">${d.a.c}</div></div>
+      <ul>${li(d.a.pts)}</ul>
+    </div>
+    <div class="eng b${d.b.win?' won':''}">${win(d.b)}
+      <div class="lbl">Engine B · AgentCore</div>
+      <h3>${d.b.h}</h3>
+      <div class="stat"><div class="v">${d.b.v}</div><div class="c">${d.b.c}</div></div>
+      <ul>${li(d.b.pts)}</ul>
+    </div>
+  </div>
+
+  <div class="catch"><div class="k">The catch</div><div class="t">${d.catch}</div></div>
+
+  <div class="foot">Valentin · GenAI TFC Capstone Deep-Dive</div>
+  <div class="pg">${d.page} / 11</div>
+</div>`;
+}).join('');
+</script>
+</body></html>

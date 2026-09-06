@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Proposal B — One Scorecard</title>
+<link rel="stylesheet" href="deck.css">
+<style>
+.grid{position:absolute; left:52px; top:142px; width:1176px}
+.hd{display:grid; grid-template-columns:196px 1fr 1fr 150px; gap:0; align-items:end; padding-bottom:9px}
+.hd div{font-size:10px; font-weight:800; letter-spacing:1.3px; text-transform:uppercase; color:var(--grey2)}
+.hd .ea{color:var(--a)} .hd .eb{color:var(--b)} .hd .vd{text-align:right}
+
+.row{
+  display:grid; grid-template-columns:196px 1fr 1fr 150px; gap:0; align-items:stretch;
+  border-top:1px solid var(--edge);
+}
+.row:last-child{border-bottom:1px solid var(--edge)}
+.row > div{padding:11px 18px 11px 0}
+
+.dim{position:relative; padding-left:44px !important}
+.dim .n{
+  position:absolute; left:0; top:12px; width:26px; height:26px; border-radius:50%;
+  background:var(--navy); color:var(--orange); font-size:12px; font-weight:800;
+  display:flex; align-items:center; justify-content:center;
+}
+.dim .t{font-size:18px; font-weight:800; color:var(--navy); letter-spacing:-.3px; line-height:1.1}
+.dim .w{font-size:11.5px; color:var(--grey2); margin-top:3px; line-height:1.3}
+
+.cell{position:relative; padding-left:18px !important}
+.cell::before{content:""; position:absolute; left:0; top:12px; bottom:12px; width:3px; border-radius:2px}
+.cell.a::before{background:var(--a); opacity:.28}
+.cell.b::before{background:var(--b); opacity:.40}
+.cell .num{
+  position:static; width:auto; height:auto; border-radius:0; background:none;
+  display:block; font-size:25px; font-weight:800; letter-spacing:-1.2px; line-height:1;
+}
+.cell.a .num{color:var(--a)} .cell.b .num{color:var(--b)}
+.cell .num small{font-size:14px; letter-spacing:0}
+.cell .d{font-size:12.5px; color:var(--navy2); line-height:1.35; margin-top:6px; max-width:390px}
+
+.vd{display:flex; flex-direction:column; align-items:flex-end; justify-content:center; text-align:right}
+.chip{
+  display:inline-block; padding:4px 11px; border-radius:14px; color:#fff;
+  font-size:11px; font-weight:800; letter-spacing:.4px; white-space:nowrap;
+}
+.chip.b{background:var(--b)} .chip.a{background:var(--a)} .chip.q{background:var(--warn)}
+.vd .why{font-size:10.5px; color:var(--grey2); margin-top:6px; line-height:1.3; max-width:140px}
+
+.close{
+  position:absolute; left:52px; bottom:44px; width:1176px; padding:13px 22px 13px 60px;
+  background:var(--navy); border-radius:10px; color:#fff;
+}
+.close .ico{
+  position:absolute; left:20px; top:50%; transform:translateY(-50%);
+  font-size:19px; color:var(--orange); font-weight:800;
+}
+.close .k{font-size:9.5px; font-weight:800; letter-spacing:1.5px; color:var(--orange); text-transform:uppercase}
+.close .t{font-size:14px; line-height:1.4; margin-top:3px; color:#EAEEF2}
+.close .t b{color:#fff}
+</style></head>
+<body>
+
+<div class="banner"><div class="box">
+  <div class="k">PROPOSAL B</div>
+  <h2>One Scorecard — five slides collapse into one</h2>
+  <p>The five deep-dives say the same sentence five times: here is A, here is B, here is who wins.
+  Say it once, in a table the audience can scan in fifteen seconds, and keep the per-dimension
+  slides in an appendix for whoever asks. This is the version that actually fixes "boring" —
+  the repetition <em>was</em> the boredom.</p>
+</div></div>
+
+<div class="slide">
+  <div class="num">5</div>
+  <h1>Two engines, scored on five dimensions</h1>
+  <div class="sub">Everything above and below the agent is shared. Only these five things change.</div>
+  <div class="rule"></div>
+  <div class="stamp">PROPOSAL B · ONE SCORECARD</div>
+
+  <div class="grid">
+    <div class="hd">
+      <div>Dimension</div>
+      <div class="ea">Engine A · Fargate + DynamoDB</div>
+      <div class="eb">Engine B · AgentCore</div>
+      <div class="vd">Verdict</div>
+    </div>
+
+    <div class="row">
+      <div class="dim"><div class="n">1</div><div class="t">Runtime</div><div class="w">Where the agent runs</div></div>
+      <div class="cell a"><div class="num">0.057<small>%</small></div>
+        <div class="d">Always-on task, utilised 0.057% at 500 turns/mo. Sessions share one process — logical isolation.</div></div>
+      <div class="cell b"><div class="num">2.2<small>× per vCPU</small></div>
+        <div class="d">Per-session microVM, per-second billing. Physical isolation, but still needs a Fargate proxy in front.</div></div>
+      <div class="vd"><span class="chip b">Engine B</span><div class="why">Wins at low load; no compute deleted</div></div>
+    </div>
+
+    <div class="row">
+      <div class="dim"><div class="n">2</div><div class="t">Memory</div><div class="w">How the agent remembers</div></div>
+      <div class="cell a"><div class="num">99.95<small>% of turn cost</small></div>
+        <div class="d">A second Claude call every turn to extract preferences, plus 656 lines of glue you own.</div></div>
+      <div class="cell b"><div class="num">656<small> lines gone</small></div>
+        <div class="d">Managed strategy does the extraction. Async, so the profile trails a message; expires at 90 days.</div></div>
+      <div class="vd"><span class="chip q">B — if priced per call</span><div class="why">$0.50/1k retrievals; per-record makes it 3.8× dearer</div></div>
+    </div>
+
+    <div class="row">
+      <div class="dim"><div class="n">3</div><div class="t">Gateway</div><div class="w">How the agent uses tools</div></div>
+      <div class="cell a"><div class="num">40<small>/40 lost</small></div>
+        <div class="d">21 tools in-process on one IAM role. Prompt injection runs with the agent's own credentials.</div></div>
+      <div class="cell b"><div class="num">1<small>/40 lost</small></div>
+        <div class="d">Tools become Lambdas behind MCP, each with its own role. CUSTOM_JWT required — no anonymous access.</div></div>
+      <div class="vd"><span class="chip b">Engine B</span><div class="why">Strongest argument in the deck</div></div>
+    </div>
+
+    <div class="row">
+      <div class="dim"><div class="n">4</div><div class="t">Identity</div><div class="w">Who the agent acts as</div></div>
+      <div class="cell a"><div class="num">1<small> role, everyone</small></div>
+        <div class="d">One task role for every user and every tool call. Auditing is coarse by construction.</div></div>
+      <div class="cell b"><div class="num">1<small>:1 per session</small></div>
+        <div class="d">actorId per user, JWT workload identity. IDs stripped from the tool schema and injected server-side.</div></div>
+      <div class="vd"><span class="chip b">Engine B</span><div class="why">Two IDs per user; '#' breaks Memory silently</div></div>
+    </div>
+
+    <div class="row">
+      <div class="dim"><div class="n">5</div><div class="t">Observability</div><div class="w">What you can see</div></div>
+      <div class="cell a"><div class="num">4<small> alarms + 1 board</small></div>
+        <div class="d">Hand-wired OTEL: real durations, real token counts per turn. You maintain it, you can query anything.</div></div>
+      <div class="cell b"><div class="num">0<small> tokens reported</small></div>
+        <div class="d">Managed traces, blank token counter. Needs manual CLI enablement; monitoring-stack.ts ignores it.</div></div>
+      <div class="vd"><span class="chip a">Engine A</span><div class="why">The one dimension that reverses</div></div>
+    </div>
+  </div>
+
+  <div class="close">
+    <div class="ico">→</div>
+    <div class="k">What we are recommending, and what it costs us</div>
+    <div class="t"><b>AgentCore on four of five.</b> It buys physical isolation, a 40× smaller tool blast radius,
+      real per-session identity and 656 lines we stop maintaining — and it costs us the instrumentation we
+      already have, plus one unresolved retrieval-pricing question.</div>
+  </div>
+
+  <div class="foot">Valentin · GenAI TFC Capstone Deep-Dive</div>
+  <div class="pg">6 / 8</div>
+</div>
+</body></html>

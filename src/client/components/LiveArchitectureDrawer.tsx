@@ -384,6 +384,23 @@ function DrawerResizeHandle({
   );
 }
 
+/**
+ * A beat's arrival time as the feed shows it — `14:07:22`, local, seconds included.
+ *
+ * Seconds and no date: everything in this panel happened inside the last minute or
+ * two of a demo, so the hour is context and the second is the information. 24-hour
+ * with an explicit locale so a US-locale machine does not turn a 52px column into
+ * `2:07:22 PM`.
+ */
+export function formatBeatTime(at: number | undefined): string | undefined {
+  if (at === undefined) return undefined;
+  return new Date(at).toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
 /** One step of a replayed action, and the key the feed knows it by. */
 interface FeedEntry {
   key: string;
@@ -785,6 +802,9 @@ export function LiveArchitectureDrawer() {
     // Absent on every demo step and on engine A: only a real `InvokeAgentRuntime`
     // reports one, which is exactly when it is worth showing.
     traceId: entry.beat.traceId,
+    // Absent on every demo step, for the same reason `traceId` is: a scripted beat
+    // happened at no particular time.
+    timeLabel: formatBeatTime(entry.beat.at),
   }));
 
   /**

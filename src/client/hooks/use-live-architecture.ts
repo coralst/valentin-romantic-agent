@@ -337,7 +337,12 @@ export function useLiveArchitecture(
 
       if (!beat) return;
 
-      setBeats((current) => [...current, beat].slice(-LIVE_BEAT_LIMIT));
+      // Stamped on arrival rather than taken from the event: the WS protocol carries
+      // no client-comparable clock, and the moment the browser saw it is what the
+      // feed's timestamp claims to be.
+      const stamped: LiveBeat = { ...beat, at: Date.now() };
+
+      setBeats((current) => [...current, stamped].slice(-LIVE_BEAT_LIMIT));
       setCurrentKey(key);
 
       if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);

@@ -409,9 +409,9 @@ describe('IconRail', () => {
       );
     }
 
-    it('offers both engines, and calls the hand-written one glue code', () => {
+    it('offers both engines, and calls the hand-written one DIY', () => {
       renderWithEngine();
-      expect(screen.getByTestId('rail-engine-valentin')).toHaveTextContent('Glue code');
+      expect(screen.getByTestId('rail-engine-valentin')).toHaveTextContent('DIY');
       expect(screen.getByTestId('rail-engine-agentcore')).toHaveTextContent('AgentCore');
     });
 

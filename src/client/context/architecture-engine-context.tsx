@@ -137,15 +137,15 @@ const FALLBACK: ArchitectureEngineContextValue = {
 /**
  * The engine's names, in one place because three surfaces say them.
  *
- * "Glue code" rather than "hand-built": what the comparison is actually about is
- * the code between the model and the tools — session handling, memory reads, tool
+ * "DIY" rather than "hand-built": what the comparison is actually about is the
+ * code between the model and the tools — session handling, memory reads, tool
  * dispatch, retries — which engine B replaces with managed primitives. "Hand-built"
- * described who typed it; "glue code" describes what it is, and it is the same
- * phrase the diagram's band caption uses.
+ * described who typed it; "DIY" describes owning that layer yourself, which is the
+ * choice the toggle is actually offering.
  */
 export const ENGINE_COPY = {
   group: 'Architecture engine',
-  valentin: 'Glue code',
+  valentin: 'DIY',
   agentcore: 'AgentCore',
 } as const;
 

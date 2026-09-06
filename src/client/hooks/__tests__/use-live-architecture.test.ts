@@ -1,8 +1,13 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { useLiveArchitecture, LIVE_BEAT_LIMIT, LIVE_HIGHLIGHT_MS } from '../use-live-architecture';
+import {
+  useLiveArchitecture,
+  LIVE_BEAT_LIMIT,
+  LIVE_BEAT_REST_MS,
+  LIVE_QUEUE_LIMIT,
+} from '../use-live-architecture';
 import { publishInboundWsEvent, resetWsObservers } from '../../utils/ws-event-observer';
-import { routeBetween } from '../../utils/aws-architecture';
+import { flowLegs, routeBetween } from '../../utils/aws-architecture';
 import { FLOW_LEG_MS } from '../../utils/aws-demo-flows';
 import type { AwsSpan, ServerEvent } from '../../../shared/interfaces/ws-events';
 import type { PreferenceWithHistory } from '../../../shared/interfaces/preference';
@@ -50,20 +55,42 @@ const PREFERENCE_UPDATE: ServerEvent = {
 };
 
 /**
- * Walk the current beat's traffic from its origin to its destination.
+ * Walk the current beat's traffic forward by `beats` legs.
  *
- * A live beat is animated hop by hop rather than arriving all at once, so
+ * A live beat is animated leg by leg rather than arriving all at once, so
  * immediately after an event `litNode` is the *origin* and the destination is only
- * lit once the legs have been walked. One `act` per beat: the next beat's timer is
+ * lit once the legs have been walked. One `act` per leg: the next leg's timer is
  * scheduled by an effect, which React does not run until the current update has
  * committed. Requires fake timers.
  */
-function walkToArrival(beats = 8) {
+function walkLegs(beats = 8) {
   for (let i = 0; i < beats; i += 1) {
     act(() => {
       vi.advanceTimersByTime(FLOW_LEG_MS);
     });
   }
+}
+
+/**
+ * Wait out the whole of the current beat, so the next one in the queue takes over.
+ *
+ * The hold is the beat's *own* length — legs times the per-leg time — plus a rest,
+ * which is the fix this file exists to pin. It used to be one fixed 2600 ms for every
+ * beat, and a thirteen-leg engine B route needs 3120 ms just to walk, so the longest
+ * routes in the system went blank two legs from the end. Deriving the hold from the
+ * route means no route can outlast its own highlight.
+ */
+function finishBeat(legCount: number) {
+  act(() => {
+    vi.advanceTimersByTime(legCount * FLOW_LEG_MS + LIVE_BEAT_REST_MS + 1);
+  });
+}
+
+/** The legs a live beat walks, so a test can name its own timings. */
+function spanLegCount(from: Parameters<typeof flowLegs>[0], to: Parameters<typeof flowLegs>[1]) {
+  // Spans round-trip: a span is a call that already completed, so it is drawn out
+  // and back rather than stranded at the far end.
+  return flowLegs(from, to, 'valentin', true).length;
 }
 
 describe('useLiveArchitecture', () => {
@@ -91,10 +118,38 @@ describe('useLiveArchitecture', () => {
       expect(result.current.beats).toHaveLength(1);
       expect(result.current.spanCount).toBe(1);
 
-      // The traffic starts where it came from and walks to where the work landed.
+      // The traffic starts where it came from, walks out to where the work landed,
+      // and comes home — a span is a call that has already returned, so drawing it
+      // one-way would leave the traffic parked in a resource it has left.
       expect(result.current.litNode).toBe('fargate');
-      walkToArrival();
+      walkLegs(2);
       expect(result.current.litNode).toBe('dynamodb');
+      walkLegs(2);
+      expect(result.current.litNode).toBe('fargate');
+    });
+
+    it('walks every leg of the route before the highlight is released', () => {
+      // The defect this pins. The hold used to be one fixed span for every beat, so a
+      // long route ran out of highlight mid-flight and the animation simply stopped —
+      // which is what "the inspector jumps over a step" looked like from the room.
+      vi.useFakeTimers();
+      const { result } = renderHook(() => useLiveArchitecture());
+
+      act(() => {
+        publishInboundWsEvent(makeSpan());
+      });
+
+      const legs = spanLegCount('fargate', 'dynamodb');
+      const visited: Array<string | undefined> = [];
+      for (let leg = 0; leg < legs; leg += 1) {
+        visited.push(result.current.litNode ?? `hop:${result.current.activeHops[0]?.segment}`);
+        walkLegs(1);
+      }
+
+      // Every leg accounted for, and nothing blank in the middle.
+      expect(visited).toHaveLength(legs);
+      expect(visited.filter((entry) => entry === undefined)).toEqual([]);
+      expect(visited).toContain('dynamodb');
     });
 
     it('keeps the measured duration and outcome', () => {
@@ -161,7 +216,7 @@ describe('useLiveArchitecture', () => {
       // once, which is what used to light seven cards simultaneously.
       const route = routeBetween('fargate', 'dynamodb');
       expect(result.current.activeHops).toEqual([]);
-      walkToArrival(1);
+      walkLegs(1);
       expect(result.current.activeHops).toEqual([route[0]]);
     });
   });
@@ -176,7 +231,7 @@ describe('useLiveArchitecture', () => {
       });
 
       expect(result.current.beats).toHaveLength(1);
-      walkToArrival();
+      walkLegs(8);
       expect(result.current.litNode).toBe('browser');
     });
 
@@ -239,7 +294,17 @@ describe('useLiveArchitecture', () => {
   });
 
   describe('history and highlighting', () => {
-    it('keeps earlier beats as done once a new one lands', () => {
+    it('queues a second beat instead of seizing the highlight from the first', () => {
+      /*
+       * The root cause of the reported bug, stated as a test.
+       *
+       * Every arrival used to take the highlight immediately, restarting the walk at
+       * leg 0. Live turns emit spans faster than a route takes to draw, so in a recorded
+       * engine A turn sixteen events produced four completed animations — and the
+       * browser's own send held the highlight for 126 ms before the next event stole it.
+       * The visible symptom was traffic that teleported and never started from the
+       * browser. A beat now finishes its route before the next one begins.
+       */
       vi.useFakeTimers();
       const { result } = renderHook(() => useLiveArchitecture());
 
@@ -251,10 +316,60 @@ describe('useLiveArchitecture', () => {
       act(() => {
         publishInboundWsEvent(makeSpan());
       });
-      walkToArrival();
 
-      expect(result.current.litNode).toBe('dynamodb');
+      // The Bedrock beat is still the one being drawn; DynamoDB is waiting its turn.
+      expect(result.current.currentBeat?.to).toBe('bedrock');
+      walkLegs(2);
+      expect(result.current.litNode).toBe('bedrock');
+      // And its destination is not yet in the trail, which would have given away
+      // where the traffic was going before it got there.
+      expect(result.current.doneNodes).not.toContain('dynamodb');
+
+      finishBeat(spanLegCount('fargate', 'bedrock'));
+
+      expect(result.current.currentBeat?.to).toBe('dynamodb');
       expect(result.current.doneNodes).toContain('bedrock');
+      walkLegs(2);
+      expect(result.current.litNode).toBe('dynamodb');
+    });
+
+    it('collapses a route already waiting in the queue', () => {
+      // One turn emits eight `preference_update` frames on the same path. Replaying
+      // that journey eight times says nothing the first one did not, and the feed
+      // still lists all eight rows.
+      vi.useFakeTimers();
+      const { result } = renderHook(() => useLiveArchitecture());
+
+      act(() => {
+        for (let i = 0; i < 8; i += 1) publishInboundWsEvent(PREFERENCE_UPDATE);
+      });
+
+      expect(result.current.beats).toHaveLength(8);
+      const first = result.current.currentBeat?.key;
+      // Only one animation was queued, so finishing it empties the playlist.
+      finishBeat(flowLegs('dynamodb', 'browser').length);
+      expect(result.current.currentBeat).toBeUndefined();
+      expect(first).toBeDefined();
+    });
+
+    it('plays a burst of distinct routes in the order they arrived', () => {
+      // The playlist is bounded (LIVE_QUEUE_LIMIT) so a burst cannot back up for
+      // minutes, but nothing is dropped from the feed — the counters are evidence.
+      vi.useFakeTimers();
+      const { result } = renderHook(() => useLiveArchitecture());
+
+      const resources = ['bedrock', 'dynamodb', 'integrations'] as const;
+      expect(resources.length).toBeLessThanOrEqual(LIVE_QUEUE_LIMIT);
+      act(() => {
+        for (const resourceId of resources) publishInboundWsEvent(makeSpan({ resourceId }));
+      });
+
+      expect(result.current.beats).toHaveLength(3);
+      for (const expected of resources) {
+        expect(result.current.currentBeat?.to).toBe(expected);
+        finishBeat(spanLegCount('fargate', expected));
+      }
+      expect(result.current.currentBeat).toBeUndefined();
     });
 
     it('lights one node at a time, whatever the route crossed', () => {
@@ -267,11 +382,14 @@ describe('useLiveArchitecture', () => {
         publishInboundWsEvent(PREFERENCE_UPDATE);
       });
 
-      for (let beat = 0; beat < 8; beat += 1) {
+      // Bounded by the route's own leg count, so the loop cannot walk off the end of
+      // the beat and start asserting against an empty playlist.
+      const legs = flowLegs('dynamodb', 'browser').length;
+      for (let beat = 0; beat < legs; beat += 1) {
         const parked = result.current.litNode !== undefined;
         expect(result.current.activeHops.length, `beat ${beat}`).toBe(parked ? 0 : 1);
         expect(result.current.doneNodes, `beat ${beat}`).not.toContain(result.current.litNode);
-        walkToArrival(1);
+        walkLegs(1);
       }
     });
 
@@ -286,15 +404,15 @@ describe('useLiveArchitecture', () => {
       act(() => {
         publishInboundWsEvent(makeSpan());
       });
-      walkToArrival();
+      walkLegs(2);
       expect(result.current.litNode).toBe('dynamodb');
 
-      act(() => {
-        vi.advanceTimersByTime(LIVE_HIGHLIGHT_MS + 1);
-      });
+      finishBeat(spanLegCount('fargate', 'dynamodb'));
 
       expect(result.current.litNode).toBeUndefined();
       expect(result.current.beats).toHaveLength(1);
+      // And the destination is history now, not a highlight.
+      expect(result.current.doneNodes).toContain('dynamodb');
     });
 
     it('evicts the oldest beats past the limit', () => {

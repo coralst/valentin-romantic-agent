@@ -593,8 +593,21 @@ describe('LiveArchitectureDrawer', () => {
       await openDrawer(user);
 
       const drawer = screen.getByTestId('architecture-drawer');
+      /*
+       * Bounded by the drawer's own tab stops rather than by a hardcoded number.
+       *
+       * The property under test is that focus *can* leave, and the number of tabs that
+       * takes is however many controls the drawer happens to have. This used to be a
+       * literal 12, which passed with exactly zero margin — so the next control added
+       * to the drawer failed this test, and the failure said "focus is trapped" about a
+       * drawer that traps nothing. A trap still fails it: a real trap cycles back to
+       * the first stop, so walking one full lap plus two never escapes.
+       */
+      const stops = drawer.querySelectorAll(
+        'a[href],button,input,select,textarea,[tabindex]:not([tabindex="-1"])',
+      ).length;
       let escaped = false;
-      for (let i = 0; i < 12 && !escaped; i += 1) {
+      for (let i = 0; i < stops + 2 && !escaped; i += 1) {
         await user.tab();
         const active = document.activeElement;
         if (active && !drawer.contains(active) && active !== document.body) escaped = true;

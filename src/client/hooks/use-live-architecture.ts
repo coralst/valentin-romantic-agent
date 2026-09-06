@@ -10,7 +10,8 @@ import {
   type AwsNodeId,
 } from '../utils/aws-architecture';
 import { useFlowTraversal } from './use-flow-traversal';
-import type { FlowBeat } from '../utils/aws-demo-flows';
+import { FLOW_LEG_MS, type FlowBeat } from '../utils/aws-demo-flows';
+import { prefersReducedMotion } from '../utils/motion-preference';
 import type { AwsCategory } from '../utils/aws-diagram-layout';
 import type { AwsSpan } from '../../shared/interfaces/ws-events';
 
@@ -59,12 +60,29 @@ export interface LiveBeat extends FlowBeat {
 export const LIVE_BEAT_LIMIT = 60;
 
 /**
- * How long the most recent beat stays lit.
+ * How long a beat rests in its destination after its route has finished being walked.
  *
- * Live traffic arrives in bursts and then stops; without this the diagram would
- * freeze on whatever happened last and read as though it were still happening.
+ * This is a *rest*, not the whole highlight: a beat holds for as long as its own route
+ * takes to walk plus this. The previous version held every beat for one fixed 2600 ms
+ * regardless of length, which silently truncated anything longer — a
+ * `preference_update` on engine B is six hops, thirteen legs, 3120 ms of animation, so
+ * the last two legs were cut off and the traffic vanished two boxes short of the
+ * browser. Deriving the hold from the route means no route can outlast its own
+ * highlight.
  */
-export const LIVE_HIGHLIGHT_MS = 2600;
+export const LIVE_BEAT_REST_MS = 900;
+
+/**
+ * How many beats may be waiting to animate.
+ *
+ * Live traffic arrives in bursts — a single turn on engine A emits three Converse
+ * spans and eight `preference_update` frames — and a queue that accepted all of them
+ * would still be playing the burst long after the turn ended, which reads as the
+ * system being slow rather than as the queue being deep. Past this, arrivals are
+ * dropped from the *animation* only: they are still recorded in `beats`, so the feed
+ * and the counters stay honest about everything that happened.
+ */
+export const LIVE_QUEUE_LIMIT = 8;
 
 export interface UseLiveArchitectureResult {
   /** Oldest first, so the feed can group in the order things happened. */
@@ -133,8 +151,8 @@ const SPAN_CATEGORY: Readonly<Record<string, AwsCategory>> = {
   'ac-runtime': 'ml',
   'ac-memory': 'ml',
   'ac-gateway': 'ml',
-  'ac-dynamodb': 'database',
-  'ac-integrations': 'external',
+  // No engine B entries for the table or the partners: they are the same two nodes on
+  // both engines now, so `dynamodb` and `integrations` above cover both.
 };
 
 /**
@@ -146,18 +164,16 @@ const SPAN_CATEGORY: Readonly<Record<string, AwsCategory>> = {
  * separate beat. Naming it otherwise on a projector would claim an authority the
  * agent does not have.
  *
- * The two engine B entries are here rather than in a second list because they are
- * the same beat in the story: on engine B the preference is extracted inside the
- * Runtime and lands in Memory, so a Memory span *is* Valentin learning something.
+ * `ac-memory` is here rather than in a second list because it is the same beat in the
+ * story: on engine B the preference is extracted inside the Runtime and lands in
+ * Memory, so a Memory span *is* Valentin learning something. The table and the
+ * partners need no engine B entry at all — they are one node each now, so the first
+ * two lines already answer for both engines.
  */
 const SPAN_ACTION: Readonly<Record<string, string>> = {
   dynamodb: 'learns something new',
   integrations: 'asks the outside world',
   'ac-memory': 'learns something new',
-  'ac-dynamodb': 'learns something new',
-  // Same words as `integrations`, because it is the same beat: a call out, with
-  // nothing booked yet. The route differs, the story does not.
-  'ac-integrations': 'asks the outside world',
 };
 
 /** Short names for the feed. `Amazon DynamoDB` does not fit 70px. */
@@ -225,13 +241,39 @@ function beatFromEvent(
     key,
     from: endpoints.from,
     to: endpoints.to,
-    service: shortService(nodeServiceName(endpoints.to)),
+    /*
+     * Named for where the news came *from*, not where it landed.
+     *
+     * Almost every WS event ends at the browser, so labelling by destination made
+     * five different events read as five identical `Browser` rows — a column that
+     * distinguished nothing. By origin they read DynamoDB, Browser, Fargate, Bedrock,
+     * DynamoDB, which is the question someone scanning the feed is actually asking:
+     * who did this?
+     */
+    service: shortService(nodeServiceName(endpoints.from)),
     operation: event.type,
     detail: describeAwsEvent(event),
     category: EVENT_CATEGORY[event.type] ?? 'network',
     actor: story.actor,
     action: story.action,
   };
+}
+
+/**
+ * Which resource made the call a span describes.
+ *
+ * On engine A every span is the Fargate task's own call. On engine B it depends how
+ * deep the span is: the proxy only ever calls the Runtime, and everything past that —
+ * Memory, the Gateway, the table, the partners — is called by the agent code running
+ * *inside* the Runtime. Attributing those to the proxy drew the proxy reaching past a
+ * Runtime it was still waiting on, which is both wrong and the reason engine B's
+ * routes looked like teleports.
+ */
+const AC_RUNTIME_CALLEES: readonly AwsNodeId[] = ['ac-memory', 'ac-gateway', 'dynamodb', 'integrations'];
+
+function spanOrigin(node: AwsNodeId, engine: ArchitectureEngine): AwsNodeId {
+  if (engine !== 'agentcore') return 'fargate';
+  return AC_RUNTIME_CALLEES.includes(node) ? 'ac-runtime' : 'ac-proxy';
 }
 
 function beatFromSpan(
@@ -242,22 +284,43 @@ function beatFromSpan(
   const node = awsNodeIdForResource(span.resourceId, engine);
   if (!node) return undefined;
 
+  const category = SPAN_CATEGORY[node] ?? 'compute';
+
   return {
     key,
-    // Every span is a call the task made, so that is where it starts. A span about
-    // the task itself routes to itself, which `routeBetween` reports as an empty
-    // route — work that happened without a network hop.
-    from: nodeForEngine('fargate', engine),
+    // A span about its own caller routes to itself, which `routeBetween` reports as an
+    // empty route — work that happened without a network hop.
+    from: spanOrigin(node, engine),
     to: node,
-    service: shortService(span.service),
+    /*
+     * One card serves every partner, so for an outbound call the partner's name is
+     * more use than the card's. Both engines already send it: `span.service` is the
+     * constant `External APIs` and `resourceName` is `Ontopo`, `Hebrew calendar` and
+     * so on. Six identical `External APIs` rows told a reader nothing about which
+     * tool fired.
+     */
+    service:
+      category === 'external' && span.resourceName
+        ? shortService(span.resourceName)
+        : shortService(span.service),
     operation: span.operation,
     detail: span.detail ?? '',
-    category: SPAN_CATEGORY[node] ?? 'compute',
+    category,
     durationMs: span.durationMs,
     ok: span.ok,
     actor: 'Valentin',
     action: SPAN_ACTION[node] ?? 'thinks',
     traceId: span.traceId,
+    /*
+     * A span is a *finished* call: it exists because something was asked and answered,
+     * and its `durationMs` is how long the answer took. So it is drawn out and back.
+     *
+     * This is the other half of the reported bug. Every animation that completed
+     * before this change was a response walk, because the spans — the only beats that
+     * describe a request — were drawn one way and then had their highlight stolen
+     * before they finished. The request half of "go and back" was never on screen.
+     */
+    returns: true,
   };
 }
 
@@ -294,10 +357,6 @@ function nodeServiceName(id: AwsNodeId): string {
       return 'Memory';
     case 'ac-gateway':
       return 'Gateway';
-    case 'ac-dynamodb':
-      return 'DynamoDB';
-    case 'ac-integrations':
-      return 'External APIs';
   }
 }
 
@@ -306,12 +365,26 @@ export function useLiveArchitecture(
   engine: ArchitectureEngine = 'valentin',
 ): UseLiveArchitectureResult {
   const [beats, setBeats] = useState<readonly LiveBeat[]>([]);
-  const [currentKey, setCurrentKey] = useState<string | undefined>(undefined);
+  /*
+   * Beats waiting to be animated, head first. The head is the one on screen.
+   *
+   * This queue is the fix for the reported bug. Every arrival used to seize the
+   * highlight immediately, resetting the traversal to leg 0 — so on a real turn, where
+   * sixteen events land in a few seconds, fifteen of them cancelled the animation of
+   * the one before it and only the last survivor ever finished walking. That is both
+   * halves of "it jumps over steps and doesn't start from the browser": the walk
+   * restarted from a *new* beat's origin mid-journey, and the origins it restarted from
+   * were the server's, not the browser's.
+   *
+   * Kept separate from `beats` on purpose. `beats` is the record of what happened and
+   * must accept everything, because the feed and the counters are evidence. This is a
+   * playlist, and a playlist may drop a duplicate.
+   */
+  const [queue, setQueue] = useState<readonly LiveBeat[]>([]);
   const [spanCount, setSpanCount] = useState(0);
   const [modelCallCount, setModelCallCount] = useState(0);
 
   const nextKeyRef = useRef(0);
-  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const record = useCallback(
     (observed: ObservedWsEvent) => {
@@ -336,17 +409,25 @@ export function useLiveArchitecture(
       }
 
       if (!beat) return;
+      const queued = beat;
 
-      setBeats((current) => [...current, beat].slice(-LIVE_BEAT_LIMIT));
-      setCurrentKey(key);
-
-      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
-      highlightTimerRef.current = setTimeout(() => {
-        highlightTimerRef.current = undefined;
-        // Drop the highlight, keep the history: the feed still shows what happened,
-        // the diagram stops claiming it is still happening.
-        setCurrentKey(undefined);
-      }, LIVE_HIGHLIGHT_MS);
+      setBeats((current) => [...current, queued].slice(-LIVE_BEAT_LIMIT));
+      setQueue((current) => {
+        /*
+         * Collapse a route that is already waiting to be drawn.
+         *
+         * One turn emits eight `preference_update` frames and three Converse spans, and
+         * each set walks an identical path. Queueing all eleven would make the diagram
+         * replay the same journey eight times over while the conversation moved on. One
+         * animation per distinct route says the same thing in a tenth of the time, and
+         * the feed still lists all eleven rows.
+         */
+        if (current.some((pending) => pending.from === queued.from && pending.to === queued.to)) {
+          return current;
+        }
+        if (current.length >= LIVE_QUEUE_LIMIT) return current;
+        return [...current, queued];
+      });
     },
     [engine],
   );
@@ -356,21 +437,26 @@ export function useLiveArchitecture(
     return subscribeToWsEvents(record);
   }, [enabled, record]);
 
-  useEffect(
-    () => () => {
-      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
-    },
-    [],
-  );
+  /*
+   * Switching engines empties the playlist.
+   *
+   * A queued beat names concrete nodes, and half of them do not exist on the other
+   * band — an `ac-runtime` beat animated while engine A is shown would light a card the
+   * viewer has just been told is not in play. `beats` survives, because the feed is a
+   * log of what happened and that did happen.
+   */
+  useEffect(() => {
+    setQueue([]);
+  }, [engine]);
 
   const clear = useCallback(() => {
     setBeats([]);
-    setCurrentKey(undefined);
+    setQueue([]);
     setSpanCount(0);
     setModelCallCount(0);
   }, []);
 
-  const currentBeat = beats.find((beat) => beat.key === currentKey);
+  const currentBeat = queue[0];
 
   /*
    * Live traffic is animated exactly the way a scripted step is: the beat's route is
@@ -383,21 +469,43 @@ export function useLiveArchitecture(
    * modes can be trusted to look the same, which is the promise this hook's output
    * shape exists to keep.
    */
-  const legs = currentBeat ? flowLegs(currentBeat.from, currentBeat.to) : [];
+  const legs = currentBeat
+    ? flowLegs(currentBeat.from, currentBeat.to, engine, currentBeat.returns)
+    : [];
   const legIndex = useFlowTraversal({
     legCount: Math.max(1, legs.length),
-    resetKey: currentKey ?? null,
+    resetKey: currentBeat?.key ?? null,
     enabled: currentBeat !== undefined,
   });
   const leg = legs[Math.min(legIndex, legs.length - 1)];
 
+  /*
+   * Retire the head once it has finished walking, and let the next beat start.
+   *
+   * The hold is the beat's own length plus a rest, so a thirteen-leg engine B route
+   * gets the 3120 ms it needs and a one-leg browser beat does not sit there for three
+   * seconds. Under reduced motion the traversal has already jumped to the destination,
+   * so there is nothing to walk and only the rest applies.
+   */
+  const legCount = Math.max(1, legs.length);
+  const beatKey = currentBeat?.key;
+  useEffect(() => {
+    if (beatKey === undefined) return;
+    const walk = prefersReducedMotion() ? 0 : legCount * FLOW_LEG_MS;
+    const timer = setTimeout(() => setQueue((current) => current.slice(1)), walk + LIVE_BEAT_REST_MS);
+    return () => clearTimeout(timer);
+  }, [beatKey, legCount]);
+
   const litNode = leg?.kind === 'node' ? leg.node : undefined;
   const activeHops = leg?.kind === 'hop' ? [leg.hop] : [];
 
-  // The trail: every earlier beat's destination, plus the part of this beat's route
-  // the traffic has already crossed. Not a highlight — the diagram renders these
-  // border-only, so the one lit box stays the only thing that draws the eye.
-  const trail = beats.filter((beat) => beat.key !== currentKey).map((beat) => beat.to);
+  // The trail: the destination of every beat that has already been animated, plus the
+  // part of this beat's route the traffic has already crossed. Not a highlight — the
+  // diagram renders these border-only, so the one lit box stays the only thing that
+  // draws the eye. Beats still queued are excluded: their destination has not been
+  // visited yet, and marking it as history would give away where the traffic is going.
+  const pending = new Set(queue.map((beat) => beat.key));
+  const trail = beats.filter((beat) => !pending.has(beat.key)).map((beat) => beat.to);
   for (const earlier of legs.slice(0, legIndex)) {
     if (earlier.kind === 'node') trail.push(earlier.node);
   }

@@ -32,7 +32,16 @@ import type { ServerEvent } from '../../shared/interfaces/ws-events';
  * and greying them out when you switch would claim a difference that isn't there.
  */
 
-/** Stable identifier for an AWS resource in the diagram. */
+/**
+ * Stable identifier for an AWS resource in the diagram.
+ *
+ * `dynamodb` and `integrations` are each ONE id, not one per engine. The table and
+ * the providers are genuinely the same resources on both paths, and drawing them
+ * twice said the opposite — a room reading two DynamoDB cards concludes there are
+ * two tables. They are drawn once, in a shared band between the two engine bands,
+ * and each engine reaches the same card by its own route. See `AGENTCORE_PARENT`
+ * for how one node has a different parent on each engine.
+ */
 export type AwsNodeId =
   | 'browser'
   | 'cloudfront'
@@ -45,9 +54,7 @@ export type AwsNodeId =
   | 'ac-proxy'
   | 'ac-runtime'
   | 'ac-memory'
-  | 'ac-gateway'
-  | 'ac-dynamodb'
-  | 'ac-integrations';
+  | 'ac-gateway';
 
 /**
  * Which engine a resource belongs to.
@@ -144,13 +151,40 @@ export const AWS_NODES: readonly AwsNode[] = [
     tier: 'data',
     engine: 'valentin',
   },
+  /*
+   * Shared by both engines, and drawn once because there is one table.
+   *
+   * No `engine` field, which is what makes `isNodeInEngine` answer true on both
+   * bands and stops the card greying out when you flip the toggle. Engine A writes
+   * it from the task over a VPC gateway endpoint; engine B reaches the same rows
+   * through the Gateway's Lambda target. Two connectors arrive at this one card,
+   * and that convergence is the point — it is the picture that says "same data,
+   * two routes", which two cards said the opposite of.
+   */
   {
     id: 'dynamodb',
     service: 'Amazon DynamoDB',
     resourceName: 'ValentinTable-dev',
     caption: 'pk/sk · GSI1 · on-demand',
     tier: 'data',
-    engine: 'valentin',
+  },
+  /*
+   * The one node here that is not AWS, and the only honest way to draw the tool
+   * loop: outbound HTTPS to Ontopo, Hebcal, Amadeus, Google and Meta. Omitting it
+   * would draw a diagram in which Valentin books a restaurant with no restaurant
+   * in the picture.
+   *
+   * One grouped node rather than six — six cards do not read on a projector — and
+   * shared for the same reason as `dynamodb`: the providers are the same five
+   * companies on both paths. Only the leg that reaches them differs, and that
+   * difference lives on the two connectors' labels, which is where it belongs.
+   */
+  {
+    id: 'integrations',
+    service: 'External APIs',
+    resourceName: '6 integrations',
+    caption: 'HTTPS out · NAT or Lambda',
+    tier: 'data',
   },
 
   // --- Engine B. Same image as `fargate`, same task size, same table. ---
@@ -201,55 +235,6 @@ export const AWS_NODES: readonly AwsNode[] = [
     engine: 'agentcore',
     inAgentCore: true,
   },
-  {
-    id: 'ac-dynamodb',
-    service: 'Amazon DynamoDB',
-    resourceName: 'ValentinTable-dev',
-    // Drawn twice, and it is the same table both times. Duplicating the node is
-    // how a tree says "same resource, different path": engine A writes it from
-    // the task, engine B reaches it through the Gateway's Lambda target. The
-    // Lambda's name is on the connector rather than in here, which is where it
-    // belongs anyway — it is the hop, not the table.
-    caption: 'same table · via the Gateway',
-    tier: 'data',
-    engine: 'agentcore',
-  },
-  {
-    id: 'ac-integrations',
-    service: 'External APIs',
-    // The Lambda behind the second target, named here rather than on the
-    // connector because on this path it is the thing holding the credentials:
-    // engine A's task calls Ontopo itself, engine B's does not and cannot.
-    resourceName: 'valentin-integration-tools-dev',
-    caption: 'same tools · via the Gateway',
-    tier: 'data',
-    // Engine B's copy of `integrations`, the same duplication as `ac-dynamodb`
-    // and for the same reason: one real set of providers, two routes to it. This
-    // is the node that makes the Gateway branch visible, and it is visible only
-    // with the toggle on because of this one field.
-    engine: 'agentcore',
-  },
-  /*
-   * The one node here that is not AWS, and the only honest way to draw the tool
-   * loop: outbound HTTPS from the task to Ontopo, Hebcal, Amadeus, Google and
-   * Meta. Omitting it would draw a diagram in which Valentin books a restaurant
-   * with no restaurant in the picture.
-   *
-   * One grouped node rather than six. Six cards do not read on a projector, and
-   * which service fired is swapped into `resourceName` live from the span — see
-   * `INTEGRATION_LABELS` in the span bridge — so the room still sees "Ontopo" and
-   * its real duration on a single node.
-   */
-  {
-    id: 'integrations',
-    service: 'External APIs',
-    resourceName: '6 integrations',
-    caption: 'outbound HTTPS · NAT gateway',
-    tier: 'data',
-    // Engine A's, not shared: engine B reaches the same jobs through the Gateway,
-    // so leaving this unscoped would light it on a band that never calls it.
-    engine: 'valentin',
-  },
 ] as const;
 
 /** Lookup by id. */
@@ -288,8 +273,9 @@ export function isSegmentInEngine(segment: AwsSegment, engine: ArchitectureEngin
 const AGENTCORE_COUNTERPART: Readonly<Partial<Record<AwsNodeId, AwsNodeId>>> = {
   fargate: 'ac-proxy',
   bedrock: 'ac-runtime',
-  dynamodb: 'ac-dynamodb',
-  integrations: 'ac-integrations',
+  // `dynamodb` and `integrations` have no entry, and that absence is the dedupe:
+  // they map to themselves on both engines because they *are* themselves on both
+  // engines. What differs is the route in, and that is `AGENTCORE_PARENT`'s job.
 };
 
 /**
@@ -348,9 +334,35 @@ const PARENT: Readonly<Partial<Record<AwsNodeId, AwsNodeId>>> = {
   'ac-runtime': 'ac-proxy',
   'ac-memory': 'ac-runtime',
   'ac-gateway': 'ac-runtime',
-  'ac-dynamodb': 'ac-gateway',
-  'ac-integrations': 'ac-gateway',
 };
+
+/**
+ * Where the two shared nodes hang when engine B is the one being shown.
+ *
+ * This is how one card can be on both engines without the topology stopping being
+ * a tree: the parent is a function of `(node, engine)`, so each engine sees its own
+ * tree over a partly shared set of nodes. Engine A reaches the table from the task;
+ * engine B reaches the same table through the Gateway's Lambda target. Both are
+ * single-parent, both still compute a unique route, and an impossible link stays
+ * unrepresentable — `fargate → ac-gateway` is not a parent edge on either engine, so
+ * no route can produce it.
+ *
+ * The alternative was a second node per resource, which is what this replaced. Two
+ * DynamoDB cards told a room there were two tables.
+ */
+const AGENTCORE_PARENT: Readonly<Partial<Record<AwsNodeId, AwsNodeId>>> = {
+  dynamodb: 'ac-gateway',
+  integrations: 'ac-gateway',
+};
+
+/** The resource one hop closer to the browser, on the engine being shown. */
+function parentOf(id: AwsNodeId, engine: ArchitectureEngine): AwsNodeId | undefined {
+  if (engine === 'agentcore') {
+    const shared = AGENTCORE_PARENT[id];
+    if (shared) return shared;
+  }
+  return PARENT[id];
+}
 
 /**
  * A physical link between a parent and its child, named for the pair it joins.
@@ -368,8 +380,8 @@ export type AwsSegmentId =
   | 'ac-proxy-ac-runtime'
   | 'ac-runtime-ac-memory'
   | 'ac-runtime-ac-gateway'
-  | 'ac-gateway-ac-dynamodb'
-  | 'ac-gateway-ac-integrations';
+  | 'ac-gateway-dynamodb'
+  | 'ac-gateway-integrations';
 
 /** A connector in the diagram, always oriented parent → child. */
 export interface AwsSegment {
@@ -415,27 +427,30 @@ export const AWS_SEGMENTS: readonly AwsSegment[] = [
     to: 'ac-gateway',
     label: 'MCP tool call',
   },
+  /*
+   * The second arrow into each shared card, and the only place engine B's route to
+   * them is stated. Both land on a node engine A also reaches, which is why the
+   * labels have to carry the difference the duplicate cards used to: engine A's
+   * hops say 'VPC gateway endpoint' and 'NAT · public internet' from the task,
+   * because on that path the task holds the credentials and makes the call itself.
+   */
   {
-    id: 'ac-gateway-ac-dynamodb',
+    id: 'ac-gateway-dynamodb',
     from: 'ac-gateway',
-    to: 'ac-dynamodb',
-    label: 'Lambda target',
+    to: 'dynamodb',
+    label: 'valentin-preferences target',
   },
   {
-    id: 'ac-gateway-ac-integrations',
+    id: 'ac-gateway-integrations',
     from: 'ac-gateway',
-    to: 'ac-integrations',
-    // Named for the target rather than the transport, which is the difference
-    // this connector exists to show: engine A's equivalent hop is labelled
-    // 'NAT · public internet' from the task, because on that path the task itself
-    // holds the credentials and makes the call.
+    to: 'integrations',
     label: 'valentin-integrations target',
   },
 ] as const;
 
-/** Segment joining a node to its parent. Undefined for the root. */
-function segmentToParent(id: AwsNodeId): AwsSegment | undefined {
-  const parent = PARENT[id];
+/** Segment joining a node to its parent on this engine. Undefined for the root. */
+function segmentToParent(id: AwsNodeId, engine: ArchitectureEngine): AwsSegment | undefined {
+  const parent = parentOf(id, engine);
   if (!parent) return undefined;
   return AWS_SEGMENTS.find((segment) => segment.from === parent && segment.to === id);
 }
@@ -454,12 +469,12 @@ export interface AwsHop {
 }
 
 /** The chain of nodes from `id` up to the root, inclusive of both. */
-function chainToRoot(id: AwsNodeId): AwsNodeId[] {
+function chainToRoot(id: AwsNodeId, engine: ArchitectureEngine): AwsNodeId[] {
   const chain: AwsNodeId[] = [id];
-  let current = PARENT[id];
+  let current = parentOf(id, engine);
   while (current) {
     chain.push(current);
-    current = PARENT[current];
+    current = parentOf(current, engine);
   }
   return chain;
 }
@@ -467,15 +482,25 @@ function chainToRoot(id: AwsNodeId): AwsNodeId[] {
 /**
  * The hops traffic takes to get from `from` to `to`, in travel order.
  *
- * Because the topology is a tree, this is the unique path: climb from `from` to
- * the lowest common ancestor, then descend to `to`. Same node in and out gives
- * an empty route — work that happened without a network hop.
+ * Because the topology is a tree *per engine*, this is the unique path: climb from
+ * `from` to the lowest common ancestor, then descend to `to`. Same node in and out
+ * gives an empty route — work that happened without a network hop.
+ *
+ * `engine` is not cosmetic here. The two shared nodes hang in a different place on
+ * each engine, so the same call is a different route: `dynamodb` is one hop from the
+ * task on engine A and three hops from the proxy on engine B. Defaulting to
+ * `'valentin'` keeps every engine-agnostic caller working, and is the right default
+ * because engine A is the shape all the authored routes are written in.
  */
-export function routeBetween(from: AwsNodeId, to: AwsNodeId): readonly AwsHop[] {
+export function routeBetween(
+  from: AwsNodeId,
+  to: AwsNodeId,
+  engine: ArchitectureEngine = 'valentin',
+): readonly AwsHop[] {
   if (from === to) return [];
 
-  const fromChain = chainToRoot(from);
-  const toChain = chainToRoot(to);
+  const fromChain = chainToRoot(from, engine);
+  const toChain = chainToRoot(to, engine);
   const meetingPoint = fromChain.find((id) => toChain.includes(id));
   // Unreachable while every node chains to `browser`, but a future node added
   // without a parent entry would otherwise route into nonsense silently.
@@ -483,18 +508,22 @@ export function routeBetween(from: AwsNodeId, to: AwsNodeId): readonly AwsHop[] 
 
   const hops: AwsHop[] = [];
 
-  for (let id: AwsNodeId | undefined = from; id && id !== meetingPoint; id = PARENT[id]) {
-    const segment = segmentToParent(id);
-    const parent = PARENT[id];
+  for (
+    let id: AwsNodeId | undefined = from;
+    id && id !== meetingPoint;
+    id = parentOf(id, engine)
+  ) {
+    const segment = segmentToParent(id, engine);
+    const parent = parentOf(id, engine);
     if (segment && parent) hops.push({ segment: segment.id, node: parent, downstream: false });
   }
 
   const descent: AwsNodeId[] = [];
-  for (let id: AwsNodeId | undefined = to; id && id !== meetingPoint; id = PARENT[id]) {
+  for (let id: AwsNodeId | undefined = to; id && id !== meetingPoint; id = parentOf(id, engine)) {
     descent.push(id);
   }
   for (const id of descent.reverse()) {
-    const segment = segmentToParent(id);
+    const segment = segmentToParent(id, engine);
     if (segment) hops.push({ segment: segment.id, node: id, downstream: true });
   }
 
@@ -502,8 +531,12 @@ export function routeBetween(from: AwsNodeId, to: AwsNodeId): readonly AwsHop[] 
 }
 
 /** The nodes a route touches, including both endpoints, in travel order. */
-export function nodesAlongRoute(from: AwsNodeId, to: AwsNodeId): readonly AwsNodeId[] {
-  const hops = routeBetween(from, to);
+export function nodesAlongRoute(
+  from: AwsNodeId,
+  to: AwsNodeId,
+  engine: ArchitectureEngine = 'valentin',
+): readonly AwsNodeId[] {
+  const hops = routeBetween(from, to, engine);
   if (hops.length === 0) return [from];
   return [from, ...hops.map((hop) => hop.node)];
 }
@@ -532,9 +565,21 @@ export type FlowLeg =
  * The origin node leads, so the journey starts where the traffic already is. Work
  * with no network hop (`from === to`) is a single node leg rather than nothing:
  * something did happen, it just happened in one place.
+ *
+ * `roundTrip` walks the route out and then back, ending where it started. Almost
+ * every beat in this system is a *call* — the task asks Bedrock and waits for the
+ * answer, it does not hand the turn to Bedrock — and drawing only the outbound leg
+ * left the traffic stranded in the callee. A room watching that sees the request
+ * arrive at DynamoDB and simply stop, with the reply appearing later out of nowhere.
+ * Out-and-back is what makes the go-and-back flow read as one round trip.
  */
-export function flowLegs(from: AwsNodeId, to: AwsNodeId): readonly FlowLeg[] {
-  const hops = routeBetween(from, to);
+export function flowLegs(
+  from: AwsNodeId,
+  to: AwsNodeId,
+  engine: ArchitectureEngine = 'valentin',
+  roundTrip = false,
+): readonly FlowLeg[] {
+  const hops = routeBetween(from, to, engine);
   if (hops.length === 0) return [{ kind: 'node', node: to, downstream: true }];
 
   const legs: FlowLeg[] = [{ kind: 'node', node: from, downstream: hops[0].downstream }];
@@ -542,6 +587,16 @@ export function flowLegs(from: AwsNodeId, to: AwsNodeId): readonly FlowLeg[] {
     legs.push({ kind: 'hop', hop, downstream: hop.downstream });
     legs.push({ kind: 'node', node: hop.node, downstream: hop.downstream });
   }
+
+  if (roundTrip) {
+    // The return journey is the same route computed backwards, not a mirror of the
+    // outbound legs: reversing the array would keep each hop's `downstream` flag
+    // pointing the way it came, and the arrows would animate the wrong direction on
+    // the way home. Its first leg is dropped because it is the node we are already
+    // resting in — the callee — and re-lighting it would stutter.
+    legs.push(...flowLegs(to, from, engine).slice(1));
+  }
+
   return legs;
 }
 
@@ -589,7 +644,11 @@ export function awsNodesForEventType(
 ): readonly AwsNodeId[] {
   const route = EVENT_ROUTES[eventType];
   if (!route) return [];
-  return nodesAlongRoute(nodeForEngine(route.from, engine), nodeForEngine(route.to, engine));
+  return nodesAlongRoute(
+    nodeForEngine(route.from, engine),
+    nodeForEngine(route.to, engine),
+    engine,
+  );
 }
 
 /** The connectors that light up for an event type, with their directions. */
@@ -599,7 +658,7 @@ export function awsHopsForEventType(
 ): readonly AwsHop[] {
   const route = EVENT_ROUTES[eventType];
   if (!route) return [];
-  return routeBetween(nodeForEngine(route.from, engine), nodeForEngine(route.to, engine));
+  return routeBetween(nodeForEngine(route.from, engine), nodeForEngine(route.to, engine), engine);
 }
 
 /**
@@ -634,10 +693,10 @@ const AGENTCORE_RESOURCE_IDS: Readonly<Record<string, AwsNodeId>> = {
   'agentcore-runtime': 'ac-runtime',
   'agentcore-memory': 'ac-memory',
   'agentcore-gateway': 'ac-gateway',
-  // A tool call the Gateway routed to the integration Lambda. Its own id rather
-  // than `integrations`, because that one is engine A's node and `nodeForEngine`
-  // would translate it back the wrong way on a mislabelled view.
-  'agentcore-integrations': 'ac-integrations',
+  // A tool call the Gateway routed to the integration Lambda. Now the same node
+  // engine A's task calls directly — the providers were never two sets, and the
+  // Gateway hop that makes this path different is on the connector.
+  'agentcore-integrations': 'integrations',
 };
 
 /**

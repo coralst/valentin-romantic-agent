@@ -134,19 +134,29 @@ test.describe('The engine toggle', () => {
     await openDrawer(page);
 
     const gateway = page.getByTestId('aws-node-ac-gateway');
-    const toolLambda = page.getByTestId('aws-node-ac-integrations');
+    const memory = page.getByTestId('aws-node-ac-memory');
     const bedrock = page.getByTestId('aws-node-bedrock');
+    // The two shared cards. Both engines really do read and write the same table and
+    // call the same partner APIs, so these are one card each rather than one per
+    // engine — and neither ever mutes, which is the visible half of that claim.
+    const table = page.getByTestId('aws-node-dynamodb');
+    const partners = page.getByTestId('aws-node-integrations');
 
     // Engine A: the Gateway branch is greyed out. Nothing on engine A's path reaches
     // it, so lighting it would credit the control arm with the Gateway.
     await expect(gateway).toHaveAttribute('data-state', 'muted', { timeout: 15_000 });
-    await expect(toolLambda).toHaveAttribute('data-state', 'muted');
+    await expect(memory).toHaveAttribute('data-state', 'muted');
     await expect(bedrock).not.toHaveAttribute('data-state', 'muted');
+    await expect(table).not.toHaveAttribute('data-state', 'muted');
+    await expect(partners).not.toHaveAttribute('data-state', 'muted');
 
     await selectEngine(page, 'agentcore');
 
     await expect(gateway).not.toHaveAttribute('data-state', 'muted', { timeout: 15_000 });
-    await expect(toolLambda).not.toHaveAttribute('data-state', 'muted');
+    await expect(memory).not.toHaveAttribute('data-state', 'muted');
+    // Still live on the other engine too — that is the dedupe, asserted from the DOM.
+    await expect(table).not.toHaveAttribute('data-state', 'muted');
+    await expect(partners).not.toHaveAttribute('data-state', 'muted');
     // And engine A's own model call greys out, so the two halves cannot be read as
     // one diagram of everything running at once.
     await expect(bedrock).toHaveAttribute('data-state', 'muted');
@@ -155,8 +165,11 @@ test.describe('The engine toggle', () => {
     // lights on the first switch and never goes dark.
     await selectEngine(page, 'valentin');
     await expect(gateway).toHaveAttribute('data-state', 'muted', { timeout: 15_000 });
-    await expect(toolLambda).toHaveAttribute('data-state', 'muted');
+    await expect(memory).toHaveAttribute('data-state', 'muted');
     await expect(bedrock).not.toHaveAttribute('data-state', 'muted');
+    // The shared pair survives the round trip too: they are not engine B's to lose.
+    await expect(table).not.toHaveAttribute('data-state', 'muted');
+    await expect(partners).not.toHaveAttribute('data-state', 'muted');
   });
 
   test('the Gateway card names the MCP endpoint and both Lambda targets', async ({ page }) => {

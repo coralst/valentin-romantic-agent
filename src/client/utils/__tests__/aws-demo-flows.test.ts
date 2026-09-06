@@ -6,6 +6,7 @@ import {
   demoFlow,
   demoStepDwellMs,
   frameForStep,
+  restingNode,
   stepLegCount,
   FLOW_LEG_MS,
   type DemoFlowId,
@@ -121,6 +122,29 @@ describe('DEMO_FLOWS', () => {
     }
   });
 
+  /**
+   * The anti-teleport invariant, and the strongest statement in this file.
+   *
+   * "Starts somewhere it has been" is too weak: it permits a step to resume from any
+   * node the traffic visited at any earlier point in the flow, which is precisely the
+   * jump the reported bug was made of. `LEARNS_SOMETHING` used to author
+   * `from: 'fargate'` on a step following one that ended at the browser, and that
+   * passed the test above because Fargate *had* been visited — several steps ago.
+   *
+   * What has to hold is stricter: a step starts where the previous step left the
+   * traffic *resting*, which for a returning call is its origin and not its target.
+   * With that, no step needs an authored `from` at all, so the failure mode is gone
+   * rather than merely tested for.
+   */
+  it('resumes each step exactly where the previous one left the traffic', () => {
+    for (const flow of DEMO_FLOWS) {
+      for (let i = 1; i < flow.steps.length; i += 1) {
+        const previous = flow.steps[i - 1];
+        expect(flow.steps[i].from, `${flow.id} step ${i}`).toBe(restingNode(previous));
+      }
+    }
+  });
+
   it('routes every step over links the real topology actually has', () => {
     // This is the property that makes an impossible arrow unrepresentable rather
     // than merely unlikely: the path is computed, never authored.
@@ -181,12 +205,34 @@ describe('DEMO_FLOWS', () => {
     const steps = flow.steps;
 
     expect(steps).toHaveLength(9);
-    expect(steps[7]).toMatchObject({ to: 'dynamodb', operation: 'PutItem', durationMs: 18 });
+    // The write is a round trip: the task calls the table and the call returns, so the
+    // traffic is back on Fargate afterwards. It used to be drawn one-way, which parked
+    // the traffic in DynamoDB and made the next step teleport out of it.
+    expect(steps[6]).toMatchObject({
+      to: 'dynamodb',
+      operation: 'PutItem',
+      durationMs: 18,
+      returns: true,
+    });
+    expect(steps[7]).toMatchObject({ to: 'browser', operation: 'agent_message' });
+    /*
+     * And the toast is browser-local.
+     *
+     * The server emits both of these in the same burst — `preference_update` fires
+     * inside `handleMessage` via the extractor's callback, so it is on the wire before
+     * `agent_message`. Two simultaneous homeward deliveries cannot both be the one that
+     * travels: whichever is drawn second would have to start from the browser, where
+     * the first one just landed. So the reply gets the journey (it is the visible
+     * answer) and the toast is rendered where the traffic already is, which is also
+     * literally what happens — nothing crosses the network for it a second time.
+     */
     expect(steps[8]).toMatchObject({
-      from: 'dynamodb',
+      from: 'browser',
       to: 'browser',
       operation: 'preference_update',
     });
+    // A self-beat: no hop, so it lights one box and moves nothing.
+    expect(routeBetween('browser', 'browser')).toEqual([]);
   });
 
   it('makes two Converse calls in the headline flow, as the server really does', () => {
@@ -234,20 +280,57 @@ describe('frameForStep', () => {
   });
 
   it('reads a request as a request', () => {
-    const frame = frameForStep(steps, 4); // Fargate → Bedrock
+    // Fargate → Bedrock, caught at the far end of the round trip. Asked for as a leg
+    // index rather than as the whole step, because the whole step now *ends* back on
+    // Fargate: the model call returned.
+    const outbound = frameForStep(steps, 4, 2);
 
-    expect(frame.litNode).toBe('bedrock');
-    expect(frame.litIsResponse).toBe(false);
-    expect(frame.activeHops.every((hop) => hop.downstream)).toBe(true);
+    expect(outbound.litNode).toBe('bedrock');
+    expect(outbound.litIsResponse).toBe(false);
+    expect(outbound.activeHops.every((hop) => hop.downstream)).toBe(true);
   });
 
   it('reads the return trip as a response', () => {
-    const frame = frameForStep(steps, 8); // DynamoDB → Browser
+    const frame = frameForStep(steps, 7); // Fargate → Browser, the reply going home.
 
     expect(frame.litNode).toBe('browser');
     expect(frame.litIsResponse).toBe(true);
     // Mid-flight on the way home, the live hop climbs rather than descends.
-    expect(frameForStep(steps, 8, 1).activeHops[0].downstream).toBe(false);
+    expect(frameForStep(steps, 7, 1).activeHops[0].downstream).toBe(false);
+  });
+
+  it('keeps a self-beat travelling whichever way the traffic already was', () => {
+    /*
+     * A self-beat is the one beat whose direction nothing local can settle. It has no
+     * hop, so there is no `downstream` flag to colour it by, and the node does not
+     * settle it either: `browser → browser` opens two of the five flows as the user's
+     * own send and closes this one as the preference toast. So it inherits.
+     *
+     * Getting this wrong is visible rather than pedantic. The old code hardcoded a
+     * self-beat as a request, which relit the browser card in request-claret one beat
+     * after the reply had landed on it in response-teal — the diagram announcing a new
+     * request that never happened, at the exact moment the flow ends.
+     */
+    const send = demoFlow('chat-reply').steps;
+    expect(send[0]).toMatchObject({ from: 'browser', to: 'browser' });
+    expect(frameForStep(send, 0).litIsResponse).toBe(false);
+
+    expect(steps[8]).toMatchObject({ from: 'browser', to: 'browser' });
+    expect(frameForStep(steps, 7).litIsResponse).toBe(true);
+    expect(frameForStep(steps, 8).litIsResponse).toBe(true);
+  });
+
+  it('brings a returning call home rather than parking it at the far end', () => {
+    // The anti-teleport property, at the level of a single step. A round-trip step's
+    // last leg is its *origin*, which is why the next step needs no `from` override —
+    // and an authored `from` was exactly how the old flows jumped.
+    const call = 6; // Fargate → DynamoDB → Fargate.
+
+    expect(frameForStep(steps, call, 0).litNode).toBe('fargate');
+    expect(frameForStep(steps, call, 2).litNode).toBe('dynamodb');
+    expect(frameForStep(steps, call, 99).litNode).toBe('fargate');
+    // And the leg after the far end climbs back, so the return is drawn, not implied.
+    expect(frameForStep(steps, call, 3).activeHops[0].downstream).toBe(false);
   });
 
   it('never lists a node as both lit and done', () => {
@@ -267,8 +350,8 @@ describe('frameForStep', () => {
    * where the request had got to.
    */
   describe('walking a step one beat at a time', () => {
-    // DynamoDB → Browser, the longest journey in the flow.
-    const homeward = 8;
+    // Fargate → Browser, the longest one-way journey in the flow: the reply going home.
+    const homeward = 7;
 
     it('alternates a node and a segment, and never both', () => {
       const legs = stepLegCount(steps[homeward]);
@@ -283,7 +366,7 @@ describe('frameForStep', () => {
     });
 
     it('starts where the traffic already is and ends where the step lands', () => {
-      expect(frameForStep(steps, homeward, 0).litNode).toBe('dynamodb');
+      expect(frameForStep(steps, homeward, 0).litNode).toBe('fargate');
       expect(frameForStep(steps, homeward, 99).litNode).toBe('browser');
     });
 
@@ -300,8 +383,14 @@ describe('frameForStep', () => {
     });
 
     it('leaves the node behind it in the trail once the traffic moves on', () => {
-      expect(frameForStep(steps, homeward, 0).doneNodes).not.toContain('dynamodb');
-      expect(frameForStep(steps, homeward, 2).doneNodes).toContain('dynamodb');
+      // Read off the DynamoDB write rather than off the homeward step, because every
+      // node on the way home has already been visited earlier in the flow — so the
+      // trail growing would be unobservable there. DynamoDB is reached once.
+      const write = 6;
+      expect(frameForStep(steps, write, 0).doneNodes).not.toContain('dynamodb');
+      // Lit, not done, at the moment the traffic is sitting in it.
+      expect(frameForStep(steps, write, 2).doneNodes).not.toContain('dynamodb');
+      expect(frameForStep(steps, write, 3).doneNodes).toContain('dynamodb');
     });
 
     it('withholds the duration pill until the traffic has arrived', () => {
@@ -322,7 +411,7 @@ describe('frameForStep', () => {
   });
 
   it('accumulates duration pills and mutes the ones that are not current', () => {
-    const frame = frameForStep(steps, 7);
+    const frame = frameForStep(steps, 6); // The DynamoDB write, after two Converse calls.
 
     expect(frame.durations.dynamodb).toEqual({ label: '18 ms', ok: true, current: true });
     expect(frame.durations.bedrock?.current).toBe(false);

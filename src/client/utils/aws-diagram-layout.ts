@@ -12,22 +12,34 @@ import type { ArchitectureEngine, AwsNodeId, AwsSegmentId } from './aws-architec
  * shallow: on a projector that reads far better than seven stacked rows in a
  * 560px panel.
  *
- * TWO BANDS
+ * TWO BANDS AND A SHARED COLUMN
  *
  * Engine A occupies the band above the spine and out to the right; engine B hangs
  * below it, forking at the ALB exactly where the deployed listener forks. Both are
  * always drawn — the drawer shades the one you are not looking at rather than
  * unmounting it, because a box that vanishes reads as "we removed that" instead of
  * "that is the other engine".
+ *
+ * The far-right column belongs to neither. DynamoDB and the external APIs are the
+ * same resources on both paths, so they are drawn once, between the two bands, with
+ * one connector arriving from each engine. That convergence is the picture: the two
+ * engines meet at the same table. It replaced a duplicate card per engine, which
+ * told a room there were two tables and two sets of partners.
  */
 
 /**
  * Canvas the connectors are drawn on. Node cards are positioned in the same space.
  *
  * Grew from 916×286 to hold engine B. The extra width is two columns for the
- * Gateway and the table it reaches; the extra height is engine B's band.
+ * Gateway and the shared resources it reaches; the extra height is engine B's band.
+ *
+ * The last 30px hold no card and are not slack: they are the routing corridor
+ * engine A's link to the lower shared card runs down. The shared column has traffic
+ * arriving from both bands, and with cards ending at 1446 there was nowhere on that
+ * side to put a wire — the two corridors either side of the column (1246–1260 and
+ * 1446–1476) are what keep four connectors from converging into an unreadable braid.
  */
-export const AWS_DIAGRAM_CANVAS = { width: 1446, height: 480 } as const;
+export const AWS_DIAGRAM_CANVAS = { width: 1476, height: 480 } as const;
 
 /**
  * Every node card, at exactly one size.
@@ -71,12 +83,18 @@ export const AWS_COLUMN_PITCH = 210;
  * set of coordinates — every geometry test, arrowhead and chevron stays valid at
  * any scale, which a second set of "compact" numbers would not.
  *
- * 0.645 puts 1446×480 at 933×310, which is the space the drawer actually has
+ * 0.632 puts 1476×480 at 933×303, which is the space the drawer actually has
  * beside the flow feed. Down from 0.74 because uniform cards are wider than the
  * narrowest of the old ones; the trade is deliberate — slightly smaller type in
  * exchange for a grid that lines up and never clips.
+ *
+ * The step from 0.645 to 0.632 bought the 30px routing corridor on the right. Two
+ * percent of type size is the cheapest of the options for finding room for the
+ * shared column: the alternatives were a whole extra 210px column (0.563, a visible
+ * loss on a projector) or a taller canvas (0.533, worse still, and the height budget
+ * below is the binding one).
  */
-export const AWS_DIAGRAM_SCALE = 0.645;
+export const AWS_DIAGRAM_SCALE = 0.632;
 
 /**
  * The shared vertical centre of Browser, CloudFront, ALB, Fargate and DynamoDB.
@@ -121,31 +139,33 @@ export const AWS_NODE_BOXES: Readonly<Record<AwsNodeId, AwsNodeBox>> = {
   s3: { x: 420, top: 0 },
   alb: { x: 420, top: 107 },
   fargate: { x: 630, top: 107 },
-  // Bedrock above the spine, DynamoDB below it, centred on it as a pair.
   bedrock: { x: 840, top: 55 },
-  dynamodb: { x: 840, top: 159 },
   // Engine B's band. `ac-proxy` sits in the same column as `fargate` and inside
   // the same VPC box, which is the point: one image, one task size, two services.
   'ac-proxy': { x: 630, top: 381 },
   'ac-runtime': { x: 840, top: 381 },
   // Memory branches up off engine B's spine; the Gateway stays on it, so the
-  // longest chain — proxy, Runtime, Gateway, table — reads as one straight line.
+  // longest chain — proxy, Runtime, Gateway, shared resources — reads left to right.
   'ac-memory': { x: 1050, top: 274 },
   'ac-gateway': { x: 1050, top: 381 },
-  'ac-dynamodb': { x: 1260, top: 381 },
-  // The second Lambda target, branching up off engine B's spine in the same column
-  // as the table — the mirror of `ac-memory` branching up in the Gateway's column.
-  // It could not straddle the spine as engine A's AI/Data pair does: 90px below
-  // `ac-dynamodb` is y=523 and the canvas ends at 480. It also sits outside the
-  // AgentCore box (which ends at x=1246), and that is the point — the Gateway is
-  // managed, the Lambda behind it is ours.
-  'ac-integrations': { x: 1260, top: 277 },
-  // The external APIs. Engine A only, and outside both dashed boxes on purpose:
-  // it is neither in the VPC nor managed by AgentCore. Sits on engine A's spine
-  // in the column the Gateway uses on engine B, which is why the column heading
-  // is engine-scoped rather than shared.
-  integrations: { x: 1050, top: 107 },
 
+  /*
+   * The shared column: one table, one set of partners, reached from both bands.
+   *
+   * Stacked in the last column rather than placed on either spine, because sitting
+   * on a spine would claim the card belongs to that engine — which is the exact
+   * claim the two duplicate cards used to make. Vertically they straddle the gap
+   * between the bands, so neither engine's connector has to travel further than the
+   * other's.
+   *
+   * Outside the AgentCore box (which ends at x=1246) and outside the VPC, and both
+   * facts are load-bearing: the table and the partners are ours on either path, and
+   * on engine B the Gateway reaches them through a Lambda we own. `dynamodb` takes
+   * the upper slot because engine A writes it on nearly every turn, so its connector
+   * is the one that earns the short, straight route down off the spine.
+   */
+  dynamodb: { x: 1260, top: 188 },
+  integrations: { x: 1260, top: 293 },
 };
 
 /** Column heading above each tier. */
@@ -166,13 +186,15 @@ export const AWS_TIER_LABELS: readonly AwsTierLabel[] = [
   { label: 'Edge', x: 210 },
   { label: 'Origin', x: 420 },
   { label: 'Compute', x: 630 },
-  { label: 'AI · Data', x: 840 },
-  // One column, two meanings. On engine A it holds the external APIs; on engine B
-  // it holds the Gateway. A shared heading would have to be wrong on one of them.
-  { label: 'External APIs', x: 1050, engine: 'valentin' },
+  { label: 'Model', x: 840 },
+  // Engine B only, because engine A has no card in this column — its request runs
+  // straight through the gap to the shared resources, which is a fair picture of a
+  // task that talks to the table itself with nothing in between.
   { label: 'AgentCore', x: 1050, engine: 'agentcore' },
-  { label: 'Tool target', x: 1260, engine: 'agentcore' },
-
+  // Unscoped, and that is the dedupe visible in the headings: this column means the
+  // same thing on both engines now. Every heading here is engine-agnostic except the
+  // one column the two engines genuinely fill differently.
+  { label: 'Shared', x: 1260 },
 ] as const;
 
 /**
@@ -194,9 +216,10 @@ export const AWS_VPC_BOX = {
  * The dashed box around the Bedrock AgentCore primitives.
  *
  * Drawn because the boundary is the argument: Runtime, Memory and Gateway are
- * managed, so what is inside this box is the code we did not write. `ac-dynamodb`
- * is deliberately outside it — the table is ours, and the Gateway reaches it
- * through a Lambda we own.
+ * managed, so what is inside this box is the code we did not write. The shared
+ * column is deliberately outside it — the table and the partners are ours, and the
+ * Gateway reaches them through a Lambda we own. Its right edge at x=1246 is what
+ * leaves the 14px corridor the Gateway's two outbound connectors climb.
  *
  * Its top clears engine A's lowest card by 15px. It used to start at y=228, which
  * was *inside* the DynamoDB card above it, so the box's label sat on top of that
@@ -324,18 +347,26 @@ export const AWS_SEGMENT_GEOMETRY: Readonly<Record<AwsSegmentId, AwsSegmentGeome
     midDownstreamHead: '828,116 822,125 834,125',
     midUpstreamHead: '828,130 822,121 834,121',
   },
-  // Below the spine, so this is the leg that carries the chevron pair which is
-  // easy to get backwards — see the note above, and the assertion in the tests.
+  /*
+   * Engine A's link to the shared table: out along the spine past the AgentCore
+   * column, then down into the card's top edge.
+   *
+   * The long run is horizontal here, not vertical, which is why the chevron pair
+   * points sideways — it is placed on the run the eye actually follows, and that run
+   * is now 537px of straight spine. Threading it at y=152 clears Bedrock's card
+   * bottom (y=145) by 7px and passes above the shared card (top y=188), so the only
+   * bend is the last 30px.
+   */
   'fargate-dynamodb': {
     id: 'fargate-dynamodb',
-    path: 'M816,152 L828,152 L828,204 L834,204',
-    downstreamHead: '840,204 831,198 831,210',
+    path: 'M816,152 L1353,152 L1353,182',
+    // Arrives from above, so this head points down — the one arrowhead in the
+    // diagram that is neither horizontal nor on a spine.
+    downstreamHead: '1353,188 1347,179 1359,179',
     upstreamHead: '816,152 825,146 825,158',
     elbowed: true,
-    // DynamoDB is below the spine, so the chevrons are the other way up from
-    // Bedrock's. Getting this pair backwards is exactly the bug above.
-    midDownstreamHead: '828,184 822,175 834,175',
-    midUpstreamHead: '828,174 822,183 834,183',
+    midDownstreamHead: '1089,152 1080,146 1080,158',
+    midUpstreamHead: '1071,152 1080,146 1080,158',
   },
 
   // --- Engine B. Forks at the ALB and runs along its own spine at y=426. ---
@@ -376,31 +407,64 @@ export const AWS_SEGMENT_GEOMETRY: Readonly<Record<AwsSegmentId, AwsSegmentGeome
     upstreamHead: '1026,426 1035,420 1035,432',
     elbowed: false,
   },
-  'ac-gateway-ac-dynamodb': {
-    id: 'ac-gateway-ac-dynamodb',
-    path: 'M1236,426 L1254,426',
-    downstreamHead: '1260,426 1251,420 1251,432',
-    upstreamHead: '1236,426 1245,420 1245,432',
-    elbowed: false,  },
-  'ac-gateway-ac-integrations': {
-    id: 'ac-gateway-ac-integrations',
-    path: 'M1236,426 L1248,426 L1248,322 L1254,322',
-    downstreamHead: '1260,322 1251,316 1251,328',
+  /*
+   * The Gateway's two outbound links — the second arrow into each shared card.
+   *
+   * They leave the Gateway's right edge at *different* heights (426 and 440) on
+   * purpose. Both used to leave at the spine, which overlapped them for the first
+   * 16px, and an overlapped connector is worse than a crowded one: the drawer
+   * highlights one segment at a time, so the wrong wire appeared to light up.
+   */
+  'ac-gateway-dynamodb': {
+    id: 'ac-gateway-dynamodb',
+    // Climbs the 14px corridor between the AgentCore box (ends x=1246) and the
+    // shared column (starts x=1260) — the only route to the upper card that crosses
+    // neither the managed boundary nor the lower card.
+    path: 'M1236,426 L1252,426 L1252,233 L1254,233',
+    downstreamHead: '1260,233 1251,227 1251,239',
     upstreamHead: '1236,426 1245,420 1245,432',
     elbowed: true,
-    // The tool Lambda sits above engine B's spine, so away-from-the-browser is up
-    // — the same pair as `ac-runtime-ac-memory` one column to the left.
-    midDownstreamHead: '1248,370 1242,379 1254,379',
-    midUpstreamHead: '1248,384 1242,375 1254,375',
+    // The table is above engine B's spine, so away-from-the-browser is up — the same
+    // pair as `ac-runtime-ac-memory`, and the same pair to get backwards.
+    midDownstreamHead: '1252,320 1246,329 1258,329',
+    midUpstreamHead: '1252,334 1246,325 1258,325',
+  },
+  'ac-gateway-integrations': {
+    id: 'ac-gateway-integrations',
+    // The lower shared card sits almost directly above the Gateway, so this one needs
+    // no corridor: out past the boundary and straight up into its underside, entering
+    // at the card's centre line (x=1353) — the same line engine A drops into the upper
+    // card on. Each shared card is approached head-on from one band and from the side
+    // by the other, which is what keeps four wires off each other.
+    path: 'M1236,440 L1353,440 L1353,389',
+    downstreamHead: '1353,383 1347,392 1359,392',
+    upstreamHead: '1236,440 1245,434 1245,446',
+    elbowed: true,
+    // On the horizontal run, because that is the long one here: the climb into the
+    // card is barely 50px and a chevron on it would collide with the arrowhead.
+    midDownstreamHead: '1299,440 1290,434 1290,446',
+    midUpstreamHead: '1281,440 1290,434 1290,446',
   },
   'fargate-integrations': {
     id: 'fargate-integrations',
-    // Straight, and it threads the 14px gap between the Bedrock and DynamoDB
-    // cards: engine A's spine continuing out of the VPC rather than a new line.
-    path: 'M816,152 L1044,152',
-    downstreamHead: '1050,152 1041,146 1041,158',
-    upstreamHead: '816,152 825,146 825,158',
-    elbowed: false
+    /*
+     * Engine A's link to the shared partners, and the longest wire in the diagram.
+     *
+     * It runs 24px below the spine so it does not overlap `fargate-dynamodb`'s trunk,
+     * out to the far corridor (x=1461, in the 30px the canvas reserves), then down
+     * and back in through the card's right edge. The lower shared card is the one
+     * engine A cannot reach by dropping off the spine — the AgentCore box occupies
+     * everything between them — so it goes around, and the detour is honest: on this
+     * engine the call really does leave the VPC and come back.
+     */
+    path: 'M816,176 L1461,176 L1461,338 L1452,338',
+    // Points left, arriving from outside. The only downstream head in the diagram
+    // that travels back toward the browser's side of the canvas.
+    downstreamHead: '1446,338 1455,332 1455,344',
+    upstreamHead: '816,176 825,170 825,182',
+    elbowed: true,
+    midDownstreamHead: '1089,176 1080,170 1080,182',
+    midUpstreamHead: '1071,176 1080,170 1080,182',
   },
 };
 
@@ -536,19 +600,9 @@ export const AWS_NODE_VISUALS: Readonly<Record<AwsNodeId, AwsNodeVisual>> = {
     glyph:
       '<path d="M5 20V6.5A1.5 1.5 0 0 1 6.5 5h11A1.5 1.5 0 0 1 19 6.5V20" /><path d="M3 20h18M9.5 12.5h5M12.5 10l2.5 2.5-2.5 2.5" />',
   },
-  'ac-dynamodb': {
-    tile: 'linear-gradient(135deg,#7A9DFF,#527FFF)',
-    glyph:
-      '<ellipse cx="12" cy="5.8" rx="7.4" ry="2.9" /><path d="M4.6 5.8v12.4c0 1.6 3.3 2.9 7.4 2.9s7.4-1.3 7.4-2.9V5.8" /><path d="M4.6 12c0 1.6 3.3 2.9 7.4 2.9s7.4-1.3 7.4-2.9" />',
-  },
-  // Deliberately identical to `integrations`: it is the same Ontopo and the same
-  // Meta, reached the other way. Giving engine B's copy its own colour would say
-  // the partners differ, when the only thing that differs is the route in.
-  'ac-integrations': {
-    tile: 'linear-gradient(135deg,#B8536B,#8C2F45)',
-    glyph:
-      '<path d="M13.5 4.5H6A1.5 1.5 0 0 0 4.5 6v12A1.5 1.5 0 0 0 6 19.5h7.5" /><path d="M10.5 12h10M17 8.2l3.5 3.8-3.5 3.8" />',
-  },
+  // No `ac-dynamodb` or `ac-integrations`. Their visuals were byte-for-byte copies of
+  // `dynamodb` and `integrations` — which was the tell that they should never have
+  // been separate nodes.
 };
 
 /** The one extra badge worth projecting: the WAF rule in front of CloudFront. */

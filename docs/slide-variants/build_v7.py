@@ -6,10 +6,14 @@ ownership, debuggability — latency stays on the matrix), each lens slide
 carrying a fixed strip of AgentCore component chips that toggle per lens.
 
 Kept from v6: the four front slides (with the slide-3 typos fixed), the
-hand-added two-engines architecture diagram, the cost-bill and blast-radius
-picture slides, team/graph/lessons/thanks. Dropped: the old comparison table,
-the four message-only placeholders, and the accidental duplicate of the cost
-picture that was retitled "Compute — resilience".
+hand-added two-engines architecture diagram, lessons and thanks. Dropped: the
+old comparison table, the four message-only placeholders, and the accidental
+duplicate of the cost picture retitled "Compute — resilience".
+
+The three text-heavy screenshots are gone too, because baked pixels cannot obey
+the house rules (engine A is DIY, nothing below 10pt): the cost bill and the
+team tree are re-authored native in raster_slides.py, and the PR graph keeps
+only its plot, cropped and re-labelled by graph_crop.py.
 
     python3 docs/slide-variants/build_v7.py
 """
@@ -22,6 +26,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pptx import Presentation
 
 import lens_slides as L
+import raster_slides as R
+import graph_crop as G
 import emit_pptx
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
@@ -180,15 +186,31 @@ def fix_typos(slide):
     return n
 
 
-def retitle(slide, old, new):
-    for sh in slide.shapes:
-        if sh.has_text_frame and sh.text_frame.text.strip() == old:
-            runs = sh.text_frame.paragraphs[0].runs
-            runs[0].text = new
-            for extra in runs[1:]:
-                extra.text = ''
-            return True
-    return False
+def rebuild_graph_slide(slide, page, badge):
+    """Keep only the plot: re-crop the picture and re-author its text natively.
+
+    The v6 slide was one screenshot of an HTML card, so its lane labels, legend
+    and caption strip were pixels at 5–7pt. Everything but the picture is
+    dropped, the picture is cropped down to the plot and moved, and the labels
+    come back as real text. The picture is re-appended last so it sits above
+    the ops' background rectangle.
+    """
+    pic = None
+    for sh in list(slide.shapes):
+        if pic is None and sh.shape_type == 13:
+            pic = sh
+        sh._element.getparent().remove(sh._element)
+    if pic is None:
+        raise RuntimeError('graph slide has no picture')
+
+    emit_pptx.render(slide, G.slide_graph_ops(page, TOTAL, badge))
+
+    from pptx.util import Inches
+    slide.shapes._spTree.append(pic._element)
+    pic.crop_left, pic.crop_right = G.CROP['l'], G.CROP['r']
+    pic.crop_top, pic.crop_bottom = G.CROP['t'], G.CROP['b']
+    pic.left, pic.top = Inches(G.PLOT['x']), Inches(G.PLOT['y'])
+    pic.width, pic.height = Inches(G.PLOT['w']), Inches(G.PLOT['h'])
 
 
 def add_ops_slide(prs, layout, ops):
@@ -211,28 +233,30 @@ def main():
     # 8 MSG_COMPUTE · 9 duplicate cost.png ("Compute — resilience") ·
     # 10 blast.png · 11 MSG_MEMORY · 12 MSG_GATEWAY · 13 MSG_OBS ·
     # 14 team.png · 15 graph.png · 16 lessons · 17 thanks
-    retitle(slides[6], 'Compute — cost', 'Cost — the bill, itemised')
-
     PAGES = dict(cost=7, resil=9, security=11, ownership=12, debug=13)
     BADGES = dict(cost=6, resil=8, security=10, ownership=11, debug=12)
     new = [add_ops_slide(prs, layout, L.slide_matrix(6, TOTAL, 5))]
     new += [add_ops_slide(prs, layout, ops)
             for ops in L.all_lens_slides(TOTAL, PAGES, BADGES)]
     blast = add_ops_slide(prs, layout, L.slide_blast(10, TOTAL, 9))
+    # the two text-only rasters, re-authored native (DIY wording, all ≥10pt)
+    bill = add_ops_slide(prs, layout, R.slide_bill(8, TOTAL, 7))
+    team = add_ops_slide(prs, layout, R.slide_team(14, TOTAL, 13))
 
     sld_lst = prs.slides._sldIdLst
     ids = list(sld_lst)
     keep = {i: ids[i] for i in range(17)}
-    matrix, cost, resil, sec, own, debug, blast_id = ids[17:]
+    (matrix, cost, resil, sec, own, debug,
+     blast_id, bill_id, team_id) = ids[17:]
 
     order = [keep[0], keep[1], keep[2], keep[3], keep[4],   # 1-5
              matrix,                                        # 6
-             cost, keep[6],                                 # 7, 8 (bill pic)
+             cost, bill_id,                                 # 7, 8 (native bill)
              resil, blast_id,                               # 9, 10 (native blast)
-             sec, own, debug,                               # 11-13
-             keep[13], keep[14], keep[15], keep[16]]        # 14-17
+             sec, own, debug,                                # 11-13
+             team_id, keep[14], keep[15], keep[16]]         # 14-17
 
-    for i in (5, 7, 8, 9, 10, 11, 12):                      # drop old block
+    for i in (5, 6, 7, 8, 9, 10, 11, 12, 13):               # drop old block
         prs.part.drop_rel(keep[i].rId)
         sld_lst.remove(keep[i])
 
@@ -251,9 +275,7 @@ def main():
     import aws_slides as A
     emit_pptx.render(final[4], [('text', 11.30, 7.05, 1.50, 0.35,
                                  f'5 / {TOTAL}', 10, A.GREY, False, 'r', 'm')])
-    fix_chrome(final[7], 8, badge=7)        # cost.png
-    fix_chrome(final[13], 14, badge=13)     # team.png
-    fix_chrome(final[14], 15, badge=14)     # graph.png
+    rebuild_graph_slide(final[14], 15, 14)  # graph.png → cropped plot + text
     fix_chrome(final[15], 16, badge=15)     # lessons
 
     # house rule: nothing below 10pt anywhere in the deck

@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cost slides — five ways to draw it</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gloock&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #2A2226; --ink-2: #756A70; --ink-3: #A3959C;
+    --claret: #8C2F45;         /* engine A · DIY */
+    --olive: #6E8B3D;          /* engine B · AgentCore (chroma-corrected from the deck's #7C8464) */
+    --blush: #F6DEE2; --cream: #FFFDFB; --bg: #EFE7E1;
+    --rule: #E2D6D0; --grid: #EDE3DE;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: Outfit, system-ui, sans-serif; color: var(--ink); background: var(--bg);
+         margin: 0; padding: 40px 28px 80px; -webkit-font-smoothing: antialiased; }
+  .page { max-width: 1180px; margin: 0 auto; }
+  h1 { font-family: Gloock, serif; font-weight: 400; font-size: 42px; line-height: 1.1; margin: 0 0 10px; }
+  .sub { font-size: 17px; color: var(--ink-2); line-height: 1.6; max-width: 860px; margin: 0 0 8px; }
+  .sub b { color: var(--ink); font-weight: 500; }
+  .palnote { font-size: 13.5px; color: var(--ink-3); margin: 0 0 34px; }
+  code { font-family: ui-monospace, SFMono-Regular, monospace; font-size: .88em; color: var(--claret); }
+
+  .opt { background: var(--cream); border: 1px solid var(--rule); border-radius: 14px;
+         padding: 26px 28px 22px; margin-bottom: 26px; }
+  .opt > header { display: flex; align-items: baseline; gap: 14px; margin-bottom: 4px; }
+  .num { font-family: Gloock, serif; font-size: 26px; color: var(--claret); line-height: 1; }
+  .opt h2 { font-family: Gloock, serif; font-weight: 400; font-size: 25px; margin: 0; line-height: 1.15; }
+  .form { font-size: 12px; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3);
+          margin-left: auto; white-space: nowrap; }
+  .says { font-size: 15.5px; color: var(--ink-2); line-height: 1.55; margin: 6px 0 18px; max-width: 940px; }
+  .risk { font-size: 14px; color: var(--ink-3); line-height: 1.5; margin: 14px 0 0;
+          padding-top: 12px; border-top: 1px solid var(--rule); max-width: 940px; }
+  .risk b { color: var(--ink-2); font-weight: 500; }
+
+  .legend { display: flex; gap: 20px; align-items: center; margin: 0 0 10px; font-size: 14px; color: var(--ink-2); }
+  .legend i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 7px;
+              vertical-align: -1px; }
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .ax { font-size: 12px; fill: var(--ink-3); }
+  .axt { font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; fill: var(--ink-3); }
+  .val { font-size: 13px; fill: var(--ink); font-weight: 500; }
+  .val-s { font-size: 12px; fill: var(--ink-2); }
+  .anno { font-size: 12.5px; fill: var(--ink-2); }
+  .hit { cursor: crosshair; }
+
+  /* option 3 facets */
+  .facets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .facet h3 { font-size: 13px; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3);
+              margin: 0 0 12px; font-weight: 500; }
+
+  /* option 5 */
+  .hero { font-family: Gloock, serif; font-size: 68px; line-height: 1; color: var(--claret); }
+  .hero small { font-family: Outfit, sans-serif; font-size: 17px; color: var(--ink-2); display: block;
+                margin-top: 8px; font-weight: 400; }
+  .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 22px 0 4px; }
+  .kpi { border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; background: var(--bg); }
+  .kpi .k { font-size: 12px; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); }
+  /* Values wear ink; the swatch beside them carries engine identity. */
+  .kpi .a, .kpi .b { font-family: Gloock, serif; font-size: 27px; color: var(--ink);
+                     line-height: 1.1; display: flex; align-items: center; gap: 9px; }
+  .kpi .a { margin-top: 10px; }
+  .kpi .a i, .kpi .b i { width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto; }
+  .kpi .a i { background: var(--claret); } .kpi .b i { background: var(--olive); }
+  .kpi .a em, .kpi .b em { font-family: Outfit, sans-serif; font-style: normal; font-size: 13px;
+                           color: var(--ink-3); margin-left: 2px; }
+  .kpi .s { font-size: 13.5px; color: var(--ink-2); margin-top: 10px; }
+  table { border-collapse: collapse; width: 100%; margin-top: 20px; font-size: 14.5px; }
+  th { text-align: left; font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase;
+       color: var(--ink-3); font-weight: 500; padding: 0 12px 8px 0; border-bottom: 1px solid var(--rule); }
+  td { padding: 9px 12px 9px 0; border-bottom: 1px solid var(--grid); color: var(--ink-2); }
+  td.n { font-family: ui-monospace, monospace; font-size: 13.5px; color: var(--ink); text-align: right; }
+  td .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; }
+  tr.tot td { font-weight: 600; color: var(--ink); border-bottom: 2px solid var(--ink); }
+
+  .tip { position: fixed; pointer-events: none; opacity: 0; transition: opacity .1s;
+         background: var(--ink); color: var(--cream); font-size: 13px; padding: 7px 10px;
+         border-radius: 7px; z-index: 20; white-space: nowrap; }
+  .tip b { font-weight: 600; }
+  footer { font-size: 13.5px; color: var(--ink-3); margin-top: 30px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>Cost — five ways to draw it</h1>
+<p class="sub">Same model both slides use (<code>scripts/cost-model.mjs</code>): engine&nbsp;A is
+  <b>$18.02 fixed + $1.386/user</b>, engine&nbsp;B is <b>$0.0006 fixed + $0.1029/user</b>. Fargate steps
+  to 4 tasks at 100k users and 31 at 1M. Ratio runs <b>187.5×</b> at one user down to <b>13.5×</b> at scale.
+  The reply call to Bedrock is identical on both sides and excluded from both.</p>
+<p class="palnote">Palette: claret <code>#8C2F45</code> · olive <code>#6E8B3D</code> — six checks pass
+  (CVD ΔE 15.4 deutan, 25.2 normal). The deck's <code>#7C8464</code> failed the chroma floor: it reads
+  gray as a chart fill.</p>
+
+<!-- ══════════ 1 ══════════ -->
+<section class="opt">
+  <header><span class="num">1</span><h2>Cost vs users, log–log</h2><span class="form">2-series line · log/log</span></header>
+  <p class="says">The only form that carries seven orders of magnitude honestly. Two regimes are
+    annotated: below ~13 users A's $18 floor <em>is</em> the bill; above it the lines run parallel and
+    the ratio pins at 13.5×.</p>
+  <div class="legend">
+    <span><i style="background:var(--claret)"></i>Engine A · DIY</span>
+    <span><i style="background:var(--olive)"></i>Engine B · AgentCore</span>
+  </div>
+  <svg id="c1" viewBox="0 0 1080 420" role="img"
+       aria-label="Monthly cost against user count, both axes logarithmic. Engine A runs from $19.41 at one user to $1.39M at a million; engine B from $0.10 to $103k."></svg>
+  <p class="risk"><b>Risk:</b> log axes invite misreading — a constant 13.5× gap looks like a shrinking
+    one. Needs the "each gridline is 10×" note kept visible.</p>
+</section>
+
+<!-- ══════════ 2 ══════════ -->
+<section class="opt">
+  <header><span class="num">2</span><h2>Cost <em>per user</em> — the floor vs. the meter, literally</h2><span class="form">2-series line · asymptote</span></header>
+  <p class="says">Your title's two words, drawn. A's per-user cost falls from $19.41 to a
+    <b>$1.386 asymptote</b> as the floor amortises; B is flat at <b>$0.1029</b> from the first user
+    because it has no floor. The gap stops closing at 13.5×.</p>
+  <div class="legend">
+    <span><i style="background:var(--claret)"></i>Engine A · DIY</span>
+    <span><i style="background:var(--olive)"></i>Engine B · AgentCore</span>
+  </div>
+  <svg id="c2" viewBox="0 0 1080 400" role="img"
+       aria-label="Cost per user per month against user count. Engine A falls from $19.41 toward a $1.386 asymptote; engine B is flat at $0.1029."></svg>
+  <p class="risk"><b>Risk:</b> it's a derived metric, and it hides absolute money — the $1.28M/month
+    at a million users doesn't appear. Pairs best with one stat tile carrying the total.</p>
+</section>
+
+<!-- ══════════ 3 ══════════ -->
+<section class="opt">
+  <header><span class="num">3</span><h2>Fixed vs variable, in real dollars</h2><span class="form">stacked bar · 3 facets</span></header>
+  <p class="says">Absolute money, no normalising. The floor is <b>93% of A's bill at one user</b> and
+    <b>0.04% at a million</b> — same two bars, three scales, and each facet says its own multiple.</p>
+  <div class="legend">
+    <span><i style="background:var(--claret)"></i>Fixed (Fargate / Gateway)</span>
+    <span><i style="background:var(--blush);border:1px solid var(--claret)"></i>Per-user (metered)</span>
+  </div>
+  <div class="facets" id="c3"></div>
+  <p class="risk"><b>Risk:</b> three independent x-scales in one row — powerful but the single most
+    common misread on a slide. Each facet must print its own total, as here.</p>
+</section>
+
+<!-- ══════════ 4 ══════════ -->
+<section class="opt">
+  <header><span class="num">4</span><h2>One dumbbell replacing both ledgers</h2><span class="form">dumbbell · log $</span></header>
+  <p class="says">Slide 7's two disconnected lists become one comparison at one user/month. Fargate is
+    the whole argument; the index/storage line is <b>identical on both sides</b> at $0.0006, which two
+    separate tables can never show.</p>
+  <div class="legend">
+    <span><i style="background:var(--claret)"></i>Engine A · DIY</span>
+    <span><i style="background:var(--olive)"></i>Engine B · AgentCore</span>
+  </div>
+  <svg id="c4" viewBox="0 0 1080 300" role="img"
+       aria-label="Dumbbell chart comparing three cost components per engine on a log dollar axis."></svg>
+  <p class="risk"><b>Risk:</b> the components aren't 1:1 — pairing Fargate with Runtime is a judgement
+    call, so the row labels must name the <em>function</em>, not the service. Also: B wins all three
+    rows monthly while losing on unit price (Memory ~124×/turn dearer) — that needs saying aloud.</p>
+</section>
+
+<!-- ══════════ 5 ══════════ -->
+<section class="opt">
+  <header><span class="num">5</span><h2>No chart — hero, KPI row, table</h2><span class="form">stat tiles + table</span></header>
+  <p class="says">Six headline numbers is a KPI row, not a chart. This collapses slides 6 and 7 into
+    one, with zero chance of a misread — and the itemised bill becomes a real table with the
+    fixed/metered split as columns.</p>
+  <div class="hero">13.5×<small>cheaper at scale — and <b style="color:var(--claret)">187.5×</b> at one user, where only B has no floor</small></div>
+  <div class="kpis">
+    <div class="kpi"><div class="k">1 user</div>
+      <div class="a"><i></i>$19.41<em>DIY</em></div>
+      <div class="b"><i></i>$0.10<em>AgentCore</em></div>
+      <div class="s">saves $19.30 / mo · 187.4×</div></div>
+    <div class="kpi"><div class="k">10,000 users</div>
+      <div class="a"><i></i>$13,878<em>DIY</em></div>
+      <div class="b"><i></i>$1,029<em>AgentCore</em></div>
+      <div class="s">saves $12,849 / mo · 13.5×</div></div>
+    <div class="kpi"><div class="k">1,000,000 users</div>
+      <div class="a"><i></i>$1.387 M<em>DIY</em></div>
+      <div class="b"><i></i>$102,925<em>AgentCore</em></div>
+      <div class="s">saves $1.284 M / mo · $15.4 M / yr</div></div>
+  </div>
+  <table>
+    <thead><tr><th>Line item</th><th>Engine</th><th style="text-align:right">Fixed</th><th style="text-align:right">Per user</th><th style="text-align:right">At 1 user</th></tr></thead>
+    <tbody id="c5"></tbody>
+  </table>
+  <p class="risk"><b>Risk:</b> least visual punch of the five — it reads as a finance slide, not a
+    story. Strongest if the narrative punch lands on the next slide (blast radius) instead.</p>
+</section>
+
+<footer>Every figure regenerated from <code>scripts/cost-model.mjs</code>. Note the current slides say
+  <b>18× / 189×</b>; the model says <b>13.5× / 187.5×</b> — one of the two is stale and should be
+  reconciled before this is redrawn.</footer>
+</div>
+
+<div class="tip" id="tip"></div>
+
+<script>
+const A_FIX = 18.02, A_VAR = 1.386, B_FIX = 0.0006, B_VAR = 0.1029;
+const CLARET = '#8C2F45', OLIVE = '#6E8B3D', INK3 = '#A3959C', GRID = '#EDE3DE', CREAM = '#FFFDFB';
+
+// Computed from the same formula scripts/cost-model.mjs uses, so ratios are exact
+// rather than derived from rounded display values (which gave 194× instead of 187×).
+const PEAK_PER_USER = 0.015167;                    // peak concurrent sessions per user
+const tasksAt = u => Math.max(1, Math.ceil(u * PEAK_PER_USER / 500));
+const costA = u => A_FIX * tasksAt(u) + A_VAR * u;
+const costB = u => B_FIX + B_VAR * u;
+const ROWS = [1, 10, 100, 1000, 10000, 100000, 1000000].map(u => (
+  { users: u, tasks: tasksAt(u), a: costA(u), b: costB(u) }
+));
+
+const tip = document.getElementById('tip');
+function showTip(e, html) { tip.innerHTML = html; tip.style.opacity = 1;
+  tip.style.left = (e.clientX + 14) + 'px'; tip.style.top = (e.clientY - 10) + 'px'; }
+function hideTip() { tip.style.opacity = 0; }
+
+const money = v => v >= 1e6 ? '$' + (v / 1e6).toFixed(3) + ' M'
+  : v >= 1000 ? '$' + Math.round(v).toLocaleString()
+  : v >= 0.01 ? '$' + v.toFixed(2)
+  : '$' + v.toFixed(4);
+// Decade ticks read as round money, not as $1.000 M / $0.1.
+const axMoney = v => v >= 1e6 ? '$' + (v / 1e6) + 'M' : v >= 1000 ? '$' + (v / 1000) + 'k'
+  : v >= 1 ? '$' + v : '$' + v.toFixed(2);
+const users = n => n >= 1e6 ? (n / 1e6) + 'M' : n >= 1000 ? (n / 1000) + 'k' : String(n);
+
+function el(tag, attrs, parent) {
+  const n = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(n);
+  return n;
+}
+function txt(parent, x, y, s, cls, anchor) {
+  const t = el('text', { x, y, class: cls || 'ax' }, parent);
+  if (anchor) t.setAttribute('text-anchor', anchor);
+  t.textContent = s; return t;
+}
+
+/* ── 1 · log–log lines ─────────────────────────────────────── */
+(function () {
+  const s = document.getElementById('c1'), W = 1080, H = 420;
+  const L = 74, R = 148, T = 26, B = 56;
+  const px = u => L + (Math.log10(u) / 6) * (W - L - R);
+  const yLo = -1.3, yHi = 6.3;                     // $0.05 → $2M
+  const py = d => T + (1 - (Math.log10(d) - yLo) / (yHi - yLo)) * (H - T - B);
+
+  for (let e = -1; e <= 6; e++) {                  // horizontal decades
+    const y = py(Math.pow(10, e));
+    el('line', { x1: L, x2: W - R, y1: y, y2: y, stroke: GRID, 'stroke-width': 1 }, s);
+    txt(s, L - 12, y + 4, axMoney(Math.pow(10, e)), 'ax', 'end');
+  }
+  for (let e = 0; e <= 6; e++) {                   // user ticks
+    const x = px(Math.pow(10, e));
+    el('line', { x1: x, x2: x, y1: T, y2: H - B, stroke: GRID, 'stroke-width': 1 }, s);
+    txt(s, x, H - B + 22, users(Math.pow(10, e)), 'ax', 'middle');
+  }
+  txt(s, L, H - B + 44, 'USERS  →  each gridline is 10×', 'axt');
+  txt(s, L - 12, T - 10, '$ / MONTH', 'axt', 'end');
+
+  // the floor-dominated zone: users where fixed > half the bill (n < ~13)
+  el('rect', { x: L, y: T, width: px(13) - L, height: H - T - B, fill: '#8C2F45', opacity: .055 }, s);
+  txt(s, px(13) + 10, py(19.41) - 16, "← A's $18 floor is most of the bill here", 'anno');
+
+  [['a', CLARET, 'Engine A · DIY'], ['b', OLIVE, 'Engine B · AgentCore']].forEach(([k, c, name]) => {
+    const d = ROWS.map(r => `${px(r.users)},${py(r[k])}`).join(' L ');
+    el('path', { d: 'M ' + d, fill: 'none', stroke: c, 'stroke-width': 2.5,
+                 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, s);
+    ROWS.forEach(r => {
+      const dot = el('circle', { cx: px(r.users), cy: py(r[k]), r: 5, fill: c,
+                                 stroke: CREAM, 'stroke-width': 2, class: 'hit' }, s);
+      dot.addEventListener('mousemove', e => showTip(e,
+        `<b>${name}</b><br>${users(r.users)} users · ${money(r[k])}/mo`));
+      dot.addEventListener('mouseleave', hideTip);
+    });
+    const last = ROWS[ROWS.length - 1];
+    el('circle', { cx: W - R + 14, cy: py(last[k]) - 5, r: 4.5, fill: c }, s);
+    txt(s, W - R + 24, py(last[k]) - 1, money(last[k]), 'val');
+    txt(s, W - R + 24, py(last[k]) + 15, name.replace('Engine ', '').replace(' · ', ' '), 'val-s');
+  });
+
+  // ratio callouts at the two ends
+  const r0 = ROWS[0], rN = ROWS[ROWS.length - 1];
+  el('line', { x1: px(1) , x2: px(1), y1: py(r0.b), y2: py(r0.a), stroke: INK3,
+               'stroke-width': 1, 'stroke-dasharray': '3 3' }, s);
+  txt(s, px(1) + 10, (py(r0.a) + py(r0.b)) / 2 + 4, '187.5×', 'val');
+  el('line', { x1: px(1e6), x2: px(1e6), y1: py(rN.b), y2: py(rN.a), stroke: INK3,
+               'stroke-width': 1, 'stroke-dasharray': '3 3' }, s);
+  txt(s, px(1e6) - 10, (py(rN.a) + py(rN.b)) / 2 + 4, '13.5×', 'val', 'end');
+})();
+
+/* ── 2 · per-user cost, with asymptote ─────────────────────── */
+(function () {
+  const s = document.getElementById('c2'), W = 1080, H = 400;
+  const L = 74, R = 168, T = 28, B = 56;
+  const px = u => L + (Math.log10(u) / 6) * (W - L - R);
+  const yLo = Math.log10(0.06), yHi = Math.log10(40);
+  const py = d => T + (1 - (Math.log10(d) - yLo) / (yHi - yLo)) * (H - T - B);
+
+  [0.1, 0.3, 1, 3, 10, 30].forEach(v => {
+    const y = py(v);
+    el('line', { x1: L, x2: W - R, y1: y, y2: y, stroke: GRID, 'stroke-width': 1 }, s);
+    txt(s, L - 12, y + 4, '$' + (v < 1 ? v.toFixed(2) : v.toFixed(0)), 'ax', 'end');
+  });
+  for (let e = 0; e <= 6; e++) {
+    const x = px(Math.pow(10, e));
+    el('line', { x1: x, x2: x, y1: T, y2: H - B, stroke: GRID, 'stroke-width': 1 }, s);
+    txt(s, x, H - B + 22, users(Math.pow(10, e)), 'ax', 'middle');
+  }
+  txt(s, L, H - B + 44, 'USERS  →', 'axt');
+  txt(s, 0, T - 10, '$ / USER / MONTH', 'axt');   // anchored start: 'end' clipped it at x=0
+
+  // asymptote guides
+  el('line', { x1: L, x2: W - R, y1: py(A_VAR), y2: py(A_VAR), stroke: CLARET,
+               'stroke-width': 1.5, 'stroke-dasharray': '5 4', opacity: .5 }, s);
+  txt(s, W - R + 12, py(A_VAR) + 4, '$1.386 floor melts to this', 'val-s');
+
+  const pts = [];
+  for (let i = 0; i <= 120; i++) {
+    const u = Math.pow(10, (i / 120) * 6);
+    const tasks = u > 400000 ? Math.ceil(u / 32000) : u > 40000 ? 4 : 1;   // Fargate steps
+    pts.push([px(u), py((A_FIX * tasks) / u + A_VAR)]);
+  }
+  el('path', { d: 'M ' + pts.map(p => p.join(',')).join(' L '), fill: 'none',
+               stroke: CLARET, 'stroke-width': 2.5, 'stroke-linecap': 'round' }, s);
+  el('line', { x1: px(1), x2: px(1e6), y1: py(B_VAR + B_FIX), y2: py(B_VAR + B_FIX),
+               stroke: OLIVE, 'stroke-width': 2.5, 'stroke-linecap': 'round' }, s);
+
+  ROWS.forEach(r => {
+    [['a', CLARET, 'Engine A · DIY'], ['b', OLIVE, 'Engine B · AgentCore']].forEach(([k, c, name]) => {
+      const v = r[k] / r.users;
+      const dot = el('circle', { cx: px(r.users), cy: py(v), r: 5, fill: c, stroke: CREAM,
+                                 'stroke-width': 2, class: 'hit' }, s);
+      dot.addEventListener('mousemove', e => showTip(e,
+        `<b>${name}</b><br>${users(r.users)} users · $${v.toFixed(4)} per user`));
+      dot.addEventListener('mouseleave', hideTip);
+    });
+  });
+
+  el('circle', { cx: px(1) + 0, cy: py(19.41), r: 5, fill: CLARET, stroke: CREAM, 'stroke-width': 2 }, s);
+  txt(s, px(1) + 14, py(19.41) - 8, '$19.41 at one user', 'val');
+  txt(s, W - R + 12, py(B_VAR) + 4, '$0.1029 — flat from user one', 'val');
+  el('circle', { cx: W - R + 4, cy: py(B_VAR), r: 4.5, fill: OLIVE }, s);
+  txt(s, W - R + 12, py(B_VAR) + 21, 'no floor to amortise', 'val-s');
+  txt(s, px(3000), py(2.6), 'gap stops closing at 13.5×', 'anno');
+})();
+
+/* ── 3 · fixed vs variable, three facets ───────────────────── */
+(function () {
+  const host = document.getElementById('c3');
+  [ROWS[0], ROWS[4], ROWS[6]].forEach(r => {
+    const aFix = A_FIX * r.tasks, aVar = r.a - aFix;
+    const share = (aFix / r.a * 100);
+    const d = document.createElement('div');
+    d.className = 'facet';
+    d.innerHTML = `<h3>${users(r.users)} user${r.users > 1 ? 's' : ''}</h3>`;
+    const W = 330, H = 186, L = 44, R = 4, T = 26, rowH = 30, gap = 40;
+    const s = el('svg', { viewBox: `0 0 ${W} ${H}` });
+    const max = r.a, sx = v => (v / max) * (W - L - R);
+    [['DIY', r.a, aFix, aVar, CLARET, '#F6DEE2'],
+     ['AGC', r.b, B_FIX, r.b - B_FIX, OLIVE, '#E8EFD9']].forEach(([lab, tot, fx, vr, c, light], i) => {
+      const y = T + i * (rowH + gap);
+      txt(s, 0, y + rowH / 2 + 4, lab, 'ax');
+      const wF = Math.max(sx(fx), 2);
+      const wV = Math.max(sx(vr), 2);
+      el('rect', { x: L, y, width: wF, height: rowH, fill: c, rx: 3 }, s);
+      // 2px surface gap between the two segments
+      el('rect', { x: L + wF + 2, y, width: Math.max(wV - 2, 1), height: rowH,
+                   fill: light, stroke: c, 'stroke-width': 1, rx: 3 }, s);
+      // Total and the fixed share ride together ABOVE the bar — placing the share to
+      // the right of a full-width bar collided with the next facet.
+      const pct = fx / tot * 100;
+      const share = pct >= 1 ? `${pct.toFixed(0)}% fixed`
+        : pct >= 0.1 ? `${pct.toFixed(1)}% fixed` : '<0.1% fixed';
+      txt(s, L, y - 7, money(tot), 'val');
+      txt(s, L + 72, y - 7, '· ' + share, 'val-s');
+    });
+    txt(s, 0, H - 8, `${(r.a / r.b).toFixed(1)}× · saves ${money(r.a - r.b)}/mo`, 'anno');
+    d.appendChild(s);
+    host.appendChild(d);
+  });
+})();
+
+/* ── 4 · dumbbell ──────────────────────────────────────────── */
+(function () {
+  const s = document.getElementById('c4'), W = 1080, H = 252;
+  const L = 250, R = 130, T = 40, B = 50;
+  const lo = Math.log10(0.0004), hi = Math.log10(40);
+  const px = v => L + ((Math.log10(v) - lo) / (hi - lo)) * (W - L - R);
+
+  const items = [
+    { fn: 'Compute', a: ['AWS Fargate', 18.02], b: ['AgentCore Runtime', 0.0047] },
+    { fn: 'Memory / extraction', a: ['2nd Bedrock call', 1.385], b: ['AgentCore Memory', 0.098] },
+    { fn: 'Index / storage', a: ['Amazon DynamoDB', 0.0006], b: ['AgentCore Gateway', 0.0006] },
+  ];
+  [0.001, 0.01, 0.1, 1, 10].forEach(v => {
+    const x = px(v);
+    el('line', { x1: x, x2: x, y1: T - 14, y2: H - B, stroke: GRID, 'stroke-width': 1 }, s);
+    txt(s, x, H - B + 20, '$' + v, 'ax', 'middle');
+  });
+  txt(s, L, H - B + 42, '$ / MONTH AT ONE USER  ·  each gridline is 10×', 'axt');
+
+  items.forEach((it, i) => {
+    const y = T + i * 62;
+    txt(s, 0, y + 5, it.fn, 'val');
+    txt(s, 0, y + 22, `${it.a[0]} → ${it.b[0]}`, 'val-s');
+    const xa = px(it.a[1]), xb = px(it.b[1]);
+    if (Math.abs(xa - xb) > 3) {
+      el('line', { x1: xb, x2: xa, y1: y, y2: y, stroke: INK3, 'stroke-width': 2,
+                   'stroke-linecap': 'round', opacity: .5 }, s);
+      txt(s, (xa + xb) / 2, y - 12, `${(it.a[1] / it.b[1]).toFixed(0)}× cheaper`, 'anno', 'middle');
+    } else {
+      txt(s, xa + 18, y - 11, 'identical — $0.0006 both sides', 'anno');
+    }
+    if (Math.abs(xa - xb) <= 3) {
+      // Identical values: a split marker, so "both sides" is visible rather than one
+      // engine's dot silently painting over the other's.
+      el('path', { d: `M ${xa} ${y - 7} A 7 7 0 0 0 ${xa} ${y + 7} Z`, fill: OLIVE,
+                   stroke: CREAM, 'stroke-width': 2 }, s);
+      el('path', { d: `M ${xa} ${y - 7} A 7 7 0 0 1 ${xa} ${y + 7} Z`, fill: CLARET,
+                   stroke: CREAM, 'stroke-width': 2 }, s);
+    } else {
+      [[xb, OLIVE, 'Engine B · AgentCore', it.b], [xa, CLARET, 'Engine A · DIY', it.a]]
+        .forEach(([x, c, name, pair]) => {
+          const dot = el('circle', { cx: x, cy: y, r: 7, fill: c, stroke: CREAM,
+                                     'stroke-width': 2, class: 'hit' }, s);
+          dot.addEventListener('mousemove', e => showTip(e,
+            `<b>${name}</b><br>${pair[0]} · ${money(pair[1])}/mo`));
+          dot.addEventListener('mouseleave', hideTip);
+        });
+    }
+    txt(s, W - R + 10, y + 5, money(it.a[1]) + ' → ' + money(it.b[1]), 'val-s');
+  });
+})();
+
+/* ── 5 · table ─────────────────────────────────────────────── */
+(function () {
+  const rows = [
+    ['AWS Fargate', 'A', '$18.02', '—', '$18.02', CLARET],
+    ['2nd Bedrock call · extraction', 'A', '—', '$1.386', '$1.385', CLARET],
+    ['Amazon DynamoDB', 'A', '—', '$0.0006', '$0.0006', CLARET],
+    ['AgentCore Gateway', 'B', '$0.0006', '—', '$0.0006', OLIVE],
+    ['AgentCore Memory', 'B', '—', '$0.098', '$0.098', OLIVE],
+    ['AgentCore Runtime', 'B', '—', '$0.0047', '$0.0047', OLIVE],
+  ];
+  const tb = document.getElementById('c5');
+  rows.forEach(([n, e, f, v, t, c]) => {
+    tb.insertAdjacentHTML('beforeend',
+      `<tr><td><span class="dot" style="background:${c}"></span>${n}</td>
+       <td>${e === 'A' ? 'A · DIY' : 'B · AgentCore'}</td>
+       <td class="n">${f}</td><td class="n">${v}</td><td class="n">${t}</td></tr>`);
+  });
+  tb.insertAdjacentHTML('beforeend',
+    `<tr class="tot"><td>Engine A total, one user</td><td>A · DIY</td>
+     <td class="n">$18.02</td><td class="n">$1.386</td><td class="n">$19.41</td></tr>
+     <tr class="tot"><td>Engine B total, one user</td><td>B · AgentCore</td>
+     <td class="n">$0.0006</td><td class="n">$0.1029</td><td class="n">$0.10</td></tr>`);
+})();
+</script>
+</body>
+</html>

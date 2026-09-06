@@ -1,9 +1,11 @@
-"""build_v7.py — assemble docs/Valentin-Presentation-v7.pptx from v6.
+"""build_v8.py — assemble docs/Valentin-Presentation-v8.pptx from v6.
 
-v7 pivots the comparison section from component-major (Compute → Memory →
+v7 pivoted the comparison section from component-major (Compute → Memory →
 Tool use → Observability) to lens-major (cost, resilience, security,
 ownership, debuggability — latency stays on the matrix), each lens slide
 carrying a fixed strip of AgentCore component chips that toggle per lens.
+v8 keeps that and charts the cost deep-dive instead of tabulating it
+(cost_chart.py), so the 1 / 10 / 1,000 / 1,000,000-user story is a picture.
 
 Kept from v6: the four front slides (with the slide-3 typos fixed), the
 hand-added two-engines architecture diagram, lessons and thanks. Dropped: the
@@ -15,7 +17,7 @@ the house rules (engine A is DIY, nothing below 10pt): the cost bill and the
 team tree are re-authored native in raster_slides.py, and the PR graph keeps
 only its plot, cropped and re-labelled by graph_crop.py.
 
-    python3 docs/slide-variants/build_v7.py
+    python3 docs/slide-variants/build_v8.py
 """
 import os
 import re
@@ -26,6 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pptx import Presentation
 
 import lens_slides as L
+import cost_chart as C
 import raster_slides as R
 import graph_crop as G
 import emit_pptx
@@ -33,7 +36,7 @@ import emit_pptx
 REPO = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 V6 = ('/Users/coralst/Desktop/screenshots/projects/valentin-romantic-agent/'
       '.claude/worktrees/deck-html-deepdive/docs/Valentin-Presentation-v6.pptx')
-OUT = os.path.join(REPO, 'docs', 'Valentin-Presentation-v7.pptx')
+OUT = os.path.join(REPO, 'docs', 'Valentin-Presentation-v8.pptx')
 TOTAL = 17
 
 # ── transcript, rebudgeted to 10:00 exactly ──────────────────────────────────
@@ -236,6 +239,8 @@ def main():
     PAGES = dict(cost=7, resil=9, security=11, ownership=12, debug=13)
     BADGES = dict(cost=6, resil=8, security=10, ownership=11, debug=12)
     new = [add_ops_slide(prs, layout, L.slide_matrix(6, TOTAL, 5))]
+    cost_slide = add_ops_slide(
+        prs, layout, C.slide_cost_graph(PAGES['cost'], TOTAL, BADGES['cost']))
     new += [add_ops_slide(prs, layout, ops)
             for ops in L.all_lens_slides(TOTAL, PAGES, BADGES)]
     blast = add_ops_slide(prs, layout, L.slide_blast(10, TOTAL, 9))

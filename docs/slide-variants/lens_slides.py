@@ -187,73 +187,6 @@ def slide_matrix(page, total, badge):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Cost — the deep-dive: fixed floor vs. usage meter at 1 / 10 / 1k / 1M users.
-# ─────────────────────────────────────────────────────────────────────────────
-# Engine A: $18.02/mo per Fargate task (one task per 40 concurrent sessions,
-# the deck's own capacity number) + $1.385/user/mo extraction calls.
-# Engine B: $0.0006/mo Gateway (the only fixed line) + $0.1027/user/mo
-# (compute $0.0047 + Memory $0.098). Identical Bedrock reply call excluded.
-
-COST_ROWS = [
-    ('1',         '$18.02', '$1.39',  '$19.41',  '$0.10',  '189×'),
-    ('10',        '$18.02', '$13.85', '$31.87',  '$1.03',  '31×'),
-    ('1,000',     '$450',   '$1,385', '$1,836',  '$103',   '18×'),
-    ('1,000,000', '$450K',  '$1.4M',  '$1.84M',  '$103K',  '18×'),
-]
-
-CCOLS = dict(users=(0.62, 1.55), a=(2.27, 5.05), b=(7.42, 3.10), gap=(10.62, 2.10))
-
-
-def slide_cost_scaling(page, total, badge):
-    ops = chrome(page, total, badge)
-    ops += heading(
-        'Cost — the floor vs. the meter',
-        'Fixed versus usage as users grow. Extraction and compute in; the '
-        'identical Bedrock reply call excluded from both.')
-    ops += chip_strip(TOGGLES['cost'])
-
-    hy, top, rh = 2.52, 2.94, 0.60
-    ops.append(('rect', 0.62, hy, 12.10, 0.40, NAVY, None, 0.06))
-    for k, lab, col in (('users', 'USERS', ORANGE),
-                        ('a', f'{A_LABEL}  —  FLOOR + USAGE = TOTAL', WHITE),
-                        ('b', f'{B_LABEL}', WHITE),
-                        ('gap', 'GAP', WHITE)):
-        cx, cw = CCOLS[k]
-        ops.append(('text', cx + 0.12, hy, cw - 0.24, 0.40, lab, 10, col, True, 'l', 'm'))
-
-    for r, (users, floor, usage, total_a, total_b, gap) in enumerate(COST_ROWS):
-        y = top + r * rh
-        if r % 2 == 0:
-            ops.append(('rect', 0.62, y, 12.10, rh, CARD, None, 0))
-        ops.append(('rect', 0.62, y + rh - 0.01, 12.10, 0.01, BORDER, None, 0))
-        cx, cw = CCOLS['users']
-        ops.append(('text', cx + 0.12, y, cw - 0.24, rh, users, 13, NAVY, True, 'l', 'm'))
-        cx, cw = CCOLS['a']
-        ops.append(('text', cx + 0.12, y, cw - 0.24, rh,
-                    [(f'{floor}', True, GREY), ('  floor  +  ', False, GREY),
-                     (f'{usage}', True, GREY), ('  usage   =   ', False, GREY),
-                     (total_a, True, NAVY)], 12, INK, False, 'l', 'm'))
-        cx, cw = CCOLS['b']
-        ops.append(('text', cx + 0.12, y, cw - 0.24, rh,
-                    [('no floor   =   ', False, GREY), (total_b, True, GREEN)],
-                    12, INK, False, 'l', 'm'))
-        cx, cw = CCOLS['gap']
-        ops.append(('text', cx + 0.12, y, cw - 0.24, rh, gap, 15, ORANGE, True, 'l', 'm'))
-
-    insight = ('The floor decides at one user; the meter decides at a million. '
-               'Engine A’s “fixed” cost is not even fixed — it steps up one task '
-               'per 40 concurrent sessions — and its $1.39/user extraction meter '
-               'never catches B’s $0.10. Engine B has no floor at any scale.')
-    ops.append(('text', 0.62, 5.44, 12.10, 0.60, insight, 11, GREY, False, 'l', 't'))
-
-    ops += verdict_band(
-        '18×', 'cheaper at scale — 189× at one user, where only B has no floor',
-        'AGENTCORE',
-        giveup='if Memory retrievals meter per record, not per call, this narrows — confirm before quoting')
-    return ops
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Resilience — the experiment, rebuilt native (replaces the off-template
 # dark raster): the same fault injected on each engine, 40 dots per side.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -319,10 +252,14 @@ def slide_blast(page, total, badge):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def all_lens_slides(total, pages, badges):
-    """pages/badges: dicts keyed by lens key."""
-    S = []
-    S.append(slide_cost_scaling(pages['cost'], total, badges['cost']))
+    """The four deep-dive lenses that share the two-column layout.
 
+    Cost is not here: its deep-dive is charted, not columned — see
+    cost_chart.slide_cost_graph. Latency deliberately has no slide at all.
+
+    pages/badges: dicts keyed by lens key.
+    """
+    S = []
     S.append(slide_lens(
         pages['resil'], total, badges['resil'],
         'Resilience — what one fault takes down',

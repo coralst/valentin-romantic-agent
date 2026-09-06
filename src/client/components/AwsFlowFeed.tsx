@@ -1,3 +1,4 @@
+import { useCallback, useState } from 'react';
 import { AWS_CATEGORY_COLORS, type AwsCategory } from '../utils/aws-diagram-layout';
 import { colors, typography } from '../design-system/tokens';
 
@@ -34,6 +35,13 @@ export interface FeedRow {
    * value someone can copy. On its own line so it never squeezes the detail column.
    */
   traceId?: string;
+  /**
+   * Wall-clock time the beat happened, already formatted — `14:07:22`.
+   *
+   * Absent for a scripted step, which happened at no time at all. The column is
+   * still reserved so the rows of a mixed list stay in one set of columns.
+   */
+  timeLabel?: string;
 }
 
 export interface AwsFlowFeedProps {
@@ -53,6 +61,15 @@ export interface AwsFlowFeedProps {
   onSelectGroup?: (group: FeedGroup) => void;
   /** The group being replayed, if any. Its steps stay expanded; the rest fold up. */
   selectedGroupId?: string | null;
+  /**
+   * Start with every group's steps showing instead of folded.
+   *
+   * Off by default: the feed is an index of actions first and a log second, and a
+   * turn is a dozen spans — forty rows of them pushed the actions a presenter has to
+   * point at off the bottom of the panel. Callers that render the feed as a plain
+   * log (and the tests that assert over rows) opt back in.
+   */
+  startExpanded?: boolean;
 }
 
 export interface FeedGroup {
@@ -106,6 +123,21 @@ export const REPLAY_COPY = {
   glyph: '↻',
 } as const;
 
+/**
+ * The fold affordance's words, in one place for the same reason as `REPLAY_COPY`.
+ *
+ * Chevrons rather than +/−: the control reveals a list underneath itself, which is
+ * a disclosure, and a `+` in a log reads as "add a row".
+ */
+export const FOLD_COPY = {
+  expand: 'Show steps',
+  collapse: 'Hide steps',
+  expandAll: 'Expand all',
+  collapseAll: 'Collapse all',
+  folded: '▸',
+  unfolded: '▾',
+} as const;
+
 const headingStyle: React.CSSProperties = {
   fontSize: 9,
   fontWeight: 700,
@@ -120,12 +152,38 @@ const headingStyle: React.CSSProperties = {
 
 const rowStyle: React.CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: '16px 70px 1fr 48px',
+  // The time is the last column, not the first: the eye scans this list for *what*
+  // happened, and a leading clock column would push the service name away from the
+  // coloured category chip that qualifies it.
+  gridTemplateColumns: '16px 66px 1fr 46px 52px',
   gap: 8,
   alignItems: 'center',
   padding: '5px 0',
   borderBottom: `1px solid ${colors.border}`,
   fontSize: 10.5,
+};
+
+/** Times are identifiers to line up, not prose — mono and tabular, like the trace id. */
+const timeStyle: React.CSSProperties = {
+  textAlign: 'right',
+  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+  fontSize: typography.px.micro,
+  color: '#A3959C',
+  fontVariantNumeric: 'tabular-nums',
+  whiteSpace: 'nowrap',
+};
+
+/** Bare glyph buttons: the panel is 260px wide and there is one per group. */
+const foldButtonStyle: React.CSSProperties = {
+  border: 'none',
+  background: 'transparent',
+  padding: '0 2px',
+  width: 14,
+  fontSize: 9,
+  lineHeight: 1,
+  color: '#A3959C',
+  cursor: 'pointer',
+  flexShrink: 0,
 };
 
 export function AwsFlowFeed({
@@ -135,10 +193,36 @@ export function AwsFlowFeed({
   emptyMessage,
   onSelectGroup,
   selectedGroupId = null,
+  startExpanded = false,
 }: AwsFlowFeedProps) {
   // Newest first: reversed here rather than at the call site so the caller can
   // keep its rows in the order the traffic actually happened.
   const groups = groupFeedRows(rows).reverse();
+
+  /*
+   * Only the groups whose fold a person has actually touched.
+   *
+   * An override map rather than a set of open ids, because "unset" has to stay
+   * distinguishable from "closed": groups arrive while the panel is open, and a set
+   * of open ids cannot tell a new group (fold it) from one the presenter closed
+   * (leave it closed) — nor honour `startExpanded` for arrivals.
+   */
+  const [foldOverrides, setFoldOverrides] = useState<Readonly<Record<string, boolean>>>({});
+
+  const toggleFold = useCallback((groupId: string, expanded: boolean) => {
+    setFoldOverrides((current) => ({ ...current, [groupId]: !expanded }));
+  }, []);
+
+  const setAllFolds = useCallback(
+    (expanded: boolean) => {
+      setFoldOverrides(Object.fromEntries(groups.map((group) => [group.id, expanded])));
+    },
+    [groups],
+  );
+
+  // Expand-all is offered when anything is folded, collapse-all when anything is
+  // open, so the one control always does something.
+  const someFolded = groups.some((group) => (foldOverrides[group.id] ?? startExpanded) === false);
 
   return (
     <div
@@ -157,7 +241,10 @@ export function AwsFlowFeed({
          * side instead of the entire log becoming useless. On a presentation screen
          * neither has to give anything up.
          */
-        minWidth: 260,
+        // Was 260 before the rows carried a clock column; the detail column is the
+        // one that gives way when the panel is squeezed, and at 260 it had nothing
+        // left to give.
+        minWidth: 300,
         display: 'flex',
         flexDirection: 'column',
         borderLeft: '1px solid #E5D9D2',
@@ -168,10 +255,46 @@ export function AwsFlowFeed({
     >
       <div style={headingStyle}>
         <span>{heading}</span>
-        <span>{summary}</span>
+        <span style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+          {groups.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setAllFolds(someFolded)}
+              data-testid="aws-feed-fold-all"
+              style={{
+                border: 'none',
+                background: 'transparent',
+                padding: 0,
+                font: 'inherit',
+                color: '#8C2F45',
+                cursor: 'pointer',
+              }}
+            >
+              {someFolded ? FOLD_COPY.expandAll : FOLD_COPY.collapseAll}
+            </button>
+          )}
+          <span>{summary}</span>
+        </span>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+      <div
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          minHeight: 0,
+          /*
+           * Room for the scrollbar, taken before it appears.
+           *
+           * The right-most things in this list are now a clock time and the replay
+           * glyph. On a platform with classic (space-taking) scrollbars they sat
+           * underneath one — invisible on macOS, where scrollbars are overlays, and
+           * clipped everywhere else. A reserved gutter costs 8px and does not move
+           * when the list starts scrolling.
+           */
+          scrollbarGutter: 'stable',
+          paddingRight: 8,
+        }}
+      >
         {groups.length === 0 && emptyMessage && (
           <div style={{ fontSize: 11, color: '#A3959C', lineHeight: 1.6, paddingTop: 4 }}>
             {emptyMessage}
@@ -184,7 +307,12 @@ export function AwsFlowFeed({
           // Picking one action folds the others down to their captions. The ask was
           // to choose an action and see *its* steps; leaving forty rows expanded
           // underneath the chosen one buries the thing that was chosen.
-          const isCollapsed = selectedGroupId !== null && !isSelected;
+          const defaultExpanded = selectedGroupId !== null ? isSelected : startExpanded;
+          const isExpanded = foldOverrides[group.id] ?? defaultExpanded;
+          const isCollapsed = !isExpanded;
+          // When the group is folded this is the only time it shows, so it is the
+          // group's newest beat — the one the presenter just talked about.
+          const groupTimeLabel = group.rows[group.rows.length - 1]?.timeLabel;
 
           const headerStyle: React.CSSProperties = {
             // In the drawer the feed is only ~460px wide, so the action becomes a
@@ -193,7 +321,12 @@ export function AwsFlowFeed({
             display: 'flex',
             alignItems: 'baseline',
             gap: 7,
-            width: '100%',
+            // `flex: 1` with `minWidth: 0`, not `width: 100%`: the header now shares a
+            // flex row with the fold chevron, and a 100%-wide header beside a 14px
+            // button overflows its container by exactly the button — which pushed the
+            // replay glyph and the time off the right edge of the panel.
+            flex: 1,
+            minWidth: 0,
             padding: '5px 0 4px 8px',
             borderLeft: `2px solid ${isSelected || isCurrent ? '#8C2F45' : '#E5D9D2'}`,
             background: isSelected ? 'rgba(242,212,216,0.35)' : 'transparent',
@@ -247,10 +380,19 @@ export function AwsFlowFeed({
               >
                 {group.rows.length}
               </span>
+              {/* When the group is folded, its steps' times are hidden with them. */}
+              {groupTimeLabel && (
+                <span
+                  data-testid="aws-feed-group-time"
+                  style={{ ...timeStyle, marginLeft: 'auto', flexShrink: 0 }}
+                >
+                  {groupTimeLabel}
+                </span>
+              )}
               {onSelectGroup && (
                 <span
                   style={{
-                    marginLeft: 'auto',
+                    marginLeft: groupTimeLabel ? undefined : 'auto',
                     fontSize: 9,
                     fontWeight: 700,
                     letterSpacing: '0.06em',
@@ -272,39 +414,59 @@ export function AwsFlowFeed({
               data-testid="aws-feed-group"
               data-group-id={group.id}
               data-selected={isSelected ? 'true' : 'false'}
+              data-expanded={isExpanded ? 'true' : 'false'}
             >
               {/*
-                A caption where there is nothing to replay to, a real control where
-                there is. Rendering the button unconditionally would put a dead
-                affordance on screen; rendering a clickable `div` would put one
-                outside the keyboard's reach.
+                Fold and replay are two controls, side by side rather than nested:
+                a button inside a button is invalid HTML, and the two answer different
+                questions — "what were the steps" and "do it again". The chevron sits
+                outside the header's own border so the caption keeps its left rule.
               */}
-              {onSelectGroup ? (
+              <div style={{ display: 'flex', alignItems: 'stretch', gap: 2 }}>
                 <button
                   type="button"
-                  onClick={() => onSelectGroup(group)}
-                  aria-pressed={isSelected}
-                  aria-label={`${REPLAY_COPY.action}: ${group.actor} ${group.action}`}
-                  data-testid="aws-feed-group-header"
-                  style={{
-                    ...headerStyle,
-                    // Strip the button back to the caption it replaces: the affordance
-                    // is the pointer and the replay glyph, not a chrome-coloured box.
-                    borderTop: 'none',
-                    borderRight: 'none',
-                    borderBottom: 'none',
-                    font: 'inherit',
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                  }}
+                  onClick={() => toggleFold(group.id, isExpanded)}
+                  aria-expanded={isExpanded}
+                  aria-label={`${isExpanded ? FOLD_COPY.collapse : FOLD_COPY.expand}: ${group.actor} ${group.action}`}
+                  data-testid="aws-feed-group-fold"
+                  style={foldButtonStyle}
                 >
-                  {headerContent}
+                  {isExpanded ? FOLD_COPY.unfolded : FOLD_COPY.folded}
                 </button>
-              ) : (
-                <div data-testid="aws-feed-group-header" style={headerStyle}>
-                  {headerContent}
-                </div>
-              )}
+
+                {/*
+                  A caption where there is nothing to replay to, a real control where
+                  there is. Rendering the button unconditionally would put a dead
+                  affordance on screen; rendering a clickable `div` would put one
+                  outside the keyboard's reach.
+                */}
+                {onSelectGroup ? (
+                  <button
+                    type="button"
+                    onClick={() => onSelectGroup(group)}
+                    aria-pressed={isSelected}
+                    aria-label={`${REPLAY_COPY.action}: ${group.actor} ${group.action}`}
+                    data-testid="aws-feed-group-header"
+                    style={{
+                      ...headerStyle,
+                      // Strip the button back to the caption it replaces: the affordance
+                      // is the pointer and the replay glyph, not a chrome-coloured box.
+                      borderTop: 'none',
+                      borderRight: 'none',
+                      borderBottom: 'none',
+                      font: 'inherit',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {headerContent}
+                  </button>
+                ) : (
+                  <div data-testid="aws-feed-group-header" style={headerStyle}>
+                    {headerContent}
+                  </div>
+                )}
+              </div>
 
               {!isCollapsed &&
                 [...group.rows].reverse().map((row) => (
@@ -341,6 +503,11 @@ export function AwsFlowFeed({
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
                           whiteSpace: 'nowrap',
+                          // A grid item's automatic minimum is its content, so `1fr`
+                          // could not actually shrink: the row stayed as wide as the
+                          // longest detail string and the clock column hung off the
+                          // panel's right edge. This is what makes the ellipsis work.
+                          minWidth: 0,
                         }}
                       >
                         <b style={{ color: '#2A2226', fontWeight: 600 }}>{row.operation}</b>{' '}
@@ -356,6 +523,9 @@ export function AwsFlowFeed({
                         }}
                       >
                         {row.durationLabel}
+                      </span>
+                      <span data-testid="aws-feed-row-time" style={timeStyle}>
+                        {row.timeLabel ?? ''}
                       </span>
                     </div>
                     {row.traceId && (

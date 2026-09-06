@@ -32,14 +32,18 @@ VALIGN = {'t': 'flex-start', 'm': 'center', 'b': 'flex-end'}
 def op_html(op):
     kind = op[0]
     if kind in ('rect', 'oval'):
+        lwpt, dash = 1, None
         if kind == 'rect':
-            _, x, y, w, h, fill, line, radius = op
+            _, x, y, w, h, fill, line, radius = op[:8]
+            if len(op) > 9:
+                lwpt, dash = op[8], op[9]
         else:
             _, x, y, w, h, fill, line = op
             radius = min(w, h) / 2
         st = [f'left:{x}in', f'top:{y}in', f'width:{w}in', f'height:{h}in']
         st.append(f'background:#{fill}' if fill else 'background:transparent')
-        st.append(f'border:1.25px solid #{line}' if line else '')
+        style = {'dash': 'dashed', 'dot': 'dotted', 'longdash': 'dashed'}.get(dash, 'solid')
+        st.append(f'border:{lwpt * 1.25}px {style} #{line}' if line else '')
         if radius:
             st.append(f'border-radius:{radius}in')
         return f'<div class="s" style="{";".join(s for s in st if s)}"></div>'
@@ -52,11 +56,20 @@ def op_html(op):
         return (f'<div class="t" style="{";".join(st)}">'
                 f'<div>{_runs_html(runs)}</div></div>')
     if kind in ('arrow', 'line'):
-        _, x1, y1, x2, y2, color, wpt = op
+        _, x1, y1, x2, y2, color, wpt = op[:7]
+        dash = op[7] if len(op) > 7 else None
         head = f'marker-end="url(#ah{color})"' if kind == 'arrow' else ''
+        # Patterns chosen to look like PowerPoint's 'dash' and 'sysDot' presets.
+        pat = {'dash': '5 4', 'dot': '1.5 2.5', 'longdash': '9 5'}.get(dash)
         return (f'<svg class="s" style="left:0;top:0;width:{W}in;height:{H}in">'
                 f'<line x1="{x1}in" y1="{y1}in" x2="{x2}in" y2="{y2}in" '
-                f'stroke="#{color}" stroke-width="{wpt}pt" {head}/></svg>')
+                f'stroke="#{color}" stroke-width="{wpt}pt" '
+                + (f'stroke-dasharray="{pat}" ' if pat else '')
+                + f'{head}/></svg>')
+    if kind == 'pic':
+        _, x, y, w, h, path, alt = op
+        return (f'<img class="s" src="{_html.escape(path)}" alt="{_html.escape(alt)}" '
+                f'style="left:{x}in;top:{y}in;width:{w}in;height:{h}in">')
     if kind == 'arc':
         _, x, y, w, h, start, swing, color, wpt, arrow = op
         import math

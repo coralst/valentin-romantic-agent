@@ -27,12 +27,27 @@ def _fill(shape, color):
         shape.fill.fore_color.rgb = RGBColor.from_string(color)
 
 
-def _stroke(shape, line):
+def _stroke(shape, line, wpt=1, dash=None):
     if line:
         shape.line.color.rgb = RGBColor.from_string(line)
-        shape.line.width = Pt(1)
+        shape.line.width = Pt(wpt)
+        _set_dash(shape.line, dash)
     else:
         shape.line.fill.background()
+
+
+# PowerPoint's own preset names. 'dash' still reads as a dash from the back of a
+# room; 'sysDot' is the tightest dotted pattern that survives a screen share.
+DASH = {'dash': 'dash', 'dot': 'sysDot', 'longdash': 'lgDash'}
+
+
+def _set_dash(line, dash):
+    if not dash:
+        return
+    ln = line._get_or_add_ln()
+    for old in ln.findall(qn('a:prstDash')):
+        ln.remove(old)
+    ln.append(ln.makeelement(qn('a:prstDash'), {'val': DASH[dash]}))
 
 
 def _add_tail_end(line):
@@ -66,7 +81,8 @@ def render(slide, ops):
     for op in ops:
         kind = op[0]
         if kind == 'rect':
-            _, x, y, w, h, fill, line, radius = op
+            _, x, y, w, h, fill, line, radius = op[:8]
+            lwpt, dash = (op[8], op[9]) if len(op) > 9 else (1, None)
             if radius:
                 sh = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(x),
                                             Inches(y), Inches(w), Inches(h))
@@ -75,7 +91,7 @@ def render(slide, ops):
                 sh = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(x), Inches(y),
                                             Inches(w), Inches(h))
             _fill(sh, fill)
-            _stroke(sh, line)
+            _stroke(sh, line, lwpt, dash)
             sh.shadow.inherit = False
         elif kind == 'oval':
             _, x, y, w, h, fill, line = op
@@ -89,13 +105,20 @@ def render(slide, ops):
             box = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
             _set_text(box, runs, size, color, bold, align, valign)
         elif kind in ('arrow', 'line'):
-            _, x1, y1, x2, y2, color, wpt = op
+            _, x1, y1, x2, y2, color, wpt = op[:7]
+            dash = op[7] if len(op) > 7 else None
             cx = slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, Inches(x1),
                                             Inches(y1), Inches(x2), Inches(y2))
             cx.line.color.rgb = RGBColor.from_string(color)
             cx.line.width = Pt(wpt)
+            _set_dash(cx.line, dash)
             if kind == 'arrow':
                 _add_tail_end(cx.line)
+        elif kind == 'pic':
+            _, x, y, w, h, path, alt = op
+            pic = slide.shapes.add_picture(path, Inches(x), Inches(y),
+                                           Inches(w), Inches(h))
+            pic._element.nvPicPr.cNvPr.set('descr', alt)
         elif kind == 'arc':
             _, x, y, w, h, start, swing, color, wpt, arrow = op
             add_arc(slide, x, y, w, h, start, start + swing, color, wpt, arrow)

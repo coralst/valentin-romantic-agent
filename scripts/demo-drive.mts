@@ -582,9 +582,21 @@ const PLAN_TURNS: Turn[] = [
      * actually offered. The fallback is unreachable in a passing take — the shortlist
      * turn's own `replyMust` requires a clock time — and is here so the type holds.
      */
+    /*
+     * Asks for the card, not just for the booking.
+     *
+     * "Go ahead and book the first one at 20:00" produced the sentence
+     * `propose_reservation`'s description tells the model to say *while calling it* —
+     * "I've got a table … it's waiting for you to confirm" — with no call, no card and
+     * nothing to confirm. Asking in the shape the tool actually has ("put it in front
+     * of me so I can confirm it myself") is what reaches the write path; and if it
+     * ever stops working, `confirmProposal` now fails the take on exactly that
+     * sentence rather than filming a table nobody is holding.
+     */
     say: (previous) =>
-      'Yes — go ahead and book the first one on that list, at ' +
-      `${previous.match(/\b([01]?\d|2[0-3]):[0-5]\d\b/)?.[0] ?? '20:00'}.`,
+      'Yes — book the first one on that list, at ' +
+      `${previous.match(/\b([01]?\d|2[0-3]):[0-5]\d\b/)?.[0] ?? '20:00'}. ` +
+      'Put it in front of me so I can confirm it myself.',
     beat: 'Now it is a write, so it comes back as a proposal instead of an answer',
     confirms: true,
     replyMust: [/reserv|propos|confirm|book|table/i],
@@ -1059,7 +1071,7 @@ const showing = (target: Locator) => target.isVisible().catch(() => false);
  * which is why this is filmable at all: no restaurant is being committed to for the
  * sake of a demo.
  */
-async function confirmProposal(page: Page, what: string): Promise<void> {
+async function confirmProposal(page: Page, what: string, reply: string): Promise<void> {
   /*
    * The card's own testid is `proposal-<uuid>`, but two of its *children* are
    * `proposal-countdown` and `proposal-resolved` — so a bare prefix match plus
@@ -1080,6 +1092,28 @@ async function confirmProposal(page: Page, what: string): Promise<void> {
     .catch(() => false);
 
   if (!appeared) {
+    /*
+     * A claimed proposal with no card is the one outcome that must not be filmed.
+     *
+     * Observed: "Done — I've got a table for two at Yaffo Tel Aviv on Thursday the
+     * 24th at 20:00. It's waiting for you to confirm." — with no card, and no tool
+     * span for that turn in the feed. The sentence is almost verbatim from
+     * `propose_reservation`'s own description, which instructs the model to say it
+     * *when calling*; saying it instead of calling is a table nobody is holding, and
+     * downstream it is a mail that names a venue no reservation exists for.
+     *
+     * A reply that simply asks another question is a different thing entirely and
+     * still only a log line: he is allowed not to propose. What he is not allowed to
+     * do is announce that he has.
+     */
+    if (/waiting (for|on) (you|your)|waiting to be confirmed|got (you )?a table/i.test(reply)) {
+      throw new Error(
+        `TAKE FAILED — the reply announces a ${what} that no card exists for.\n` +
+          '  Nothing was proposed, so nothing can be confirmed, and the sentence on ' +
+          'screen is untrue.\n' +
+          `  reply: ${reply.slice(0, 400)}`,
+      );
+    }
     console.log(`  (no proposal card for ${what} — he answered without proposing)`);
     return;
   }
@@ -1151,14 +1185,19 @@ async function playTurns(
     assertReply(spoken, reply);
     previousReply = reply;
     await shot(page, `${tag}-${String(number).padStart(2, '0')}`);
-    if (turn.confirms) await confirmProposal(page, tag === 'plan' ? planName(spoken) : 'action');
+    if (turn.confirms) {
+      await confirmProposal(page, tag === 'plan' ? planName(spoken) : 'action', reply);
+    }
   }
 }
 
 /** A short, file-safe name for the proposal a planning turn is expected to raise. */
 function planName(turn: SpokenTurn): string {
   if (/playlist/i.test(turn.say)) return 'playlist';
-  if (/table|restaurant/i.test(turn.say)) return 'reservation';
+  // `book` is in here because the booking line names neither a table nor a
+  // restaurant — it says "book the first one on that list" — and the log then called
+  // the reservation beat "action", which is the one beat whose name matters most.
+  if (/table|restaurant|book/i.test(turn.say)) return 'reservation';
   return 'action';
 }
 
@@ -1751,13 +1790,48 @@ async function inspectMomentOne(page: Page, feed: Locator): Promise<void> {
  * of 10" needs a hop count, and a hop count needs spans.
  */
 async function inspectMomentTwo(page: Page, drawer: Locator): Promise<void> {
-  const group = page.getByTestId('aws-feed-group-header').first();
+  /*
+   * The busiest group, not the newest one.
+   *
+   * `.first()` is the most recent, which after the memory turns is a single-span group
+   * — and the beat then opened on "Step 1 of 1". The assertion passed and the claim
+   * ("picked apart hop by hop") was thin enough to be embarrassing. `groupFeedRows`
+   * keys on actor and action, so the group with the most rows is the one where a
+   * single action fanned out into several AWS calls: exactly what a hop-by-hop replay
+   * is for. Ties keep the newest, since the loop only takes a strictly larger count.
+   */
+  const richest = await page.evaluate(() => {
+    const groups = Array.from(
+      document.querySelectorAll('[data-testid="aws-flow-feed"] [data-testid="aws-feed-group"]'),
+    );
+    let best = 0;
+    let bestRows = -1;
+    groups.forEach((candidate, index) => {
+      const rows = candidate.querySelectorAll('[data-testid="aws-feed-row"]').length;
+      if (rows > bestRows) {
+        bestRows = rows;
+        best = index;
+      }
+    });
+    return { index: best, rows: bestRows };
+  });
+  if (richest.rows > 1) console.log(`  replaying the group with ${richest.rows} spans in it`);
+  const group = page.getByTestId('aws-feed-group-header').nth(richest.index);
   if (!(await showing(group))) {
     console.log('  (no replayable group in the feed — skipping the hop-by-hop moment)');
     return;
   }
 
-  const traceId = await page.getByTestId('aws-feed-trace-id').first().innerText().catch(() => '');
+  // The trace id of *this* group, so the number logged belongs to the call being
+  // replayed. Only the AgentCore Runtime span carries one, so an empty string here is
+  // normal on engine A and the log line is skipped rather than printed blank.
+  const traceId = await page
+    .getByTestId('aws-feed-group')
+    .nth(richest.index)
+    .getByTestId('aws-feed-trace-id')
+    .first()
+    .innerText()
+    .catch(() => '');
   await caption(page, 'INSPECT 2/4 — the same call, picked apart hop by hop', 'inspect');
   await humanClick(page, group, 'replay the call');
   if (traceId) console.log(`  replaying trace ${traceId.trim()}`);

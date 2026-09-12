@@ -180,19 +180,26 @@ export function nowBlock(now: Date): string {
    * Thursday, then "Tuesday" for a Wednesday, on the first turn each time. A
    * fourteen-day lookup table costs a line and turns that derivation into a read.
    */
+  // "16 September = Wednesday", not "Wed 09-16": the user says dates in words,
+  // and the first rehearsal with the numeric form watched the model glance past
+  // "Wed 09-16" and still write "Tuesday the 16th". The lookup has to be keyed
+  // the way the question arrives.
   const fortnight = Array.from({ length: 14 }, (_, i) => {
     const day = new Date(now.getTime() + (i + 1) * 86_400_000);
-    const zone = inZone(day, REMINDER_ZONE);
-    const name = new Intl.DateTimeFormat('en-GB', {
+    const parts = new Intl.DateTimeFormat('en-GB', {
       timeZone: REMINDER_ZONE,
-      weekday: 'short',
-    }).format(day);
-    return `${name} ${zone.localDate.slice(5)}`;
-  }).join(' · ');
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+    }).formatToParts(day);
+    const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+    return `${get('day')} ${get('month')} = ${get('weekday')}`;
+  }).join('; ');
 
   return `RIGHT NOW: it is ${weekday} ${localDate}, ${localTime} in Israel (${REMINDER_ZONE}). The Hebrew date is ${hebrewDateOf(now)}.
-THE NEXT TWO WEEKS (read weekdays from here — never derive one yourself): ${fortnight}.
-Work out every relative date the user says — "tomorrow", "next Tuesday", "the 4th", "in two weeks" — against that date, and pass tools the absolute YYYY-MM-DD you arrived at. Never guess a year. If a date he gives is ambiguous or already past, ask him rather than picking one. For a date beyond the two weeks above, state the date without naming its weekday.`;
+CALENDAR FOR THE NEXT TWO WEEKS: ${fortnight}.
+Before you name the weekday of ANY date, find that date in the calendar line above and copy its weekday exactly — never work a weekday out yourself. For a date beyond those two weeks, give the date without naming its weekday.
+Work out every relative date the user says — "tomorrow", "next Tuesday", "the 4th", "in two weeks" — against today's date, and pass tools the absolute YYYY-MM-DD you arrived at. Never guess a year. If a date he gives is ambiguous or already past, ask him rather than picking one.`;
 }
 
 /** A calendar date, no year semantics attached. Mirrors the planner's shape. */

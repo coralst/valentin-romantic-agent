@@ -196,9 +196,9 @@ describe('buildSystemPrompt', () => {
       // Saturday 5 September 2026 in Israel. The 10th is a Thursday — the exact
       // weekday the recorded model got wrong before this line existed.
       const block = nowBlock(new Date('2026-09-05T12:00:00Z'));
-      expect(block).toContain('Thu 09-10');
-      expect(block).toContain('Sun 09-06');
-      expect(block).toMatch(/never derive one yourself/);
+      expect(block).toContain('10 September = Thursday');
+      expect(block).toContain('6 September = Sunday');
+      expect(block).toMatch(/never work a weekday out yourself/);
     });
   });
 

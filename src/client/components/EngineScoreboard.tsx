@@ -69,13 +69,13 @@ const PROVENANCE_MARK: Record<Provenance, string> = {
 /**
  * The two static tiles, with the commands that produced them.
  *
- * `wc -l src/server/extraction/*.ts` → 545 (`preference-extractor.ts`) + 50
- * (`category-mapper.ts`) + 29 (`partner-name.ts`) = 624, plus `conversation-memory.ts`
+ * `wc -l src/server/extraction/*.ts` → 683 (`preference-extractor.ts`) + 50
+ * (`category-mapper.ts`) + 29 (`partner-name.ts`) = 762, plus `conversation-memory.ts`
  * at 103 lines, whose budget-and-truncation half is what AgentCore Memory replaces.
  * `extraction-line-count.test.ts` re-counts these files and fails if they drift, so the
  * claim cannot quietly rot into a lie.
  */
-export const EXTRACTION_LINES = 624;
+export const EXTRACTION_LINES = 762;
 export const MEMORY_LINES = 103;
 export const REPLACED_LINES = EXTRACTION_LINES + MEMORY_LINES;
 

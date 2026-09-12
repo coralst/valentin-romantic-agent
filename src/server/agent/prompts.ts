@@ -174,6 +174,134 @@ export function nowBlock(now: Date): string {
 Work out every relative date the user says — "tomorrow", "next Tuesday", "the 4th", "in two weeks" — against that date, and pass tools the absolute YYYY-MM-DD you arrived at. Never guess a year. If a date he gives is ambiguous or already past, ask him rather than picking one.`;
 }
 
+/** A calendar date, no year semantics attached. Mirrors the planner's shape. */
+interface DateParts {
+  year: number;
+  month: number;
+  day: number;
+}
+
+const DAY_MS = 86_400_000;
+
+/** The calendar date `now` falls on in the reminder zone — same recipe as the planner's. */
+function localToday(now: Date): DateParts {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: REMINDER_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? '0');
+  return { year: get('year'), month: get('month'), day: get('day') };
+}
+
+/** The first `YYYY-MM-DD` in a value, or nothing — anchored to a 4-digit year like the planner. */
+function findIsoDate(value: string): DateParts | null {
+  const match = /(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (!match) return null;
+  const [, y, mo, d] = match;
+  const parts = { year: Number(y), month: Number(mo), day: Number(d) };
+  if (parts.month < 1 || parts.month > 12 || parts.day < 1 || parts.day > 31) return null;
+  return parts;
+}
+
+/** Weekday of a calendar date, independent of the server's zone. */
+function weekdayOf(date: DateParts): string {
+  return new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', weekday: 'long' }).format(
+    new Date(Date.UTC(date.year, date.month - 1, date.day)),
+  );
+}
+
+/** Whole calendar days from `today` to `date`. Negative when past. */
+function daysUntil(date: DateParts, today: DateParts): number {
+  return Math.round(
+    (Date.UTC(date.year, date.month - 1, date.day) -
+      Date.UTC(today.year, today.month - 1, today.day)) /
+      DAY_MS,
+  );
+}
+
+/** The next time a month/day recurs, at or after today. Year on the stored value is ignored. */
+function rollForward(date: DateParts, today: DateParts): DateParts {
+  for (let year = today.year; year <= today.year + 1; year += 1) {
+    // 29 February observed on the 28th in a common year, matching the planner.
+    const day =
+      date.month === 2 && date.day === 29 && !((year % 4 === 0 && year % 100 !== 0) || year % 400 === 0)
+        ? 28
+        : date.day;
+    const candidate = { year, month: date.month, day };
+    if (
+      Date.UTC(candidate.year, candidate.month - 1, candidate.day) >=
+      Date.UTC(today.year, today.month - 1, today.day)
+    ) {
+      return candidate;
+    }
+  }
+  return { year: today.year + 1, month: date.month, day: date.day };
+}
+
+function iso(date: DateParts): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.year}-${pad(date.month)}-${pad(date.day)}`;
+}
+
+/** "in 5 days" / "TODAY" / "tomorrow" / "already passed", for the computed-dates block. */
+function distanceWording(days: number): string {
+  if (days === 0) return 'TODAY';
+  if (days === 1) return 'tomorrow';
+  if (days < 0) return `already passed, ${-days} day${days === -1 ? '' : 's'} ago`;
+  return `in ${days} days`;
+}
+
+/** The profile fields that carry a calendar date the model will otherwise re-derive. */
+const RECURRING_DATE_FIELDS = ['birthday', 'anniversary'] as const;
+
+/**
+ * Every date on the profile, already worked out — weekday, next occurrence,
+ * distance from today — so no calendar arithmetic is left to the model.
+ *
+ * This exists because the model got both halves of that arithmetic wrong on
+ * camera: told "the anniversary is 2026-09-10" on a Saturday five days before
+ * it, it said "this coming Wednesday" (a Thursday) and "in four days" (five).
+ * Weekday-of-a-date is the one computation in this prompt that is trivial for
+ * the server and unreliable for the model, so the server does it and tells the
+ * model to trust the line over its own reckoning.
+ *
+ * Recurring dates (birthday, anniversary) are shown as their *next* occurrence,
+ * exactly as the reminder planner rolls them — a birthday stored with a past or
+ * birth year must never surface as "six months ago". `next_occasion` is one-off
+ * and shown as stored, flagged plainly when it has already passed.
+ */
+export function computedDatesBlock(facts: readonly KnownFact[], now: Date): string {
+  const today = localToday(now);
+  const lines: string[] = [];
+
+  for (const fact of facts) {
+    const id = fact.fieldId ?? fact.key;
+    const parsed = findIsoDate(fact.value);
+    if (!parsed) continue;
+
+    if ((RECURRING_DATE_FIELDS as readonly string[]).includes(id)) {
+      const next = rollForward(parsed, today);
+      const days = daysUntil(next, today);
+      lines.push(
+        `- ${id.replace(/_/g, ' ')}: next falls ${weekdayOf(next)} ${iso(next)} — ${distanceWording(days)}`,
+      );
+    } else if (id === 'next_occasion') {
+      const days = daysUntil(parsed, today);
+      lines.push(
+        `- ${id.replace(/_/g, ' ')}: ${weekdayOf(parsed)} ${iso(parsed)} — ${distanceWording(days)}`,
+      );
+    }
+  }
+
+  if (lines.length === 0) return '';
+  return `
+
+DATES, ALREADY WORKED OUT (computed by the system — trust these over your own arithmetic, and never re-derive a weekday or a day count yourself):
+${lines.join('\n')}`;
+}
+
 /** The smallest thing the prompt builder needs to know about a stored fact */
 export interface KnownFact {
   key: string;
@@ -207,9 +335,22 @@ export function partnerNameFrom(facts: readonly KnownFact[]): string | null {
  * Facts are rendered as plain `label: value` lines rather than JSON: it is fewer
  * tokens and the model quotes them back more naturally.
  *
- * The unknown-field list is deliberately included in the ongoing mode too. It is
- * what lets him fill a gap when a conversation happens to wander past one,
- * instead of either interrogating or never asking again.
+ * ## Why GOAL 2 is gated on coverage, not on "any fact at all"
+ *
+ * This used to flip on `facts.length === 0` — one fact was enough. So the moment
+ * turn one landed her name, turn two was built with "GOAL 2 is live... answer
+ * practical questions with real recommendations", and a user still *introducing*
+ * her got every further fact read as a planning brief: "quiet and romantic"
+ * became a restaurant search, "she loves Nina Simone" got one line before being
+ * dragged back to an unanswered shortlist. Nothing was forgotten — the model was
+ * answering the wrong question, correctly. GOAL 2 now waits until the profile
+ * has real coverage; until then a middle state keeps GOAL 1's posture while
+ * still using what is known.
+ *
+ * The unknown-field list is included while GOAL 1 is live — it is what lets him
+ * fill a gap when a conversation wanders past one. Once GOAL 2 is live it is
+ * dropped: enumerating every missing field next to "stop collecting" pulled him
+ * straight back into interrogation.
  *
  * `now` is a parameter with a default rather than a read of the clock inside,
  * matching `shabbatWindow(from, city)` and `planReminders(input, now)`: it is what
@@ -251,19 +392,57 @@ CURRENT STATE: You know nothing about her yet. GOAL 1 is live. Open by introduci
     facts.map((fact) => fact.fieldId).filter((id): id is string => Boolean(id)),
   );
   const missing = PROFILE_FIELD_IDS.filter((id) => !knownFieldIds.has(id));
+  const dates = computedDatesBlock(facts, now);
+
+  /*
+   * Both ongoing states carry this. The single worst failure mode observed live
+   * was a stated preference being answered with a shortlist: told "somewhere
+   * quiet and romantic — she hates loud rooms", the model searched restaurants
+   * nobody asked for, and the unanswered offer then dominated every later turn.
+   */
+  const noUnsolicited =
+    'When he states a fact about her — "she loves...", "she hates...", "she does X on Tuesdays" — receive it and remember it; a stated preference is a fact to keep, not a brief to act on. Never answer a fact with a venue, a gift or an itinerary. Propose a plan only when he asks for one, or when a date you know about is close enough to need action.';
+
+  if (!goalTwoLive(name, knownFieldIds)) {
+    return `${VALENTIN_SYSTEM_PROMPT}${today}${dates}
+
+CURRENT STATE: You are still getting to know ${her}. GOAL 1 is live — keep learning who she is through ordinary conversation, one thing at a time, and never re-ask what you already know below. ${noUnsolicited}
+
+WHAT YOU KNOW ABOUT ${(name ?? 'HER').toUpperCase()}:
+${known}
+
+Still unknown: ${missing.join(', ')}. Do not interrogate him for these. Ask about one only when the conversation naturally arrives there.${history}${tools}`;
+  }
 
   const gaps =
     missing.length > 0
-      ? `\nStill unknown: ${missing.join(', ')}. Do not interrogate him for these. Ask about one only when the conversation naturally arrives there.`
+      ? `\nIf a gap in her profile surfaces naturally you may ask about it — one at a time, never as a checklist.`
       : `\nYou know every field on her profile. Stop collecting and start using it.`;
 
-  return `${VALENTIN_SYSTEM_PROMPT}${today}
+  return `${VALENTIN_SYSTEM_PROMPT}${today}${dates}
 
-CURRENT STATE: You already know ${her}. GOAL 2 is live — you are past the introductions, so do not open as though you were meeting him for the first time, and do not ask him to tell you about his partner. Use what you know below, by name and in specifics.
+CURRENT STATE: You already know ${her}. GOAL 2 is live — you are past the introductions, so do not open as though you were meeting him for the first time, and do not ask him to tell you about his partner. Use what you know below, by name and in specifics. ${noUnsolicited}
 
 WHAT YOU KNOW ABOUT ${(name ?? 'HER').toUpperCase()}:
 ${known}
 ${gaps}${history}${tools}`;
+}
+
+/**
+ * Whether the profile is filled in enough for GOAL 2's posture.
+ *
+ * Her name plus {@link GOAL_2_MIN_FIELDS} known registry fields. The number is a
+ * judgement, not a law: it is roughly "the name, the dates, and a couple of
+ * tastes" — the least he can know and still make a suggestion that is about
+ * *her*. Below it, suggesting is guessing dressed up, and the model belongs in
+ * GOAL 1's listening posture. He answers direct questions with recommendations
+ * in either state (persona guideline), so gating this does not make him refuse
+ * help — it only stops him volunteering plans at someone mid-introduction.
+ */
+const GOAL_2_MIN_FIELDS = 6;
+
+function goalTwoLive(name: string | null, knownFieldIds: ReadonlySet<string>): boolean {
+  return name !== null && knownFieldIds.size >= GOAL_2_MIN_FIELDS;
 }
 
 /**

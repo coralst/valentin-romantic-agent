@@ -458,6 +458,22 @@ describe('guardrail enforcement', () => {
   });
 
   /*
+   * PHONE blocked in both directions broke `check_availability`'s web fallback:
+   * when Ontopo has nothing, the tool hands the model the restaurant's public
+   * phone number with instructions to pass it on, and the reply repeating it
+   * came back `guardrail_intervened` (`pii:PHONE`) — so the user saw restaurant
+   * names but never the availability answer. Live session 2026-09-12T10:26Z.
+   * Input stays BLOCK: no tool takes a phone number the visitor types.
+   */
+  it('lets a venue phone number out while still blocking one typed in', () => {
+    const phone = sensitiveInfo().PiiEntitiesConfig.find(
+      (e: any) => e.Type === 'PHONE',
+    );
+    expect(phone.InputAction).toBe('BLOCK');
+    expect(phone.OutputAction).toBe('NONE');
+  });
+
+  /*
    * EMAIL used to be in the list above, and it broke the feature it was guarding.
    * `propose_email` takes a recipient address as a required input, so "email me
    * the options" means the visitor has to type one — and with the entity BLOCKing

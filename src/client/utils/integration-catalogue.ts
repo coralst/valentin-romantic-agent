@@ -78,8 +78,8 @@ export interface IntegrationService {
    * name.
    *
    * This is the half of the old row title that the provider name displaced, and it
-   * is load-bearing rather than decorative: "Amadeus" alone means nothing to most
-   * visitors, and "flights & hotels" is the whole of what they need.
+   * is load-bearing rather than decorative: "Ontopo" alone means nothing to most
+   * visitors, and "restaurant tables" is the whole of what they need.
    */
   capability: string;
   /** Which mark from the design system is drawn beside the name. */
@@ -237,38 +237,13 @@ export const INTEGRATION_CATALOGUE: readonly IntegrationService[] = [
     defaultCapUsd: null,
   },
   {
-    id: 'amadeus',
-    name: 'Amadeus',
-    backing: ['amadeus'],
-    capability: 'flights & hotels',
-    mark: 'amadeus',
-    // Not "priced against the cap you set" any more: there is no cap, because
-    // there is no purchase — see the re-check scope below.
-    blurb: 'Surprise weekends, priced for real before you commit to one.',
-    scopes: [
-      { label: 'search flights and rooms', detail: 'Read-only', reach: 'read' },
-      /*
-       * This read "hold a booking", `spend`, against a $400 cap — and Amadeus
-       * holds nothing. `proposeHotelBookingTool.confirm` re-prices the offer and
-       * stops, deliberately: the booking endpoint wants a payment card in the
-       * request body, and Valentin should never hold one. So confirming is a
-       * *read* that tells you the room is still there at that price, and the cap
-       * governed a purchase that cannot happen.
-       */
-      { label: 're-check a room is still available at that price', detail: 'No hold, no payment, no card details — you book with the hotel yourself', reach: 'read' },
-    ],
-    defaultCapUsd: null,
-  },
-  {
     /*
-     * Gmail and WhatsApp were one "Messages" row, and splitting them is a fix
-     * rather than a cosmetic change. They are separate readiness ids for a real
-     * reason — Gmail needs one OAuth refresh token, WhatsApp needs a Meta business
-     * account and pre-approved templates, a review measured in days — so the
-     * combined row spent most of its life reporting `partial`, and its consent
-     * sheet offered two unrelated credential forms stacked on top of each other.
-     * One row per account means the badge is exact and the sheet asks for one
-     * thing.
+     * Email is its own row, and was once half of a combined "Messages" row. The
+     * other half was WhatsApp, which is no longer offered here at all: it needed a
+     * Meta business account and templates Meta approves over days, so the combined
+     * row spent most of its life reporting `partial` and its consent sheet stacked
+     * two unrelated credential forms. One row per account keeps the badge exact and
+     * the sheet asking for one thing.
      */
     id: 'gmail',
     name: 'Gmail',
@@ -285,25 +260,6 @@ export const INTEGRATION_CATALOGUE: readonly IntegrationService[] = [
        */
       { label: 'write the message for you', detail: 'You see the full text before anything is sent', reach: 'write' },
       { label: 'send it once you confirm', detail: 'Only the message on screen, only to the address named on it', reach: 'write' },
-    ],
-    defaultCapUsd: null,
-  },
-  {
-    id: 'whatsapp',
-    name: 'WhatsApp',
-    backing: ['whatsapp'],
-    capability: 'messages',
-    mark: 'whatsapp',
-    blurb: 'The short one, in the app she actually reads.',
-    scopes: [
-      { label: 'write the message for you', detail: 'You see the full text before anything is sent', reach: 'write' },
-      /*
-       * Worth spelling out on this row and not on Gmail's: WhatsApp will only
-       * deliver a business-initiated message that matches a template Meta has
-       * already approved, so "he can send anything you confirm" would be false here
-       * in a way it is not for email.
-       */
-      { label: 'send it once you confirm', detail: 'Only through a message template WhatsApp has already approved, and only to the number named on it', reach: 'write' },
     ],
     defaultCapUsd: null,
   },

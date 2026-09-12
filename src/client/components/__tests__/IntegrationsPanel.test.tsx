@@ -232,23 +232,25 @@ describe('IntegrationsPanel', () => {
      *
      * Wolt stood here first, back when the catalogue claimed Valentin could "place
      * an order" for $80; he never could, because the handoff ends at the shop's own
-     * page. Amadeus took over and turned out to be the same mistake:
-     * `propose_hotel_booking.confirm` re-prices an offer and stops, because the
-     * order endpoint wants a payment card Valentin must never hold. So the $400
-     * ceiling governed a purchase that cannot happen, and implied a hold that never
-     * did.
+     * page. Amadeus took over and turned out to be the same mistake — its confirm
+     * step re-priced an offer and stopped, because the order endpoint wants a
+     * payment card Valentin must never hold — and that row is now withdrawn from the
+     * panel entirely.
      *
      * What is left to assert is that the slider is absent everywhere. If a real
      * spending capability is ever built, restore the granting test alongside it —
      * cap first, code second.
      */
-    it('offers no cap on Amadeus, which re-prices but cannot spend', async () => {
+    it('offers no cap on any row in the catalogue', async () => {
       const user = userEvent.setup();
       await renderPanel();
 
-      await user.click(screen.getByTestId('integration-node-amadeus'));
-      expect(screen.queryByTestId('integration-cap-slider')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('integration-cap-value')).not.toBeInTheDocument();
+      for (const service of INTEGRATION_CATALOGUE) {
+        await user.click(screen.getByTestId(`integration-node-${service.id}`));
+        expect(screen.queryByTestId('integration-cap-slider')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('integration-cap-value')).not.toBeInTheDocument();
+        await user.keyboard('{Escape}');
+      }
     });
 
     it('offers no cap on a service that cannot spend', async () => {
@@ -265,10 +267,10 @@ describe('IntegrationsPanel', () => {
 
       // The read-back half of the same finding: a granted integration must not
       // acquire a "up to $N" line it was never given.
-      await connect(user, 'amadeus');
-      await user.click(screen.getByTestId('integration-node-amadeus'));
+      await connect(user, 'wolt');
+      await user.click(screen.getByTestId('integration-node-wolt'));
       expect(screen.queryByTestId('integration-cap-value')).not.toBeInTheDocument();
-      expect(screen.getByTestId('integration-node-amadeus')).not.toHaveTextContent('up to $');
+      expect(screen.getByTestId('integration-node-wolt')).not.toHaveTextContent('up to $');
     });
   });
 
@@ -413,21 +415,21 @@ describe('IntegrationsPanel', () => {
        * stronger claim and the one that cannot rot.
        *
        * The distinction the visitor cannot see by looking is still the point:
-       * Amadeus is real code waiting on a key, and "needs credentials" is what
+       * Google Places is real code waiting on a key, and "needs credentials" is what
        * separates it from code that does not exist.
        */
-      const amadeus = await screen.findByTestId('integration-readiness-amadeus');
-      expect(amadeus).toHaveAttribute('data-readiness', 'unconfigured');
-      expect(amadeus).toHaveTextContent('needs credentials');
+      const places = await screen.findByTestId('integration-readiness-google-places');
+      expect(places).toHaveAttribute('data-readiness', 'unconfigured');
+      expect(places).toHaveTextContent('needs credentials');
 
       expect(screen.queryByText('not built yet')).not.toBeInTheDocument();
     });
 
-    it('badges Gmail and WhatsApp separately when only Gmail is configured', async () => {
+    it('badges each account separately when only Gmail is configured', async () => {
       /*
        * The realistic deployment, and what splitting the old Messages row bought.
-       * Gmail needs one refresh token; WhatsApp needs a Meta business number and
-       * template review, which lands days later.
+       * Gmail needs one refresh token; the other accounts each need their own thing,
+       * and they arrive at different times.
        *
        * This used to assert `partial` — "live via Gmail" on one combined row —
        * because a single row had to summarise two unequal services, and that summary
@@ -443,9 +445,9 @@ describe('IntegrationsPanel', () => {
       expect(gmail).toHaveAttribute('data-readiness', 'ready');
       expect(gmail).toHaveTextContent('live');
 
-      const whatsapp = screen.getByTestId('integration-readiness-whatsapp');
-      expect(whatsapp).toHaveAttribute('data-readiness', 'unconfigured');
-      expect(whatsapp).toHaveTextContent('needs credentials');
+      const spotify = screen.getByTestId('integration-readiness-spotify');
+      expect(spotify).toHaveAttribute('data-readiness', 'unconfigured');
+      expect(spotify).toHaveTextContent('needs credentials');
     });
 
     it('claims nothing at all when the server cannot be reached', async () => {

@@ -540,6 +540,14 @@ export interface FlowBeat {
    * the console and find nothing behind.
    */
   traceId?: string;
+  /**
+   * Wall-clock time the beat was observed, epoch ms.
+   *
+   * Absent on a scripted step, for the same reason `traceId` is: the demo flow is
+   * authored, so any time on it would be a time nothing happened at. The feed shows
+   * the column only for the beats that have one.
+   */
+  at?: number;
 }
 
 /** How many beats a step is animated over: box, arrow, box, arrow, box. */

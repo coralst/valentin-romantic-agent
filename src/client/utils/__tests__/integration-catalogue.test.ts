@@ -30,13 +30,8 @@ describe('integration catalogue', () => {
     expect(backed.ontopo).toContain('ontopo');
     expect(backed.hebcal).toContain('hebcal');
     expect(backed['google-calendar']).toContain('google-calendar');
-    expect(backed.amadeus).toContain('amadeus');
     expect(backed.wolt).toContain('wolt');
-    // Split rows, deliberately: Gmail and WhatsApp have separate readiness and
-    // separate credential forms, and the combined row reported "needs credentials"
-    // for email that worked.
     expect(backed.gmail).toEqual(['gmail']);
-    expect(backed.whatsapp).toEqual(['whatsapp']);
 
     // Spotify, since `spotifyTools` registers on any deployment holding an app
     // credential — the same correction the Wolt rows needed, made before the row
@@ -137,6 +132,24 @@ describe('integration catalogue', () => {
     const ids = INTEGRATION_CATALOGUE.map((service) => service.id);
     expect(ids).not.toContain('browser');
     expect(ids).not.toContain('events');
+  });
+
+  /*
+   * Amadeus and WhatsApp are the same kind of deliberate absence, for a different
+   * reason: the server still knows both ids, but neither is offered to a visitor.
+   * Amadeus could only ever re-price a room it cannot hold, and WhatsApp cannot
+   * deliver anything until Meta approves a template — so both rows asked for a
+   * credential and then promised less than the row implied. Asserted so a later
+   * edit re-adds them on purpose rather than by reflex.
+   */
+  it('does not offer the providers that were withdrawn from the panel', () => {
+    const ids = INTEGRATION_CATALOGUE.map((service) => service.id);
+    expect(ids).not.toContain('amadeus');
+    expect(ids).not.toContain('whatsapp');
+    for (const service of INTEGRATION_CATALOGUE) {
+      expect(service.backing ?? []).not.toContain('amadeus');
+      expect(service.backing ?? []).not.toContain('whatsapp');
+    }
   });
 
   /*

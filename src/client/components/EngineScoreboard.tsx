@@ -45,7 +45,7 @@ export const SCOREBOARD_COPY = {
   /** Shown when live but nothing has happened yet. */
   liveEmpty: 'Send a message on each engine and both columns fill in.',
   glueWins:
-    'Glue code wins at: fixed cost under steady load, no preview-service dependency, and propose-then-confirm — engine B has none.',
+    'DIY wins at: fixed cost under steady load, no preview-service dependency, and propose-then-confirm — engine B has none.',
   scope:
     'AgentCore still answers behind a Fargate proxy here. What it removes is the stateful Fargate, the hand-written extractor and the DynamoDB memory layer — not Fargate.',
   legend: '● measured live · ▪ counted in this repo · cost: see /engine-comparison.html',

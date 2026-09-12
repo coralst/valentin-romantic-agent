@@ -106,13 +106,14 @@ describe('AwsFlowFeed', () => {
         rows={[makeRow({ key: 'a' }), makeRow({ key: 'b' })]}
         summary=""
         heading="Demo flow"
+        startExpanded
       />,
     );
     expect(screen.getAllByTestId('aws-feed-row')).toHaveLength(2);
   });
 
   it('shows the operation, detail and duration', () => {
-    render(<AwsFlowFeed rows={[makeRow()]} summary="" heading="Demo flow" />);
+    render(<AwsFlowFeed rows={[makeRow()]} summary="" heading="Demo flow" startExpanded />);
     expect(screen.getByText('PutItem')).toBeInTheDocument();
     expect(screen.getByText(/PREF#music/)).toBeInTheDocument();
     expect(screen.getByText('18 ms')).toBeInTheDocument();
@@ -124,6 +125,7 @@ describe('AwsFlowFeed', () => {
         rows={[makeRow({ key: 'a' }), makeRow({ key: 'b', isCurrent: true })]}
         summary=""
         heading="Demo flow"
+        startExpanded
       />,
     );
 
@@ -144,6 +146,7 @@ describe('AwsFlowFeed', () => {
         ]}
         summary=""
         heading="Demo flow"
+        startExpanded
       />,
     );
 
@@ -156,7 +159,14 @@ describe('AwsFlowFeed', () => {
   });
 
   it('shows an em dash for a beat that was a delivery rather than a call', () => {
-    render(<AwsFlowFeed rows={[makeRow({ durationLabel: '—' })]} summary="" heading="Demo flow" />);
+    render(
+      <AwsFlowFeed
+        rows={[makeRow({ durationLabel: '—' })]}
+        summary=""
+        heading="Demo flow"
+        startExpanded
+      />,
+    );
     expect(screen.getByText('—')).toBeInTheDocument();
   });
 });
@@ -178,8 +188,13 @@ describe('choosing a user action', () => {
   it('leaves the groups as plain captions when there is nothing to replay to', () => {
     render(<AwsFlowFeed rows={ROWS} summary="" heading="Demo flow" />);
 
-    // A control that did nothing would be a worse lie than no control.
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    // A control that did nothing would be a worse lie than no control. The fold
+    // controls are still buttons — folding works with or without a replay — so what
+    // must be absent is the header *itself* being pressable.
+    for (const header of screen.getAllByTestId('aws-feed-group-header')) {
+      expect(header.tagName).not.toBe('BUTTON');
+      expect(header).not.toHaveAttribute('aria-pressed');
+    }
   });
 
   it('offers each group as a control when replay is available', () => {
@@ -252,5 +267,156 @@ describe('choosing a user action', () => {
     expect(headers[0]).toHaveAttribute('aria-pressed', 'true');
     expect(headers[1]).toHaveAttribute('aria-pressed', 'false');
     expect(headers[0]).toHaveTextContent(REPLAY_COPY.replaying);
+  });
+});
+
+/**
+ * Folding.
+ *
+ * A turn is a dozen spans, and the panel is a column beside the diagram: expanded,
+ * three turns of traffic pushed the actions a presenter has to point at off the
+ * bottom. So the feed opens as an index of actions and reveals steps on request.
+ */
+describe('folding an action away', () => {
+  const ROWS = [
+    makeRow({ key: 'a', actor: 'User', action: 'sends a message in chat', operation: 'Send' }),
+    makeRow({ key: 'b', actor: 'Valentin', action: 'writes a reply', operation: 'Converse' }),
+    makeRow({ key: 'c', actor: 'Valentin', action: 'writes a reply', operation: 'Query' }),
+  ];
+
+  it('starts folded, showing the actions and not their steps', () => {
+    render(<AwsFlowFeed rows={ROWS} summary="" heading="Live flow" />);
+
+    expect(screen.getAllByTestId('aws-feed-group')).toHaveLength(2);
+    expect(screen.queryAllByTestId('aws-feed-row')).toHaveLength(0);
+    // The caption still says how much is folded underneath it.
+    expect(screen.getAllByTestId('aws-feed-group-header')[0]).toHaveTextContent('2');
+  });
+
+  it('unfolds one action without unfolding the rest', async () => {
+    render(<AwsFlowFeed rows={ROWS} summary="" heading="Live flow" />);
+
+    const user = userEvent.setup();
+    // Newest first, so 'writes a reply' and its two steps are on top.
+    await user.click(screen.getAllByTestId('aws-feed-group-fold')[0]);
+
+    expect(screen.getAllByTestId('aws-feed-row')).toHaveLength(2);
+    expect(screen.queryByText('Send')).not.toBeInTheDocument();
+  });
+
+  it('folds an unfolded action again', async () => {
+    render(<AwsFlowFeed rows={ROWS} summary="" heading="Live flow" startExpanded />);
+
+    const user = userEvent.setup();
+    const fold = () => screen.getAllByTestId('aws-feed-group-fold')[0];
+    expect(fold()).toHaveAttribute('aria-expanded', 'true');
+
+    await user.click(fold());
+
+    expect(fold()).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getAllByTestId('aws-feed-row')).toHaveLength(1);
+  });
+
+  it('unfolds and refolds everything at once', async () => {
+    render(<AwsFlowFeed rows={ROWS} summary="" heading="Live flow" />);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId('aws-feed-fold-all'));
+    expect(screen.getAllByTestId('aws-feed-row')).toHaveLength(3);
+
+    // The one control flips to the thing that would now do something.
+    await user.click(screen.getByTestId('aws-feed-fold-all'));
+    expect(screen.queryAllByTestId('aws-feed-row')).toHaveLength(0);
+  });
+
+  /*
+   * An action that arrives after the presenter unfolded another one must not unfold
+   * itself — the fold state is per action, and a growing log that keeps re-expanding
+   * is the problem folding was added to solve.
+   */
+  it('folds an action that arrives later, even while another is open', async () => {
+    const { rerender } = render(<AwsFlowFeed rows={ROWS} summary="" heading="Live flow" />);
+
+    const user = userEvent.setup();
+    await user.click(screen.getAllByTestId('aws-feed-group-fold')[0]);
+    expect(screen.getAllByTestId('aws-feed-row')).toHaveLength(2);
+
+    rerender(
+      <AwsFlowFeed
+        rows={[...ROWS, makeRow({ key: 'd', action: 'asks the outside world' })]}
+        summary=""
+        heading="Live flow"
+      />,
+    );
+
+    // Still the two steps of the action that was opened by hand, and nothing else.
+    expect(screen.getAllByTestId('aws-feed-row')).toHaveLength(2);
+    expect(screen.getAllByTestId('aws-feed-group')).toHaveLength(3);
+  });
+
+  /** The replayed action is shown whether or not anyone unfolded it. */
+  it('keeps the replayed action open without a fold click', () => {
+    render(
+      <AwsFlowFeed
+        rows={ROWS}
+        summary=""
+        heading="Replay"
+        onSelectGroup={() => {}}
+        selectedGroupId="b"
+      />,
+    );
+
+    expect(screen.getAllByTestId('aws-feed-row')).toHaveLength(2);
+  });
+});
+
+/**
+ * Timestamps.
+ *
+ * "When did that happen" was unanswerable from the panel: it showed how long each
+ * call took but never what time it was, so a span in the log could not be lined up
+ * against anything outside the app — a CloudWatch entry, or the moment on stage.
+ */
+describe('showing when a beat happened', () => {
+  it('shows the time beside the duration', () => {
+    render(
+      <AwsFlowFeed
+        rows={[makeRow({ timeLabel: '14:07:22' })]}
+        summary=""
+        heading="Live flow"
+        startExpanded
+      />,
+    );
+
+    expect(screen.getByTestId('aws-feed-row-time')).toHaveTextContent('14:07:22');
+    // Not at the cost of the duration, which answers a different question.
+    expect(screen.getByText('18 ms')).toBeInTheDocument();
+  });
+
+  it('leaves the time blank for a scripted step that happened at no time', () => {
+    render(<AwsFlowFeed rows={[makeRow()]} summary="" heading="Demo flow" startExpanded />);
+
+    // Present but empty: the column stays reserved so a mixed list keeps one set of
+    // columns, and an invented time would be worse than none.
+    expect(screen.getByTestId('aws-feed-row-time')).toHaveTextContent('');
+    expect(screen.queryByTestId('aws-feed-group-time')).not.toBeInTheDocument();
+  });
+
+  it('shows the newest step time on a folded action', () => {
+    render(
+      <AwsFlowFeed
+        rows={[
+          makeRow({ key: 'a', timeLabel: '14:07:22' }),
+          makeRow({ key: 'b', timeLabel: '14:07:25' }),
+        ]}
+        summary=""
+        heading="Live flow"
+      />,
+    );
+
+    // Folded, so this is the only time on screen — it has to be the beat that was
+    // just talked about, not the one the action opened with.
+    expect(screen.queryAllByTestId('aws-feed-row')).toHaveLength(0);
+    expect(screen.getByTestId('aws-feed-group-time')).toHaveTextContent('14:07:25');
   });
 });

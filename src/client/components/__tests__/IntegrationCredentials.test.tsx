@@ -56,6 +56,9 @@ function serverReports(
     if (path === '/api/integrations/google/auth-url') {
       return { url: 'https://accounts.google.com/o/oauth2/v2/auth?client_id=x' };
     }
+    if (path === '/api/integrations/spotify/auth-url') {
+      return { url: 'https://accounts.spotify.com/authorize?client_id=x' };
+    }
     throw new Error(`unexpected GET ${path}`);
   });
 }
@@ -87,25 +90,16 @@ beforeEach(() => {
 });
 
 describe('offering the form', () => {
-  it('offers Amadeus credentials on the Amadeus card, which needs them', async () => {
-    const user = userEvent.setup();
-    await renderPanel();
-    await openSheet(user, 'amadeus');
-
-    expect(screen.getByTestId('integration-credentials-amadeus')).toBeInTheDocument();
-    expect(screen.getByTestId('integration-field-amadeus-clientId')).toBeInTheDocument();
-  });
-
   /*
    * This test used to assert the opposite, on whichever row was still a drawing —
    * `flowers`, then `music`, then `rides`. There is no such row left: Wolt, Spotify
    * and the rest all reach a real service, and the rides row was deleted rather
    * than left as a promise with nothing behind it.
    *
-   * So the assertion flips to the case that now exists. Spotify takes an id and a
-   * secret like Amadeus does, and getting its form wrong is the live risk — an
-   * empty sheet on a row the panel badges live is the contradiction a visitor
-   * would actually hit.
+   * Spotify is also the row these tests drive generally, now that the Amadeus and
+   * WhatsApp rows are gone: it is the remaining id-and-secret form, and getting it
+   * wrong is the live risk — an empty sheet on a row the panel badges live is the
+   * contradiction a visitor would actually hit.
    */
   it('offers Spotify credentials on the Spotify card, now that the row reaches a real service', async () => {
     const user = userEvent.setup();
@@ -138,29 +132,30 @@ describe('offering the form', () => {
      * share a refresh token and rendering the same form twice would be nonsense.
      *
      * Splitting Messages into a Gmail row and a WhatsApp row is what removed that
-     * case: no row backs two services now, so `missingConnectFlows`'s dedup can no
-     * longer be reached from the catalogue. The property still worth pinning is the
-     * one a visitor sees — a row asks for the credential it needs and for nothing
-     * else. WhatsApp's form has no business appearing under Gmail.
+     * case, and withdrawing the WhatsApp row entirely removed the second form it
+     * could have leaked. No row backs two services now, so `missingConnectFlows`'s
+     * dedup can no longer be reached from the catalogue. The property still worth
+     * pinning is the one a visitor sees — a row asks for the credential it needs and
+     * for nothing else, so Spotify's form has no business appearing under Gmail.
      */
     await openSheet(user, 'gmail');
 
     expect(screen.getAllByTestId('integration-credentials-google')).toHaveLength(1);
-    expect(screen.queryByTestId('integration-credentials-whatsapp')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('integration-credentials-spotify')).not.toBeInTheDocument();
   });
 
   it('hides the inputs for a provider that is already configured', async () => {
-    serverReports({ hebcal: true, ontopo: true, amadeus: true });
+    serverReports({ hebcal: true, ontopo: true, spotify: true });
     const user = userEvent.setup();
     await renderPanel();
-    await openSheet(user, 'amadeus');
+    await openSheet(user, 'spotify');
 
     // No empty inputs to overwrite a working key with a typo. The server probes
     // before applying, so the typo would be rejected and the old value would
     // survive — leaving an error on screen for a service that is actually fine.
-    expect(screen.queryByTestId('integration-field-amadeus-clientId')).not.toBeInTheDocument();
-    expect(screen.getByTestId('integration-held-amadeus')).toBeInTheDocument();
-    expect(screen.getByTestId('integration-forget-amadeus')).toBeInTheDocument();
+    expect(screen.queryByTestId('integration-field-spotify-clientId')).not.toBeInTheDocument();
+    expect(screen.getByTestId('integration-held-spotify')).toBeInTheDocument();
+    expect(screen.getByTestId('integration-forget-spotify')).toBeInTheDocument();
   });
 });
 
@@ -168,15 +163,15 @@ describe('the fields themselves', () => {
   it('masks the secret and not the public identifier', async () => {
     const user = userEvent.setup();
     await renderPanel();
-    await openSheet(user, 'amadeus');
+    await openSheet(user, 'spotify');
 
     // This panel gets projected. A secret rendered as plain text is disclosed
     // whether or not anyone meant it to be.
-    expect(screen.getByTestId('integration-field-amadeus-clientSecret')).toHaveAttribute(
+    expect(screen.getByTestId('integration-field-spotify-clientSecret')).toHaveAttribute(
       'type',
       'password',
     );
-    expect(screen.getByTestId('integration-field-amadeus-clientId')).toHaveAttribute(
+    expect(screen.getByTestId('integration-field-spotify-clientId')).toHaveAttribute(
       'type',
       'text',
     );
@@ -185,95 +180,109 @@ describe('the fields themselves', () => {
   it('will not submit until every field has something in it', async () => {
     const user = userEvent.setup();
     await renderPanel();
-    await openSheet(user, 'amadeus');
+    await openSheet(user, 'spotify');
 
-    const submit = screen.getByTestId('integration-connect-submit-amadeus');
+    const submit = screen.getByTestId('integration-connect-submit-spotify');
     expect(submit).toBeDisabled();
 
-    await user.type(screen.getByTestId('integration-field-amadeus-clientId'), 'key');
+    await user.type(screen.getByTestId('integration-field-spotify-clientId'), 'key');
     expect(submit).toBeDisabled();
 
-    await user.type(screen.getByTestId('integration-field-amadeus-clientSecret'), 'secret');
+    await user.type(screen.getByTestId('integration-field-spotify-clientSecret'), 'secret');
     expect(submit).toBeEnabled();
   });
 });
 
 describe('submitting', () => {
   it('posts the fields and refetches readiness, so the badge flips', async () => {
-    api.post.mockResolvedValue({ message: 'Amadeus connected.' });
+    api.post.mockResolvedValue({ message: 'Spotify connected.' });
+    vi.spyOn(window, 'open').mockReturnValue({ closed: false } as Window);
     const user = userEvent.setup();
     await renderPanel();
-    await openSheet(user, 'amadeus');
+    await openSheet(user, 'spotify');
 
-    await user.type(screen.getByTestId('integration-field-amadeus-clientId'), 'key-1');
-    await user.type(screen.getByTestId('integration-field-amadeus-clientSecret'), 'secret-1');
+    await user.type(screen.getByTestId('integration-field-spotify-clientId'), 'key-1');
+    await user.type(screen.getByTestId('integration-field-spotify-clientSecret'), 'secret-1');
 
-    // Readiness now reports Amadeus as configured, as the server would after a
+    // Readiness now reports Spotify as configured, as the server would after a
     // successful probe.
-    serverReports({ hebcal: true, ontopo: true, amadeus: true });
-    await user.click(screen.getByTestId('integration-connect-submit-amadeus'));
+    serverReports({ hebcal: true, ontopo: true, spotify: true });
+    await user.click(screen.getByTestId('integration-connect-submit-spotify'));
     await act(async () => {});
 
-    expect(api.post).toHaveBeenCalledWith('/api/integrations/amadeus/connect', {
+    expect(api.post).toHaveBeenCalledWith('/api/integrations/spotify/connect', {
       clientId: 'key-1',
       clientSecret: 'secret-1',
     });
-    expect(screen.getByTestId('integration-done-amadeus')).toBeInTheDocument();
+
+    // Spotify's POST buys catalogue search; the account grant is a second leg, so
+    // "done" only arrives once the popup reports back.
+    await act(async () => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: { source: 'valentin-spotify-oauth', ok: true },
+          origin: window.location.origin,
+        }),
+      );
+    });
+    await act(async () => {});
+
+    expect(screen.getByTestId('integration-done-spotify')).toBeInTheDocument();
     // The badge is the visible payoff: the panel re-read the server rather than
     // trusting its own request.
-    expect(screen.getByTestId('integration-readiness-amadeus')).toHaveTextContent('live');
+    expect(screen.getByTestId('integration-readiness-spotify')).toHaveTextContent('live');
   });
 
   it('shows the server\'s own reason when a credential is refused', async () => {
     api.post.mockRejectedValue(
-      new Error('Amadeus rejected these credentials. Nothing was changed.'),
+      new Error('Spotify rejected these credentials. Nothing was changed.'),
     );
     const user = userEvent.setup();
     await renderPanel();
-    await openSheet(user, 'amadeus');
+    await openSheet(user, 'spotify');
 
-    await user.type(screen.getByTestId('integration-field-amadeus-clientId'), 'typo');
-    await user.type(screen.getByTestId('integration-field-amadeus-clientSecret'), 'typo');
-    await user.click(screen.getByTestId('integration-connect-submit-amadeus'));
+    await user.type(screen.getByTestId('integration-field-spotify-clientId'), 'typo');
+    await user.type(screen.getByTestId('integration-field-spotify-clientSecret'), 'typo');
+    await user.click(screen.getByTestId('integration-connect-submit-spotify'));
     await act(async () => {});
 
     // Not "the server responded with 400". Only the server knows whether the key
     // was wrong or the provider was unreachable, and the visitor acts differently
     // on each.
-    expect(screen.getByTestId('integration-error-amadeus')).toHaveTextContent(
+    expect(screen.getByTestId('integration-error-spotify')).toHaveTextContent(
       /rejected these credentials/i,
     );
-    expect(screen.getByTestId('integration-readiness-amadeus')).toHaveTextContent(
+    expect(screen.getByTestId('integration-readiness-spotify')).toHaveTextContent(
       'needs credentials',
     );
   });
 
   it('keeps one provider\'s failure out of another provider\'s form', async () => {
-    api.post.mockRejectedValue(new Error('WhatsApp rejected these credentials.'));
+    api.post.mockRejectedValue(new Error('Spotify rejected these credentials.'));
     const user = userEvent.setup();
     await renderPanel();
-    await openSheet(user, 'whatsapp');
+    await openSheet(user, 'spotify');
 
-    await user.type(screen.getByTestId('integration-field-whatsapp-phoneNumberId'), '1');
-    await user.type(screen.getByTestId('integration-field-whatsapp-token'), '2');
-    await user.click(screen.getByTestId('integration-connect-submit-whatsapp'));
+    await user.type(screen.getByTestId('integration-field-spotify-clientId'), '1');
+    await user.type(screen.getByTestId('integration-field-spotify-clientSecret'), '2');
+    await user.click(screen.getByTestId('integration-connect-submit-spotify'));
     await act(async () => {});
 
-    expect(screen.getByTestId('integration-error-whatsapp')).toBeInTheDocument();
+    expect(screen.getByTestId('integration-error-spotify')).toBeInTheDocument();
 
     /*
      * The connect hook lives on the panel, not on the sheet, so a status left
      * unscoped survives the sheet that produced it. It used to be enough to check
      * the Google form sitting directly below WhatsApp's in the combined Messages
-     * row; with one provider per row the same leak now shows up a sheet later, so
-     * that is where it is checked — close this row, open Gmail's, and WhatsApp's
-     * failure must not be waiting there.
+     * row; with one provider per row the same leak shows up a sheet later, so that
+     * is where it is checked — close this row, open Gmail's, and Spotify's failure
+     * must not be waiting there.
      */
     await user.keyboard('{Escape}');
     await openSheet(user, 'gmail');
     await act(async () => {});
 
-    expect(screen.queryByTestId('integration-error-whatsapp')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('integration-error-spotify')).not.toBeInTheDocument();
     expect(screen.queryByTestId('integration-error-google')).not.toBeInTheDocument();
   });
 });

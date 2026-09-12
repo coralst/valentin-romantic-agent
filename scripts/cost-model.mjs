@@ -422,9 +422,18 @@ function measuredEngineA(metrics, gaps) {
   const rows = Array.isArray(metrics.bedrockConverse) ? metrics.bedrockConverse : [];
   if (rows.length === 0) gaps.push('engine A: no bedrock.converse rows — token cost is $0');
 
-  const inputTokens = field(rows, 'inputTokens');
-  const outputTokens = field(rows, 'outputTokens');
+  // `inTokens`/`outTokens` are the collector's aliases; the un-prefixed names would shadow
+  // the source JSON fields in the Logs Insights `stats` and come back null. The old names
+  // are still read so metrics files collected before 2026-09-12 still price.
+  const inputTokens = field(rows, 'inTokens') || field(rows, 'inputTokens');
+  const outputTokens = field(rows, 'outTokens') || field(rows, 'outputTokens');
   const calls = field(rows, 'calls');
+  if (rows.length > 0 && inputTokens === 0) {
+    gaps.push(
+      'engine A: bedrock.converse rows carry no token columns — the stats aliases are ' +
+        'shadowing the source fields again. Do not report this as a zero token bill.',
+    );
+  }
 
   const wcu = num(metrics.dynamodb?.writeCapacityUnits);
   const rcu = num(metrics.dynamodb?.readCapacityUnits);
@@ -439,14 +448,21 @@ function measuredEngineA(metrics, gaps) {
     tokens: { in: inputTokens, out: outputTokens, calls_per_turn: calls / metrics.turns },
     // Per-operation split, so the slide can price the extract-preferences call the deck
     // guessed at 2,940 in / 300 out.
-    byOperation: rows.map((row) => ({
-      operation: row.operation,
-      calls: Number(row.calls ?? 0),
-      inputTokens: Number(row.inputTokens ?? 0),
-      outputTokens: Number(row.outputTokens ?? 0),
-      inputPerCall: Number(row.inputTokens ?? 0) / Math.max(1, Number(row.calls ?? 0)),
-      outputPerCall: Number(row.outputTokens ?? 0) / Math.max(1, Number(row.calls ?? 0)),
-    })),
+    byOperation: rows.map((row) => {
+      const rowIn = Number(row.inTokens ?? row.inputTokens ?? 0);
+      const rowOut = Number(row.outTokens ?? row.outputTokens ?? 0);
+      const rowCalls = Math.max(1, Number(row.calls ?? 0));
+      return {
+        operation: row.operation,
+        calls: Number(row.calls ?? 0),
+        inputTokens: rowIn,
+        outputTokens: rowOut,
+        inputPerCall: rowIn / rowCalls,
+        outputPerCall: rowOut / rowCalls,
+        // The tail is the finding: engine A's loop is capped at 5, engine B's is not.
+        maxInputTokens: num(row.maxInTokens),
+      };
+    }),
     truncations: field(metrics.toolLoopTruncated, 'truncated'),
   };
 }

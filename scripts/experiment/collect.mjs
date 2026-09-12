@@ -231,12 +231,18 @@ function readRun(path) {
 
 /** Engine A's real token cost. `agent.turn` under-counts it; this does not. */
 async function engineATokens(window) {
+  // The aliases must NOT be named `inputTokens`/`outputTokens`. Logs Insights discovers
+  // those names from the JSON payload, and `sum(inputTokens) as inputTokens` shadows the
+  // source field with the aggregate — the column then comes back null and is dropped from
+  // the row entirely, which reads exactly like "the log carries no token fields". It does
+  // carry them; this cost one run's analysis to find.
   const query = `
     fields @timestamp
     | filter event = "bedrock.converse"
     | stats count() as calls,
-            sum(inputTokens) as inputTokens,
-            sum(outputTokens) as outputTokens,
+            sum(inputTokens) as inTokens,
+            sum(outputTokens) as outTokens,
+            max(inputTokens) as maxInTokens,
             avg(durationMs) as avgDurationMs,
             sum(ok = 0) as failures
       by operation

@@ -460,7 +460,8 @@ function measuredEngineA(metrics, gaps) {
         inputPerCall: rowIn / rowCalls,
         outputPerCall: rowOut / rowCalls,
         // The tail is the finding: engine A's loop is capped at 5, engine B's is not.
-        maxInputTokens: num(row.maxInTokens),
+        // Logs Insights returns every column as a string, so num() would reject it.
+        maxInputTokens: row.maxInTokens === undefined ? null : Number(row.maxInTokens),
       };
     }),
     truncations: field(metrics.toolLoopTruncated, 'truncated'),
@@ -608,7 +609,12 @@ function buildCorrections(a, b, metricsA, metricsB) {
       false,
     ],
     ['Writes per turn', String(DDB_WRITE_UNITS), `${wcuPerTurn.toFixed(1)} WCU`, false],
-    ['Gateway overhead', '~300 ms', fmt(b.gatewayPerTurnMs, ' ms'), true],
+    // The last flag means "the deck was pessimistic — the measurement is kinder", which
+    // for a latency row means measured BELOW the claim. Do not hard-code it: the claimed
+    // ~300 ms turned out optimistic (523 ms measured), so a fixed `true` would paint a
+    // regression green.
+    ['Gateway overhead', '~300 ms', fmt(b.gatewayPerTurnMs, ' ms'),
+      Number.isFinite(b.gatewayPerTurnMs) && b.gatewayPerTurnMs < 300],
   ];
 }
 

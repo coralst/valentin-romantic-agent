@@ -1,0 +1,184 @@
+{
+  "arm": "b",
+  "engine": "agentcore",
+  "smoke": false,
+  "window": {
+    "start": "2026-09-12T10:46:38.853Z",
+    "end": "2026-09-12T11:21:43.136Z"
+  },
+  "tightWindow": {
+    "start": "2026-09-12T10:47:38.853Z",
+    "end": "2026-09-12T11:11:43.136Z"
+  },
+  "turns": 120,
+  "sessions": [
+    {
+      "conversationId": "c01-onboarding-core",
+      "wallClockSec": 101.512
+    },
+    {
+      "conversationId": "c02-onboarding-history",
+      "wallClockSec": 119.907
+    },
+    {
+      "conversationId": "c03-onboarding-taste",
+      "wallClockSec": 111.792
+    },
+    {
+      "conversationId": "c04-onboarding-rhythm",
+      "wallClockSec": 113.512
+    },
+    {
+      "conversationId": "c05-planning-dinner",
+      "wallClockSec": 126.713
+    },
+    {
+      "conversationId": "c06-planning-day",
+      "wallClockSec": 105.677
+    },
+    {
+      "conversationId": "c07-planning-gift",
+      "wallClockSec": 79.953
+    },
+    {
+      "conversationId": "c08-planning-music",
+      "wallClockSec": 353.053
+    },
+    {
+      "conversationId": "c09-recall-profile",
+      "wallClockSec": 84.248
+    },
+    {
+      "conversationId": "c10-recall-plan",
+      "wallClockSec": 79.686
+    },
+    {
+      "conversationId": "c11-chatter-short",
+      "wallClockSec": 76.538
+    },
+    {
+      "conversationId": "c12-chatter-mixed",
+      "wallClockSec": 81.995
+    }
+  ],
+  "sessionWallClockSec": 1434.5860000000002,
+  "latencyMs": {
+    "p50": 5181,
+    "p90": 10100,
+    "p99": 70612,
+    "max": 100323,
+    "wallP50": 5359,
+    "wallP90": 10243
+  },
+  "storeReadsPerTurn": 8.75,
+  "failedTurns": 0,
+  "turnCounts": {
+    "proxy": [
+      {
+        "engine": "agentcore",
+        "turns": "120"
+      }
+    ]
+  },
+  "tokens": {
+    "source": "spans",
+    "attribute": "attributes.gen_ai.usage.input_tokens",
+    "llmSpans": "522",
+    "inputTokens": "5822274",
+    "outputTokens": "70470"
+  },
+  "runtime": {
+    "invocations": 120,
+    "sessions": 12,
+    "errors": 0,
+    "throttles": 0,
+    "avgLatencyMs": 12965.19351947293,
+    "compute": {
+      "vcpuHours": 0.08007735444445001,
+      "gbHours": 4.891194373605176,
+      "dimensions": [
+        "Resource=arn:aws:bedrock-agentcore:us-east-1:684394110906:runtime/valentin_agent_dev-Yn2GsXHG69",
+        "Service=AgentCore.Runtime",
+        "Name=valentin_agent_dev::DEFAULT"
+      ],
+      "lagging": false
+    }
+  },
+  "memory": {
+    "CreateEvent": {
+      "invocations": 120,
+      "errors": null,
+      "avgDurationMs": 77.74428080310433
+    },
+    "ListEvents": {
+      "invocations": null,
+      "errors": null,
+      "avgDurationMs": null
+    },
+    "RetrieveMemoryRecords": {
+      "invocations": null,
+      "errors": null,
+      "avgDurationMs": null
+    },
+    "ListMemoryRecords": {
+      "invocations": 120,
+      "errors": null,
+      "avgDurationMs": 151.55969463322404
+    },
+    "Extraction": {
+      "invocations": 26,
+      "errors": null,
+      "avgDurationMs": 3183.305555555556,
+      "inputTokens": 21406,
+      "outputTokens": 4496
+    },
+    "Consolidation": {
+      "invocations": 21,
+      "errors": null,
+      "avgDurationMs": 1788.9166666666667,
+      "inputTokens": 12328,
+      "outputTokens": 3664
+    },
+    "created_Event": 120,
+    "created_MemoryRecordsExtracted": 64
+  },
+  "gateway": {
+    "byMethod": {
+      "initialize": {
+        "calls": 120,
+        "avgDurationMs": 6.02919237919238
+      },
+      "notifications/initialized": {
+        "calls": 120,
+        "avgDurationMs": 3.893901593901594
+      },
+      "tools/list": {
+        "calls": 120,
+        "avgDurationMs": 37.7954855954856
+      },
+      "tools/call": {
+        "calls": 127,
+        "avgDurationMs": 523.4366083551263
+      }
+    },
+    "inboundAuthOk": 487,
+    "inboundAuthFail": null
+  },
+  "lambdas": {
+    "valentin-profile-tools-dev": {
+      "invocations": 59,
+      "errors": 0,
+      "totalDurationMs": 5242.26
+    },
+    "valentin-integration-tools-dev": {
+      "invocations": 68,
+      "errors": 0,
+      "totalDurationMs": 31677.46
+    }
+  },
+  "dynamodb": {
+    "writeCapacityUnits": 657,
+    "readCapacityUnits": 938.5,
+    "throttles": null
+  }
+}

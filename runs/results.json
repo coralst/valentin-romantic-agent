@@ -1,0 +1,164 @@
+{
+  "dummy": false,
+  "generatedAt": "2026-09-12T11:35:56.601Z",
+  "turns": 120,
+  "conversations": 12,
+  "windows": {
+    "a": {
+      "start": "2026-09-12T10:20:58.510Z",
+      "end": "2026-09-12T10:39:56.823Z"
+    },
+    "b": {
+      "start": "2026-09-12T10:47:38.853Z",
+      "end": "2026-09-12T11:11:43.136Z"
+    }
+  },
+  "cost": {
+    "a": {
+      "Bedrock tokens": 6.098685000000001,
+      "DynamoDB": 0.0008414375000000001,
+      "Fargate (1 task, 730 h)": 18.02078
+    },
+    "b": {
+      "Bedrock tokens": 18.523872,
+      "AgentCore Memory": 0.138,
+      "AgentCore Runtime": 0.05338871005334719,
+      "AgentCore Gateway": 0.008235000000000001,
+      "Tool Lambdas": 0.0003112221549765,
+      "DynamoDB": 0.0005279375,
+      "Fargate (2 tasks, 730 h)": 36.04156
+    }
+  },
+  "latency": {
+    "a": {
+      "p50": 3196,
+      "p90": 9792,
+      "p99": 31962,
+      "max": 33210,
+      "wallP50": 3369,
+      "wallP90": 9949
+    },
+    "b": {
+      "p50": 5181,
+      "p90": 10100,
+      "p99": 70612,
+      "max": 100323,
+      "wallP50": 5359,
+      "wallP90": 10243
+    }
+  },
+  "tokens": {
+    "a": {
+      "in": 1809635,
+      "out": 44652,
+      "calls_per_turn": 2.433333333333333
+    },
+    "b": {
+      "in": 5822274,
+      "out": 70470,
+      "calls_per_turn": 4.35
+    }
+  },
+  "corrections": [
+    [
+      "Turn latency A / B",
+      "~2.1 s / ~2.4 s",
+      "3.2 s / 5.2 s",
+      false
+    ],
+    [
+      "Always-on tasks (B)",
+      "none",
+      "2 Fargate tasks",
+      false
+    ],
+    [
+      "Tools indexed",
+      "3",
+      "29",
+      false
+    ],
+    [
+      "Runtime per conversation",
+      "3 s/turn assumed",
+      "1467 s billed",
+      false
+    ],
+    [
+      "Writes per turn",
+      "9",
+      "8.5 WCU",
+      false
+    ],
+    [
+      "Gateway overhead",
+      "~300 ms",
+      "523 ms",
+      false
+    ]
+  ],
+  "detail": {
+    "engineATokensByOperation": [
+      {
+        "operation": "chat-tools",
+        "calls": 172,
+        "inputTokens": 1341681,
+        "outputTokens": 17097,
+        "inputPerCall": 7800.470930232558,
+        "outputPerCall": 99.40116279069767,
+        "maxInputTokens": 15328
+      },
+      {
+        "operation": "extract-preferences",
+        "calls": 120,
+        "inputTokens": 467954,
+        "outputTokens": 27555,
+        "inputPerCall": 3899.616666666667,
+        "outputPerCall": 229.625,
+        "maxInputTokens": 4682
+      }
+    ],
+    "engineAToolLoopTruncations": 5,
+    "engineBTokenSource": "GenAI Observability spans",
+    "engineBMemory": {
+      "events": 120,
+      "retrievals": 120,
+      "records": 64,
+      "extractionTokens": {
+        "in": 33734,
+        "out": 8160
+      }
+    },
+    "engineBRuntime": {
+      "invocations": 120,
+      "sessions": 12,
+      "vcpuHours": 0.08007735444445001,
+      "gbHours": 4.891194373605176,
+      "gbHoursSource": "meter",
+      "gbHoursPerConversation": 0.4075995311337646,
+      "sessionWallClockSec": 1434.5860000000002
+    },
+    "engineBGatewayCalls": 487,
+    "storeReadsPerTurn": {
+      "a": 9.766666666666667,
+      "b": 8.75
+    },
+    "failedTurns": {
+      "a": 0,
+      "b": 0
+    }
+  },
+  "excluded": {
+    "note": "Charged to both engines identically, so it cancels in the comparison — stated rather than silently dropped.",
+    "sharedNetworkPerMonth": 62.05,
+    "alsoExcluded": [
+      "ALB",
+      "CloudFront",
+      "S3",
+      "Secrets Manager",
+      "CloudWatch Logs ingestion"
+    ],
+    "fargateTasksBStandalone": 18.02078
+  },
+  "gaps": []
+}

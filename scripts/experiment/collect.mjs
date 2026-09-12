@@ -67,14 +67,14 @@ const RUNTIME_DIMS = [
 /**
  * The vCPU/GB-hour meters, in descending order of specificity.
  *
- * These are BILLING meters and they publish on their own schedule: on 2026-09-12 the
- * only `MemoryUsed-GBHours` datapoint in the trailing four days was stamped
- * 2026-09-08, with nothing for traffic minutes old, and it existed only under the
- * `Service`-only dimension set. So they cannot price a one-hour experiment window on
- * the day it runs. `runtimeComputeMeters()` reports whichever set answers and marks
- * the result `lagging` when none does; the authoritative figure comes from re-running
- * the collector days later, and the run-day number comes from measured session
- * wall-clock instead (see `sessionWallClock()`).
+ * These are BILLING meters and they publish on a lag of tens of minutes, not in near
+ * real time. Measured on 2026-09-12: four minutes after a 2-turn smoke they had no
+ * datapoint for it at all (the newest was four days old), but roughly fifteen minutes
+ * after the 120-turn arm B run they had published it in full, under the most specific
+ * dimension set. So a window is priceable — just not immediately after it closes.
+ * `runtimeComputeMeters()` reports whichever set answers and marks the result `lagging`
+ * when none does; re-run the collector after a wait rather than treating a lagging
+ * meter as zero burn.
  */
 const COMPUTE_METER_DIMS = [
   [['Resource', RUNTIME_ARN], ['Service', 'AgentCore.Runtime'], ['Name', RUNTIME_NAME]],
@@ -215,11 +215,21 @@ function readRun(path) {
     // A partial run has the same file shape as a real one. Carried through so the collector
     // can refuse to let a smoke test be priced as a month.
     smoke: start.data.smoke === true,
-    // Pad the window: CloudWatch buckets on period boundaries, and engine B's Memory
-    // extraction is asynchronous and lands minutes after the last turn.
+    // Pad the window: CloudWatch buckets on period boundaries, so a tight window clips
+    // the first and last bucket.
+    //
+    // The tail pad is arm-dependent, and that asymmetry is deliberate. Engine B's Memory
+    // extraction and consolidation are asynchronous and land minutes after its last turn,
+    // so B needs 10 minutes. Engine A's only deferred work is its extract-preferences
+    // Converse, which resolves in seconds. Padding A by 10 minutes ran its window 2 minutes
+    // into arm B's run, and since DynamoDB is the ONE meter the two arms share, that
+    // silently attributed some of B's writes to A. Log queries are scoped by log group and
+    // were never at risk; the capacity numbers were.
     window: {
       start: new Date(new Date(start.data.startedAt).getTime() - 60_000).toISOString(),
-      end: new Date(new Date(summary.data.endedAt).getTime() + 600_000).toISOString(),
+      end: new Date(
+        new Date(summary.data.endedAt).getTime() + (start.data.arm === 'b' ? 600_000 : 120_000),
+      ).toISOString(),
     },
     tight: { start: start.data.startedAt, end: summary.data.endedAt },
     turns,

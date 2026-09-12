@@ -189,10 +189,21 @@ def build(results: dict, out: Path) -> None:
                 radius=0.18)
     frame = band.text_frame
     frame.vertical_anchor = MSO_ANCHOR.MIDDLE
-    line(frame,
-         f'Engine B costs {saving_per_turn / per_turn_a * 100:.0f}% less per turn '
-         f'— and {total_b / total_a:.1f}x more per month. '
-         f'They cross over at ~{crossover_users:.0f} users.',
+    # The headline follows the measurement, it does not assume its direction. The format
+    # preview was drafted when engine B was believed cheaper per turn; the real run showed
+    # the opposite, and a slide that hard-codes the old sign would state a falsehood.
+    if saving_per_turn > 0:
+        headline = (
+            f'Engine B costs {saving_per_turn / per_turn_a * 100:.0f}% less per turn '
+            f'— and {total_b / total_a:.1f}x more per month. '
+            f'They cross over at ~{crossover_users:.0f} users.'
+        )
+    else:
+        headline = (
+            f'Engine B costs {per_turn_b / per_turn_a:.1f}x more per turn '
+            f'AND {total_b / total_a:.1f}x more per month. There is no crossover.'
+        )
+    line(frame, headline,
          size=19, bold=True, color=INK, first=True, align=PP_ALIGN.CENTER)
 
     # ------------------------------------------------------------------ cost panel
@@ -269,10 +280,16 @@ def build(results: dict, out: Path) -> None:
                          size=10.5, color=BODY)
         paragraph.runs[0].font.name = 'Menlo'
 
+    tail_a = results['latency']['a']['p99']
+    tail_b = results['latency']['b']['p99']
+    tail_clause = (
+        f'and its tail is {tail_b / tail_a:.1f}x longer'
+        if tail_b > tail_a else f'but its tail is {tail_a / tail_b:.1f}x tighter'
+    )
     line(frame,
          "Engine A's median excludes the extraction call it defers past the reply — "
-         'real for the user, still on the bill. Engine B is slower at the median and '
-         'tighter in the tail.',
+         f'real for the user, still on the bill. Engine B is slower at the median '
+         f'{tail_clause} — its tool loop has no iteration cap.',
          size=8.5, color=MUTED, italic=True, space_before=6)
 
     # -------------------------------------------------- claimed vs measured footer
@@ -300,8 +317,126 @@ def build(results: dict, out: Path) -> None:
     print(f'wrote {out}')
     print(f'  engine A  total ${total_a:.2f}/mo   variable ${per_turn_a:.4f}/turn')
     print(f'  engine B  total ${total_b:.2f}/mo   variable ${per_turn_b:.4f}/turn')
-    print(f'  crossover ~{crossover_users:.1f} users '
-          f'({crossover_turns:,.0f} turns/month)')
+    if saving_per_turn > 0:
+        print(f'  crossover ~{crossover_users:.1f} users '
+              f'({crossover_turns:,.0f} turns/month)')
+    else:
+        print('  crossover none — engine B is dearer per turn AND per month')
+
+
+def tail_stats(directory: Path) -> dict:
+    """Per-conversation latency shape, read back out of the raw driver JSONL.
+
+    The percentiles in results.json answer "how long does a turn take"; they cannot
+    answer "is the first turn of a conversation the expensive one", which is the
+    question a live demo actually cares about. That needs the per-turn records.
+    """
+    import statistics
+    out = {}
+    for arm in ('a', 'b'):
+        path = directory / f'engine-{arm}.jsonl'
+        if not path.exists():
+            return {}
+        per: dict[str, list[int]] = {}
+        for raw in path.read_text().splitlines():
+            record = json.loads(raw)
+            if record.get('kind') != 'turn':
+                continue
+            data = record['data']
+            per.setdefault(data['conversationId'], []).append(data['replyLatencyMs'])
+        firsts = [turns[0] for turns in per.values()]
+        later = [value for turns in per.values() for value in turns[1:]]
+        out[arm] = {
+            'firstTurnP50': statistics.median(firsts),
+            'laterTurnP50': statistics.median(later),
+            'over30s': sum(1 for turns in per.values() for v in turns if v > 30_000),
+        }
+    return out
+
+
+def build_latency(results: dict, out: Path, tails: dict) -> None:
+    """Slide 9 — the latency picture, as measured bars rather than assumed ones."""
+    prs = Presentation()
+    prs.slide_width = SLIDE_W
+    prs.slide_height = SLIDE_H
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+
+    from pptx.enum.shapes import MSO_SHAPE
+    badge = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(0.62), Inches(0.42),
+                                   Inches(0.62), Inches(0.62))
+    badge.fill.solid()
+    badge.fill.fore_color.rgb = INK
+    badge.line.fill.background()
+    badge.shadow.inherit = False
+    line(badge.text_frame, '9', size=22, bold=True, color=WHITE, first=True,
+         align=PP_ALIGN.CENTER)
+    badge.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+
+    line(textbox(slide, Inches(1.45), Inches(0.42), Inches(11), Inches(0.7)),
+         'What the user waits — measured', size=32, bold=True, color=INK, first=True)
+    rect(slide, Inches(0.62), Inches(1.20), Inches(1.5), Inches(0.045), AMBER)
+    line(textbox(slide, Inches(0.62), Inches(1.38), Inches(12.1), Inches(0.4)),
+         f'{results["turns"]} turns per engine, same 12 conversations, server-reported '
+         'replyLatencyMs. The deck assumed ~2.1 s / ~2.4 s.',
+         size=13, color=BODY, first=True)
+
+    latency = results['latency']
+    scale_max = max(latency['a']['max'], latency['b']['max'])
+    bar_x, bar_w = Inches(2.35), Inches(9.4)
+    row_y = Inches(2.05)
+    row_h = Inches(0.40)
+
+    for key, label in [('p50', 'median'), ('p90', 'p90'), ('p99', 'p99'),
+                       ('max', 'worst turn')]:
+        for arm, colour in (('a', GREEN), ('b', RED)):
+            value = latency[arm][key]
+            frame = textbox(slide, Inches(0.62), row_y, Inches(1.65), row_h,
+                            anchor=MSO_ANCHOR.MIDDLE)
+            line(frame, f'{label} · engine {arm.upper()}', size=10.5,
+                 bold=(key == 'p50'), color=INK if key == 'p50' else BODY, first=True)
+            rect(slide, bar_x, row_y + Inches(0.07), bar_w, Inches(0.19), PANEL)
+            width = max(int(bar_w * value / scale_max), Inches(0.02))
+            rect(slide, bar_x, row_y + Inches(0.07), width, Inches(0.19), colour)
+            frame = textbox(slide, bar_x + width + Inches(0.10), row_y,
+                            Inches(1.2), row_h, anchor=MSO_ANCHOR.MIDDLE)
+            line(frame, f'{value / 1000:.1f} s', size=10, bold=True, color=colour,
+                 first=True)
+            row_y += row_h
+        row_y += Inches(0.10)
+
+    # ------------------------------------------------------- why the tails differ
+    panel(slide, Inches(0.62), Inches(5.72), Inches(5.95), Inches(1.20), GREEN)
+    frame = textbox(slide, Inches(0.90), Inches(5.86), Inches(5.5), Inches(1.0))
+    line(frame, 'ENGINE A  ·  capped', size=10, bold=True, color=GREEN, first=True)
+    line(frame,
+         f'Tool loop caps at 5 iterations — '
+         f'{results.get("detail", {}).get("engineAToolLoopTruncations", 0)} '
+         f'turns hit the cap and were cut off. {tails.get("a", {}).get("over30s", 0)} turns '
+         'over 30 s. The median excludes the extraction call A defers past the reply.',
+         size=9.5, color=BODY, space_before=3)
+
+    panel(slide, Inches(6.78), Inches(5.72), Inches(5.94), Inches(1.20), RED)
+    frame = textbox(slide, Inches(7.06), Inches(5.86), Inches(5.5), Inches(1.0))
+    line(frame, 'ENGINE B  ·  uncapped', size=10, bold=True, color=RED, first=True)
+    line(frame,
+         f'agent.py has no iteration cap, so the tail is unbounded: '
+         f'{tails.get("b", {}).get("over30s", 0)} turns over 30 s, worst '
+         f'{latency["b"]["max"] / 1000:.0f} s. The tail is the finding, not the median.',
+         size=9.5, color=BODY, space_before=3)
+
+    note = (
+        f'No cold-start penalty: the first turn of a conversation runs at '
+        f'{tails["b"]["firstTurnP50"] / 1000:.1f} s on B against '
+        f'{tails["b"]["laterTurnP50"] / 1000:.1f} s for later turns — the container stays '
+        'warm and later turns carry more history. n = 1 run, so read p50/p90 with '
+        'confidence and p99 as indicative.'
+    ) if tails else 'n = 1 run — read p50/p90 with confidence, p99 as indicative.'
+    line(textbox(slide, Inches(0.62), Inches(7.04), Inches(12.1), Inches(0.3)),
+         note, size=8.5, color=MUTED, italic=True, first=True)
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    prs.save(str(out))
+    print(f'wrote {out}')
 
 
 def main() -> None:
@@ -311,6 +446,8 @@ def main() -> None:
     parser.add_argument('--from', dest='source', type=Path,
                         help='directory holding results.json from collect.mjs')
     parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--latency-out', type=Path,
+                        help='also write the measured latency slide here')
     args = parser.parse_args()
 
     if args.dummy:
@@ -321,6 +458,9 @@ def main() -> None:
         parser.error('pass --dummy or --from DIR')
 
     build(results, args.out)
+    if args.latency_out:
+        build_latency(results, args.latency_out,
+                      tail_stats(args.source) if args.source else {})
 
 
 if __name__ == '__main__':

@@ -1,0 +1,16 @@
+
+════ MEASURED (120 turns/user/month, no extrapolation) ════
+  A Bedrock tokens             $6.0987
+  A DynamoDB                   $0.0008
+  A Fargate (1 task, 730 h)    $18.0208
+  A TOTAL                      $24.12
+  B Bedrock tokens             $18.5239
+  B AgentCore Memory           $0.1380
+  B AgentCore Runtime          $0.0534
+  B AgentCore Gateway          $0.0082
+  B Tool Lambdas               $0.0003
+  B DynamoDB                   $0.0005
+  B Fargate (2 tasks, 730 h)   $36.0416
+  B TOTAL                      $54.77
+
+  wrote runs/results.json

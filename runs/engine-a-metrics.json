@@ -1,0 +1,151 @@
+{
+  "arm": "a",
+  "engine": "valentin",
+  "smoke": false,
+  "window": {
+    "start": "2026-09-12T10:19:58.510Z",
+    "end": "2026-09-12T10:41:56.823Z"
+  },
+  "tightWindow": {
+    "start": "2026-09-12T10:20:58.510Z",
+    "end": "2026-09-12T10:39:56.823Z"
+  },
+  "turns": 120,
+  "sessions": [
+    {
+      "conversationId": "c01-onboarding-core",
+      "wallClockSec": 75.304
+    },
+    {
+      "conversationId": "c02-onboarding-history",
+      "wallClockSec": 71.019
+    },
+    {
+      "conversationId": "c03-onboarding-taste",
+      "wallClockSec": 66.738
+    },
+    {
+      "conversationId": "c04-onboarding-rhythm",
+      "wallClockSec": 68.467
+    },
+    {
+      "conversationId": "c05-planning-dinner",
+      "wallClockSec": 119.857
+    },
+    {
+      "conversationId": "c06-planning-day",
+      "wallClockSec": 100.92
+    },
+    {
+      "conversationId": "c07-planning-gift",
+      "wallClockSec": 138.585
+    },
+    {
+      "conversationId": "c08-planning-music",
+      "wallClockSec": 199.528
+    },
+    {
+      "conversationId": "c09-recall-profile",
+      "wallClockSec": 70.275
+    },
+    {
+      "conversationId": "c10-recall-plan",
+      "wallClockSec": 76.575
+    },
+    {
+      "conversationId": "c11-chatter-short",
+      "wallClockSec": 65.232
+    },
+    {
+      "conversationId": "c12-chatter-mixed",
+      "wallClockSec": 76.541
+    }
+  ],
+  "sessionWallClockSec": 1129.041,
+  "latencyMs": {
+    "p50": 3196,
+    "p90": 9792,
+    "p99": 31962,
+    "max": 33210,
+    "wallP50": 3369,
+    "wallP90": 9949
+  },
+  "storeReadsPerTurn": 9.766666666666667,
+  "failedTurns": 0,
+  "turnCounts": {
+    "proxy": [
+      {
+        "engine": "valentin",
+        "turns": "120"
+      }
+    ]
+  },
+  "bedrockConverse": [
+    {
+      "operation": "chat-tools",
+      "calls": "172",
+      "inTokens": "1341681",
+      "outTokens": "17097",
+      "maxInTokens": "15328",
+      "avgDurationMs": "3722.0058",
+      "failures": "0"
+    },
+    {
+      "operation": "extract-preferences",
+      "calls": "120",
+      "inTokens": "467954",
+      "outTokens": "27555",
+      "maxInTokens": "4682",
+      "avgDurationMs": "3736.5833",
+      "failures": "0"
+    }
+  ],
+  "toolLoopTruncated": [
+    {
+      "truncated": "5"
+    }
+  ],
+  "integrations": [
+    {
+      "integration": "spotify",
+      "calls": "60",
+      "avgMs": "393.4167",
+      "maxMs": "778"
+    },
+    {
+      "integration": "web-search",
+      "calls": "29",
+      "avgMs": "292.069",
+      "maxMs": "879"
+    },
+    {
+      "integration": "ontopo",
+      "calls": "8",
+      "avgMs": "651.5",
+      "maxMs": "1844"
+    },
+    {
+      "integration": "hebcal",
+      "calls": "3",
+      "avgMs": "5",
+      "maxMs": "8"
+    },
+    {
+      "integration": "wolt",
+      "calls": "1",
+      "avgMs": "2896",
+      "maxMs": "2896"
+    },
+    {
+      "integration": "gmail",
+      "calls": "1",
+      "avgMs": "7",
+      "maxMs": "7"
+    }
+  ],
+  "dynamodb": {
+    "writeCapacityUnits": 1018,
+    "readCapacityUnits": 1641.5,
+    "throttles": null
+  }
+}

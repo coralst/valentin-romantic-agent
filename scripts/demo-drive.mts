@@ -93,6 +93,51 @@ const REPLY_TIMEOUT_MS = 90_000;
 /** The scheduler's sweep interval, plus room for the send itself. */
 const SWEEP_WAIT_MS = 95_000;
 
+/**
+ * The anniversary the demo plans for — computed at launch, never hardcoded.
+ *
+ * The script used to say "10 September", which was true for exactly the week it
+ * was written in: run after the 10th, the model is being handed a date in the
+ * past, and everything downstream — the countdown, the reminder arming, "find a
+ * table that evening" — is planning for a day that already happened.
+ *
+ * Four to six days out, skipping Friday and Saturday. The floor keeps the date
+ * inside the reminder lead window so the sweep beat still sends mail during the
+ * run; the ceiling keeps it *under* the lead time for the same reason. Fridays
+ * and Saturdays are skipped because most of the bookable kitchens are closed for
+ * Shabbat, and the model would rightly spend the turn saying so instead of
+ * playing the beat. Three consecutive candidates cannot all be Friday/Saturday.
+ */
+function pickOccasion(): { iso: string; dayMonth: string; ordinal: string; weekday: string } {
+  for (let offset = 4; offset <= 6; offset++) {
+    const when = new Date(Date.now() + offset * 86_400_000);
+    const weekday = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Jerusalem',
+      weekday: 'long',
+    }).format(when);
+    if (weekday === 'Friday' || weekday === 'Saturday') continue;
+    const iso = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Jerusalem',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(when);
+    const day = Number(iso.slice(8, 10));
+    const month = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Jerusalem',
+      month: 'long',
+    }).format(when);
+    const tens = Math.floor((day % 100) / 10);
+    const suffix = tens === 1 ? 'th' : (['th', 'st', 'nd', 'rd'][day % 10] ?? 'th');
+    return { iso, dayMonth: `${day} ${month}`, ordinal: `${day}${suffix}`, weekday };
+  }
+  throw new Error('unreachable: three consecutive days cannot all be Friday/Saturday');
+}
+const OCCASION = pickOccasion();
+
+/** Weekday names, for the wrong-weekday assertion. */
+const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 /** Scale a duration by `--speed`. */
 const paced = (ms: number) => Math.round(ms / SPEED);
@@ -134,6 +179,28 @@ interface Turn {
    * scripting failure as a product failure.
    */
   confirms?: boolean;
+  /**
+   * The reply must match every one of these, or the take FAILS.
+   *
+   * These are the run's own review pass. A recorded take where the model was
+   * asked about restaurants and answered about Nina Simone looked fine to every
+   * "did a reply arrive" check and was only caught by a human watching the
+   * video afterwards. The script now watches for exactly that class of failure
+   * and stops the take, because a wrong take discovered at recording time costs
+   * a re-run; discovered afterwards it costs the demo.
+   */
+  replyMust?: RegExp[];
+  /** The reply must match none of these, or the take fails. Same contract. */
+  replyMustNot?: RegExp[];
+  /**
+   * If the reply names any weekday at all, this one must be among them.
+   *
+   * Softer than a mustNot on the six wrong days: a reply may legitimately
+   * mention Friday while talking about Shabbat. What it must never do is the
+   * recorded failure — call the date "this coming Wednesday" when the day is a
+   * Thursday, and have nobody notice until the video was reviewed.
+   */
+  expectWeekday?: string;
 }
 
 /**
@@ -169,8 +236,12 @@ interface Turn {
 const PROFILE_TURNS: Turn[] = [
   {
     say: "Hi! Let me get her details down first, then we'll talk about the evening. " +
-      'Her name is Maya, and our third anniversary is on 10 September.',
+      `Her name is Maya, and our third anniversary is on ${OCCASION.dayMonth}.`,
     beat: 'Her name and the date — the rail starts counting down',
+    // The recorded failure: told the date on a Saturday five days before it, the
+    // model called Thursday "this coming Wednesday". The server now computes the
+    // weekday into the prompt; this asserts the fix held on camera.
+    expectWeekday: OCCASION.weekday,
   },
   {
     say: 'Her birthday is 2 March.',
@@ -184,10 +255,18 @@ const PROFILE_TURNS: Turn[] = [
   {
     say: 'Also, somewhere quiet and romantic. She hates loud rooms.',
     beat: 'The kind of room — atmosphere, kept separate from cuisine',
+    // A stated preference is a fact to file, not a search brief. The recorded
+    // run answered this with five restaurants nobody asked for, and the
+    // unanswered offer then dominated every later turn.
+    replyMustNot: [/Montefiore|Yaffo Tel Aviv|NOEMA|Brasserie|Matteo/i, /here are (a )?(few|five|four|three|some)/i],
   },
   {
     say: "She's obsessed with Nina Simone — jazz generally, really.",
     beat: 'Her music — this is the row Spotify reads later',
+    // The reply must engage with the music, not drag the conversation back to a
+    // shortlist ("Back to Wednesday: are any of those five speaking to you?").
+    replyMust: [/nina|jazz|music/i],
+    replyMustNot: [/restaurant|shortlist|Montefiore|Yaffo Tel Aviv|NOEMA|Brasserie|Matteo/i],
   },
   {
     say: 'One more thing — she does pottery on Tuesdays, and on Fridays she finishes work at 17:00.',
@@ -238,14 +317,19 @@ const PROFILE_TURNS: Turn[] = [
  */
 const PLAN_TURNS: Turn[] = [
   {
-    say: "Before we book anything — what's already in my calendar around the 10th? " +
+    say: `Before we book anything — what's already in my calendar around the ${OCCASION.ordinal}? ` +
       "I don't want to double-book that evening.",
     beat: 'Google Calendar, read-only — checking for a clash before proposing a thing',
+    replyMust: [/calendar|clash|clear|free|nothing|event|booked/i],
   },
   {
     say: 'Good. Find us a table for two that evening — quiet, Mediterranean, ' +
       'and nothing with shellfish on it.',
     beat: 'Ontopo — real restaurants, real availability, and her allergy in the query',
+    // The observed failure class, verbatim from review: "it isn't acceptable
+    // that it is asked on restaurant and answer about Nina Simone".
+    replyMust: [/table|restaurant|place/i],
+    replyMustNot: [/nina simone/i],
   },
   /*
    * The search and the booking are two turns because that is what the model does.
@@ -262,11 +346,13 @@ const PLAN_TURNS: Turn[] = [
     say: 'Yes — go ahead and book the quiet one at 20:00.',
     beat: 'Now it is a write, so it comes back as a proposal instead of an answer',
     confirms: true,
+    replyMust: [/reserv|propos|confirm|book|table/i],
   },
   {
     say: 'And put together a playlist for the drive there.',
     beat: 'Spotify — real tracks, chosen off the row that says Nina Simone',
     confirms: true,
+    replyMust: [/playlist|track|song|nina/i],
   },
 ];
 
@@ -510,7 +596,7 @@ const transcriptOf = (page: Page) =>
  */
 const QUIET_MS = 3_500;
 
-async function awaitReply(page: Page, before: string, sent: string): Promise<void> {
+async function awaitReply(page: Page, before: string, sent: string): Promise<string> {
   const typing = page.getByTestId('typing-indicator');
   const deadline = Date.now() + REPLY_TIMEOUT_MS;
 
@@ -559,6 +645,51 @@ async function awaitReply(page: Page, before: string, sent: string): Promise<voi
    * watching a demo cannot get the time back.
    */
   await sleep(Math.min(paced(4_500), paced(900) + said * paced(8)));
+
+  /*
+   * What the reply actually said, for the per-turn assertions.
+   *
+   * Cut after the *tail* of the sent line rather than its head, so the user's own
+   * words are excluded from the slice being asserted — a mustNot on "restaurant"
+   * must not trip on the user saying "find us a table", and a must on "table"
+   * must not pass because he typed the word himself.
+   */
+  const tail = sent.slice(-24);
+  const cut = previous.lastIndexOf(tail);
+  return cut >= 0 ? previous.slice(cut + tail.length) : previous.slice(before.length);
+}
+
+/**
+ * Fail the take when a reply is off-topic, instead of finding out in review.
+ *
+ * Throwing is the point: every one of these patterns encodes a failure that a
+ * recorded run actually exhibited, was not caught by any liveness check, and
+ * cost the demo. A thrown take is re-runnable; a shipped wrong take is not.
+ */
+function assertReply(turn: Turn, reply: string): void {
+  for (const must of turn.replyMust ?? []) {
+    if (!must.test(reply)) {
+      throw new Error(
+        `TAKE FAILED — the reply never matched ${must}.\n  asked: ${turn.say}\n  reply: ${reply.slice(0, 400)}`,
+      );
+    }
+  }
+  for (const mustNot of turn.replyMustNot ?? []) {
+    if (mustNot.test(reply)) {
+      throw new Error(
+        `TAKE FAILED — the reply matched forbidden ${mustNot}.\n  asked: ${turn.say}\n  reply: ${reply.slice(0, 400)}`,
+      );
+    }
+  }
+  if (turn.expectWeekday) {
+    const named = WEEKDAYS.filter((day) => new RegExp(`\\b${day}\\b`, 'i').test(reply));
+    if (named.length > 0 && !named.includes(turn.expectWeekday)) {
+      throw new Error(
+        `TAKE FAILED — the reply named ${named.join(', ')} but the date is a ${turn.expectWeekday}.\n` +
+          `  asked: ${turn.say}\n  reply: ${reply.slice(0, 400)}`,
+      );
+    }
+  }
 }
 
 let shotIndex = 0;
@@ -683,7 +814,8 @@ async function playTurns(page: Page, composer: Locator, turns: Turn[], tag: stri
     const before = await transcriptOf(page);
     await typeHuman(page, composer, turn);
     await composer.press('Enter');
-    await awaitReply(page, before, turn.say);
+    const reply = await awaitReply(page, before, turn.say);
+    assertReply(turn, reply);
     await shot(page, `${tag}-${String(index + 1).padStart(2, '0')}`);
     if (turn.confirms) await confirmProposal(page, tag === 'plan' ? planName(turn) : 'action');
   }
@@ -938,12 +1070,26 @@ async function main(): Promise<void> {
     console.log('\nact 6 — the plan: calendar, then a table, then the music');
     await playTurns(page, composer, PLAN_TURNS, 'plan');
 
-    console.log('\nact 7 — the inspector');
+    console.log('\nact 7 — one question, two architectures, inspected');
     /*
-     * Two ways in, and both are on screen: the magnifier in the sidebar and the
-     * bar across the bottom. The sidebar toggle is preferred because it is the one
-     * a presenter can point at; the bar is the fallback for a layout where the
-     * sidebar is collapsed.
+     * ## Why this is one act and not two
+     *
+     * It used to be "act 7: inspector" then "act 8: engine switch" — and the
+     * scoreboard opened *before* AgentCore had run a single turn, so its right
+     * column honestly rendered "not yet run". A comparison sheet with one column
+     * is not a comparison. The A/B shape fixes that structurally: the same
+     * question is asked once on each engine with the inspector open, the
+     * differences are pointed at as they appear, and the scoreboard comes LAST,
+     * when both columns hold turns this very run just played.
+     *
+     * The question is a pure memory read ("what can't she eat") on purpose: it
+     * exercises the one thing the engines genuinely implement differently —
+     * glue-code extraction + readKnownFacts vs AgentCore Memory — with no tool
+     * call, no Ontopo variance, and no proposal card muddying the trace.
+     *
+     * Two ways into the drawer, and both are on screen: the magnifier in the
+     * sidebar and the bar across the bottom. The sidebar toggle is preferred
+     * because it is the one a presenter can point at.
      */
     const architecture = page.getByTestId('architecture-toggle');
     const reopenBar = page.getByTestId('architecture-reopen-bar');
@@ -956,8 +1102,63 @@ async function main(): Promise<void> {
       await linger(page, page.getByTestId('aws-topology-diagram'), 5_200);
       await shot(page, 'inspector-topology');
 
+      // ——— A: the glue code, watched through the feed ———
+      await playTurns(
+        page,
+        composer,
+        [{
+          say: "Remind me what she can't eat.",
+          beat: 'One question on the glue code — watch the feed on the right',
+          replyMust: [/shellfish/i],
+        }],
+        'engine-a',
+      );
+
       /*
-       * Replay one call rather than describing the feed.
+       * The double Bedrock call, pointed at rather than asserted in prose.
+       *
+       * Engine A costs two model calls per turn: the reply itself, plus a
+       * forced-tool `extract-preferences` Converse that re-reads the turn for
+       * facts. Both land in the flow feed with their `operation` in the detail
+       * column, so the caption is *computed from the rows on screen* — the count
+       * is read, not claimed. The extraction call is async and trails the reply,
+       * hence the wait.
+       */
+      const feed = page.getByTestId('aws-flow-feed');
+      await feed
+        .getByText('extract-preferences')
+        .first()
+        .waitFor({ state: 'visible', timeout: 30_000 })
+        .catch(() => {});
+      const newestGroup = feed.getByTestId('aws-feed-group').first();
+      const bedrockCalls = await newestGroup
+        .getByTestId('aws-feed-row')
+        .filter({ hasText: /bedrock/i })
+        .count()
+        .catch(() => 0);
+      const extractionSeen = await feed
+        .getByText('extract-preferences')
+        .first()
+        .isVisible()
+        .catch(() => false);
+      console.log(`  feed shows ${bedrockCalls} Bedrock call(s) for that turn; extraction row ${extractionSeen ? 'present' : 'absent'}`);
+      await caption(
+        page,
+        bedrockCalls >= 2
+          ? `That one turn = ${bedrockCalls} Bedrock calls: the reply, plus a forced-tool "extract-preferences" pass`
+          : extractionSeen
+            ? 'The reply call — and below it, the separate "extract-preferences" Bedrock pass'
+            : 'The glue code pays a second, forced-tool Bedrock call per turn to extract preferences',
+      );
+      if (extractionSeen) {
+        await linger(page, feed.getByText('extract-preferences').first(), 5_500);
+      } else {
+        await hold(5_500);
+      }
+      await shot(page, 'engine-a-two-bedrock-calls');
+
+      /*
+       * Replay that call rather than describing the feed.
        *
        * Clicking a group is what turns the feed from a log into an inspector: the
        * diagram stops following live traffic and walks that one request hop by hop,
@@ -972,13 +1173,13 @@ async function main(): Promise<void> {
           .first()
           .innerText()
           .catch(() => '');
-        await caption(page, 'Pick one of them apart — hop by hop');
-        await humanClick(page, group, 'replay one call');
+        await caption(page, 'Pick it apart — hop by hop');
+        await humanClick(page, group, 'replay the call');
         if (traceId) console.log(`  replaying trace ${traceId.trim()}`);
 
         const steps = page.getByTestId('architecture-step-count');
         await steps.waitFor({ state: 'visible', timeout: 8_000 }).catch(() => {});
-        await shot(page, 'inspector-replay');
+        await shot(page, 'inspector-replay-glue');
 
         // Scoped to the drawer: `/^next/i` alone also matches the rail's "Next up"
         // hero, and stepping the flow by clicking a countdown card is a confusing
@@ -996,82 +1197,115 @@ async function main(): Promise<void> {
         await shot(page, 'inspector-stepped');
       }
 
-      const scoreboard = page.getByTestId('scoreboard-toggle');
-      if (await showing(scoreboard)) {
-        await humanClick(page, scoreboard, 'open the engine scoreboard');
-        await caption(page, 'The two engines, measured against each other');
-        await hold(5_000);
-        await shot(page, 'inspector-scoreboard');
+      // ——— The switch ———
+      /*
+       * The engine switch is the claim that the same conversation runs on two
+       * different back ends: engine A is this repo's own tool loop ("Glue code"),
+       * engine B is Bedrock AgentCore running the same tools behind a managed
+       * runtime.
+       *
+       * What is *not* assumed is that engine B is reachable. `resolveEngine`
+       * downgrades to A when the AgentCore wiring is absent, and the drawer says so
+       * through `architecture-serving-chip` / the `downgraded` marker. The caption is
+       * therefore read from the app rather than written here — a video that says
+       * "now on AgentCore" over engine A's answers is exactly the lie this project
+       * keeps deciding not to tell.
+       */
+      const engineSwitch = page.getByTestId('rail-engine-switch');
+      if (await showing(engineSwitch)) {
+        await caption(page, 'Same conversation, same tools — a different engine underneath');
+        await linger(page, engineSwitch, 3_000);
+        await humanClick(page, page.getByTestId('rail-engine-agentcore'), 'switch to AgentCore');
+        await hold(3_000);
+
+        const serving = page.getByTestId('architecture-serving-chip');
+        const downgraded = (await showing(page.getByTestId('downgraded')))
+          || /glue/i.test(await serving.innerText().catch(() => ''));
+        // The chip renders its own "SERVING:" prefix, so the raw text read back into a
+        // sentence gave "is serving SERVING: GLUE CODE". Keep the engine name only.
+        const label = (await serving.innerText().catch(() => ''))
+          .replace(/\s+/g, ' ')
+          .replace(/^serving:?\s*/i, '')
+          .trim();
+
+        if (downgraded) {
+          await caption(
+            page,
+            label
+              ? `Asked for AgentCore; this deployment is serving ${label} — it says so rather than pretending`
+              : 'AgentCore is not wired on this deployment, and the app refuses to claim it is',
+            'substituted',
+          );
+          console.log(`  engine B unavailable here — serving chip reads: ${label || '(none)'}`);
+          await hold(6_000);
+        } else {
+          await caption(page, `Now served by ${label || 'AgentCore'} — same diagram, a different path lights up`);
+          await hold(2_500);
+          const agentcoreBox = page.getByTestId('aws-agentcore-box');
+          if (await showing(agentcoreBox)) await linger(page, agentcoreBox, 4_500);
+          await shot(page, 'engine-agentcore-topology');
+
+          // ——— B: the identical question ———
+          await playTurns(
+            page,
+            composer,
+            [{
+              say: "Remind me what she can't eat.",
+              beat: 'The identical question, answered by AgentCore — Memory replaces the extraction pass',
+              replyMust: [/shellfish/i],
+            }],
+            'engine-b',
+          );
+
+          /*
+           * The B-side difference, read off the feed like the A-side one was:
+           * the newest group should hold a Runtime row (with an X-Ray trace id —
+           * only engine B reports one) and no `extract-preferences` row.
+           */
+          const bGroup = feed.getByTestId('aws-feed-group').first();
+          const bExtraction = await bGroup
+            .getByTestId('aws-feed-row')
+            .filter({ hasText: /extract-preferences/i })
+            .count()
+            .catch(() => 0);
+          console.log(`  engine B newest group: extraction rows ${bExtraction}`);
+          await caption(
+            page,
+            bExtraction === 0
+              ? 'Same answer — and no extraction pass in the feed. AgentCore Memory holds the fact'
+              : 'Same answer, through the managed runtime',
+          );
+          await hold(5_500);
+          await shot(page, 'engine-b-no-extraction');
+        }
+        await shot(page, 'engine-agentcore');
+
+        /*
+         * The scoreboard LAST, once both engines hold turns from this run — so
+         * neither column can read "not yet run" and every number on it was
+         * measured minutes ago, on camera. On a downgraded deployment engine B
+         * never ran, the sheet would honestly say "not yet run", and a caption
+         * promising measured numbers over that would be the lie — so skip it.
+         */
+        if (!downgraded) {
+          const scoreboard = page.getByTestId('scoreboard-toggle');
+          if (await showing(scoreboard)) {
+            await humanClick(page, scoreboard, 'open the engine scoreboard');
+            await caption(page, 'The two engines, measured — every number from turns this run just played');
+            await hold(6_000);
+            await shot(page, 'inspector-scoreboard');
+          }
+        }
+
+        await humanClick(page, page.getByTestId('rail-engine-valentin'), 'switch back to the glue code');
+        await caption(page, 'And back. The switch is a runtime choice, not a redeploy');
+        await hold(4_000);
+        await shot(page, 'engine-back');
       }
-    }
-
-    console.log('\nact 8 — the other architecture');
-    /*
-     * The engine switch is the claim that the same conversation runs on two
-     * different back ends: engine A is this repo's own tool loop ("Glue code"),
-     * engine B is Bedrock AgentCore running the same tools behind a managed
-     * runtime.
-     *
-     * What is *not* assumed is that engine B is reachable. `resolveEngine`
-     * downgrades to A when the AgentCore wiring is absent, and the drawer says so
-     * through `architecture-serving-chip` / the `downgraded` marker. The caption is
-     * therefore read from the app rather than written here — a video that says
-     * "now on AgentCore" over engine A's answers is exactly the lie this project
-     * keeps deciding not to tell.
-     */
-    const engineSwitch = page.getByTestId('rail-engine-switch');
-    if (await showing(engineSwitch)) {
-      await caption(page, 'Same conversation, same tools — a different engine underneath');
-      await linger(page, engineSwitch, 3_000);
-      await humanClick(page, page.getByTestId('rail-engine-agentcore'), 'switch to AgentCore');
-      await hold(3_000);
-
-      const serving = page.getByTestId('architecture-serving-chip');
-      const downgraded = (await showing(page.getByTestId('downgraded')))
-        || /glue/i.test(await serving.innerText().catch(() => ''));
-      // The chip renders its own "SERVING:" prefix, so the raw text read back into a
-      // sentence gave "is serving SERVING: GLUE CODE". Keep the engine name only.
-      const label = (await serving.innerText().catch(() => ''))
-        .replace(/\s+/g, ' ')
-        .replace(/^serving:?\s*/i, '')
-        .trim();
-
-      if (downgraded) {
-        await caption(
-          page,
-          label
-            ? `Asked for AgentCore; this deployment is serving ${label} — it says so rather than pretending`
-            : 'AgentCore is not wired on this deployment, and the app refuses to claim it is',
-          'substituted',
-        );
-        console.log(`  engine B unavailable here — serving chip reads: ${label || '(none)'}`);
-        await hold(6_000);
-      } else {
-        await caption(page, `Now served by ${label || 'AgentCore'} — the topology redraws`);
-        await hold(2_500);
-        const agentcoreBox = page.getByTestId('aws-agentcore-box');
-        if (await showing(agentcoreBox)) await linger(page, agentcoreBox, 4_500);
-        await shot(page, 'engine-agentcore-topology');
-
-        // One real turn on engine B. Short on purpose: the claim being filmed is
-        // "the switch is live", and one answer proves it as well as ten.
-        await playTurns(
-          page,
-          composer,
-          [{ say: "Remind me what she can't eat.", beat: 'Answered by AgentCore, not by the glue code' }],
-          'agentcore',
-        );
-      }
-      await shot(page, 'engine-agentcore');
-
-      await humanClick(page, page.getByTestId('rail-engine-valentin'), 'switch back to the glue code');
-      await caption(page, 'And back. The switch is a runtime choice, not a redeploy');
-      await hold(4_000);
-      await shot(page, 'engine-back');
     }
 
     if (DO_SURVEY) {
-      console.log('\nact 9 — the day-after survey (substituted)');
+      console.log('\nact 8 — the day-after survey (substituted)');
       const demo = page.getByTestId('rail-demo-button');
       if (await demo.isVisible().catch(() => false)) {
         await caption(

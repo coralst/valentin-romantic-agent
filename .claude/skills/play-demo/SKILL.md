@@ -18,20 +18,32 @@ One command, watched live:
 npm run demo:drive -- --to=<their email>
 ```
 
-It opens a headed Chromium on **the login page** and plays nine acts:
+It opens a headed Chromium on **the login page** and plays eight acts:
 
 1. the entrance page, and **Create an Account** — a profile that knows nothing
-2. the conversation: nine turns of facts, typed at human speed
+2. the conversation: the facts, typed at human speed. The anniversary date is
+   **computed at launch** (4–6 days out, never Shabbat), so the script can be
+   run any day without handing the model a date in the past
 3. the rail filling in, and the countdown that is the notification
 4. the 60-second scheduler sweep firing, and the **real reminder email**
 5. the integrations panel — what is connected, and what is dark for want of a key
 6. the plan: a **Google Calendar** clash check, an **Ontopo** table and a
    **Spotify** playlist, each with its proposal card confirmed on camera
-7. the **inspector** — the Live Architecture drawer, replaying one call hop by hop
-8. **the other architecture** — the engine switch, Glue code ↔ AgentCore
-9. the day-after survey (the one substituted beat)
+7. **one question, two architectures** — the A/B inspector act. The same memory
+   question is asked on the Glue code (the feed shows its **two Bedrock calls**:
+   the reply plus the forced-tool `extract-preferences` pass, replayed hop by
+   hop), the engine is switched live, the identical question is answered by
+   **AgentCore** (no extraction row — Memory holds the fact), and only then the
+   scoreboard opens, both columns populated by turns this run just played
+8. the day-after survey (the one substituted beat)
 
 Roughly **20–25 minutes** at `--speed=1`.
+
+**The run reviews itself.** Every scripted turn carries reply assertions —
+the restaurant turn must talk about restaurants, the music turn must not, a
+reply that names a weekday must name the *right* one. A reply that violates one
+**fails the take immediately** with the offending text in the log, instead of
+the failure being discovered in video review afterwards.
 
 The browser window stays open at the end on purpose. Ctrl-C closes it.
 

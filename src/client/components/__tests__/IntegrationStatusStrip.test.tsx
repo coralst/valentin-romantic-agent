@@ -107,11 +107,12 @@ describe('IntegrationStatusStrip', () => {
   });
 
   it('shows the configured services first, so they survive the overflow cut', () => {
-    // Two configured out of nine: both must be inside the visible six.
-    render(<IntegrationStatusStrip readiness={loaded({ hebcal: true, whatsapp: true })} />);
+    // Two configured, both last in catalogue order: they must still be inside the
+    // visible six rather than cut by it.
+    render(<IntegrationStatusStrip readiness={loaded({ hebcal: true, 'web-search': true })} />);
 
     expect(screen.getByTestId('integration-status-hebcal')).toBeInTheDocument();
-    expect(screen.getByTestId('integration-status-whatsapp')).toBeInTheDocument();
+    expect(screen.getByTestId('integration-status-web-search')).toBeInTheDocument();
   });
 
   it('says the status is unavailable rather than reporting a count it cannot justify', () => {

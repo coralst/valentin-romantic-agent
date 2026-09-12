@@ -90,6 +90,10 @@ screenshots/final/
 # attach them to the PR instead of committing a few MB of PNGs per sweep.
 screenshots/bug-hunt-*/
 
+# The Chrome profile `demo:drive` reuses so act 3 can open a signed-in Gmail. It
+# holds a live Google session — never commit it, and never share it.
+.demo-chrome-profile/
+
 # Throwaway session drivers. A parallel session spins up its own dev server on
 # its own port and its own ad-hoc Playwright driver; those are scratch, and
 # committing one means the next integration merge has to invent an OWNERSHIP row

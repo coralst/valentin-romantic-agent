@@ -38,7 +38,7 @@ describe('encoding', () => {
     });
   });
 
-  it('splits on the first separator, so a title may contain one', () => {
+  it('splits on the last separator, so a title may contain one', () => {
     const awkward = { ...PLAYLIST, title: 'me@home mixtape' };
     expect(decodeKeepsake(encodeKeepsake(awkward))?.title).toBe('me@home mixtape');
   });
@@ -122,6 +122,10 @@ describe('the whole chain, confirm to mail', () => {
     const reminder: Reminder = {
       id: 'anniversary-2026-09-17',
       sessionId,
+      userId: 'user-1',
+      channel: 'log',
+      attempts: 0,
+      createdAt: '2026-09-01T00:00:00.000Z',
       kind: 'anniversary',
       title: null,
       occasion: 'anniversary',
@@ -143,6 +147,10 @@ describe('the whole chain, confirm to mail', () => {
     const context = await reminderContextFor(storage, {
       id: 'anniversary-2026-09-17',
       sessionId,
+      userId: 'user-1',
+      channel: 'log',
+      attempts: 0,
+      createdAt: '2026-09-01T00:00:00.000Z',
       kind: 'anniversary',
       title: null,
       occasion: 'anniversary',

@@ -12,19 +12,36 @@
  * Neither script should grow into the other; they are optimising for opposite
  * things (throughput vs. legibility).
  *
+ * ## The four acts
+ *
+ * 1. **The entrance.** Three beats: the landing page, the way in, the empty profile.
+ * 2. **The conversation.** Everything else the product does, in one unbroken thread —
+ *    the facts land, the inspector opens and stays open, the same question is asked on
+ *    both engines, the calendar and Ontopo and Spotify are called for real, and the
+ *    last thing it does is *post a letter*. Act 2 ends when the sweep sends the mail.
+ * 3. **The inbox.** His actual Gmail, opened in the same browser: the confirmation of
+ *    the restaurant he chose, and the surprise playlist link at the bottom of it.
+ * 4. **The day-after survey**, which is the one substituted beat (see below).
+ *
  * ## What is real here
  *
  * All of it, with one marked exception. The conversation goes through the live
  * websocket to the live model; extraction writes real rows; the reminder is armed
  * by the real planner and swept by the real 60-second scheduler; **the email is
- * really sent** by `gmailSender`.
+ * really sent** by `gmailSender` and then really read out of the inbox.
  *
- * The exception is the day-after survey, and the script says so on screen while
- * it happens rather than letting it pass as real. A survey exists because a date
- * went by and nobody can make a day pass during a demo — so the last beat seeds
- * the demo fixture, whose outings are already in the past, and the *real*
- * `unratedOutings` path raises the prompt. Only the passage of time is stood in
- * for. See `CAPTION_SUBSTITUTED`.
+ * ## The four marked inspection moments
+ *
+ * The drawer is opened once, early, and never closed — and at four points the caption
+ * turns blue to say *this is the bit to look at*. Each one is read off the screen and
+ * then **asserted**, so a take in which the claim was not true stops rather than
+ * shipping: (1) engine A spends two Bedrock calls on one turn, (2) that call replayed
+ * hop by hop, (3) engine B spends none on extraction, (4) one `check_availability`
+ * span per restaurant offered, with a real clock time in the reply.
+ *
+ * The exception is act 4, the day-after survey, and the script says so on screen while
+ * it happens rather than letting it pass as real — an amber caption, for the whole beat.
+ * See {@link theSurvey}.
  *
  * ## The address
  *
@@ -41,10 +58,25 @@
  * the machine's screen for twenty minutes. `--record --headed` if you want to
  * watch it being made.
  *
+ * ## Reading the inbox needs a signed-in browser profile
+ *
+ * Act 3 opens `mail.google.com` in the same browser, which only works if that browser
+ * is already signed in — a fresh Playwright profile cannot pass Google's 2FA, and
+ * scripting a password into it would be both fragile and a bad idea. So the whole run
+ * uses a **persistent** profile at {@link USER_DATA_DIR}, and there is a one-time
+ * setup pass that opens Gmail and waits for a human:
+ *
+ *   npm run demo:drive -- --gmail-login     # sign in once, by hand, then close it
+ *
+ * A run whose profile is not signed in does not fail: act 3 captions itself as skipped
+ * and says which command to run. That is deliberate — a missing inbox beat costs one
+ * act, and a take that dies at minute eighteen costs the whole recording.
+ *
  * Usage:
  *   npm run demo:drive -- --to=you@example.com
  *   npm run demo:drive -- --to=you@example.com --speed=1.6   # rehearse faster
  *   npm run demo:drive -- --to=you@example.com --no-mail     # skip the send beat
+ *   npm run demo:drive -- --to=you@example.com --no-inbox    # skip act 3
  *   npm run demo:drive -- --to=you@example.com --record      # write a video too
  */
 import { chromium, type Page, type Locator, type BrowserContext } from '@playwright/test';
@@ -64,6 +96,18 @@ const TO = flag('to') ?? '';
 const SPEED = Math.max(0.2, Number(flag('speed') ?? 1));
 const SEND_MAIL = !has('no-mail');
 const DO_SURVEY = !has('no-survey');
+/** Act 3. Pointless with nothing sent, so it follows the mail beat. */
+const DO_INBOX = SEND_MAIL && !has('no-inbox');
+/** Open Gmail, wait for a human to sign in, and exit. One-time setup. */
+const GMAIL_LOGIN = has('gmail-login');
+/**
+ * The browser profile the run reuses, so act 3 can open a signed-in Gmail.
+ *
+ * Outside `SHOT_DIR` on purpose: that directory is deleted at the start of every run
+ * (see `main`), and a run that wipes its own Google session would put the sign-in back
+ * in front of the audience every time.
+ */
+const USER_DATA_DIR = path.resolve(flag('profile-dir') ?? '.demo-chrome-profile');
 const SHOT_DIR = path.resolve('screenshots/demo');
 const VIDEO_DIR = path.join(SHOT_DIR, 'video');
 /** Write a video of the run as well as the stills. */
@@ -101,20 +145,45 @@ const SWEEP_WAIT_MS = 95_000;
  * past, and everything downstream — the countdown, the reminder arming, "find a
  * table that evening" — is planning for a day that already happened.
  *
- * Four to six days out, skipping Friday and Saturday. The floor keeps the date
- * inside the reminder lead window so the sweep beat still sends mail during the
- * run; the ceiling keeps it *under* the lead time for the same reason. Fridays
- * and Saturdays are skipped because most of the bookable kitchens are closed for
- * Shabbat, and the model would rightly spend the turn saying so instead of
- * playing the beat. Three consecutive candidates cannot all be Friday/Saturday.
+ * ## Why a Thursday, and why *more* than a week out
+ *
+ * A Thursday because the kitchens worth booking are open on one (most are shut for
+ * Shabbat on Friday and Saturday, and the model would rightly spend the turn saying
+ * so instead of playing the beat).
+ *
+ * More than a week out because of the order act 2 has to run in, and this is the
+ * single most load-bearing number in the script. `leadTimeDays` defaults to **a
+ * week**, and `syncReminders` arms the reminder the moment the anniversary lands on
+ * the profile — which is turn 1. So on the old four-to-six-days-out date the row was
+ * *already overdue* before anything had been booked, and `scheduler.ts` sweeps every
+ * 60 seconds: the mail went out about ninety seconds into the conversation, naming no
+ * restaurant and carrying no playlist, because neither existed yet.
+ *
+ * Held outside the lead window, the row is planned and simply not due, all the way
+ * through the booking and the playlist. The closing turn then asks for a *fortnight's*
+ * notice — a real option in `REMINDER_LEAD_OPTIONS`, not a demo hook — the planner
+ * re-plans the row, the due instant lands in the past, and the very next sweep sends
+ * it. The mail then has a confirmed venue and a saved playlist to talk about because
+ * both happened before it was asked for.
+ *
+ * {@link LEAD_FLOOR_DAYS} is that week, plus a day so a run that straddles midnight
+ * cannot drift into the window on its own.
  */
+const LEAD_FLOOR_DAYS = 8;
+
 function pickOccasion(): { iso: string; dayMonth: string; ordinal: string; weekday: string } {
-  for (let offset = 4; offset <= 6; offset++) {
+  for (let offset = LEAD_FLOOR_DAYS; offset <= LEAD_FLOOR_DAYS + 7; offset++) {
     const when = new Date(Date.now() + offset * 86_400_000);
     const weekday = new Intl.DateTimeFormat('en-GB', {
       timeZone: 'Asia/Jerusalem',
       weekday: 'long',
     }).format(when);
+    /*
+     * A Thursday if the window holds one, and it always does — the window is eight
+     * consecutive days. The other weekdays are kept as a fallback rather than a
+     * `throw`, because "no Thursday" is not a state worth failing a recording over.
+     */
+    if (weekday !== 'Thursday' && offset < LEAD_FLOOR_DAYS + 7) continue;
     if (weekday === 'Friday' || weekday === 'Saturday') continue;
     const iso = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Asia/Jerusalem',
@@ -131,9 +200,34 @@ function pickOccasion(): { iso: string; dayMonth: string; ordinal: string; weekd
     const suffix = tens === 1 ? 'th' : (['th', 'st', 'nd', 'rd'][day % 10] ?? 'th');
     return { iso, dayMonth: `${day} ${month}`, ordinal: `${day}${suffix}`, weekday };
   }
-  throw new Error('unreachable: three consecutive days cannot all be Friday/Saturday');
+  throw new Error('unreachable: an eight-day window contains a Thursday');
 }
 const OCCASION = pickOccasion();
+
+/** Whole days from today to the occasion, in the reminder's own zone. */
+function daysToOccasion(): number {
+  const today = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jerusalem',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+  const [ty, tm, td] = today.split('-').map(Number);
+  const [oy, om, od] = OCCASION.iso.split('-').map(Number);
+  return Math.round((Date.UTC(oy, om - 1, od) - Date.UTC(ty, tm - 1, td)) / 86_400_000);
+}
+
+/**
+ * The notice asked for in the closing turn, and how overdue that makes the row.
+ *
+ * A fortnight, because that is the smallest option in `REMINDER_LEAD_OPTIONS` that is
+ * larger than {@link LEAD_FLOOR_DAYS} — so it is guaranteed to put the due instant in
+ * the past, which is what makes the next sweep send. Computed rather than written into
+ * a caption for the usual reason: "four days overdue" is a sentence that goes stale on
+ * the day someone runs this at a different distance from the date.
+ */
+const CLOSING_LEAD_DAYS = 14;
+const OVERDUE_DAYS = CLOSING_LEAD_DAYS - daysToOccasion();
 
 /** Weekday names, for the wrong-weekday assertion. */
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -225,13 +319,10 @@ interface Turn {
  * that even if he does end a turn with a question, volunteering the next fact
  * reads as a person adding to a list rather than as a non-answer.
  *
- * Two ordering constraints inside that. `notify_email` comes before anything
- * about timing, so the address is on the profile before a reminder is discussed —
- * though a sweep landing early is harmless, because `dispatcher.ts` checks for a
- * missing target *before* it claims the row and `adoptTarget` back-fills the
- * address afterwards. And `weekly_rhythm` is the last fact, because "she finishes
- * work at 17:00" is quoted back verbatim in the mail, so it should still be in the
- * audience's mind when the mail appears.
+ * `weekly_rhythm` is late for a reason of its own: "she finishes work at 17:00" is
+ * quoted back verbatim in the mail, so it should still be in the audience's mind when
+ * the mail appears. The address and everything about timing are later still, in
+ * {@link CLOSING_TURNS} — see that block for why they cannot be here.
  */
 const PROFILE_TURNS: Turn[] = [
   {
@@ -281,23 +372,48 @@ const PROFILE_TURNS: Turn[] = [
     stumble: true,
   },
   {
+    say: "That's her, then. We're in Tel Aviv.",
+    beat: 'The city arrives last — it is what makes a shortlist possible',
+  },
+];
+
+/**
+ * The last three turns of act 2: where to write, and when.
+ *
+ * Held back to the very end, after the table is booked and the playlist is saved, and
+ * the reason is {@link LEAD_FLOOR_DAYS}: these are the turns that make the reminder
+ * *due*. Asked any earlier, the sweep fires while the conversation is still gathering
+ * facts and the mail goes out with nothing in it to confirm.
+ *
+ * So the order is exact. The address first, because a row that comes due with no target
+ * is skipped without being claimed and would need a second sweep. Then the question
+ * about notice, which is a real question — the answer comes off
+ * `REMINDER_LEAD_OPTIONS`, not out of the model. Then the change to a fortnight, which
+ * re-plans the row into the past and hands it to the next sweep.
+ */
+const CLOSING_TURNS: Turn[] = [
+  {
     say: `And send reminders to ${TO}.`,
     beat: 'His own address — the one field Valentin will never invent',
     needsMail: true,
   },
   {
-    say: "That's her, then. We're in Tel Aviv — how far in advance do you normally " +
-      'give me a heads-up before a date like this?',
-    beat: 'The city arrives with the question — and a week out is already now',
+    say: 'How far in advance do you normally give me a heads-up before a date like this?',
+    beat: 'A real question about a real setting — the answer is a stored option',
+    replyMust: [/week|day|notice|advance|remind/i],
   },
   {
-    say: 'Yes — send me the proposal.',
-    beat: 'Arming the reminder',
+    /*
+     * A fortnight, not "five days": `REMINDER_LEAD_OPTIONS` holds Same day / 1 day /
+     * 3 days / 1 week / 2 weeks / 1 month, and `leadTimeDays` silently falls back to a
+     * week for anything else — so asking for five days would look like it worked, park
+     * the row a week out, and never come due on camera. Two weeks is the smallest
+     * option that puts the due instant behind us.
+     */
+    say: 'Make it two weeks before, from now on — I want time to actually plan something.',
+    beat: 'Two weeks of notice — which means this one is already overdue',
     needsMail: true,
-  },
-  {
-    say: "Don't email me about her birthday though, I never forget that one.",
-    beat: 'Per-date control: silences the mail, keeps the date',
+    replyMust: [/two weeks|fortnight|14 days/i],
   },
 ];
 
@@ -335,7 +451,13 @@ const PLAN_TURNS: Turn[] = [
     beat: 'Ontopo — real restaurants, real availability, and her allergy in the query',
     // The observed failure class, verbatim from review: "it isn't acceptable
     // that it is asked on restaurant and answer about Nina Simone".
-    replyMust: [/table|restaurant|place/i],
+    //
+    // The clock time is the third assertion and the strongest one. A shortlist can be
+    // recited from the model's own idea of Tel Aviv; a specific "20:30" cannot, because
+    // the only thing that knows a table is free at 20:30 is the `check_availability`
+    // call inspection moment 4 then counts. A reply with restaurants and no times is
+    // exactly the take that looks right and is not.
+    replyMust: [/table|restaurant|place/i, /\b([01]?\d|2[0-3]):[0-5]\d\b/],
     replyMustNot: [/nina simone/i],
   },
   /*
@@ -348,18 +470,60 @@ const PLAN_TURNS: Turn[] = [
    * Deliberately does not name a restaurant. Whatever the shortlist holds on the day
    * is real Ontopo availability, and a scripted "book Yaffo" is a line that goes
    * wrong on camera the first time Yaffo is full.
+   *
+   * It picks by *position* rather than by a quality, though. "Book the quiet one"
+   * asked for the only thing every result shared — the search filtered for quiet —
+   * so the model rightly asked which, and the take failed for the script's
+   * ambiguity rather than for anything the model did wrong.
    */
   {
-    say: 'Yes — go ahead and book the quiet one at 20:00.',
+    say: 'Yes — go ahead and book the first one on that list, at 20:00.',
     beat: 'Now it is a write, so it comes back as a proposal instead of an answer',
     confirms: true,
     replyMust: [/reserv|propos|confirm|book|table/i],
   },
+  /*
+   * The Nina Simone payoff, and the one turn whose wording matters to a *later* act.
+   *
+   * "Don't tell her" is not decoration: it is what makes the mail's closing paragraph
+   * land in act 3 as a surprise rather than as a duplicate of something already
+   * announced. Nothing in the code reads that phrase — the mail's surprise block is
+   * rendered from the stored keepsake by `email-body.ts` and would appear either way —
+   * so this is a line for the audience, not a flag for the model.
+   *
+   * What the line does *not* do is name the artist. The playlist is built from the
+   * `music` row extraction wrote back in the profile half, and that is the whole claim:
+   * say it once, and it turns up in a real Spotify playlist two acts later.
+   */
   {
-    say: 'And put together a playlist for the drive there.',
+    say: "And put together a playlist for the drive there — keep it as a surprise, don't " +
+      'tell her about it.',
     beat: 'Spotify — real tracks, chosen off the row that says Nina Simone',
     confirms: true,
     replyMust: [/playlist|track|song|nina/i],
+  },
+];
+
+/**
+ * The same question, twice, once per engine — with the drawer open both times.
+ *
+ * A pure memory read on purpose. It exercises the one thing the two engines genuinely
+ * implement differently — this repo's extraction plus `readKnownFacts` on engine A, a
+ * managed AgentCore Memory strategy on engine B — with no tool call, no Ontopo variance
+ * and no proposal card muddying the trace. Two questions rather than one so the
+ * comparison rests on more than a single sample, and because the second is the fact the
+ * playlist will later be built from.
+ */
+const MEMORY_TURNS: Turn[] = [
+  {
+    say: "Remind me what she can't eat.",
+    beat: 'A memory read on the glue code — watch the feed on the right',
+    replyMust: [/shellfish/i],
+  },
+  {
+    say: 'And what does she listen to?',
+    beat: 'Nothing was re-asked — this comes off a row, not out of the transcript',
+    replyMust: [/nina|jazz/i],
   },
 ];
 
@@ -433,12 +597,19 @@ const OVERLAY = `() => {
         return;
       }
       caption.textContent = text;
+      // Three tones, and the two coloured ones are the whole point of having tones:
+      // amber says "this beat is stood in for", blue says "this is the claim to look
+      // at". Anything a viewer has to take on trust is one of those two colours.
       caption.style.background = tone === 'substituted'
         ? 'rgba(120,72,10,.94)'
-        : 'rgba(17,17,20,.88)';
+        : tone === 'inspect'
+          ? 'rgba(12,58,104,.94)'
+          : 'rgba(17,17,20,.88)';
       caption.style.borderColor = tone === 'substituted'
         ? 'rgba(255,190,90,.55)'
-        : 'rgba(255,255,255,.14)';
+        : tone === 'inspect'
+          ? 'rgba(120,196,255,.6)'
+          : 'rgba(255,255,255,.14)';
       caption.style.opacity = '1';
       caption.style.transform = 'translateX(-50%) translateY(0)';
     };
@@ -450,7 +621,9 @@ const OVERLAY = `() => {
 /** Where the virtual mouse currently is, so a glide can start from it. */
 let pointer = { x: 40, y: 40 };
 
-async function caption(page: Page, text: string, tone?: 'substituted'): Promise<void> {
+type CaptionTone = 'substituted' | 'inspect';
+
+async function caption(page: Page, text: string, tone?: CaptionTone): Promise<void> {
   await page
     .evaluate(
       ([value, kind]) =>
@@ -463,7 +636,29 @@ async function caption(page: Page, text: string, tone?: 'substituted'): Promise<
     .catch(() => {
       /* An overlay that failed to install must not stop the demo. */
     });
-  if (text) console.log(`  · ${tone === 'substituted' ? '🔶 ' : ''}${text}`);
+  const mark = tone === 'substituted' ? '🔶 ' : tone === 'inspect' ? '🔎 ' : '';
+  if (text) console.log(`  · ${mark}${text}`);
+}
+
+/**
+ * One of the four marked inspection moments: caption it, hold on it, still it.
+ *
+ * A helper rather than four hand-rolled blocks so all four are guaranteed to look the
+ * same on screen — same colour, same numbering, same dwell. The numbering is written
+ * into the caption because the point of marking them is that someone reviewing the
+ * video can find them again, and "the second one" has to mean something.
+ */
+async function inspectionMoment(
+  page: Page,
+  index: number,
+  claim: string,
+  target: Locator | null,
+  shotName: string,
+): Promise<void> {
+  await caption(page, `INSPECT ${index}/4 — ${claim}`, 'inspect');
+  if (target && (await showing(target))) await linger(page, target, 6_000);
+  else await hold(6_000);
+  await shot(page, shotName);
 }
 
 /** Ease-in-out, so the pointer accelerates and settles like a hand does. */
@@ -812,18 +1007,32 @@ async function confirmProposal(page: Page, what: string): Promise<void> {
   await shot(page, `confirmed-${what}`);
 }
 
-/** Play a block of scripted turns, waiting out each reply. */
-async function playTurns(page: Page, composer: Locator, turns: Turn[], tag: string): Promise<void> {
+/**
+ * Play a block of scripted turns, waiting out each reply.
+ *
+ * `numberedFrom` exists because one block is played in two halves — inspection moment 4
+ * lands between the shortlist and the booking — and a second call that restarted its
+ * counting at "plan 1/2" would make the log read as two separate plans instead of one
+ * interrupted one.
+ */
+async function playTurns(
+  page: Page,
+  composer: Locator,
+  turns: Turn[],
+  tag: string,
+  numberedFrom = 0,
+): Promise<void> {
   const playable = turns.filter((turn) => SEND_MAIL || !turn.needsMail);
   for (const [index, turn] of playable.entries()) {
-    console.log(`\n${tag} ${index + 1}/${playable.length}: ${turn.beat}`);
+    const number = numberedFrom + index + 1;
+    console.log(`\n${tag} ${number}/${numberedFrom + playable.length}: ${turn.beat}`);
     await caption(page, turn.beat);
     const before = await transcriptOf(page);
     await typeHuman(page, composer, turn);
     await composer.press('Enter');
     const reply = await awaitReply(page, before, turn.say);
     assertReply(turn, reply);
-    await shot(page, `${tag}-${String(index + 1).padStart(2, '0')}`);
+    await shot(page, `${tag}-${String(number).padStart(2, '0')}`);
     if (turn.confirms) await confirmProposal(page, tag === 'plan' ? planName(turn) : 'action');
   }
 }
@@ -835,7 +1044,79 @@ function planName(turn: Turn): string {
   return 'action';
 }
 
+/**
+ * One browser, reused between runs, so act 3 can read a signed-in inbox.
+ *
+ * `launchPersistentContext` rather than `launch` + `newContext`, which is the whole
+ * reason this function exists: a fresh context has no Google session, and Google's
+ * sign-in cannot be scripted past 2FA — nor should it be. The profile is signed in once
+ * by hand (`--gmail-login`) and every later run inherits it.
+ *
+ * It asks for real Chrome first (`channel: 'chrome'`). Bundled Chromium works for
+ * everything else here, but Google is materially more likely to challenge a sign-in
+ * from it, and the profile is only useful if the sign-in survives. Falls back silently
+ * when Chrome is not installed: the run then works exactly as before and only act 3 is
+ * at risk.
+ */
+async function openBrowser(): Promise<BrowserContext> {
+  const options = {
+    headless: !HEADED,
+    viewport: { width: 1600, height: 960 },
+    args: ['--window-size=1680,1020'],
+    /*
+     * A device scale of 2 makes the overlay crisp on a retina screen being mirrored to
+     * a projector — but it doubles every recorded frame to 3200×1920 before ffmpeg ever
+     * sees it, and Playwright's encoder is the bottleneck in a twenty-minute run. A
+     * recording run therefore takes scale 1 and a video sized to the viewport: same
+     * layout, same captions, a file that plays anywhere.
+     */
+    deviceScaleFactor: RECORD ? 1 : 2,
+    ...(RECORD
+      ? { recordVideo: { dir: VIDEO_DIR, size: { width: 1600, height: 960 } } }
+      : {}),
+  };
+
+  try {
+    return await chromium.launchPersistentContext(USER_DATA_DIR, {
+      ...options,
+      channel: 'chrome',
+    });
+  } catch {
+    console.log('  (no Chrome channel installed — using bundled Chromium)');
+    return chromium.launchPersistentContext(USER_DATA_DIR, options);
+  }
+}
+
+/**
+ * `--gmail-login`: open Gmail and get out of the way.
+ *
+ * Deliberately not part of a demo run. Signing in is a human step that can take a
+ * couple of minutes and involves a phone, and a recording that pauses for it is not a
+ * recording. This exists so the pause happens once, on a different afternoon.
+ */
+async function gmailLogin(): Promise<void> {
+  const context = await chromium
+    .launchPersistentContext(USER_DATA_DIR, { headless: false, channel: 'chrome' })
+    .catch(() => chromium.launchPersistentContext(USER_DATA_DIR, { headless: false }));
+  const page = context.pages()[0] ?? (await context.newPage());
+  await page.goto('https://mail.google.com/', { waitUntil: 'domcontentloaded' });
+  console.log(
+    `\nSign in to Gmail in the window that just opened.\n` +
+      `The session is kept in ${USER_DATA_DIR}, so this is a one-time step.\n` +
+      `When the inbox is on screen, close the window (or Ctrl-C here).\n`,
+  );
+  // Long, but bounded: an unattended `--gmail-login` should not hold a terminal
+  // for ever, and fifteen minutes is more than a sign-in takes.
+  await page.waitForEvent('close', { timeout: 900_000 }).catch(() => {});
+  await context.close().catch(() => {});
+}
+
 async function main(): Promise<void> {
+  if (GMAIL_LOGIN) {
+    await gmailLogin();
+    return;
+  }
+
   if (SEND_MAIL && !TO) {
     console.error(
       'demo-drive: --to=<address> is required.\n' +
@@ -891,26 +1172,10 @@ async function main(): Promise<void> {
       `${RECORD ? ` · recording${HEADED ? ' (headed)' : ''}` : ''}\n`,
   );
 
-  const browser = await chromium.launch({
-    headless: !HEADED,
-    args: ['--window-size=1680,1020'],
-  });
-  const context = await browser.newContext({
-    viewport: { width: 1600, height: 960 },
-    /*
-     * A device scale of 2 makes the overlay crisp on a retina screen being
-     * mirrored to a projector — but it doubles every recorded frame to 3200×1920
-     * before ffmpeg ever sees it, and Playwright's encoder is the bottleneck in a
-     * twenty-minute run. A recording run therefore takes scale 1 and a video sized
-     * to the viewport: same layout, same captions, a file that plays anywhere.
-     */
-    deviceScaleFactor: RECORD ? 1 : 2,
-    ...(RECORD
-      ? { recordVideo: { dir: VIDEO_DIR, size: { width: 1600, height: 960 } } }
-      : {}),
-  });
+  const context = await openBrowser();
   await context.addInitScript(`(${OVERLAY})()`);
-  const page = await context.newPage();
+  const page = context.pages()[0] ?? (await context.newPage());
+  await page.setViewportSize({ width: 1600, height: 960 });
 
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -1001,43 +1266,95 @@ async function main(): Promise<void> {
     await hold(3_600);
     await shot(page, 'welcome');
 
-    console.log('\nact 2 — the conversation');
+    /*
+     * ## Act 2, and why it is one act
+     *
+     * Everything the product does happens inside a single conversation, in one
+     * unbroken thread, and it ends by posting a letter. The old cut — facts, then a
+     * detour to the rail, then the mail, then back for the booking — put the mail
+     * *before* the things the mail is about, so it could only ever be a prompt. Here
+     * the table is booked and the playlist is saved while everyone is watching, and
+     * the reminder that goes out at the end is a confirmation of both.
+     */
+    console.log('\nact 2 — the conversation (one thread, ending in the post)');
     const composer = page.getByRole('textbox', { name: /type a message/i });
     await playTurns(page, composer, PROFILE_TURNS, 'turn');
 
-    console.log('\nact 3 — what it learned');
     await caption(page, 'Every row on the right was extracted from what he just said');
-    await linger(page, page.getByTestId('brief-rail'), 4_500);
+    await linger(page, page.getByTestId('brief-rail'), 4_000);
     await shot(page, 'brief-rail');
 
     const nextUp = page.getByTestId('brief-next-up');
     if (await showing(nextUp)) {
       await caption(page, 'The countdown is the notification, before any mail exists');
-      await linger(page, nextUp, 4_000);
+      await linger(page, nextUp, 3_500);
       await shot(page, 'next-up');
     }
 
-    if (SEND_MAIL) {
-      console.log('\nact 4 — the notification, and the mail');
-      await caption(page, 'The scheduler sweeps every 60 seconds. Waiting for it to fire…');
-      // Nothing to click here and that is the point: no button was pressed to
-      // make this happen. Wait it out on screen so the audience sees that.
-      const until = Date.now() + SWEEP_WAIT_MS;
-      while (Date.now() < until) {
-        const left = Math.ceil((until - Date.now()) / 1000);
-        await caption(page, `Waiting for the 60-second sweep — ${left}s`);
-        await sleep(1_000);
-      }
-      await caption(page, `Sent by code, not by the model — check ${TO}`);
-      await hold(4_000);
-      await shot(page, 'after-sweep');
-      console.log(`  mail should now be in ${TO}`);
-      console.log('  to prove it arrived from the mailbox side:');
-      console.log(`    npm run verify:reminder-mail -- --to=${TO}`);
-      console.log('  (needs one Google Disconnect→Connect first, or it exits 2)');
+    /*
+     * The drawer opens here and is never closed again.
+     *
+     * Once, early, so that every later beat — both engines, the calendar read, the
+     * availability calls, the two confirms — is visible in the feed as it happens
+     * rather than reconstructed afterwards. It used to open and close around a single
+     * act, which made it look like a diagnostic mode rather than what it is: a window
+     * onto the run that was already going on.
+     *
+     * Two ways in and both are on screen: the magnifier in the sidebar and the bar
+     * across the bottom. The sidebar toggle is preferred because it is the one a
+     * presenter can point at.
+     */
+    const architecture = page.getByTestId('architecture-toggle');
+    const reopenBar = page.getByTestId('architecture-reopen-bar');
+    const opener = (await showing(architecture)) ? architecture : reopenBar;
+    const drawer = page.getByTestId('architecture-drawer');
+    const feed = page.getByTestId('aws-flow-feed');
+    if (await showing(opener)) {
+      await humanClick(page, opener, 'open the live architecture drawer');
+      await drawer.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
+      await caption(page, 'Every call the conversation has made — each with its trace id');
+      await linger(page, page.getByTestId('aws-topology-diagram'), 4_800);
+      await shot(page, 'inspector-topology');
+
+      // ——— A: the glue code ———
+      await playTurns(page, composer, MEMORY_TURNS, 'engine-a');
+      await inspectMomentOne(page, feed);
+      await inspectMomentTwo(page, drawer);
+
+      // ——— The switch, and B ———
+      await runEngineB(page, composer, feed);
     }
 
-    console.log('\nact 5 — the tools he can actually reach');
+    /*
+     * Her file — the answer to "is any of that actually stored, or is it just in the
+     * transcript?". One captioned claim and one assertion: the artist he mentioned
+     * once, in passing, six turns ago, is on the board as a card.
+     */
+    const herFile = page.getByTestId('her-file-thread');
+    if (await showing(herFile)) {
+      await humanClick(page, herFile, 'open her file');
+      const board = page.getByTestId('dossier-board');
+      await board.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
+      await caption(page, 'Not a form he filled in — every card here came out of a sentence');
+      await linger(page, board, 5_000);
+      const boardText = await board.innerText().catch(() => '');
+      if (!/nina|jazz/i.test(boardText)) {
+        throw new Error(
+          'TAKE FAILED — her file has no music card, so the playlist beat has nothing ' +
+            'to be built from.',
+        );
+      }
+      console.log('  ✓ her file holds the music row the playlist will be built from');
+      await shot(page, 'her-file');
+      await humanClick(page, herFile, 'back to the conversation');
+      await hold(1_400);
+    }
+
+    /*
+     * The integrations panel, for one reason only: the turns immediately after this
+     * call real providers, and this is where the audience gets to see that the
+     * providers are named, credentialed and countable before anything is booked.
+     */
     const integrations = page.getByTestId('rail-integrations-button');
     if (await showing(integrations)) {
       await humanClick(page, integrations, 'open the integrations panel');
@@ -1074,267 +1391,49 @@ async function main(): Promise<void> {
       if (await showing(close)) await humanClick(page, close, 'close integrations');
     }
 
-    console.log('\nact 6 — the plan: calendar, then a table, then the music');
-    await playTurns(page, composer, PLAN_TURNS, 'plan');
-
-    console.log('\nact 7 — one question, two architectures, inspected');
     /*
-     * ## Why this is one act and not two
-     *
-     * It used to be "act 7: inspector" then "act 8: engine switch" — and the
-     * scoreboard opened *before* AgentCore had run a single turn, so its right
-     * column honestly rendered "not yet run". A comparison sheet with one column
-     * is not a comparison. The A/B shape fixes that structurally: the same
-     * question is asked once on each engine with the inspector open, the
-     * differences are pointed at as they appear, and the scoreboard comes LAST,
-     * when both columns hold turns this very run just played.
-     *
-     * The question is a pure memory read ("what can't she eat") on purpose: it
-     * exercises the one thing the engines genuinely implement differently —
-     * glue-code extraction + readKnownFacts vs AgentCore Memory — with no tool
-     * call, no Ontopo variance, and no proposal card muddying the trace.
-     *
-     * Two ways into the drawer, and both are on screen: the magnifier in the
-     * sidebar and the bar across the bottom. The sidebar toggle is preferred
-     * because it is the one a presenter can point at.
+     * The plan, split at the shortlist so inspection moment 4 can land between the
+     * search and the booking — which is the only place it belongs. The claim being
+     * marked is that the times on screen came from Ontopo and not from the model, and
+     * that is an interesting claim for exactly as long as nobody has booked yet.
      */
-    const architecture = page.getByTestId('architecture-toggle');
-    const reopenBar = page.getByTestId('architecture-reopen-bar');
-    const opener = (await showing(architecture)) ? architecture : reopenBar;
-    if (await showing(opener)) {
-      await humanClick(page, opener, 'open the live architecture drawer');
-      const drawer = page.getByTestId('architecture-drawer');
-      await drawer.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
-      await caption(page, 'Every call the last ten minutes made — with its trace id');
-      await linger(page, page.getByTestId('aws-topology-diagram'), 5_200);
-      await shot(page, 'inspector-topology');
+    console.log('\n  the plan: calendar, then a table, then the music');
+    await playTurns(page, composer, PLAN_TURNS.slice(0, 2), 'plan');
+    await inspectMomentFour(page, feed);
+    await playTurns(page, composer, PLAN_TURNS.slice(2), 'plan', 2);
 
-      // ——— A: the glue code, watched through the feed ———
-      await playTurns(
-        page,
-        composer,
-        [{
-          say: "Remind me what she can't eat.",
-          beat: 'One question on the glue code — watch the feed on the right',
-          replyMust: [/shellfish/i],
-        }],
-        'engine-a',
-      );
+    await playTurns(page, composer, CLOSING_TURNS, 'closing');
 
+    if (SEND_MAIL) {
       /*
-       * The double Bedrock call, pointed at rather than asserted in prose.
-       *
-       * Engine A costs two model calls per turn: the reply itself, plus a
-       * forced-tool `extract-preferences` Converse that re-reads the turn for
-       * facts. Both land in the flow feed with their `operation` in the detail
-       * column, so the caption is *computed from the rows on screen* — the count
-       * is read, not claimed. The extraction call is async and trails the reply,
-       * hence the wait.
+       * The only beat in the demo with nothing to click, and that is its content: the
+       * two turns above changed a setting, and a timer nobody is watching turned that
+       * into a letter. Waited out on screen at full length for the same reason.
        */
-      const feed = page.getByTestId('aws-flow-feed');
-      await feed
-        .getByText('extract-preferences')
-        .first()
-        .waitFor({ state: 'visible', timeout: 30_000 })
-        .catch(() => {});
-      const newestGroup = feed.getByTestId('aws-feed-group').first();
-      const bedrockCalls = await newestGroup
-        .getByTestId('aws-feed-row')
-        .filter({ hasText: /bedrock/i })
-        .count()
-        .catch(() => 0);
-      const extractionSeen = await feed
-        .getByText('extract-preferences')
-        .first()
-        .isVisible()
-        .catch(() => false);
-      console.log(`  feed shows ${bedrockCalls} Bedrock call(s) for that turn; extraction row ${extractionSeen ? 'present' : 'absent'}`);
+      console.log('\n  the sweep, and the mail');
+      const overdue = OVERDUE_DAYS > 0
+        ? `${OVERDUE_DAYS} day${OVERDUE_DAYS === 1 ? '' : 's'} overdue`
+        : 'due now';
       await caption(
         page,
-        bedrockCalls >= 2
-          ? `That one turn = ${bedrockCalls} Bedrock calls: the reply, plus a forced-tool "extract-preferences" pass`
-          : extractionSeen
-            ? 'The reply call — and below it, the separate "extract-preferences" Bedrock pass'
-            : 'The glue code pays a second, forced-tool Bedrock call per turn to extract preferences',
+        `Two weeks' notice makes this reminder ${overdue}. The scheduler sweeps every 60s…`,
       );
-      if (extractionSeen) {
-        await linger(page, feed.getByText('extract-preferences').first(), 5_500);
-      } else {
-        await hold(5_500);
+      await hold(4_000);
+      const until = Date.now() + SWEEP_WAIT_MS;
+      while (Date.now() < until) {
+        const left = Math.ceil((until - Date.now()) / 1000);
+        await caption(page, `Waiting for the 60-second sweep — ${left}s`);
+        await sleep(1_000);
       }
-      await shot(page, 'engine-a-two-bedrock-calls');
-
-      /*
-       * Replay that call rather than describing the feed.
-       *
-       * Clicking a group is what turns the feed from a log into an inspector: the
-       * diagram stops following live traffic and walks that one request hop by hop,
-       * and the step controls appear because there is now something that can be
-       * stepped. `aws-feed-group-header` is the clickable row — the group is the
-       * container.
-       */
-      const group = page.getByTestId('aws-feed-group-header').first();
-      if (await showing(group)) {
-        const traceId = await page
-          .getByTestId('aws-feed-trace-id')
-          .first()
-          .innerText()
-          .catch(() => '');
-        await caption(page, 'Pick it apart — hop by hop');
-        await humanClick(page, group, 'replay the call');
-        if (traceId) console.log(`  replaying trace ${traceId.trim()}`);
-
-        const steps = page.getByTestId('architecture-step-count');
-        await steps.waitFor({ state: 'visible', timeout: 8_000 }).catch(() => {});
-        await shot(page, 'inspector-replay-glue');
-
-        // Scoped to the drawer: `/^next/i` alone also matches the rail's "Next up"
-        // hero, and stepping the flow by clicking a countdown card is a confusing
-        // way for this beat to appear to do nothing.
-        const next = drawer.getByRole('button', { name: DRAWER_COPY_NEXT });
-        for (let step = 0; step < 4 && (await showing(next)); step++) {
-          if (await next.isDisabled().catch(() => true)) break;
-          await humanClick(page, next, `advance the replay (${step + 1})`);
-          // The readout already reads "Step 2 of 10" — prefixing it produced
-          // "Step Step 2 of 10" on screen.
-          const readout = (await steps.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
-          await caption(page, readout || 'Stepping through the call');
-          await hold(2_400);
-        }
-        await shot(page, 'inspector-stepped');
-      }
-
-      // ——— The switch ———
-      /*
-       * The engine switch is the claim that the same conversation runs on two
-       * different back ends: engine A is this repo's own tool loop ("Glue code"),
-       * engine B is Bedrock AgentCore running the same tools behind a managed
-       * runtime.
-       *
-       * What is *not* assumed is that engine B is reachable. `resolveEngine`
-       * downgrades to A when the AgentCore wiring is absent, and the drawer says so
-       * through `architecture-serving-chip` / the `downgraded` marker. The caption is
-       * therefore read from the app rather than written here — a video that says
-       * "now on AgentCore" over engine A's answers is exactly the lie this project
-       * keeps deciding not to tell.
-       */
-      const engineSwitch = page.getByTestId('rail-engine-switch');
-      if (await showing(engineSwitch)) {
-        await caption(page, 'Same conversation, same tools — a different engine underneath');
-        await linger(page, engineSwitch, 3_000);
-        await humanClick(page, page.getByTestId('rail-engine-agentcore'), 'switch to AgentCore');
-        await hold(3_000);
-
-        const serving = page.getByTestId('architecture-serving-chip');
-        const downgraded = (await showing(page.getByTestId('downgraded')))
-          || /glue/i.test(await serving.innerText().catch(() => ''));
-        // The chip renders its own "SERVING:" prefix, so the raw text read back into a
-        // sentence gave "is serving SERVING: GLUE CODE". Keep the engine name only.
-        const label = (await serving.innerText().catch(() => ''))
-          .replace(/\s+/g, ' ')
-          .replace(/^serving:?\s*/i, '')
-          .trim();
-
-        if (downgraded) {
-          await caption(
-            page,
-            label
-              ? `Asked for AgentCore; this deployment is serving ${label} — it says so rather than pretending`
-              : 'AgentCore is not wired on this deployment, and the app refuses to claim it is',
-            'substituted',
-          );
-          console.log(`  engine B unavailable here — serving chip reads: ${label || '(none)'}`);
-          await hold(6_000);
-        } else {
-          await caption(page, `Now served by ${label || 'AgentCore'} — same diagram, a different path lights up`);
-          await hold(2_500);
-          const agentcoreBox = page.getByTestId('aws-agentcore-box');
-          if (await showing(agentcoreBox)) await linger(page, agentcoreBox, 4_500);
-          await shot(page, 'engine-agentcore-topology');
-
-          // ——— B: the identical question ———
-          await playTurns(
-            page,
-            composer,
-            [{
-              say: "Remind me what she can't eat.",
-              beat: 'The identical question, answered by AgentCore — Memory replaces the extraction pass',
-              replyMust: [/shellfish/i],
-            }],
-            'engine-b',
-          );
-
-          /*
-           * The B-side difference, read off the feed like the A-side one was:
-           * the newest group should hold a Runtime row (with an X-Ray trace id —
-           * only engine B reports one) and no `extract-preferences` row.
-           */
-          const bGroup = feed.getByTestId('aws-feed-group').first();
-          const bExtraction = await bGroup
-            .getByTestId('aws-feed-row')
-            .filter({ hasText: /extract-preferences/i })
-            .count()
-            .catch(() => 0);
-          console.log(`  engine B newest group: extraction rows ${bExtraction}`);
-          await caption(
-            page,
-            bExtraction === 0
-              ? 'Same answer — and no extraction pass in the feed. AgentCore Memory holds the fact'
-              : 'Same answer, through the managed runtime',
-          );
-          await hold(5_500);
-          await shot(page, 'engine-b-no-extraction');
-        }
-        await shot(page, 'engine-agentcore');
-
-        /*
-         * The scoreboard LAST, once both engines hold turns from this run — so
-         * neither column can read "not yet run" and every number on it was
-         * measured minutes ago, on camera. On a downgraded deployment engine B
-         * never ran, the sheet would honestly say "not yet run", and a caption
-         * promising measured numbers over that would be the lie — so skip it.
-         */
-        if (!downgraded) {
-          const scoreboard = page.getByTestId('scoreboard-toggle');
-          if (await showing(scoreboard)) {
-            await humanClick(page, scoreboard, 'open the engine scoreboard');
-            await caption(page, 'The two engines, measured — every number from turns this run just played');
-            await hold(6_000);
-            await shot(page, 'inspector-scoreboard');
-          }
-        }
-
-        await humanClick(page, page.getByTestId('rail-engine-valentin'), 'switch back to the glue code');
-        await caption(page, 'And back. The switch is a runtime choice, not a redeploy');
-        await hold(4_000);
-        await shot(page, 'engine-back');
-      }
+      await caption(page, `Gone. Sent by code, not by the model — it is in ${TO}`);
+      await hold(4_500);
+      await shot(page, 'after-sweep');
+      console.log(`  mail should now be in ${TO}`);
     }
 
-    if (DO_SURVEY) {
-      console.log('\nact 8 — the day-after survey (substituted)');
-      const demo = page.getByTestId('rail-demo-button');
-      if (await demo.isVisible().catch(() => false)) {
-        await caption(
-          page,
-          'SUBSTITUTED: a survey needs a date to have passed, and a day cannot pass on stage',
-          'substituted',
-        );
-        await hold(4_500);
-        await humanClick(page, demo, 'open demo controls');
-        const seed = page.getByTestId('load-demo-profile-button');
-        if (await seed.isVisible().catch(() => false)) {
-          await humanClick(page, seed, 'seed the demo session');
-          await caption(
-            page,
-            'Only the passing of time is stood in for — the rating prompt itself is the real path',
-            'substituted',
-          );
-          await hold(7_000);
-        }
-        await shot(page, 'survey-seeded');
-      }
-    }
+    if (DO_INBOX) await readTheInbox(page, context);
+
+    if (DO_SURVEY) await theSurvey(page);
 
     await caption(page, '');
     console.log(`\nscreenshots → ${SHOT_DIR}`);
@@ -1358,9 +1457,406 @@ async function main(): Promise<void> {
     await sleep(600_000);
   } finally {
     if (RECORD) await finishVideo(context);
-    await browser.close().catch(() => {});
+    else await context.close().catch(() => {});
   }
 }
+
+/**
+ * Inspection moment 1: one turn on engine A, two Bedrock calls.
+ *
+ * The cost of the do-it-yourself engine, on screen and counted rather than asserted in
+ * prose: the reply itself, plus a forced-tool `extract-preferences` Converse that
+ * re-reads the turn for facts. Both land in the feed with their `operation` in the
+ * detail column. The extraction call is fired after the reply and trails it, hence the
+ * wait before counting.
+ *
+ * This one throws. The double call is the sharpest thing the comparison has to say, and
+ * a take that captioned it over a single row would be a false claim delivered with
+ * total confidence — which is the exact failure this script exists to prevent.
+ */
+async function inspectMomentOne(page: Page, feed: Locator): Promise<void> {
+  const extraction = feed.getByText('extract-preferences').first();
+  await extraction.waitFor({ state: 'visible', timeout: 30_000 }).catch(() => {});
+
+  const newestGroup = feed.getByTestId('aws-feed-group').first();
+  const bedrockCalls = await newestGroup
+    .getByTestId('aws-feed-row')
+    .filter({ hasText: /bedrock/i })
+    .count()
+    .catch(() => 0);
+  console.log(`  feed shows ${bedrockCalls} Bedrock call(s) for that turn`);
+
+  if (bedrockCalls < 2) {
+    throw new Error(
+      `TAKE FAILED — engine A's newest group holds ${bedrockCalls} Bedrock row(s), not 2.\n` +
+        '  The whole point of this moment is the second, forced-tool extraction call.\n' +
+        '  Either extraction did not run, or the feed grouped it under another request.',
+    );
+  }
+
+  await inspectionMoment(
+    page,
+    1,
+    `One turn, ${bedrockCalls} Bedrock calls — the reply, plus a forced-tool "extract-preferences" pass`,
+    (await showing(extraction)) ? extraction : newestGroup,
+    'inspect-1-two-bedrock-calls',
+  );
+}
+
+/**
+ * Inspection moment 2: that same call, walked hop by hop.
+ *
+ * Clicking a group is what turns the feed from a log into an inspector — the diagram
+ * stops following live traffic and replays one request. `aws-feed-group-header` is the
+ * clickable row; the group is the container around it.
+ *
+ * Asserted on the step readout rather than on the diagram, because the readout is the
+ * one thing that can only be true if a stored trace is genuinely being stepped: "Step 2
+ * of 10" needs a hop count, and a hop count needs spans.
+ */
+async function inspectMomentTwo(page: Page, drawer: Locator): Promise<void> {
+  const group = page.getByTestId('aws-feed-group-header').first();
+  if (!(await showing(group))) {
+    console.log('  (no replayable group in the feed — skipping the hop-by-hop moment)');
+    return;
+  }
+
+  const traceId = await page.getByTestId('aws-feed-trace-id').first().innerText().catch(() => '');
+  await caption(page, 'INSPECT 2/4 — the same call, picked apart hop by hop', 'inspect');
+  await humanClick(page, group, 'replay the call');
+  if (traceId) console.log(`  replaying trace ${traceId.trim()}`);
+
+  const steps = page.getByTestId('architecture-step-count');
+  await steps.waitFor({ state: 'visible', timeout: 8_000 }).catch(() => {});
+  const opening = (await steps.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+  if (!/step\s+\d+\s+of\s+\d+/i.test(opening)) {
+    throw new Error(
+      `TAKE FAILED — clicking the call did not open a stepped replay.\n` +
+        `  the step readout says: ${opening || '(nothing)'}`,
+    );
+  }
+  console.log(`  ✓ replay opened: ${opening}`);
+  await shot(page, 'inspect-2-replay-opened');
+
+  // Scoped to the drawer: `/^next/i` alone also matches the rail's "Next up" hero, and
+  // stepping the flow by clicking a countdown card is a confusing way for this beat to
+  // appear to do nothing.
+  const next = drawer.getByRole('button', { name: DRAWER_COPY_NEXT });
+  for (let step = 0; step < 4 && (await showing(next)); step++) {
+    if (await next.isDisabled().catch(() => true)) break;
+    await humanClick(page, next, `advance the replay (${step + 1})`);
+    // The readout already reads "Step 2 of 10" — prefixing it produced
+    // "Step Step 2 of 10" on screen.
+    const readout = (await steps.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+    await caption(page, readout || 'Stepping through the call', 'inspect');
+    await hold(2_400);
+  }
+  await shot(page, 'inspect-2-stepped');
+}
+
+/**
+ * The switch to AgentCore, the identical questions, and inspection moment 3.
+ *
+ * ## What is not assumed
+ *
+ * That engine B is reachable. `resolveEngine` downgrades to A when the AgentCore wiring
+ * is absent, and the drawer says so through `architecture-serving-chip` / the
+ * `downgraded` marker. The caption is therefore read from the app rather than written
+ * here — a video that says "now on AgentCore" over engine A's answers is exactly the lie
+ * this project keeps deciding not to tell.
+ *
+ * It ends by switching back, and that is not tidying up: every turn after this calls a
+ * tool, and AgentCore is invoked with no tool registry (`hasTools = false`), so the
+ * booking beats have to run on the glue code.
+ */
+async function runEngineB(page: Page, composer: Locator, feed: Locator): Promise<void> {
+  const engineSwitch = page.getByTestId('rail-engine-switch');
+  if (!(await showing(engineSwitch))) return;
+
+  await caption(page, 'Same conversation, same tools — a different engine underneath');
+  await linger(page, engineSwitch, 3_000);
+  await humanClick(page, page.getByTestId('rail-engine-agentcore'), 'switch to AgentCore');
+  await hold(3_000);
+
+  const serving = page.getByTestId('architecture-serving-chip');
+  const downgraded = (await showing(page.getByTestId('downgraded')))
+    || /glue/i.test(await serving.innerText().catch(() => ''));
+  // The chip renders its own "SERVING:" prefix, so the raw text read back into a
+  // sentence gave "is serving SERVING: GLUE CODE". Keep the engine name only.
+  const label = (await serving.innerText().catch(() => ''))
+    .replace(/\s+/g, ' ')
+    .replace(/^serving:?\s*/i, '')
+    .trim();
+
+  if (downgraded) {
+    await caption(
+      page,
+      label
+        ? `Asked for AgentCore; this deployment is serving ${label} — it says so rather than pretending`
+        : 'AgentCore is not wired on this deployment, and the app refuses to claim it is',
+      'substituted',
+    );
+    console.log(`  engine B unavailable here — serving chip reads: ${label || '(none)'}`);
+    await hold(6_000);
+    await shot(page, 'engine-agentcore-downgraded');
+    await humanClick(page, page.getByTestId('rail-engine-valentin'), 'switch back to the glue code');
+    await hold(2_500);
+    return;
+  }
+
+  await caption(page, `Now served by ${label || 'AgentCore'} — same diagram, a different path lights up`);
+  await hold(2_500);
+  const agentcoreBox = page.getByTestId('aws-agentcore-box');
+  if (await showing(agentcoreBox)) await linger(page, agentcoreBox, 4_500);
+  await shot(page, 'engine-agentcore-topology');
+
+  await playTurns(page, composer, MEMORY_TURNS, 'engine-b');
+
+  /*
+   * Inspection moment 3: the *absence*, which is the exact counterpart of moment 1.
+   *
+   * Engine B answers the same two questions and spends no Bedrock call on extraction,
+   * because AgentCore Memory's managed strategy already holds the fact. An absence is
+   * the hardest thing to show on camera, so it is counted and captioned with the number
+   * — and asserted, because "no extraction row" is also what a broken feed looks like.
+   * The Runtime row is checked alongside it for exactly that reason: it proves the feed
+   * was receiving this turn at all.
+   */
+  const bGroup = feed.getByTestId('aws-feed-group').first();
+  const rows = bGroup.getByTestId('aws-feed-row');
+  const extractionRows = await rows.filter({ hasText: /extract-preferences/i }).count().catch(() => 0);
+  const runtimeRows = await rows.filter({ hasText: /runtime|agentcore/i }).count().catch(() => 0);
+  console.log(`  engine B newest group: ${extractionRows} extraction row(s), ${runtimeRows} runtime row(s)`);
+
+  if (extractionRows > 0) {
+    throw new Error(
+      `TAKE FAILED — engine B's newest group holds ${extractionRows} extract-preferences row(s).\n` +
+        '  The comparison this moment makes is that AgentCore spends none.',
+    );
+  }
+  if (runtimeRows === 0) {
+    throw new Error(
+      'TAKE FAILED — engine B ran, but the feed shows no AgentCore Runtime row for it.\n' +
+        '  An empty group would make "no extraction call" true for the wrong reason.',
+    );
+  }
+
+  await inspectionMoment(
+    page,
+    3,
+    'Same answers — and zero extraction calls. AgentCore Memory already held the fact',
+    bGroup,
+    'inspect-3-no-extraction',
+  );
+
+  /*
+   * The scoreboard here, once both engines hold turns from this run — so neither column
+   * can read "not yet run" and every number on it was measured minutes ago, on camera.
+   */
+  const scoreboard = page.getByTestId('scoreboard-toggle');
+  if (await showing(scoreboard)) {
+    await humanClick(page, scoreboard, 'open the engine scoreboard');
+    await caption(page, 'The two engines, measured — every number from turns this run just played');
+    await hold(6_000);
+    await shot(page, 'inspector-scoreboard');
+  }
+
+  await humanClick(page, page.getByTestId('rail-engine-valentin'), 'switch back to the glue code');
+  await caption(page, 'And back — the switch is a runtime choice, not a redeploy. Tools live here');
+  await hold(4_000);
+  await shot(page, 'engine-back');
+}
+
+/**
+ * Inspection moment 4: the times on screen were fetched, not remembered.
+ *
+ * One `check_availability` span per restaurant the shortlist offered. The count is read
+ * off the feed and put in the caption rather than written into it, because how many
+ * venues the model decides to price is the model's call and a hardcoded "three" is a
+ * sentence that goes wrong on camera.
+ *
+ * Zero is the one count that fails the take: a shortlist with times in it and no
+ * availability call behind it is a shortlist the model made up, which is precisely the
+ * claim this demo is making it does not do. The clock time in the reply itself is
+ * asserted separately, on the turn — see `PLAN_TURNS`.
+ */
+async function inspectMomentFour(page: Page, feed: Locator): Promise<void> {
+  // The one moment reached from outside the "drawer opened" branch, so it has to cope
+  // with there being no feed to read. Skipped rather than failed: the absence of the
+  // inspector is not evidence about where the times came from.
+  if (!(await showing(feed))) {
+    console.log('  (the inspector is not open — skipping the availability moment)');
+    return;
+  }
+
+  const availability = feed.getByText('check_availability');
+  await availability.first().waitFor({ state: 'visible', timeout: 20_000 }).catch(() => {});
+  const calls = await availability.count().catch(() => 0);
+  console.log(`  feed shows ${calls} check_availability span(s)`);
+
+  if (calls === 0) {
+    throw new Error(
+      'TAKE FAILED — the shortlist named times and the feed holds no check_availability ' +
+        'span.\n  Those times would have to have come from the model, which is the one ' +
+        'thing this beat claims cannot happen.',
+    );
+  }
+
+  await inspectionMoment(
+    page,
+    4,
+    `${calls} availability call${calls === 1 ? '' : 's'} to Ontopo — those times were fetched, not remembered`,
+    availability.first(),
+    'inspect-4-availability-spans',
+  );
+}
+
+/**
+ * Act 3: his own inbox, in the same browser.
+ *
+ * The mail is the one artefact of this demo that leaves the building, so it is the one
+ * worth reading where it actually landed rather than in a render of it. Three things are
+ * pointed at in order, and they are the three that could only be true if the whole chain
+ * held: the restaurant *he* chose is named, the link back into the conversation works,
+ * and at the bottom there is a playlist he asked to be kept a surprise.
+ *
+ * ## Why nothing here fails the take
+ *
+ * Because everything that *can* be verified already has been, in code — the reservation
+ * and surprise branches are unit-tested in `email-body.test.ts`, and the send itself is
+ * confirmed by the sweep. What is left is Google's own UI and a signed-in profile, and
+ * neither is this project's to guarantee. A run that ends after the sweep is still a
+ * complete demo of the product; a run that dies at minute eighteen on a Gmail selector
+ * is not.
+ */
+async function readTheInbox(page: Page, context: BrowserContext): Promise<void> {
+  console.log('\nact 3 — the inbox');
+  await caption(page, 'And now the part that left the building — his actual inbox');
+  await hold(3_000);
+
+  const mail = await context.newPage();
+  await mail.addInitScript(`(${OVERLAY})()`);
+  await mail.setViewportSize({ width: 1600, height: 960 });
+  await mail.goto('https://mail.google.com/', { waitUntil: 'domcontentloaded' }).catch(() => {});
+
+  // The message list is the one thing on a Gmail page that means "signed in and
+  // loaded". A sign-in screen never renders it.
+  const inbox = mail.locator('table[role="grid"], div[role="main"] table').first();
+  const signedIn = await inbox
+    .waitFor({ state: 'visible', timeout: 30_000 })
+    .then(() => true)
+    .catch(() => false);
+
+  if (!signedIn) {
+    await caption(
+      mail,
+      'SKIPPED: this browser profile is not signed in to Gmail — run --gmail-login once',
+      'substituted',
+    );
+    console.log(
+      `  Gmail is not signed in on ${USER_DATA_DIR}.\n` +
+        '  One-time fix:  npm run demo:drive -- --gmail-login\n' +
+        '  Or prove the mail arrived from the mailbox side instead:\n' +
+        `    npm run verify:reminder-mail -- --to=${TO}`,
+    );
+    await hold(6_000);
+    await shot(mail, 'inbox-not-signed-in');
+    await mail.close().catch(() => {});
+    return;
+  }
+
+  await caption(mail, 'Nobody sent this by hand — a 60-second timer did, two minutes ago');
+  await hold(4_000);
+  await shot(mail, 'inbox');
+
+  /*
+   * The newest message from Valentin, found by its subject rather than by position: an
+   * inbox is a real inbox and something else may well have arrived during the run. The
+   * occasion word is in every subject `buildSubject` produces.
+   */
+  const letter = mail
+    .locator('tr')
+    .filter({ hasText: /anniversary/i })
+    .first();
+  if (!(await showing(letter))) {
+    await caption(mail, 'The mail has not landed in this view yet — Gmail is a few seconds behind', 'substituted');
+    console.log('  no matching message visible yet — leaving the inbox as it is');
+    await hold(5_000);
+    await shot(mail, 'inbox-no-message-yet');
+    await mail.close().catch(() => {});
+    return;
+  }
+
+  await humanClick(mail, letter, 'open the reminder');
+  await hold(2_500);
+  await caption(mail, 'The restaurant he chose — and it never says "booked", because it cannot know that');
+  await hold(6_000);
+  await shot(mail, 'mail-opened');
+
+  /*
+   * The surprise, read out of the body rather than asserted: `email-body.ts` renders it
+   * only from a stored title and an http(s) link, and its absence here would mean the
+   * playlist confirm handed back no URL — which the card on screen said at the time.
+   */
+  const body = await mail.locator('div[role="main"]').innerText().catch(() => '');
+  const hasSurprise = /surprise/i.test(body);
+  console.log(`  mail body ${hasSurprise ? 'carries' : 'does not carry'} the surprise paragraph`);
+  await caption(
+    mail,
+    hasSurprise
+      ? 'And at the bottom: the surprise. A playlist, made from one sentence he said in passing'
+      : 'The confirmation, the timing note, and a link back into the conversation',
+  );
+  await hold(7_000);
+  await shot(mail, 'mail-surprise');
+
+  const playlistLink = mail.locator('a[href*="open.spotify.com"]').first();
+  if (await showing(playlistLink)) {
+    await caption(mail, 'A real playlist, in a real library — opened from a real mail');
+    await humanClick(mail, playlistLink, 'open the playlist');
+    await hold(6_000);
+    await shot(mail, 'mail-playlist-opened');
+  }
+
+  await mail.close().catch(() => {});
+  await page.bringToFront().catch(() => {});
+  await hold(1_500);
+}
+
+/**
+ * Act 4: the day-after survey — the one substituted beat, and it says so.
+ *
+ * A survey exists because a date went by, and nobody can make a day pass during a demo.
+ * So this seeds the demo fixture, whose outings are already in the past, and the *real*
+ * `unratedOutings` path raises the prompt. Only the passage of time is stood in for, and
+ * the amber caption is on screen the whole time saying which part.
+ */
+async function theSurvey(page: Page): Promise<void> {
+  console.log('\nact 4 — the day-after survey (substituted)');
+  const demo = page.getByTestId('rail-demo-button');
+  if (!(await showing(demo))) return;
+
+  await caption(
+    page,
+    'SUBSTITUTED: a survey needs a date to have passed, and a day cannot pass on stage',
+    'substituted',
+  );
+  await hold(4_500);
+  await humanClick(page, demo, 'open demo controls');
+
+  const seed = page.getByTestId('load-demo-profile-button');
+  if (await showing(seed)) {
+    await humanClick(page, seed, 'seed the demo session');
+    await caption(
+      page,
+      'Only the passing of time is stood in for — the rating prompt itself is the real path',
+      'substituted',
+    );
+    await hold(7_000);
+  }
+  await shot(page, 'survey-seeded');
+}
+
 
 /**
  * Close the context so the video is flushed, then give the file a name.

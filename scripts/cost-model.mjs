@@ -1,3 +1,5 @@
+import { readFileSync, writeFileSync } from 'node:fs';
+
 /**
  * The arithmetic behind `public/engine-comparison.html`.
  *
@@ -7,6 +9,20 @@
  * `node scripts/cost-model.mjs` and every figure on the page should fall out.
  *
  * It is deliberately not a unit test. It is the audit trail for a slide.
+ *
+ *   node scripts/cost-model.mjs                     the analytic model (unchanged output)
+ *   node scripts/cost-model.mjs --from-measured runs/
+ *                                                   substitutes measured quantities and writes
+ *                                                   runs/results.json for build-results-slide.py
+ *
+ * Four numbers here were wrong until 2026-09-12, each in engine B's favour. They are kept
+ * beside their corrections rather than overwritten, because the published page quotes the old
+ * ones and the before/after delta is itself a finding:
+ *
+ *   - engine B's always-on proxy Fargate task was uncounted entirely (B_PROXY_TASKS)
+ *   - TOOLS_INDEXED was 3; the Gateway has 29 registered
+ *   - SEC_PER_TURN = 3 was a guess; the meter bills on session wall clock, 182-1,449 s observed
+ *   - Lambda, NAT, interface endpoints and Logs had no line items at all
  */
 
 // ---- Sourced unit rates -----------------------------------------------------------------
@@ -36,11 +52,46 @@ const DDB_RRU = 0.125 / 1e6; // 0.5 RRU per 4 KB, eventually consistent
 const SONNET_IN = 3 / 1e6;
 const SONNET_OUT = 15 / 1e6;
 
+// ---- Line items the model used to omit -------------------------------------------------
+// These were admitted as missing and always understated engine B. Named and priced now, so
+// the exclusion list on the slide is a choice rather than an oversight.
+
+// AWS Lambda pricing page, us-east-1, x86. Behind engine B's Gateway only.
+const LAMBDA_REQUEST = 0.2 / 1e6;
+const LAMBDA_GB_SEC = 0.0000166667;
+// infra/lib/agentcore-stack.ts:160 / :254
+const LAMBDA_MB = { 'valentin-profile-tools-dev': 256, 'valentin-integration-tools-dev': 512 };
+
+// VPC pricing page. Charged to BOTH engines and identical for both — the VPC is shared, so
+// this cancels in any A-vs-B comparison and only matters to the absolute total.
+const NAT_HR = 0.045;
+const NAT_GB = 0.045;
+const NAT_GATEWAYS = 1; // infra/lib/network-stack.ts:22 — dev is 1, prod would be 2
+// network-stack.ts:47-55: BEDROCK_RUNTIME + CLOUDWATCH_LOGS interface endpoints, maxAzs 2.
+// The S3 and DynamoDB endpoints are Gateway type and cost nothing.
+const ENDPOINT_ENI_HR = 0.01;
+const ENDPOINT_ENIS = 2 * 2; // 2 endpoints x 2 AZs
+const ENDPOINT_GB = 0.01;
+
+// CloudWatch Logs pricing page, standard class.
+const LOGS_INGEST_GB = 0.5;
+const LOGS_STORE_GB_MO = 0.03;
+
 // ---- Counted quantities -----------------------------------------------------------------
 const VCPU = 0.5; // infra/config/environments.ts: dev cpu 512
 const GIB = 1; //                                    memoryLimitMiB 1024
 const HOURS = 730; // a month of an always-on task
-const SEC_PER_TURN = 3; // ASSUMPTION — no measurement exists; all repo durations are authored
+/**
+ * ASSUMPTION, and a badly wrong one. Superseded by `--from-measured`.
+ *
+ * The AgentCore Runtime meters memory-hours on **session wall clock**, not on time spent
+ * computing — `runtimeSessionIdFor()` passes the app session UUID straight through, so the
+ * microVM stays billable for the whole conversation including the user's think time. Observed
+ * 182-1,449 billed seconds per invoke against the 3 s guessed here, up to ~480x.
+ *
+ * Kept so the unmeasured model still runs and the delta is visible on one screen.
+ */
+const SEC_PER_TURN = 3;
 
 // dynamodb-store.ts, typical turn: 6 Query + 1 GetItem reads; 2 Put + 1 BatchWrite + 3 Update
 // writes, of which 3 replicate into the ALL-projected sparse GSI1.
@@ -59,7 +110,19 @@ const MAX_MEMORY_RECORDS = 100; // agentcore-adapter.ts:138
 // how many tools to call. Two Gateway API invocations per turn is the conservative floor: one
 // ListTools plus one InvokeTool.
 const GATEWAY_INVOKES_PER_TURN = 2;
-const TOOLS_INDEXED = 3; // get_partner_profile, save_preference, list_preferences
+
+// CORRECTED 2026-09-12. The published page says 3 — the three profile tools — but the Gateway
+// meters every tool it has *indexed*, and `aws bedrock-agentcore-control list-gateway-targets`
+// returns 29: 3 profile tools plus 26 integration tools. ~10x the claim.
+const TOOLS_INDEXED_AS_PUBLISHED = 3;
+const TOOLS_INDEXED = 29;
+
+// CORRECTED 2026-09-12. Engine B does not replace the Fargate task, it ADDS one: the
+// `valentin-ac-proxy-dev` service terminates the WebSocket, holds the session and calls
+// InvokeAgentRuntime, and it is always-on at the same 512/1024 sizing as engine A's task
+// (compute-stack.ts:720-721). The model previously counted zero Fargate for engine B, which
+// is the single largest error in it — at one user this line is ~86% of the bill.
+const B_PROXY_TASKS = 1;
 
 // ---- Layer 1: compute -------------------------------------------------------------------
 export const fargatePerHour = VCPU * FARGATE_VCPU_HR + GIB * FARGATE_GB_HR;
@@ -92,7 +155,10 @@ export const toolIndexPerMonth = TOOLS_INDEXED * AC_TOOL_INDEX_MO;
 // ---- Totals ------------------------------------------------------------------------------
 export const A_FIXED = fargatePerMonth;
 export const A_VAR = dynamoPerTurn + extractionPerTurn;
-export const B_FIXED = memoryStoragePerMonth + toolIndexPerMonth;
+// B_PROXY_TASKS * fargatePerMonth is the correction: engine B's proxy is a whole extra
+// always-on task, not a rounding error.
+export const B_FIXED =
+  memoryStoragePerMonth + toolIndexPerMonth + B_PROXY_TASKS * fargatePerMonth;
 export const B_VAR = runtimePerTurn + memoryPerTurn + gatewayPerTurn;
 
 export const totalA = (n) => A_FIXED + n * A_VAR;
@@ -150,7 +216,6 @@ function main() {
   console.log('  B @500 turns', usd(B_FIXED + 500 * B_VAR_PER_RECORD));
 }
 
-main();
 
 // ============================================================================================
 // Usage model, stated explicitly because every figure above depends on it.
@@ -196,7 +261,8 @@ export const perUserB = USAGE.memoryRecordsPerUser * AC_RECORD_MO;
 
 // Fixed: paid at zero usage, shared by every user.
 export const fixedA = fargatePerMonth;
-export const fixedB = toolIndexPerMonth;
+// Engine B pays engine A's rent PLUS the tool index: the proxy task is always-on.
+export const fixedB = toolIndexPerMonth + B_PROXY_TASKS * fargatePerMonth;
 
 export const monthlyA = (users) => fixedA + users * (perUserA + TPU * perTurnA);
 export const monthlyB = (users) => fixedB + users * (perUserB + TPU * perTurnB);
@@ -228,7 +294,6 @@ function usageReport() {
   console.log('  asymptotic ratio', (bigA / bigB).toFixed(1) + '×');
 }
 
-usageReport();
 
 // ============================================================================================
 // Scale: at 100k and 1M users, one Fargate task is no longer enough.
@@ -261,7 +326,19 @@ export function fargateTasks(users) {
 
 export const scaledA = (users) =>
   fargateTasks(users) * fargatePerMonth + users * (perUserA + TPU * perTurnA);
-export const scaledB = (users) => fixedB + users * (perUserB + TPU * perTurnB);
+/**
+ * Engine B steps on the SAME curve as engine A, not on a flat line.
+ *
+ * The old model had engine B's compute independent of user count, which is where its
+ * asymptotic advantage came from. But the proxy terminates the WebSocket and holds the session
+ * for the whole conversation exactly as engine A's task does, so it needs the same number of
+ * tasks for the same peak concurrency. What engine B actually buys is not "no containers" —
+ * it is "the same containers, plus a Runtime bill, minus the model call".
+ */
+export const scaledB = (users) =>
+  toolIndexPerMonth +
+  B_PROXY_TASKS * fargateTasks(users) * fargatePerMonth +
+  users * (perUserB + TPU * perTurnB);
 
 function scaleReport() {
   const usd = (v) =>
@@ -284,4 +361,332 @@ function scaleReport() {
   console.log('  1M users, per year saved:', usd((scaledA(1e6) - scaledB(1e6)) * 12));
 }
 
-scaleReport();
+// ============================================================================================
+// MEASURED MODE — `--from-measured runs/`
+//
+// Substitutes the quantities `scripts/experiment/collect.mjs` measured for the ones counted
+// from code above, and writes `runs/results.json` in the exact shape
+// `scripts/build-results-slide.py --from` consumes. The rate table is untouched: only the
+// quantities change, which is what makes the before/after delta attributable to measurement
+// rather than to a repricing.
+//
+// The usage-billed / time-billed split is enforced here and is the whole point:
+//   - usage-billed items are taken from the 120-turn run with NO extrapolation
+//   - time-billed items (Fargate, NAT, endpoints) are analytic at 730 h/month, because they
+//     cost the same at 1 turn as at 120 and scaling them from a ~40-minute window would be
+//     arithmetic dressed up as measurement
+// ============================================================================================
+
+/**
+ * Fargate tasks attributed to each engine.
+ *
+ * Engine B is 2 because, as deployed, it is an ADDITION to engine A rather than a replacement:
+ * the ALB routes `/api/*` to `valentin-service-dev` and only `/ws/agentcore` to
+ * `valentin-ac-proxy-dev`, so both tasks are always-on for engine B to answer a turn. A
+ * standalone engine-B deployment would serve HTTP from the proxy image and need 1 — that
+ * variant is printed alongside, because which number is fair depends on a claim about the
+ * architecture and the reader should see both.
+ */
+const FARGATE_TASKS = { a: 1, b: 2 };
+const FARGATE_TASKS_B_STANDALONE = 1;
+
+/**
+ * Charged to both engines identically, so it cancels in the comparison. Named, not hidden.
+ *
+ * Only the hourly rent is priced. The per-GB legs (NAT $0.045/GB, endpoint $0.01/GB, Logs
+ * $0.50/GB ingested) need a byte count nobody measured — `dataTransferPerMonth` prices them
+ * from a GB figure, and is left at zero rather than guessed, because at this traffic the rent
+ * dominates the transfer by orders of magnitude and a made-up GB number would be the only
+ * unsourced input in the file.
+ */
+export const sharedNetworkPerMonth =
+  NAT_GATEWAYS * NAT_HR * HOURS + ENDPOINT_ENIS * ENDPOINT_ENI_HR * HOURS;
+
+/** Prices the per-GB legs once someone measures the bytes. Not called by default. */
+export const dataTransferPerMonth = ({ natGb = 0, endpointGb = 0, logsGb = 0 }) =>
+  natGb * NAT_GB +
+  endpointGb * ENDPOINT_GB +
+  logsGb * LOGS_INGEST_GB +
+  logsGb * LOGS_STORE_GB_MO;
+
+const num = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+
+/** Logs Insights returns every field as a string. */
+const field = (rows, name, fallback = 0) => {
+  if (!Array.isArray(rows)) return fallback;
+  const total = rows.reduce((sum, row) => sum + Number(row[name] ?? 0), 0);
+  return Number.isFinite(total) ? total : fallback;
+};
+
+function measuredEngineA(metrics, gaps) {
+  const rows = Array.isArray(metrics.bedrockConverse) ? metrics.bedrockConverse : [];
+  if (rows.length === 0) gaps.push('engine A: no bedrock.converse rows — token cost is $0');
+
+  const inputTokens = field(rows, 'inputTokens');
+  const outputTokens = field(rows, 'outputTokens');
+  const calls = field(rows, 'calls');
+
+  const wcu = num(metrics.dynamodb?.writeCapacityUnits);
+  const rcu = num(metrics.dynamodb?.readCapacityUnits);
+  if (wcu === null || rcu === null) gaps.push('engine A: DynamoDB capacity metrics missing');
+
+  return {
+    cost: {
+      'Bedrock tokens': inputTokens * SONNET_IN + outputTokens * SONNET_OUT,
+      DynamoDB: (wcu ?? 0) * DDB_WRU + (rcu ?? 0) * DDB_RRU,
+      [`Fargate (${FARGATE_TASKS.a} task, ${HOURS} h)`]: FARGATE_TASKS.a * fargatePerMonth,
+    },
+    tokens: { in: inputTokens, out: outputTokens, calls_per_turn: calls / metrics.turns },
+    // Per-operation split, so the slide can price the extract-preferences call the deck
+    // guessed at 2,940 in / 300 out.
+    byOperation: rows.map((row) => ({
+      operation: row.operation,
+      calls: Number(row.calls ?? 0),
+      inputTokens: Number(row.inputTokens ?? 0),
+      outputTokens: Number(row.outputTokens ?? 0),
+      inputPerCall: Number(row.inputTokens ?? 0) / Math.max(1, Number(row.calls ?? 0)),
+      outputPerCall: Number(row.outputTokens ?? 0) / Math.max(1, Number(row.calls ?? 0)),
+    })),
+    truncations: field(metrics.toolLoopTruncated, 'truncated'),
+  };
+}
+
+function measuredEngineB(metrics, gaps) {
+  // Spans first, window subtraction second — the fallback the run was designed to allow.
+  const spans = metrics.tokens ?? {};
+  const fallback = metrics.tokensFallback;
+  let inputTokens = Number(spans.inputTokens ?? 0);
+  let outputTokens = Number(spans.outputTokens ?? 0);
+  let tokenSource = 'GenAI Observability spans';
+
+  if (!(inputTokens > 0) && fallback) {
+    inputTokens = num(fallback.inputTokens) ?? 0;
+    outputTokens = num(fallback.outputTokens) ?? 0;
+    tokenSource = 'account-level AWS/Bedrock, disjoint-window subtraction';
+    gaps.push(
+      'engine B: no LLM spans — tokens come from the account-level window subtraction, ' +
+        'valid only because the arms ran sequentially in verified-quiet windows',
+    );
+  }
+  if (!(inputTokens > 0)) gaps.push('engine B: NO token measurement from either path');
+
+  const memory = metrics.memory ?? {};
+  const events = num(memory.CreateEvent?.invocations) ?? 0;
+  const retrievals =
+    (num(memory.RetrieveMemoryRecords?.invocations) ?? 0) +
+    (num(memory.ListMemoryRecords?.invocations) ?? 0);
+  const records = num(memory.created_MemoryRecordsExtracted) ?? 0;
+  // Memory's own extraction tokens are billed inside the per-event rate, so they are reported
+  // for the fair comparison against engine A's extraction Converse, not added to the bill.
+  const extractionTokens = {
+    in:
+      (num(memory.Extraction?.inputTokens) ?? 0) + (num(memory.Consolidation?.inputTokens) ?? 0),
+    out:
+      (num(memory.Extraction?.outputTokens) ?? 0) +
+      (num(memory.Consolidation?.outputTokens) ?? 0),
+  };
+
+  // collect.mjs now nests these under `compute` and tries three dimension sets; the flat
+  // keys are the pre-2026-09-12 shape and are still read so old metrics files still price.
+  const compute = metrics.runtime?.compute ?? {};
+  const vcpuHours = num(compute.vcpuHours) ?? num(metrics.runtime?.vcpuHours);
+  let gbHours = num(compute.gbHours) ?? num(metrics.runtime?.gbHours);
+  const sessions = num(metrics.runtime?.sessions) ?? (metrics.sessions?.length ?? null);
+  let gbHoursSource = 'meter';
+
+  if (gbHours === null) {
+    // Not a dimension bug — verified on 2026-09-12 that these billing meters publish days
+    // late (newest datapoint then was 2026-09-08, for traffic minutes old). So the run-day
+    // figure uses the rate the meter itself published on the one day it did report:
+    // 1.5702 GB-h across 2 Sessions = 0.785 GB-h per conversation. Labelled a proxy, and
+    // superseded by re-running collect.mjs over the same window once the meter catches up.
+    gbHoursSource = 'proxy: 0.785 GB-h/session, observed 2026-09-08 (1.5702 GB-h / 2 sessions)';
+    gbHours = sessions === null ? null : sessions * 0.785;
+    gaps.push(
+      'engine B: Runtime GB-hour meter had not published for this window — priced at the ' +
+        '0.785 GB-h/session rate the meter reported on 2026-09-08. Re-run collect.mjs in a ' +
+        'few days and re-price for the authoritative number.',
+    );
+  }
+  if (vcpuHours === null) {
+    gaps.push(
+      'engine B: Runtime vCPU-hour meter had not published for this window; its share of ' +
+        'the bill is counted as 0 and is therefore a floor.',
+    );
+  }
+
+  const gatewayCalls = Object.values(metrics.gateway?.byMethod ?? {}).reduce(
+    (sum, entry) => sum + (num(entry.calls) ?? 0),
+    0,
+  );
+
+  let lambdaCost = 0;
+  for (const [name, entry] of Object.entries(metrics.lambdas ?? {})) {
+    const gbSeconds =
+      ((num(entry.totalDurationMs) ?? 0) / 1000) * ((LAMBDA_MB[name] ?? 512) / 1024);
+    lambdaCost += (num(entry.invocations) ?? 0) * LAMBDA_REQUEST + gbSeconds * LAMBDA_GB_SEC;
+  }
+
+  const wcu = num(metrics.dynamodb?.writeCapacityUnits);
+  const rcu = num(metrics.dynamodb?.readCapacityUnits);
+
+  return {
+    cost: {
+      'Bedrock tokens': inputTokens * SONNET_IN + outputTokens * SONNET_OUT,
+      'AgentCore Memory': events * AC_EVENT + retrievals * AC_RETRIEVAL + records * AC_RECORD_MO,
+      'AgentCore Runtime': (vcpuHours ?? 0) * AC_VCPU_HR + (gbHours ?? 0) * AC_GB_HR,
+      'AgentCore Gateway': gatewayCalls * AC_GATEWAY_INVOKE + TOOLS_INDEXED * AC_TOOL_INDEX_MO,
+      'Tool Lambdas': lambdaCost,
+      DynamoDB: (wcu ?? 0) * DDB_WRU + (rcu ?? 0) * DDB_RRU,
+      [`Fargate (${FARGATE_TASKS.b} tasks, ${HOURS} h)`]: FARGATE_TASKS.b * fargatePerMonth,
+    },
+    tokens: {
+      in: inputTokens,
+      out: outputTokens,
+      // Structurally 0 in the logs (`recordModelCall` is never reached on engine B), so this
+      // is the span count or nothing. Never report the log figure here.
+      calls_per_turn: Number(spans.llmSpans ?? 0) / metrics.turns || null,
+    },
+    tokenSource,
+    memory: { events, retrievals, records, extractionTokens },
+    runtime: {
+      invocations: num(metrics.runtime?.invocations),
+      sessions,
+      vcpuHours,
+      gbHours,
+      gbHoursSource,
+      // Per CONVERSATION, not per turn: the meter bills memory on session wall clock, and
+      // one conversation is one runtimeSessionId is one microVM.
+      gbHoursPerConversation:
+        gbHours === null || !sessions ? null : gbHours / sessions,
+      sessionWallClockSec: num(metrics.sessionWallClockSec),
+    },
+    gatewayCalls,
+    gatewayPerTurnMs: num(metrics.gateway?.byMethod?.['tools/call']?.avgDurationMs),
+  };
+}
+
+function buildCorrections(a, b, metricsA, metricsB) {
+  const wcuPerTurn = (num(metricsA.dynamodb?.writeCapacityUnits) ?? 0) / metricsA.turns;
+  const gbPerConversation = b.runtime.gbHoursPerConversation;
+  const secPerConversation = gbPerConversation === null ? null : gbPerConversation * 3600;
+
+  const fmt = (value, unit, dp = 0) =>
+    value === null || value === undefined ? 'not measured' : `${value.toFixed(dp)}${unit}`;
+
+  return [
+    // [label, what slide 6 claimed, what we measured, was slide 6 right]
+    [
+      'Turn latency A / B',
+      '~2.1 s / ~2.4 s',
+      `${(metricsA.latencyMs.p50 / 1000).toFixed(1)} s / ` +
+        `${(metricsB.latencyMs.p50 / 1000).toFixed(1)} s`,
+      false,
+    ],
+    ['Always-on tasks (B)', 'none', `${FARGATE_TASKS.b} Fargate tasks`, false],
+    ['Tools indexed', String(TOOLS_INDEXED_AS_PUBLISHED), String(TOOLS_INDEXED), false],
+    [
+      'Runtime per conversation',
+      `${SEC_PER_TURN} s/turn assumed`,
+      fmt(secPerConversation, ' s billed'),
+      false,
+    ],
+    ['Writes per turn', String(DDB_WRITE_UNITS), `${wcuPerTurn.toFixed(1)} WCU`, false],
+    ['Gateway overhead', '~300 ms', fmt(b.gatewayPerTurnMs, ' ms'), true],
+  ];
+}
+
+function fromMeasured(directory) {
+  const read = (name) => JSON.parse(readFileSync(`${directory}/${name}`, 'utf8'));
+  const metricsA = read('engine-a-metrics.json');
+  const metricsB = read('engine-b-metrics.json');
+
+  const gaps = [];
+  const a = measuredEngineA(metricsA, gaps);
+  const b = measuredEngineB(metricsB, gaps);
+
+  // A smoke file is shaped exactly like a real one. Refuse rather than warn: the failure mode
+  // is a slide that reads as a month's bill and is actually four turns.
+  if (metricsA.smoke || metricsB.smoke) {
+    console.error(
+      'refusing to price a smoke run as a month — rerun the full 12x10 corpus.\n' +
+        `  engine A smoke: ${Boolean(metricsA.smoke)} (${metricsA.turns} turns)\n` +
+        `  engine B smoke: ${Boolean(metricsB.smoke)} (${metricsB.turns} turns)`,
+    );
+    process.exit(3);
+  }
+
+  if (metricsA.turns !== metricsB.turns) {
+    gaps.push(
+      `arms are not comparable: ${metricsA.turns} turns on A vs ${metricsB.turns} on B`,
+    );
+  }
+
+  const corrections = buildCorrections(a, b, metricsA, metricsB);
+  const results = {
+    dummy: false,
+    generatedAt: new Date().toISOString(),
+    turns: metricsA.turns,
+    conversations: 12,
+    windows: { a: metricsA.tightWindow, b: metricsB.tightWindow },
+    cost: { a: a.cost, b: b.cost },
+    latency: { a: metricsA.latencyMs, b: metricsB.latencyMs },
+    tokens: { a: a.tokens, b: b.tokens },
+    corrections,
+    detail: {
+      engineATokensByOperation: a.byOperation,
+      engineAToolLoopTruncations: a.truncations,
+      engineBTokenSource: b.tokenSource,
+      engineBMemory: b.memory,
+      engineBRuntime: b.runtime,
+      engineBGatewayCalls: b.gatewayCalls,
+      storeReadsPerTurn: { a: metricsA.storeReadsPerTurn, b: metricsB.storeReadsPerTurn },
+      failedTurns: { a: metricsA.failedTurns, b: metricsB.failedTurns },
+    },
+    excluded: {
+      note:
+        'Charged to both engines identically, so it cancels in the comparison — stated rather ' +
+        'than silently dropped.',
+      sharedNetworkPerMonth,
+      alsoExcluded: ['ALB', 'CloudFront', 'S3', 'Secrets Manager', 'CloudWatch Logs ingestion'],
+      fargateTasksBStandalone: FARGATE_TASKS_B_STANDALONE * fargatePerMonth,
+    },
+    gaps,
+  };
+
+  writeFileSync(`${directory}/results.json`, `${JSON.stringify(results, null, 2)}\n`);
+
+  const usd = (v, dp = 4) => '$' + v.toFixed(dp);
+  const totalA = Object.values(a.cost).reduce((sum, v) => sum + v, 0);
+  const totalB = Object.values(b.cost).reduce((sum, v) => sum + v, 0);
+  console.log('\n════ MEASURED (120 turns/user/month, no extrapolation) ════');
+  for (const [label, value] of Object.entries(a.cost)) {
+    console.log('  A', label.padEnd(26), usd(value));
+  }
+  console.log('  A', 'TOTAL'.padEnd(26), usd(totalA, 2));
+  for (const [label, value] of Object.entries(b.cost)) {
+    console.log('  B', label.padEnd(26), usd(value));
+  }
+  console.log('  B', 'TOTAL'.padEnd(26), usd(totalB, 2));
+  console.log('\n  wrote', `${directory}/results.json`);
+  if (gaps.length) {
+    console.log('\n  GAPS — every one of these must be stated on the slide:');
+    for (const gap of gaps) console.log('   -', gap);
+  }
+}
+
+// The three analytic reports print on a bare invocation and are suppressed in measured mode,
+// so `--from-measured` output is machine-readable rather than buried under three tables.
+const measuredArg = process.argv.indexOf('--from-measured');
+if (measuredArg >= 0) {
+  const directory = process.argv[measuredArg + 1];
+  if (!directory) {
+    console.error('usage: node scripts/cost-model.mjs --from-measured runs/');
+    process.exit(2);
+  }
+  fromMeasured(directory.replace(/\/+$/, ''));
+} else {
+  main();
+  usageReport();
+  scaleReport();
+}

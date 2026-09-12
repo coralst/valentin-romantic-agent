@@ -221,6 +221,9 @@ const OWNERSHIP = [
   ['README.md', 'infra'],
   ['CONTRIBUTING.md', 'infra'],
   ['CLAUDE.md', 'infra'],
+  // Built decks. Artefacts of the write-up, not product code, and nobody edits
+  // them by hand — the generators in scripts/ produce them.
+  ['pptx/', 'infra'],
   // `docs/` LAST among the docs rules: docs/design/ is the UI Designer's (per
   // CONTRIBUTING.md), and the rest — METHODOLOGY.md, refactor-plan.json, the
   // workflow write-ups — is documentation OF the workflow, which is infra's.

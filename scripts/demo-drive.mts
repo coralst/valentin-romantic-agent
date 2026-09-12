@@ -240,8 +240,16 @@ const jitter = (base: number, spread: number) =>
   paced(base + Math.random() * spread - spread / 2);
 
 interface Turn {
-  /** Exactly what gets typed. Asserted against the composer before sending. */
-  say: string;
+  /**
+   * Exactly what gets typed. Asserted against the composer before sending.
+   *
+   * A function when the line has to quote the app back to itself — the booking turn
+   * has to name one of the hours Ontopo actually returned, and neither a fixed hour
+   * nor a vague "one of the times you found" will do: the first can contradict real
+   * availability on camera, and the second makes the agent quite rightly ask which
+   * one, which is a correct answer to a badly written script.
+   */
+  say: string | ((previousReply: string) => string);
   /** The on-screen caption while this turn is in flight. */
   beat: string;
   /**
@@ -298,6 +306,32 @@ interface Turn {
 }
 
 /**
+ * A turn whose line is settled — `say` resolved against the reply before it.
+ *
+ * Everything downstream of the resolution (typing, the composer check, the reply
+ * assertions, the proposal's name) works on this rather than on {@link Turn}, so a
+ * `say` that is still a function cannot reach the keyboard.
+ */
+type SpokenTurn = Turn & { say: string };
+
+/**
+ * Whether a reply has already offered several named options.
+ *
+ * Two shapes, because the model uses both: markdown bullets, and prose with the
+ * names in bold ("**Hotel Montefiore** is the standout…"). Two is the threshold —
+ * one bold phrase is emphasis, several are a shortlist.
+ *
+ * Deliberately shallow. It decides which of two *phrasings* a turn types, so being
+ * wrong costs a slightly odd line and not a false claim; anything cleverer would be
+ * a parser for prose, which is a thing that quietly stops working.
+ */
+function looksLikeAList(reply: string): boolean {
+  const bullets = reply.match(/^\s*[-*•]\s+\S/gm)?.length ?? 0;
+  const bolded = reply.match(/\*\*[^*\n]{3,60}\*\*/g)?.length ?? 0;
+  return bullets >= 2 || bolded >= 2;
+}
+
+/**
  * The conversation, in the order the rail fills up on camera.
  *
  * ## Why it is in two halves
@@ -344,8 +378,20 @@ const PROFILE_TURNS: Turn[] = [
     stumble: true,
   },
   {
-    say: 'One more thing for her file — she hates loud rooms. Quiet and candlelit is much more her.',
+    say: 'One more thing for her file — she hates loud rooms. Quiet and candlelit is much ' +
+      "more her. Don't suggest anywhere yet, I'll ask when her file is done.",
     beat: 'The kind of room — atmosphere, kept separate from cuisine',
+    /*
+     * Says "not yet" out loud, because the assertion below had no right to expect it.
+     *
+     * Even worded purely as a fact, this turn is the point where he has enough about
+     * her to be *useful*, and an assistant that offers is behaving well: the take died
+     * here on a reply that noted the preference and then volunteered five Tel Aviv
+     * rooms. Asserting against an eagerness the script never asked him to restrain is
+     * testing the model for the script's omission — the same mistake as three earlier
+     * failures. With the line explicit, the assertion means something: it now checks
+     * that a stated "not yet" is honoured.
+     */
     // A stated preference is a fact to file, not a search brief. The recorded
     // run answered this with five restaurants nobody asked for, and the
     // unanswered offer then dominated every later turn.
@@ -459,8 +505,39 @@ const PLAN_TURNS: Turn[] = [
      * demo should *ask* for hours, not hope the model volunteers them and then take
      * credit for it when it does.
      */
-    say: 'Good. Find us a table for two that evening — quiet, Mediterranean, ' +
-      'nothing with shellfish on it — and tell me which hours are actually free.',
+    /*
+     * Adapts to whether a shortlist already exists.
+     *
+     * The clash-check turn before this one sometimes ends by volunteering five rooms
+     * of its own accord — it has her file, and offering is the helpful thing to do.
+     * When it has, "find us a table" is a request the model has already answered, and
+     * it replies by asking *which* of its own suggestions to check: correct behaviour,
+     * no clock time, failed take. So when the previous reply is already a list, this
+     * turn names a position in it instead of re-asking for one.
+     *
+     * By position and not by name, for the reason the booking turn gives below: the
+     * shortlist is real Ontopo output, and a scripted "check Yaffo" is a line that
+     * breaks the first day Yaffo is not on it.
+     */
+    /*
+     * Names a target hour, because the model rightly asks for one otherwise.
+     *
+     * "Tell me which hours are free" with no window got "what time were you thinking
+     * — around 20:00, or earlier?" — a sensible question, and another turn spent not
+     * calling Ontopo. `check_availability` takes a time; a request that withholds it
+     * is a request the model cannot act on, and the beat needs the call to happen.
+     *
+     * "Around 20:00" and not "at 20:00": the point of the beat is which hours come
+     * back, so the script must not pre-empt the answer it is about to read.
+     */
+    say: (previous) =>
+      looksLikeAList(previous)
+        ? 'Good — check the first two on that list for that evening, dinner around ' +
+          '20:00, and tell me which hours are actually free. Nothing with shellfish ' +
+          'on the menu.'
+        : 'Good. Find us a table for two that evening, dinner around 20:00 — quiet, ' +
+          'Mediterranean, nothing with shellfish on it — and tell me which hours are ' +
+          'actually free.',
     beat: 'Ontopo — real restaurants, real availability, and her allergy in the query',
     // The observed failure class, verbatim from review: "it isn't acceptable
     // that it is asked on restaurant and answer about Nina Simone".
@@ -470,7 +547,11 @@ const PLAN_TURNS: Turn[] = [
     // the only thing that knows a table is free at 20:30 is the `check_availability`
     // call inspection moment 4 then counts. A reply with restaurants and no times is
     // exactly the take that looks right and is not.
-    replyMust: [/table|restaurant|place/i, /\b([01]?\d|2[0-3]):[0-5]\d\b/],
+    // `availab` is in the list because "availability at Yaffo: 19:30, 20:15…" is a
+    // perfectly good answer that names no "table" and no "place". The honesty of this
+    // beat rests on the clock time and on moment 4's span count, not on this vocabulary
+    // check — so it is kept broad enough not to fail a correct reply.
+    replyMust: [/table|restaurant|place|availab/i, /\b([01]?\d|2[0-3]):[0-5]\d\b/],
     replyMustNot: [/nina simone/i],
   },
   /*
@@ -491,12 +572,19 @@ const PLAN_TURNS: Turn[] = [
    */
   {
     /*
-     * "One of the times you found" and not a hardcoded 20:00. Now that the previous turn
-     * asks for real availability, a scripted hour is an hour that can genuinely be taken
-     * — and a demo that insists on a slot Ontopo has just said is full films the model
-     * arguing with the script.
+     * The hour is read out of the shortlist rather than written here.
+     *
+     * A hardcoded 20:00 can be an hour Ontopo has just said is full, which films the
+     * model arguing with the script. "One of the times you found" instead of an hour
+     * fails the other way: the model replied "which time works — 19:30, 19:45, 20:00,
+     * 20:15 or 20:30?", which is the *right* answer to an underspecified request and
+     * still no proposal to confirm. So: quote the first clock time the previous reply
+     * actually offered. The fallback is unreachable in a passing take — the shortlist
+     * turn's own `replyMust` requires a clock time — and is here so the type holds.
      */
-    say: 'Yes — go ahead and book the first one on that list, at one of the times you found.',
+    say: (previous) =>
+      'Yes — go ahead and book the first one on that list, at ' +
+      `${previous.match(/\b([01]?\d|2[0-3]):[0-5]\d\b/)?.[0] ?? '20:00'}.`,
     beat: 'Now it is a write, so it comes back as a proposal instead of an answer',
     confirms: true,
     replyMust: [/reserv|propos|confirm|book|table/i],
@@ -752,7 +840,7 @@ function keyDelay(char: string, previous: string): number {
  * rather than sending something the model then has to interpret. Being fussy
  * here is what makes it safe to be playful above.
  */
-async function typeHuman(page: Page, composer: Locator, turn: Turn): Promise<void> {
+async function typeHuman(page: Page, composer: Locator, turn: SpokenTurn): Promise<void> {
   await glideTo(page, composer);
   await composer.click();
   await sleep(jitter(420, 300)); // gathering the thought
@@ -887,7 +975,7 @@ async function awaitReply(page: Page, before: string, sent: string): Promise<str
  * recorded run actually exhibited, was not caught by any liveness check, and
  * cost the demo. A thrown take is re-runnable; a shipped wrong take is not.
  */
-function assertReply(turn: Turn, reply: string): void {
+function assertReply(turn: SpokenTurn, reply: string): void {
   for (const must of turn.replyMust ?? []) {
     if (!must.test(reply)) {
       throw new Error(
@@ -1042,22 +1130,33 @@ async function playTurns(
   numberedFrom = 0,
 ): Promise<void> {
   const playable = turns.filter((turn) => SEND_MAIL || !turn.needsMail);
+  /*
+   * The reply this loop last read, so a turn can quote it. Seeded empty: the first
+   * turn of a block has nothing before it, and a `say` function is only used where
+   * there demonstrably is something to quote.
+   */
+  let previousReply = '';
   for (const [index, turn] of playable.entries()) {
     const number = numberedFrom + index + 1;
     console.log(`\n${tag} ${number}/${numberedFrom + playable.length}: ${turn.beat}`);
     await caption(page, turn.beat);
     const before = await transcriptOf(page);
-    await typeHuman(page, composer, turn);
+    const spoken: SpokenTurn = {
+      ...turn,
+      say: typeof turn.say === 'function' ? turn.say(previousReply) : turn.say,
+    };
+    await typeHuman(page, composer, spoken);
     await composer.press('Enter');
-    const reply = await awaitReply(page, before, turn.say);
-    assertReply(turn, reply);
+    const reply = await awaitReply(page, before, spoken.say);
+    assertReply(spoken, reply);
+    previousReply = reply;
     await shot(page, `${tag}-${String(number).padStart(2, '0')}`);
-    if (turn.confirms) await confirmProposal(page, tag === 'plan' ? planName(turn) : 'action');
+    if (turn.confirms) await confirmProposal(page, tag === 'plan' ? planName(spoken) : 'action');
   }
 }
 
 /** A short, file-safe name for the proposal a planning turn is expected to raise. */
-function planName(turn: Turn): string {
+function planName(turn: SpokenTurn): string {
   if (/playlist/i.test(turn.say)) return 'playlist';
   if (/table|restaurant/i.test(turn.say)) return 'reservation';
   return 'action';
@@ -1208,6 +1307,30 @@ async function main(): Promise<void> {
      * comment in `auth-context.tsx`. On a deployment with real auth the page shows
      * without it and the parameter is ignored.
      */
+    await page.goto(`${BASE}/?landing`, { waitUntil: 'domcontentloaded' });
+
+    /*
+     * Forget who this browser was last time.
+     *
+     * `auth-context.tsx` keeps `valentin.devUser` — a uuid minted once per browser —
+     * in `localStorage`, and that uuid *is* the profile: the rows, her file, the
+     * conversations. A fresh Playwright context used to throw it away for free, but
+     * act 3 has to read a signed-in Gmail, so the run now reuses one persistent
+     * Chrome profile — and that profile carries the uuid forward. The symptom was a
+     * take where turn 4 answered "already in her file" and volunteered the previous
+     * run's restaurant shortlist: an app behaving correctly, demonstrating a demo
+     * that had quietly stopped starting from nothing.
+     *
+     * Cleared per origin, which is the whole point: `localStorage` is scoped to the
+     * app's origin, so this cannot touch the Google session living under
+     * `google.com` that act 3 depends on. Cookies are left alone for the same reason.
+     */
+    await page
+      .evaluate(() => {
+        localStorage.clear();
+        sessionStorage.clear();
+      })
+      .catch(() => {});
     await page.goto(`${BASE}/?landing`, { waitUntil: 'domcontentloaded' });
 
     /*

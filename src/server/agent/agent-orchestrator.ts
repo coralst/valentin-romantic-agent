@@ -20,6 +20,7 @@ import {
 } from './prompts';
 import { readKnownFacts, readVisitedPlaces } from './partner-profile';
 import { recordOuting } from './outing-recorder';
+import { recordKeepsake } from './keepsake-recorder';
 import {
   PendingProposalStore,
   ProposalUnavailableError,
@@ -440,6 +441,10 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
     if (result.ok) {
       const outing = await recordOuting(this.storage, sessionId, result.booking);
       if (outing) this.tools.onBooking?.(sessionId, outing);
+      // And anything that was *made* — see `keepsake-recorder.ts`. Correlated to the
+      // proposal rather than to a message, because no message asked for this: a person
+      // clicked a card, and `proposalId` is the same id the trail above uses.
+      await recordKeepsake(this.storage, sessionId, proposalId, result.keepsake);
     }
 
     /*

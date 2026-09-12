@@ -977,7 +977,57 @@ async function awaitReply(page: Page, before: string, sent: string): Promise<str
    */
   const tail = sent.slice(-24);
   const cut = previous.lastIndexOf(tail);
-  return cut >= 0 ? previous.slice(cut + tail.length) : previous.slice(before.length);
+  const after = cut >= 0 ? previous.slice(cut + tail.length) : previous.slice(before.length);
+  return withoutNotedChip(after);
+}
+
+/**
+ * Drop the extraction chip the app draws above a reply, so assertions read prose.
+ *
+ * The chip is the app announcing what it just learned — "✓ NOTED · jazz, obsessed
+ * with Nina Simone · quiet and candlelit" — and it sits inside the transcript, so it
+ * lands in the slice being asserted. That failed a take on the restaurant turn for
+ * containing "Nina Simone", when the reply was a flawless Ontopo answer and the words
+ * belonged to a chip listing rows extracted several turns earlier.
+ *
+ * Which is a real distinction, not a convenience: every mustNot here exists to catch
+ * *the model* answering the wrong question. What the extractor chose to file is a
+ * different claim, checked in a different place — inspection moment 1 and her file.
+ */
+function withoutNotedChip(reply: string): string {
+  /*
+   * Line-bounded, and deliberately not a `[\s\S]*?` run to the next blank line: the
+   * chip renders as `✓` / `NOTED` / the fact list on three consecutive lines with **no**
+   * blank line after it, so a greedy version eats the entire reply — and an empty reply
+   * passes every mustNot for the wrong reason, which is worse than the false positive it
+   * was written to fix.
+   */
+  const lines = reply.split('\n');
+  const kept: string[] = [];
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index].trim();
+    if (line === '✓') continue;
+    /*
+     * The label has to be the *whole* line, or the whole line up to the `·` that starts
+     * the fact list. `\bNOTED\b` was too loose: it also matched "Noted. She loves jazz,
+     * and I have put it in her file." — a real reply, whose first sentence it then threw
+     * away. Silently deleting prose from the text every assertion reads is the failure
+     * mode this function exists to avoid, not one it may introduce.
+     */
+    if (/^✓?\s*NOTED\s*·/i.test(line)) continue; // label and facts on one line
+    if (!/^✓?\s*NOTED\s*$/i.test(line)) {
+      kept.push(lines[index]);
+      continue;
+    }
+    // The line after a bare label is the fact list. Dropped only when it looks like one —
+    // a `·`-separated run, or a short fragment with no sentence end — so a reply that
+    // happens to be a bare "Noted" keeps whatever genuinely follows it.
+    const next = (lines[index + 1] ?? '').trim();
+    if (next.includes('·') || (next.length > 0 && next.length <= 120 && !/[.!?]$/.test(next))) {
+      index++;
+    }
+  }
+  return kept.join('\n').trim();
 }
 
 /**

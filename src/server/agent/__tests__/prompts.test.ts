@@ -191,6 +191,17 @@ describe('buildSystemPrompt', () => {
     );
   });
 
+  describe('the fortnight lookup line', () => {
+    it('spells out the next two weeks so a first-mention weekday is a read, not a derivation', () => {
+      // Saturday 5 September 2026 in Israel. The 10th is a Thursday — the exact
+      // weekday the recorded model got wrong before this line existed.
+      const block = nowBlock(new Date('2026-09-05T12:00:00Z'));
+      expect(block).toContain('Thu 09-10');
+      expect(block).toContain('Sun 09-06');
+      expect(block).toMatch(/never derive one yourself/);
+    });
+  });
+
   describe('the computed-dates block', () => {
     // Saturday 5 September 2026, noon UTC — the exact conditions of the recorded
     // run where the model called Thursday the 10th "this coming Wednesday" and

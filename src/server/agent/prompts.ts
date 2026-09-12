@@ -170,8 +170,29 @@ export function nowBlock(now: Date): string {
     weekday: 'long',
   }).format(now);
 
+  /*
+   * The next two weeks, spelled out.
+   *
+   * The computed-dates block below covers dates already ON the profile — but the
+   * turn that *teaches* a date is answered before extraction has stored it, so
+   * the very first "our anniversary is the 16th" gets a reply whose weekday the
+   * model derived itself. On camera it derived it wrong twice: "Wednesday" for a
+   * Thursday, then "Tuesday" for a Wednesday, on the first turn each time. A
+   * fourteen-day lookup table costs a line and turns that derivation into a read.
+   */
+  const fortnight = Array.from({ length: 14 }, (_, i) => {
+    const day = new Date(now.getTime() + (i + 1) * 86_400_000);
+    const zone = inZone(day, REMINDER_ZONE);
+    const name = new Intl.DateTimeFormat('en-GB', {
+      timeZone: REMINDER_ZONE,
+      weekday: 'short',
+    }).format(day);
+    return `${name} ${zone.localDate.slice(5)}`;
+  }).join(' · ');
+
   return `RIGHT NOW: it is ${weekday} ${localDate}, ${localTime} in Israel (${REMINDER_ZONE}). The Hebrew date is ${hebrewDateOf(now)}.
-Work out every relative date the user says — "tomorrow", "next Tuesday", "the 4th", "in two weeks" — against that date, and pass tools the absolute YYYY-MM-DD you arrived at. Never guess a year. If a date he gives is ambiguous or already past, ask him rather than picking one.`;
+THE NEXT TWO WEEKS (read weekdays from here — never derive one yourself): ${fortnight}.
+Work out every relative date the user says — "tomorrow", "next Tuesday", "the 4th", "in two weeks" — against that date, and pass tools the absolute YYYY-MM-DD you arrived at. Never guess a year. If a date he gives is ambiguous or already past, ask him rather than picking one. For a date beyond the two weeks above, state the date without naming its weekday.`;
 }
 
 /** A calendar date, no year semantics attached. Mirrors the planner's shape. */

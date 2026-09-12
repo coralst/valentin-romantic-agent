@@ -446,8 +446,21 @@ const PLAN_TURNS: Turn[] = [
     replyMust: [/calendar|clash|clear|free|nothing|event|booked/i],
   },
   {
+    /*
+     * Asks for the *times*, in so many words.
+     *
+     * "Find us a table" alone reliably produced a shortlist of five real Tel Aviv rooms
+     * and not one clock time: `find_restaurants` answers that question completely, so
+     * `check_availability` never ran and there was nothing for inspection moment 4 to
+     * count. The take failed on an assertion the script had no right to make.
+     *
+     * Naming the hours is also the more honest version of the beat. The claim being
+     * demonstrated is that a time on screen was fetched rather than remembered — so the
+     * demo should *ask* for hours, not hope the model volunteers them and then take
+     * credit for it when it does.
+     */
     say: 'Good. Find us a table for two that evening — quiet, Mediterranean, ' +
-      'and nothing with shellfish on it.',
+      'nothing with shellfish on it — and tell me which hours are actually free.',
     beat: 'Ontopo — real restaurants, real availability, and her allergy in the query',
     // The observed failure class, verbatim from review: "it isn't acceptable
     // that it is asked on restaurant and answer about Nina Simone".
@@ -477,7 +490,13 @@ const PLAN_TURNS: Turn[] = [
    * ambiguity rather than for anything the model did wrong.
    */
   {
-    say: 'Yes — go ahead and book the first one on that list, at 20:00.',
+    /*
+     * "One of the times you found" and not a hardcoded 20:00. Now that the previous turn
+     * asks for real availability, a scripted hour is an hour that can genuinely be taken
+     * — and a demo that insists on a slot Ontopo has just said is full films the model
+     * arguing with the script.
+     */
+    say: 'Yes — go ahead and book the first one on that list, at one of the times you found.',
     beat: 'Now it is a write, so it comes back as a proposal instead of an answer',
     confirms: true,
     replyMust: [/reserv|propos|confirm|book|table/i],
@@ -1314,6 +1333,16 @@ async function main(): Promise<void> {
       await drawer.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
       await caption(page, 'Every call the conversation has made — each with its trace id');
       await linger(page, page.getByTestId('aws-topology-diagram'), 4_800);
+      /*
+       * Unfolded here, once, on camera. The feed opens as an index of *actions* in plain
+       * English — "Valentin writes a reply" — and the AWS spans underneath each one are
+       * folded away; every claim the next few minutes make is about those spans, so this
+       * is the click that puts them on screen. It is also the click whose absence made
+       * every count in this script read zero.
+       */
+      await expandFeed(feed);
+      await caption(page, 'Unfolded: under each plain-English action, the actual AWS calls');
+      await hold(3_000);
       await shot(page, 'inspector-topology');
 
       // ——— A: the glue code ———
@@ -1462,6 +1491,89 @@ async function main(): Promise<void> {
 }
 
 /**
+ * Unfold every group in the feed, so its span rows are in the DOM at all.
+ *
+ * `LiveArchitectureDrawer` does not pass `startExpanded`, and `AwsFlowFeed` renders a
+ * group's rows behind `{!isCollapsed && …}` — so with the drawer freshly opened there
+ * are **zero** `aws-feed-row` elements to count, only the plain-English group captions
+ * ("Valentin writes a reply", "Valentin learns something new"). Every assertion here
+ * counted `0` and read it as "extraction did not run", which is the opposite of true.
+ *
+ * Called before *and* between polls, because a group that arrives while the panel is
+ * open honours `startExpanded` — i.e. it arrives folded. `aws-feed-fold-all` offers
+ * "Expand all" whenever anything is folded, so re-clicking on that label is idempotent
+ * in the only sense that matters: it never collapses what is already open.
+ */
+async function expandFeed(feed: Locator): Promise<void> {
+  const foldAll = feed.getByTestId('aws-feed-fold-all');
+  if (!(await showing(foldAll))) return;
+  const label = (await foldAll.innerText().catch(() => '')).trim();
+  if (/expand/i.test(label)) await foldAll.click({ timeout: 5_000 }).catch(() => {});
+}
+
+/**
+ * The span rows belonging to the newest turn, newest first, as flattened row text.
+ *
+ * "One turn" needs a boundary, and the feed supplies an exact one: a group captioned
+ * *sends a message in chat* is the inbound user message, so everything from the top of
+ * the list down to and including that group is the work one turn caused. Scoping to the
+ * single newest group instead — which is what this used to do — cannot see the double
+ * Bedrock call at all, because `groupFeedRows` keys on actor *and action*: the reply and
+ * the extraction have different actions ("writes a reply", "learns something new") and
+ * so are always two separate groups, never two rows of one.
+ *
+ * Read in one `evaluate` rather than through a tree of locators: the list re-renders as
+ * spans arrive, and a half-dozen chained `count()` calls against a moving DOM is how a
+ * counting assertion becomes flaky in the one place flakiness is indistinguishable from
+ * the defect it is meant to catch.
+ */
+async function newestTurnRows(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const groups = Array.from(
+      document.querySelectorAll('[data-testid="aws-flow-feed"] [data-testid="aws-feed-group"]'),
+    );
+    const rows: string[] = [];
+    for (const group of groups) {
+      for (const row of Array.from(group.querySelectorAll('[data-testid="aws-feed-row"]'))) {
+        /*
+         * Joined cell by cell, not `row.textContent`.
+         *
+         * The row is a CSS grid with no whitespace between its cells, so `textContent`
+         * runs the service into the operation and yields `BedrockConverse` — against
+         * which `/\bBedrock\b/` cannot match, because `k` and `C` are both word
+         * characters and there is no boundary between them. That is a matcher that
+         * fails on text which is on screen and correct, which is the worst kind.
+         */
+        const cells = Array.from(row.children).map((cell) => cell.textContent ?? '');
+        rows.push(cells.join(' ').replace(/\s+/g, ' ').trim());
+      }
+      const header = group.querySelector('[data-testid="aws-feed-group-header"]');
+      if (/sends a message/i.test(header?.textContent ?? '')) break;
+    }
+    return rows;
+  });
+}
+
+/** Rows for the newest turn once `match` shows up in one, or once the wait runs out. */
+async function turnRowsMatching(
+  page: Page,
+  feed: Locator,
+  match: RegExp,
+  timeoutMs: number,
+): Promise<string[]> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    await expandFeed(feed);
+    const rows = await newestTurnRows(page);
+    if (rows.some((row) => match.test(row)) || Date.now() >= deadline) return rows;
+    await sleep(1_200);
+  }
+}
+
+/** A Bedrock `Converse` row — the service column is shortened to `Bedrock`. */
+const BEDROCK_CONVERSE = /\bBedrock\b.*\bConverse\b/i;
+
+/**
  * Inspection moment 1: one turn on engine A, two Bedrock calls.
  *
  * The cost of the do-it-yourself engine, on screen and counted rather than asserted in
@@ -1475,22 +1587,21 @@ async function main(): Promise<void> {
  * total confidence — which is the exact failure this script exists to prevent.
  */
 async function inspectMomentOne(page: Page, feed: Locator): Promise<void> {
-  const extraction = feed.getByText('extract-preferences').first();
-  await extraction.waitFor({ state: 'visible', timeout: 30_000 }).catch(() => {});
+  const rows = await turnRowsMatching(page, feed, /extract-preferences/i, 40_000);
+  const converse = rows.filter((row) => BEDROCK_CONVERSE.test(row));
+  const bedrockCalls = converse.length;
+  const extracted = converse.filter((row) => /extract-preferences/i.test(row)).length;
+  console.log(
+    `  feed shows ${bedrockCalls} Bedrock Converse call(s) for that turn ` +
+      `(${extracted} of them extraction)`,
+  );
 
-  const newestGroup = feed.getByTestId('aws-feed-group').first();
-  const bedrockCalls = await newestGroup
-    .getByTestId('aws-feed-row')
-    .filter({ hasText: /bedrock/i })
-    .count()
-    .catch(() => 0);
-  console.log(`  feed shows ${bedrockCalls} Bedrock call(s) for that turn`);
-
-  if (bedrockCalls < 2) {
+  if (bedrockCalls < 2 || extracted < 1) {
     throw new Error(
-      `TAKE FAILED — engine A's newest group holds ${bedrockCalls} Bedrock row(s), not 2.\n` +
+      `TAKE FAILED — engine A's newest turn holds ${bedrockCalls} Bedrock Converse row(s) ` +
+        `and ${extracted} extract-preferences row(s); the claim needs 2 and 1.\n` +
         '  The whole point of this moment is the second, forced-tool extraction call.\n' +
-        '  Either extraction did not run, or the feed grouped it under another request.',
+        `  Rows seen: ${rows.join(' | ') || '(none — is any group expanded?)'}`,
     );
   }
 
@@ -1498,7 +1609,9 @@ async function inspectMomentOne(page: Page, feed: Locator): Promise<void> {
     page,
     1,
     `One turn, ${bedrockCalls} Bedrock calls — the reply, plus a forced-tool "extract-preferences" pass`,
-    (await showing(extraction)) ? extraction : newestGroup,
+    // The extraction row itself, which is the one row the claim is about. It exists —
+    // the assertion above just counted it — so this needs no fallback.
+    feed.getByText('extract-preferences').first(),
     'inspect-1-two-bedrock-calls',
   );
 }
@@ -1560,10 +1673,20 @@ async function inspectMomentTwo(page: Page, drawer: Locator): Promise<void> {
  * ## What is not assumed
  *
  * That engine B is reachable. `resolveEngine` downgrades to A when the AgentCore wiring
- * is absent, and the drawer says so through `architecture-serving-chip` / the
- * `downgraded` marker. The caption is therefore read from the app rather than written
- * here — a video that says "now on AgentCore" over engine A's answers is exactly the lie
- * this project keeps deciding not to tell.
+ * is absent, and the drawer says so through `architecture-serving-chip`'s own
+ * `data-serving` / `data-downgraded`. The caption is therefore read from the app rather
+ * than written here — a video that says "now on AgentCore" over engine A's answers is
+ * exactly the lie this project keeps deciding not to tell.
+ *
+ * **This act needs the deployed app.** `resolveEngine` is per *process*, not per
+ * request: it reads `AGENT_ENGINE` and ignores what the request asked for, because
+ * `compute-stack.ts` runs two Fargate services off one image and the ALB is what routes
+ * `X-Valentin-Engine: agentcore` to the second. A single `dev-server.ts` therefore
+ * serves one engine no matter which way the rail is flipped, and against `localhost`
+ * this act correctly takes the amber downgrade branch and skips inspection moment 3.
+ * That is not a bug to be worked around by setting `AGENT_ENGINE=agentcore` on the local
+ * server either — that would serve engine B for the *whole* run, including the beats
+ * whose whole point is engine A's double Bedrock call.
  *
  * It ends by switching back, and that is not tidying up: every turn after this calls a
  * tool, and AgentCore is invoked with no tool registry (`hasTools = false`), so the
@@ -1578,9 +1701,33 @@ async function runEngineB(page: Page, composer: Locator, feed: Locator): Promise
   await humanClick(page, page.getByTestId('rail-engine-agentcore'), 'switch to AgentCore');
   await hold(3_000);
 
+  /*
+   * Read off the chip's own attributes, not its words.
+   *
+   * `ServingChip` publishes `data-serving` (`valentin` | `agentcore` | `unknown`) and
+   * `data-downgraded`, which are the app's unambiguous statement about what answered.
+   * This used to sniff the rendered text for /glue/ — and the chip says "DIY", so a
+   * genuine downgrade read as success and the script captioned "now served by DIY" over
+   * an act announcing AgentCore. Exactly the lie the surrounding comment promises not to
+   * tell, told by the check that was meant to prevent it.
+   *
+   * Polled, because the chip is a `/api/config` fetch that restarts on every switch and
+   * is deliberately `null` — "Checking engine…" — while in flight. Reading it once, three
+   * seconds after the click, is a race whose losing side is a false caption.
+   */
   const serving = page.getByTestId('architecture-serving-chip');
-  const downgraded = (await showing(page.getByTestId('downgraded')))
-    || /glue/i.test(await serving.innerText().catch(() => ''));
+  const chipDeadline = Date.now() + 20_000;
+  let servingId = '';
+  for (;;) {
+    servingId = (await serving.getAttribute('data-serving').catch(() => '')) ?? '';
+    if (servingId === 'agentcore' || Date.now() >= chipDeadline) break;
+    // `unknown` is in flight; `valentin` here is a settled downgrade, but give the
+    // fetch a moment in case the switch has not propagated yet.
+    await sleep(1_000);
+  }
+  const downgraded =
+    servingId !== 'agentcore' ||
+    (await serving.getAttribute('data-downgraded').catch(() => '')) === 'true';
   // The chip renders its own "SERVING:" prefix, so the raw text read back into a
   // sentence gave "is serving SERVING: GLUE CODE". Keep the engine name only.
   const label = (await serving.innerText().catch(() => ''))
@@ -1596,7 +1743,20 @@ async function runEngineB(page: Page, composer: Locator, feed: Locator): Promise
         : 'AgentCore is not wired on this deployment, and the app refuses to claim it is',
       'substituted',
     );
-    console.log(`  engine B unavailable here — serving chip reads: ${label || '(none)'}`);
+    console.log(
+      `  engine B unavailable here — serving chip reads: ${label || '(none)'} ` +
+        `(data-serving=${servingId || 'unset'})`,
+    );
+    // Named, because on a local server this is the *expected* answer rather than a
+    // fault, and a run that reported it as a fault would send someone debugging a
+    // correctly-behaving app.
+    if (servingId === 'valentin') {
+      console.log(
+        '  (one process serves one engine — `resolveEngine` reads AGENT_ENGINE, not the\n' +
+          '   request. The switch needs the deployed app, where the ALB routes\n' +
+          '   `X-Valentin-Engine: agentcore` to a second Fargate service.)',
+      );
+    }
     await hold(6_000);
     await shot(page, 'engine-agentcore-downgraded');
     await humanClick(page, page.getByTestId('rail-engine-valentin'), 'switch back to the glue code');
@@ -1622,22 +1782,30 @@ async function runEngineB(page: Page, composer: Locator, feed: Locator): Promise
    * The Runtime row is checked alongside it for exactly that reason: it proves the feed
    * was receiving this turn at all.
    */
-  const bGroup = feed.getByTestId('aws-feed-group').first();
-  const rows = bGroup.getByTestId('aws-feed-row');
-  const extractionRows = await rows.filter({ hasText: /extract-preferences/i }).count().catch(() => 0);
-  const runtimeRows = await rows.filter({ hasText: /runtime|agentcore/i }).count().catch(() => 0);
-  console.log(`  engine B newest group: ${extractionRows} extraction row(s), ${runtimeRows} runtime row(s)`);
+  /*
+   * Waited on `InvokeAgentRuntime` and not on the absence, because you cannot wait for
+   * something not to appear: the Runtime row is the proof this turn reached the feed,
+   * and once it is there the extraction count is a count of a settled list rather than
+   * a race that happens to read zero because nothing has arrived yet.
+   */
+  const rows = await turnRowsMatching(page, feed, /InvokeAgentRuntime/i, 40_000);
+  const extractionRows = rows.filter((row) => /extract-preferences/i.test(row)).length;
+  const runtimeRows = rows.filter((row) => /InvokeAgentRuntime/i.test(row)).length;
+  console.log(
+    `  engine B's newest turn: ${extractionRows} extraction row(s), ${runtimeRows} runtime row(s)`,
+  );
 
   if (extractionRows > 0) {
     throw new Error(
-      `TAKE FAILED — engine B's newest group holds ${extractionRows} extract-preferences row(s).\n` +
+      `TAKE FAILED — engine B's newest turn holds ${extractionRows} extract-preferences row(s).\n` +
         '  The comparison this moment makes is that AgentCore spends none.',
     );
   }
   if (runtimeRows === 0) {
     throw new Error(
       'TAKE FAILED — engine B ran, but the feed shows no AgentCore Runtime row for it.\n' +
-        '  An empty group would make "no extraction call" true for the wrong reason.',
+        '  An empty turn would make "no extraction call" true for the wrong reason.\n' +
+        `  Rows seen: ${rows.join(' | ') || '(none — is any group expanded?)'}`,
     );
   }
 
@@ -1645,7 +1813,7 @@ async function runEngineB(page: Page, composer: Locator, feed: Locator): Promise
     page,
     3,
     'Same answers — and zero extraction calls. AgentCore Memory already held the fact',
-    bGroup,
+    feed.getByText('InvokeAgentRuntime').first(),
     'inspect-3-no-extraction',
   );
 
@@ -1689,10 +1857,9 @@ async function inspectMomentFour(page: Page, feed: Locator): Promise<void> {
     return;
   }
 
-  const availability = feed.getByText('check_availability');
-  await availability.first().waitFor({ state: 'visible', timeout: 20_000 }).catch(() => {});
-  const calls = await availability.count().catch(() => 0);
-  console.log(`  feed shows ${calls} check_availability span(s)`);
+  const rows = await turnRowsMatching(page, feed, /check_availability/i, 30_000);
+  const calls = rows.filter((row) => /check_availability/i.test(row)).length;
+  console.log(`  feed shows ${calls} check_availability span(s) for that turn`);
 
   if (calls === 0) {
     throw new Error(
@@ -1706,7 +1873,7 @@ async function inspectMomentFour(page: Page, feed: Locator): Promise<void> {
     page,
     4,
     `${calls} availability call${calls === 1 ? '' : 's'} to Ontopo — those times were fetched, not remembered`,
-    availability.first(),
+    feed.getByText('check_availability').first(),
     'inspect-4-availability-spans',
   );
 }

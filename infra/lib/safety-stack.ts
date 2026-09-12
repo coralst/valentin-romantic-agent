@@ -10,6 +10,7 @@ export interface SafetyStackProps extends cdk.StackProps {
 /**
  * Bumped whenever the guardrail's policy below changes.
  *
+ * 9 — PHONE output NONE; it BLOCKed replies carrying a venue's own number.
  * 8 — PROMPT_ATTACK input LOW; at HIGH it refused "create the playlist".
  * 7 — the off-topic topic is gone; it refused "email me the options".
  * 6 — the EMAIL entity is gone; a recipient address is an input, not a leak.
@@ -19,7 +20,7 @@ export interface SafetyStackProps extends cdk.StackProps {
  * 2 — NAME and AGE no longer anonymised.
  * 1 — initial policy.
  */
-const POLICY_REVISION = 8;
+const POLICY_REVISION = 9;
 
 export class SafetyStack extends cdk.Stack {
   public readonly guardrailId: string;
@@ -143,15 +144,25 @@ export class SafetyStack extends cdk.Stack {
          *
          * The genuinely dangerous identifiers below stay BLOCKed: nothing about
          * remembering a name, a city or a recipient is a reason to carry a card
-         * number, an SSN or an AWS key. PHONE stays too — no tool takes a phone
-         * number as input today, so unlike EMAIL it blocks nothing that works.
-         * If the WhatsApp path is ever built it will hit this exact wall, and
-         * this comment is the reason why.
+         * number, an SSN or an AWS key.
+         *
+         * PHONE is the fourth entity to hit the wall this comment used to predict
+         * for WhatsApp, and the culprit was our own tool output. When Ontopo has
+         * nothing bookable, `check_availability`'s web fallback hands the model
+         * the restaurant's public phone number with instructions to pass it on —
+         * and the moment the model repeated it, PHONE on output BLOCKed the whole
+         * reply. Live session 2026-09-12T10:26Z: every availability answer that
+         * carried a venue phone number came back as the canned line, so the user
+         * saw restaurant names and never the slots. Unlike EMAIL, the entity does
+         * not have to go entirely: a *visitor typing* a phone number is still not
+         * an input any tool takes, so input stays BLOCK and only output drops to
+         * NONE. A restaurant's switchboard number in a reply is the fallback
+         * feature working, not a leak.
          */
         piiEntitiesConfig: [
           { type: 'CREDIT_DEBIT_CARD_NUMBER', action: 'BLOCK' },
           { type: 'US_SOCIAL_SECURITY_NUMBER', action: 'BLOCK' },
-          { type: 'PHONE', action: 'BLOCK' },
+          { type: 'PHONE', action: 'BLOCK', inputAction: 'BLOCK', outputAction: 'NONE' },
           { type: 'AWS_ACCESS_KEY', action: 'BLOCK' },
           { type: 'AWS_SECRET_KEY', action: 'BLOCK' },
         ],

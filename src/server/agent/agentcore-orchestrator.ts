@@ -190,6 +190,8 @@ export class AgentCoreOrchestrator implements AgentOrchestratorInterface {
           // read side only, and this is where engine B gets it for free.
           false,
           await readVisitedPlaces(this.storage, sessionId),
+          new Date(),
+          content,
         ),
         history: context.recentMessages,
       });

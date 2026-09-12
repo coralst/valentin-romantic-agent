@@ -284,6 +284,74 @@ function distanceWording(days: number): string {
 /** The profile fields that carry a calendar date the model will otherwise re-derive. */
 const RECURRING_DATE_FIELDS = ['birthday', 'anniversary'] as const;
 
+const MONTH_NAMES = [
+  'january', 'february', 'march', 'april', 'may', 'june',
+  'july', 'august', 'september', 'october', 'november', 'december',
+] as const;
+
+/** `september` | `sept` | `sep` → 9, or 0 for anything else. */
+function monthNumber(word: string): number {
+  const lower = word.toLowerCase();
+  return MONTH_NAMES.findIndex((name) => name.startsWith(lower.slice(0, 3))) + 1;
+}
+
+const MONTH_PATTERN = MONTH_NAMES.map((name) => `${name.slice(0, 3)}[a-z]*`).join('|');
+
+/**
+ * Every calendar date a message names, as the day it actually falls on.
+ *
+ * A date the user has only just typed is not on the profile yet — extraction
+ * runs *after* the reply — so {@link computedDatesBlock} had nothing to say
+ * about it, and the weekday of the single most important date in the
+ * conversation was the one the model was left to derive. It derived it wrong
+ * three times running: "16 September" answered as "Tuesday the 16th".
+ *
+ * Only the three forms a person actually types are read — `2026-09-16`,
+ * `16 September`, `September 16th`. A year-less date is resolved to its next
+ * occurrence, which is what "our anniversary is on 16 September" means. Anything
+ * unrecognised yields nothing rather than a guess.
+ */
+export function datesInText(text: string, now: Date): DateParts[] {
+  const today = localToday(now);
+  const found: DateParts[] = [];
+  const push = (date: DateParts) => {
+    if (!found.some((seen) => iso(seen) === iso(date))) found.push(date);
+  };
+
+  const isoMatches = text.matchAll(/(\d{4})-(\d{2})-(\d{2})/g);
+  for (const [, y, mo, d] of isoMatches) {
+    const date = { year: Number(y), month: Number(mo), day: Number(d) };
+    if (date.month >= 1 && date.month <= 12 && date.day >= 1 && date.day <= 31) push(date);
+  }
+
+  // "16 September", "16th of September", optionally with a year.
+  const dayFirst = text.matchAll(
+    new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?(${MONTH_PATTERN})\\b(?:\\s+(\\d{4}))?`, 'gi'),
+  );
+  // "September 16", "September 16th, 2026".
+  const monthFirst = text.matchAll(
+    new RegExp(`\\b(${MONTH_PATTERN})\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?:,?\\s+(\\d{4}))?`, 'gi'),
+  );
+
+  const prose: [day: string, month: string, year: string | undefined][] = [
+    ...[...dayFirst].map((m) => [m[1], m[2], m[3]] as [string, string, string | undefined]),
+    ...[...monthFirst].map((m) => [m[2], m[1], m[3]] as [string, string, string | undefined]),
+  ];
+
+  for (const [dayText, monthText, yearText] of prose) {
+    const month = monthNumber(monthText);
+    const day = Number(dayText);
+    if (month < 1 || day < 1 || day > 31) continue;
+    push(
+      yearText
+        ? { year: Number(yearText), month, day }
+        : rollForward({ year: today.year, month, day }, today),
+    );
+  }
+
+  return found;
+}
+
 /**
  * Every date on the profile, already worked out — weekday, next occurrence,
  * distance from today — so no calendar arithmetic is left to the model.
@@ -300,9 +368,19 @@ const RECURRING_DATE_FIELDS = ['birthday', 'anniversary'] as const;
  * birth year must never surface as "six months ago". `next_occasion` is one-off
  * and shown as stored, flagged plainly when it has already passed.
  */
-export function computedDatesBlock(facts: readonly KnownFact[], now: Date): string {
+export function computedDatesBlock(
+  facts: readonly KnownFact[],
+  now: Date,
+  message = '',
+): string {
   const today = localToday(now);
   const lines: string[] = [];
+
+  for (const date of datesInText(message, now)) {
+    lines.push(
+      `- the date he just named in this message is ${weekdayOf(date)} ${iso(date)} — ${distanceWording(daysUntil(date, today))}`,
+    );
+  }
 
   for (const fact of facts) {
     const id = fact.fieldId ?? fact.key;
@@ -390,6 +468,7 @@ export function buildSystemPrompt(
   hasTools = false,
   visited: readonly Outing[] = [],
   now: Date = new Date(),
+  message = '',
 ): string {
   // Appended, not interleaved, so the persona and the profile read the same
   // whether or not this deployment has any credentials.
@@ -398,13 +477,16 @@ export function buildSystemPrompt(
   // Ahead of the state and the facts, because it is the frame they are read in: a
   // birthday "next month" means nothing until the model knows which month this is.
   const today = `\n\n${nowBlock(now)}`;
+  // Dates he names in *this* message, resolved before the reply — the profile
+  // cannot carry them yet, because extraction runs after the reply is written.
+  const dates = computedDatesBlock(facts, now, message);
 
   if (facts.length === 0) {
     // No history block here even if there somehow is one: an account with no
     // facts at all and a booked restaurant is a state that only arises from a
     // half-finished seed, and the opening turn should introduce him rather than
     // recite a venue.
-    return `${VALENTIN_SYSTEM_PROMPT}${today}
+    return `${VALENTIN_SYSTEM_PROMPT}${today}${dates}
 
 CURRENT STATE: You know nothing about her yet. GOAL 1 is live. Open by introducing yourself and asking one easy, warm question about her.${tools}`;
   }
@@ -420,7 +502,6 @@ CURRENT STATE: You know nothing about her yet. GOAL 1 is live. Open by introduci
     facts.map((fact) => fact.fieldId).filter((id): id is string => Boolean(id)),
   );
   const missing = PROFILE_FIELD_IDS.filter((id) => !knownFieldIds.has(id));
-  const dates = computedDatesBlock(facts, now);
 
   /*
    * Both ongoing states carry this. The single worst failure mode observed live

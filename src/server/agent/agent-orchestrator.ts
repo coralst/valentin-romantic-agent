@@ -292,6 +292,8 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
           await this.knownFacts(sessionId),
           (this.tools.registry?.size ?? 0) > 0,
           await readVisitedPlaces(this.storage, sessionId),
+          new Date(),
+          content,
         ),
         sessionId,
         options,

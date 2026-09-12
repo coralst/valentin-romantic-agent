@@ -253,11 +253,18 @@ const PROFILE_TURNS: Turn[] = [
     stumble: true,
   },
   {
-    say: 'Also, somewhere quiet and romantic. She hates loud rooms.',
+    say: 'One more thing for her file — she hates loud rooms. Quiet and candlelit is much more her.',
     beat: 'The kind of room — atmosphere, kept separate from cuisine',
     // A stated preference is a fact to file, not a search brief. The recorded
     // run answered this with five restaurants nobody asked for, and the
     // unanswered offer then dominated every later turn.
+    //
+    // The line is worded as a fact on purpose. It used to read "Also, somewhere
+    // quiet and romantic" — which is a venue brief in anyone's reading, so a
+    // shortlist was the *right* answer to it and the assertion below was
+    // failing the model for the script's ambiguity. Nothing about the demo
+    // needs this beat to be a request: its job is to show atmosphere landing on
+    // the profile separately from cuisine.
     replyMustNot: [/Montefiore|Yaffo Tel Aviv|NOEMA|Brasserie|Matteo/i, /here are (a )?(few|five|four|three|some)/i],
   },
   {

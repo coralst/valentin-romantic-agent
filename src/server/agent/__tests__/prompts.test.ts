@@ -3,6 +3,7 @@ import { PROFILE_FIELD_IDS } from '../../../shared/constants/profile-fields';
 import {
   buildSystemPrompt,
   computedDatesBlock,
+  datesInText,
   nowBlock,
   partnerNameFrom,
   EXTRACT_PREFERENCES_TOOL,
@@ -252,6 +253,59 @@ describe('buildSystemPrompt', () => {
         theRecordedSaturday,
       );
       expect(prompt).toContain('Thursday 2026-09-10');
+    });
+  });
+
+  /*
+   * The defect this closes: the turn that *teaches* a date is answered before
+   * extraction has stored it, so the profile-driven block above had nothing to
+   * say about the one date that mattered, and the model derived its weekday
+   * itself — calling Wednesday 16 September "Tuesday the 16th" three runs
+   * running, even with a correct fortnight table in front of it.
+   */
+  describe('dates named in the incoming message', () => {
+    // Saturday 12 September 2026 in Israel — the day of the failing rehearsal.
+    const theFailingSaturday = new Date('2026-09-12T09:00:00Z');
+
+    it('resolves a year-less prose date to its next occurrence', () => {
+      expect(datesInText('our third anniversary is on 16 September', theFailingSaturday)).toEqual([
+        { year: 2026, month: 9, day: 16 },
+      ]);
+    });
+
+    it('reads the month-first and ordinal forms too', () => {
+      expect(datesInText('September 16th', theFailingSaturday)).toEqual([
+        { year: 2026, month: 9, day: 16 },
+      ]);
+      expect(datesInText('the 2nd of March', theFailingSaturday)).toEqual([
+        { year: 2027, month: 3, day: 2 },
+      ]);
+    });
+
+    it('honours an explicit year rather than rolling it forward', () => {
+      expect(datesInText('she was born 2 March 1994', theFailingSaturday)).toEqual([
+        { year: 1994, month: 3, day: 2 },
+      ]);
+      expect(datesInText('book 2026-09-16 please', theFailingSaturday)).toEqual([
+        { year: 2026, month: 9, day: 16 },
+      ]);
+    });
+
+    it('finds nothing in a message that names no date', () => {
+      expect(datesInText('she loves Nina Simone', theFailingSaturday)).toEqual([]);
+    });
+
+    it('states the weekday of the just-typed date, on a turn with no profile at all', () => {
+      const prompt = buildSystemPrompt(
+        [],
+        false,
+        [],
+        theFailingSaturday,
+        'Her name is Maya, and our third anniversary is on 16 September.',
+      );
+      expect(prompt).toContain('Wednesday 2026-09-16');
+      expect(prompt).toContain('in 4 days');
+      expect(prompt).toMatch(/trust these over your own arithmetic/);
     });
   });
 

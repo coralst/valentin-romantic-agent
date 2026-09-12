@@ -106,7 +106,7 @@ const ORDER: Record<IntegrationStatusKind, number> = {
  *
  * Six is what fits beside the partner's name and the share button at
  * `layout.chatColumnMinWidth` without the name having to ellipsise. The catalogue
- * is nine rows, so there is always an overflow chip to design for.
+ * is longer than six either way, so there is always an overflow chip to design for.
  */
 export const MAX_TILES = 6;
 

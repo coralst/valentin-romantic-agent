@@ -214,9 +214,7 @@ test.describe('Integrations — propose and confirm', () => {
     for (const id of [
       'ontopo',
       'google-calendar',
-      'amadeus',
       'gmail',
-      'whatsapp',
       'hebcal',
       'wolt',
       'spotify',
@@ -226,6 +224,16 @@ test.describe('Integrations — propose and confirm', () => {
 
     // Ride booking is gone rather than dark: no provider, no tool, nothing to grant.
     await expect(panel.getByTestId('integration-node-rides')).toHaveCount(0);
+
+    /*
+     * Amadeus and WhatsApp are withdrawn for a softer reason than rides — the server
+     * still knows both ids — but the visitor-facing outcome is the same: a row that
+     * asked for a credential and then reached less than it implied. Amadeus could
+     * only re-price a room it cannot hold, and WhatsApp cannot deliver until Meta
+     * approves a template.
+     */
+    await expect(panel.getByTestId('integration-node-amadeus')).toHaveCount(0);
+    await expect(panel.getByTestId('integration-node-whatsapp')).toHaveCount(0);
 
     // Hebcal is arithmetic in-process, so it is live with no credential at all — the
     // one row whose readiness is not a deployment question.

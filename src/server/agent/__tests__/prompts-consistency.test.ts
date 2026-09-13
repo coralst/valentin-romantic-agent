@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest';
 
 import { REMINDER_SEND_TIME_LOCAL } from '../../../shared/interfaces/reminder';
 import { fullRegistry } from '../../integrations/__tests__/full-registry';
+import { CONVERSATION_LINK_PLACEHOLDER } from '../../sharing/link-placeholder';
 import { TOOL_GUIDANCE, VALENTIN_SYSTEM_PROMPT, nowBlock } from '../prompts';
 
 describe('TOOL_GUIDANCE against the code it describes', () => {
@@ -64,6 +65,35 @@ describe('TOOL_GUIDANCE against the code it describes', () => {
     for (const name of claimedTools) {
       expect(known.has(name), `TOOL_GUIDANCE names "${name}", which no tool provides`).toBe(true);
     }
+  });
+});
+
+describe('TOOL_GUIDANCE on handing out a conversation link', () => {
+  /**
+   * `create_conversation_link` stopped answering with a URL on 2026-09-04 — it
+   * answers with a placeholder the server expands, because the model could not
+   * transcribe 250 characters of signed base64url. The guidance went on telling it
+   * to hand back "the URL it returns, exactly as written" for nine days, which is
+   * the prompt contradicting the tool at the moment the model decides whether to
+   * trust either of them.
+   */
+  it('names the placeholder the tool actually returns', () => {
+    expect(TOOL_GUIDANCE).toContain(CONVERSATION_LINK_PLACEHOLDER);
+  });
+
+  it('does not promise a URL the tool no longer hands back', () => {
+    expect(TOOL_GUIDANCE).not.toMatch(/URL it returns/i);
+  });
+
+  /**
+   * The 2026-09-13 report. "Do not say you cannot make a link" was too narrow: the
+   * model said "I don't have access to a link to this specific conversation"
+   * instead, which is the same claim in words the rule did not name. The rule now
+   * has to cover email too, since the follow-up turn denied that as well.
+   */
+  it('forbids denying a capability that has a tool', () => {
+    expect(TOOL_GUIDANCE).toMatch(/NEVER TELL HIM A CAPABILITY IS MISSING/);
+    expect(TOOL_GUIDANCE).toMatch(/can'?t send email/i);
   });
 });
 

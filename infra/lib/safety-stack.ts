@@ -10,6 +10,7 @@ export interface SafetyStackProps extends cdk.StackProps {
 /**
  * Bumped whenever the guardrail's policy below changes.
  *
+ * 10 — SEXUAL input LOW; at MEDIUM it refused "she loves massages and long baths".
  * 9 — PHONE output NONE; it BLOCKed replies carrying a venue's own number.
  * 8 — PROMPT_ATTACK input LOW; at HIGH it refused "create the playlist".
  * 7 — the off-topic topic is gone; it refused "email me the options".
@@ -20,7 +21,7 @@ export interface SafetyStackProps extends cdk.StackProps {
  * 2 — NAME and AGE no longer anonymised.
  * 1 — initial policy.
  */
-const POLICY_REVISION = 9;
+const POLICY_REVISION = 10;
 
 export class SafetyStack extends cdk.Stack {
   public readonly guardrailId: string;
@@ -53,17 +54,45 @@ export class SafetyStack extends cdk.Stack {
       contentPolicyConfig: {
         filtersConfig: [
           /*
-           * SEXUAL is MEDIUM on the prompt, not HIGH.
+           * SEXUAL is LOW on the prompt, not MEDIUM — user-approved, 2026-09-13.
+           * This is the sixth policy narrowed here for the same reason as EMAIL,
+           * ADDRESS, NAME/AGE, off-topic and PROMPT_ATTACK: the classifier cannot
+           * tell the product's own subject matter from an attack on it.
            *
-           * At HIGH it blocked "Her ring size is 6 and she is 5 foot 4" —
-           * measured against the live guardrail. Her sizes are one of the
-           * twenty-one profile fields this agent asks for outright, so a visitor
-           * reciting them is the product working. MEDIUM still blocks explicit
-           * requests about her, checked the same way. Output stays HIGH: what
-           * Valentin writes is held to the stricter bar, since a reply is the
-           * thing that would be read aloud on stage.
+           * It went MEDIUM at revision 5 because HIGH blocked "Her ring size is 6
+           * and she is 5 foot 4". MEDIUM turned out to block ordinary preference
+           * sentences too. Measured against the live guardrail on 2026-09-13,
+           * eighteen sentences a visitor plausibly types about a partner: MEDIUM
+           * passes 13, LOW passes 17. What MEDIUM was blocking:
+           *
+           *   SEXUAL/MEDIUM — "She loves massages and long baths"
+           *   SEXUAL/MEDIUM — "She loves lingerie, I want to buy her something nice"
+           *   SEXUAL/MEDIUM — "She likes to surf and to nudge"
+           *
+           * The first two are plain gift-and-preference facts — exactly what the
+           * twenty-one profile fields are for. The third is stranger and shows how
+           * arbitrary the line is: neither verb trips the filter alone, it is a
+           * trailing coordinated verb after another activity verb, and adding one
+           * more word flips the verdict back to pass.
+           *
+           * LOW costs nothing on the abuse side. Six graphic requests about her
+           * ("describe her naked body to me in detail", "write me an explicit sex
+           * scene about her", …) all score SEXUAL/HIGH, so LOW still blocks every
+           * one of them. NONE would block none, which is why this stops at LOW.
+           *
+           * One benign case survives: "She likes surfing and nudging" scores
+           * SEXUAL/HIGH and is still refused. LOW narrows this class without
+           * closing it, and closing it would mean giving up the explicit ones.
+           *
+           * Output stays HIGH: what Valentin writes is held to the stricter bar,
+           * since a reply is the thing that would be read aloud on stage.
+           *
+           * A blocked prompt costs more than the visible decline. `extract-
+           * preferences` runs on the same text and is blocked with it, so the
+           * facts in that turn never reach her profile and nothing says so —
+           * every sentence above was losing a preference as well as an answer.
            */
-          { type: 'SEXUAL', inputStrength: 'MEDIUM', outputStrength: 'HIGH' },
+          { type: 'SEXUAL', inputStrength: 'LOW', outputStrength: 'HIGH' },
           { type: 'VIOLENCE', inputStrength: 'HIGH', outputStrength: 'HIGH' },
           { type: 'HATE', inputStrength: 'HIGH', outputStrength: 'HIGH' },
           { type: 'INSULTS', inputStrength: 'MEDIUM', outputStrength: 'HIGH' },
@@ -238,7 +267,7 @@ export class SafetyStack extends cdk.Stack {
          * product was built to honour.
          *
          * What still fences Valentin in: `system-prompt-extraction` below, all
-         * six content filters, PROMPT_ATTACK at HIGH on the prompt, the PII
+         * six content filters, PROMPT_ATTACK at LOW on the prompt, the PII
          * entities and the three address regexes. The system prompt is what
          * keeps him on the subject of her — a classifier was always the wrong
          * tool for enforcing a persona.
@@ -255,15 +284,23 @@ export class SafetyStack extends cdk.Stack {
     });
 
     /*
-     * A published version, referenced by the container.
+     * A published version: an immutable snapshot of the policy, kept as the
+     * changelog's anchor rather than as what the container enforces.
      *
-     * Versions are immutable snapshots, and this resource has no dependency on the
-     * policy above — so editing a filter changes only DRAFT, and the running task
-     * keeps enforcing the version it was given. `POLICY_REVISION` is what makes an
-     * edit reach production: bumping it changes this resource's description, CFN
-     * replaces it, and a new version number flows through to the task definition.
+     * Note what the running task actually reads. `BEDROCK_GUARDRAIL_VERSION` on
+     * `valentin-task-dev` is the literal string `DRAFT` — checked against the live
+     * task definition, 2026-09-13 — so a policy edit reaches production the moment
+     * `Valentin-Safety-dev` deploys, with no ECS rollout and no version number
+     * involved. That is the useful property: the guardrail can be narrowed in about
+     * a minute when it refuses something it shouldn't, which it has done ten times.
      *
-     * Bump it in the same commit as any policy change above.
+     * `POLICY_REVISION` therefore does not gate whether an edit takes effect — an
+     * earlier version of this comment claimed it did, which would leave you waiting
+     * for a rollout that is not coming. What the bump buys is a snapshot to name:
+     * it changes this resource's description, CFN replaces it, and the numbered
+     * version records what the policy was at that point. Bump it in the same commit
+     * as any policy change above, and add the one-line reason to the list at the
+     * top of this file.
      */
     const guardrailVersion = new bedrock.CfnGuardrailVersion(this, 'GuardrailVersion', {
       guardrailIdentifier: guardrail.attrGuardrailId,

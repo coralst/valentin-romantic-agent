@@ -235,6 +235,24 @@ test.describe('Integrations — propose and confirm', () => {
     await expect(panel.getByTestId('integration-node-amadeus')).toHaveCount(0);
     await expect(panel.getByTestId('integration-node-whatsapp')).toHaveCount(0);
 
+    /*
+     * Every row carries a health dot, and the dot has to agree with the badge beside
+     * it. Pinned against the badge rather than against a fixed colour per row because
+     * which services this runner can reach is a property of the machine — what must
+     * never happen is green next to "needs credentials", which is the panel telling
+     * the visitor a service works when the server just said it cannot reach it.
+     */
+    for (const service of ['ontopo', 'hebcal', 'wolt', 'gmail', 'spotify', 'web-search']) {
+      const badge = await panel
+        .getByTestId(`integration-readiness-${service}`)
+        .first()
+        .textContent();
+      await expect(panel.getByTestId(`integration-health-${service}`).first()).toHaveAttribute(
+        'data-health',
+        badge?.startsWith('live') ? 'live' : 'problem',
+      );
+    }
+
     // Hebcal is arithmetic in-process, so it is live with no credential at all — the
     // one row whose readiness is not a deployment question.
     await expect(panel.getByTestId('integration-readiness-hebcal').first()).toContainText(

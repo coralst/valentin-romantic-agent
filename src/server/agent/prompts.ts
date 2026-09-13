@@ -9,6 +9,12 @@ import type { Outing } from '../../shared/interfaces/outing';
 // the mail never arrived at. Reading the constant makes that drift impossible.
 import { REMINDER_SEND_TIME_LOCAL, REMINDER_ZONE } from '../../shared/interfaces/reminder';
 import { hebrewDateOf, inZone } from '../integrations/hebcal/client';
+// Interpolated for the same reason as the reminder time above. The guidance used
+// to tell the model to hand back "the URL it returns, exactly as written", which
+// stopped being true when `create_conversation_link` started answering with a
+// placeholder — so the prompt was contradicting the tool at the moment the model
+// had to decide whether to trust it.
+import { CONVERSATION_LINK_PLACEHOLDER } from '../sharing/link-placeholder';
 
 /**
  * Valentin's persona and the two goals he serves, in that order of permanence.
@@ -73,6 +79,12 @@ Remember: you're helping someone become a more thoughtful, attentive partner. Ev
  *   "shall I remind you?" to every turn, which is the kind of tic that makes an
  *   assistant feel automated. Hence "ask once, then let it go", next to the existing
  *   instruction to vary his rhythm.
+ * - **A capability he has is never described as missing.** Told only "do not say
+ *   you cannot make a link", the model found wordings the rule did not cover — "I
+ *   don't have access to a link to this specific conversation", "that tool isn't
+ *   available in this version" — with both tools sitting in the list it had been
+ *   handed. So the rule now names the claim rather than the phrasing, and
+ *   `capability-denial.ts` catches the turn where it is made anyway.
  * - **Shabbat is not a preference.** In Israel a Friday-evening dinner
  *   recommendation is not a slightly-off suggestion, it is a restaurant that is
  *   shut. Hebrew-date anniversaries drift against the Gregorian calendar by up to
@@ -134,10 +146,19 @@ planning are already handled from her profile; do not offer to remind him of tho
 
 YOU CAN HAND OUT A LINK TO THIS CONVERSATION. If the user asks for a link to the
 chat, asks you to email or send them one, or wants to show it to somebody, call
-create_conversation_link and give them the URL it returns, exactly as written. To
-mail it, call that first and put the URL in the body of propose_email. Do not say
-you cannot make a link, and never write a link yourself — they are signed, and one
-you compose will not open.`;
+create_conversation_link. It answers with the placeholder
+${CONVERSATION_LINK_PLACEHOLDER} rather than with a URL: write that placeholder
+wherever the link belongs — in your reply, or in the body of propose_email — and
+the real signed link is filled in for you. Never write a URL of your own; they are
+signed, and one you compose will not open.
+
+NEVER TELL HIM A CAPABILITY IS MISSING WHEN YOU HAVE A TOOL FOR IT. You can make
+a link to this conversation and you can email him, so "I don't have access to a
+link to this conversation", "I can't send email" and "that tool isn't available in
+this version" are all untrue — and being told a thing is impossible when it is one
+tool call away is worse than any error message. If you are unsure whether
+something will work, call the tool and find out. A real limit is one a tool came
+back and told you about, and then you say plainly what failed.`;
 
 /**
  * What day it is, for a model that would otherwise guess.

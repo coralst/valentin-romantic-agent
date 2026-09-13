@@ -80,7 +80,28 @@ second. Locally the engine-B act therefore captions an honest amber downgrade â€
 moment 3.
 
 So: rehearse locally, and record the take you keep against the deployed app,
-where all four inspection moments are live.
+where all four inspection moments are live:
+
+```bash
+npm run demo:drive -- --base=https://d26dwovftfq9oe.cloudfront.net \
+  --to=<your email> --record
+```
+
+Nothing from step 1 is needed for that run â€” the deployed backend is already
+serving, with `REMINDER_CHANNEL=gmail` set on the task. Step 2 still is, because
+act 3 opens your inbox from the same Chrome profile either way.
+
+The deployed app opens on a login gate that localhost does not have; the driver
+clicks through it on its own.
+
+To check the deployment before spending 25 minutes recording it:
+
+```bash
+node rehearsal.mjs https://d26dwovftfq9oe.cloudfront.net deployed
+```
+
+That is ~18 seconds and asserts the whole surface the demo stands on, including
+engine A's two model calls on one turn.
 
 Do **not** "fix" this by setting `AGENT_ENGINE=agentcore` locally. That serves
 engine B for the *whole* run, including the beats whose entire point is engine

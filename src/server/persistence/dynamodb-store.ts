@@ -1059,6 +1059,18 @@ function toReminder(item: Record<string, unknown>): Reminder {
     dueAt: item.dueAt as string,
     leadDays: item.leadDays as number,
     occasion: item.occasion as string,
+    /*
+     * Read back, not dropped.
+     *
+     * `saveReminder` has always written this and `set_reminder` has always set it,
+     * but this mapper never read it — so every DynamoDB read-back lost it while the
+     * in-memory store (which keeps the object by reference) kept it, and the two
+     * stores disagreed about the same row. The cost was invisible and specific: with
+     * `title` absent, `email-body` falls back to `occasion` and inflects it, mailing
+     * "Her call the florist is a week away" — the exact grammar the field's contract
+     * forbids — and `activityFor` reads the row as a dinner out rather than an errand.
+     */
+    title: typeof item.title === 'string' ? item.title : null,
     // An unknown channel must not be honoured: `log` is a real channel that always
     // works, so an unrecognised value degrades to a delivered-and-visible reminder
     // rather than a silent one.

@@ -51,12 +51,15 @@ import {
   REMINDER_SEND_TIME_LOCAL,
   REMINDER_ZONE,
   customReminderId,
+  isPlannerKind,
+  pendingReminders,
   type Reminder,
 } from '../../shared/interfaces/reminder';
+import { mutedReminderKinds } from '../../shared/constants/profile-fields';
 import type { AgentTool, ToolContext, ToolResult } from '../integrations/tool-registry';
 import { config } from '../config';
 import { dueInstant } from './planner';
-import { plannedChannel, profileFieldValue } from './reminder-sync';
+import { plannedChannel, profileFieldValue, syncReminders } from './reminder-sync';
 import { NOTIFY_EMAIL_FIELD, resolveNotifyEmail } from './notify-email';
 
 /** `YYYY-MM-DD`, and nothing else. */
@@ -378,5 +381,263 @@ function describeInstant(at: Date): string {
   return `on ${day} at ${time} Israel time`;
 }
 
+/**
+ * Everything armed and not yet sent, in his own terms.
+ *
+ * ## Why this is a tool and not left to the prompt
+ *
+ * Before it existed the only record that a reminder had been set was the sentence
+ * `set_reminder` returned into a single turn. Asked two messages later what it was
+ * going to remind him about, the model had nothing to read and answered from the
+ * transcript — so a reminder set in an earlier conversation did not exist as far as it
+ * was concerned, and one it had merely *offered* could be described as armed. Both
+ * directions are wrong and neither is visible.
+ *
+ * Reads through {@link pendingReminders}, the same filter the profile page applies, so
+ * what Valentin says is armed and what the page draws cannot disagree.
+ */
+export const listRemindersTool: AgentTool = {
+  name: 'list_reminders',
+  description:
+    'List the reminders currently set for the user — what each one is about, the ' +
+    'date it concerns, and when the email goes out. Call this whenever he asks what ' +
+    'you are reminding him about, whether something is already set, or before you ' +
+    'offer to remind him of something that may already be covered. Read the answer ' +
+    'rather than recalling it from the conversation: reminders persist across ' +
+    'conversations and some of these were set long before this one.',
+  input_schema: { type: 'object', properties: {} },
+  service: 'reminders',
+  requiresConfirmation: false,
+
+  async execute(_input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+    const storage = ctx.storage;
+    if (!storage) {
+      return {
+        ok: false,
+        summary:
+          'Reminders are not available on this deployment, so there is nothing to list. ' +
+          'Tell the user plainly rather than saying none are set.',
+      };
+    }
+
+    const pending = pendingReminders(await storage.getRemindersBySession(ctx.sessionId));
+
+    if (pending.length === 0) {
+      return {
+        ok: true,
+        summary:
+          'Nothing is set at the moment. Say so plainly — and note that her birthday, ' +
+          'your anniversary and the occasion being planned only arm themselves once ' +
+          'those dates are on her profile, so if he expected one, the date may be missing.',
+        data: { reminders: [] },
+      };
+    }
+
+    const lines = pending.map((reminder) => {
+      // `title` for a hand-set one, `occasion` for a planner row — the same
+      // preference `email-body` applies, so the two describe a row identically.
+      const what = reminder.title?.trim() || reminder.occasion;
+      const how = isPlannerKind(reminder.kind)
+        ? `from her profile (${reminder.kind})`
+        : 'set by hand';
+      return `- "${what}" — about ${reminder.occursOn}, mailing ${describeInstant(
+        new Date(reminder.dueAt),
+      )}, ${how}`;
+    });
+
+    return {
+      ok: true,
+      summary:
+        `${pending.length} reminder${pending.length === 1 ? '' : 's'} armed:\n${lines.join('\n')}\n\n` +
+        'Tell him about these in your own words. A profile one is cancelled by muting ' +
+        'that kind, a hand-set one by dropping it — cancel_reminder handles either.',
+      data: {
+        reminders: pending.map((reminder) => ({
+          id: reminder.id,
+          kind: reminder.kind,
+          what: reminder.title?.trim() || reminder.occasion,
+          occursOn: reminder.occursOn,
+          dueAt: reminder.dueAt,
+        })),
+      },
+    };
+  },
+};
+
+/**
+ * Stop one reminder, by whichever of the two mechanisms actually holds.
+ *
+ * ## Why this cannot just be a delete
+ *
+ * A `custom` row is the user's own note and deleting it is the whole story. A planner
+ * row is *derived*: `syncReminders` rebuilds birthday, anniversary and occasion rows
+ * from her profile on every edit to a reminder field, so a deleted one reappears the
+ * next time anything touches the profile. Deleting it would work, visibly, and then
+ * silently undo itself — the worst available outcome, because the user watched it
+ * succeed. Muting the kind is the write that lasts, and `reapSuperseded` then removes
+ * the row on the same sync.
+ *
+ * So this branches on `isPlannerKind` and performs whichever write is durable. It is
+ * the one place that knows the difference; the model is not asked to.
+ *
+ * ## Why it is not gated behind a confirmation
+ *
+ * Same argument as `set_reminder`, and one structural constraint on top: `toolFor` in
+ * `agent-orchestrator.ts` resolves a `confirm_*` call by scanning for the first tool
+ * with the matching `service` *and* `requiresConfirmation` — by service, not by name.
+ * A second gated reminders tool would therefore be reachable by the wrong
+ * confirmation. Both tools here stay ungated, which keeps that resolution unambiguous.
+ */
+export const cancelReminderTool: AgentTool = {
+  name: 'cancel_reminder',
+  description:
+    'Stop a reminder the user no longer wants. Say which one in his own words — ' +
+    '"the florist", "her birthday" — or pass the id from list_reminders. Call ' +
+    'list_reminders first if you are not sure what is set.\n\n' +
+    'This handles both kinds: a reminder he set by hand is dropped, and one that ' +
+    'comes from her profile (her birthday, your anniversary, the occasion being ' +
+    'planned) is muted so it does not come back. You do not need to know which is ' +
+    'which. Report what actually happened rather than assuming it was a deletion.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      reminder: {
+        type: 'string',
+        description:
+          'Which reminder to stop: the id from list_reminders, or enough of what it ' +
+          'is about to identify it — "florist", "birthday".',
+      },
+    },
+    required: ['reminder'],
+  },
+  service: 'reminders',
+  requiresConfirmation: false,
+
+  async execute(input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+    const storage = ctx.storage;
+    if (!storage) {
+      return {
+        ok: false,
+        summary:
+          'Reminders are not available on this deployment, so nothing was cancelled. ' +
+          'Tell the user plainly rather than confirming a cancellation.',
+      };
+    }
+
+    const wanted = typeof input.reminder === 'string' ? input.reminder.trim() : '';
+    if (!wanted) {
+      return {
+        ok: false,
+        summary:
+          'Nothing was cancelled — I was not told which reminder. Ask him which one he means.',
+      };
+    }
+
+    const pending = pendingReminders(await storage.getRemindersBySession(ctx.sessionId));
+    const matches = matchReminders(pending, wanted);
+
+    if (matches.length === 0) {
+      return {
+        ok: false,
+        summary:
+          `Nothing matching "${wanted}" is set, so nothing was cancelled. ` +
+          (pending.length === 0
+            ? 'In fact nothing is set at all — say so rather than confirming a cancellation.'
+            : `What is armed: ${pending
+                .map((reminder) => `"${reminder.title?.trim() || reminder.occasion}"`)
+                .join(', ')}. Ask him which he meant.`),
+      };
+    }
+
+    /*
+     * Ambiguity is a refusal, not a guess.
+     *
+     * "the dinner" can match two rows, and cancelling the wrong one is silent: the
+     * user hears that it is off and then gets mailed about it anyway, or does not get
+     * mailed about the thing he still wanted.
+     */
+    if (matches.length > 1) {
+      return {
+        ok: false,
+        summary:
+          `"${wanted}" matches more than one reminder, so nothing was cancelled: ` +
+          `${matches
+            .map((reminder) => `"${reminder.title?.trim() || reminder.occasion}" (${reminder.occursOn})`)
+            .join(', ')}. Ask him which one he means.`,
+      };
+    }
+
+    const [reminder] = matches;
+    const what = reminder.title?.trim() || reminder.occasion;
+
+    if (isPlannerKind(reminder.kind)) {
+      // Muted by kind, and the existing value is preserved: muting the birthday must
+      // not un-mute an anniversary he silenced last week.
+      const manual = await storage.getManualValues(ctx.sessionId);
+      const preferences = await storage.getPreferencesBySession(ctx.sessionId);
+      const already = mutedReminderKinds(
+        profileFieldValue(MUTED_FIELD, manual, preferences),
+      );
+      const muted = [...new Set([...already, reminder.kind])];
+
+      await storage.setManualValue(ctx.sessionId, MUTED_FIELD, muted.join(', '));
+      // The mute is only half the write: `syncReminders` is what reaps the row that
+      // is already armed. Without it the reminder stays in the due-index and mails
+      // anyway, which is exactly the failure this tool exists to prevent.
+      await syncReminders(storage, ctx.sessionId);
+
+      return {
+        ok: true,
+        summary:
+          `Done — ${reminder.kind} reminders are muted now, so the one about ${what} on ` +
+          `${reminder.occursOn} will not go out and no new one will be armed. He can have ` +
+          'them back by asking. Confirm it in your own words.',
+        data: { id: reminder.id, kind: reminder.kind, action: 'muted', muted },
+      };
+    }
+
+    await storage.deleteReminder(ctx.sessionId, reminder.id);
+    return {
+      ok: true,
+      summary:
+        `Done — the reminder "${what}" for ${reminder.occursOn} is cancelled and will not ` +
+        'be sent. Confirm it in your own words.',
+      data: { id: reminder.id, kind: reminder.kind, action: 'deleted' },
+    };
+  },
+};
+
+/** The profile field holding the muted kinds, as `mutedReminderKinds` parses it. */
+const MUTED_FIELD = 'reminders_muted';
+
+/**
+ * The pending rows a user's phrase refers to.
+ *
+ * An exact id first, so an id taken from `list_reminders` can never be re-interpreted
+ * as free text — a hash like `1f2e3d4c` would otherwise be matched as a substring of
+ * nothing and quietly become a no-match.
+ *
+ * Then a case-insensitive substring both ways round, against the title and the
+ * occasion: "birthday" should find "her birthday", and "her birthday is coming"
+ * should find it too. Deliberately not fuzzy — the caller resolves ambiguity by
+ * asking, which is cheaper than being wrong about which reminder to drop.
+ */
+function matchReminders(pending: readonly Reminder[], wanted: string): Reminder[] {
+  const exact = pending.filter((reminder) => reminder.id === wanted);
+  if (exact.length > 0) return exact;
+
+  const needle = wanted.toLowerCase();
+  return pending.filter((reminder) => {
+    const haystacks = [reminder.title ?? '', reminder.occasion, reminder.kind].map((text) =>
+      text.toLowerCase(),
+    );
+    return haystacks.some((text) => text.includes(needle) || needle.includes(text));
+  });
+}
+
 /** Registered as one array, the shape `buildToolRegistry` expects of every service. */
-export const reminderTools: AgentTool[] = [setReminderTool];
+export const reminderTools: AgentTool[] = [
+  setReminderTool,
+  listRemindersTool,
+  cancelReminderTool,
+];

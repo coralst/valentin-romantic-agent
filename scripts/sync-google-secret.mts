@@ -40,7 +40,9 @@
 
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 const run = promisify(execFile);
@@ -94,7 +96,7 @@ function fingerprint(value: string | undefined): string {
 }
 
 function fail(message: string): never {
-  console.error(`\n✗ ${message}`);
+  console.error(`\n✗ ${scrub(message)}`);
   process.exit(1);
 }
 
@@ -134,13 +136,60 @@ async function readEnvFile(): Promise<{ values: Record<string, string>; path: st
   return { values, path };
 }
 
-async function aws(args: string[], stdin?: string): Promise<string> {
-  const child = run('aws', args, { env: { ...process.env, AWS_REGION: REGION }, maxBuffer: 1 << 20 });
-  if (stdin !== undefined) {
-    child.child.stdin?.end(stdin);
-  }
-  const { stdout } = await child;
+async function aws(args: string[]): Promise<string> {
+  const { stdout } = await run('aws', args, {
+    env: { ...process.env, AWS_REGION: REGION },
+    maxBuffer: 1 << 20,
+  });
   return stdout;
+}
+
+/**
+ * Hand a credential to the AWS CLI without putting it on the command line.
+ *
+ * Three ways to pass a secret value, and only one of them is safe *and* works:
+ *
+ * - `--secret-string '<json>'` — the value lands in `ps` output and shell history.
+ * - `--secret-string fileb:///dev/stdin` — reads *bytes*, and the CLI rejects bytes for
+ *   a string parameter with `Invalid type for parameter SecretString`. Worse, its
+ *   validation error **echoes the rejected value**, so a failed write prints the
+ *   credential it was refusing to send. That is how this was first written, and it
+ *   leaked a client secret and a refresh token into a terminal.
+ * - `file://` a real file, `0600`, unlinked in a `finally`. `file:///dev/stdin` is not a
+ *   substitute — the CLI reads it as empty here and reports `Invalid JSON received`.
+ *
+ * So: a private temp directory, one short-lived file, always removed.
+ */
+async function awsWithSecretFile(args: string[], payload: string): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'valentin-secret-'));
+  const file = join(dir, 'value.json');
+  try {
+    await writeFile(file, payload, { mode: 0o600 });
+    return await aws([...args, `file://${file}`]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Every credential value this run has touched, so no error message can contain one.
+ *
+ * The AWS CLI will quote a rejected parameter back at you in full — that is how the
+ * first version of this script printed a client secret and a refresh token into a
+ * terminal while failing to write them. Registering the values as they are read, and
+ * scrubbing on the way out, means a future failure mode nobody predicted still cannot
+ * leak. Belt and braces to `fingerprint`, which covers the deliberate output.
+ */
+const sensitive = new Set<string>();
+
+function scrub(text: string): string {
+  let scrubbed = text;
+  for (const secret of sensitive) {
+    // Short values would turn unrelated output into noise; a credential is never short.
+    if (secret.length < 8) continue;
+    scrubbed = scrubbed.split(secret).join('«redacted»');
+  }
+  return scrubbed;
 }
 
 /**
@@ -194,6 +243,7 @@ async function verifyAtGoogle(values: Record<string, string>): Promise<string[]>
 
 async function main(): Promise<void> {
   const { values: env, path: envPath } = await readEnvFile();
+  for (const key of KEYS) if (env[key]) sensitive.add(env[key]);
   const missing = KEYS.filter((key) => !env[key]);
   if (missing.length > 0) {
     fail(`${envPath} is missing ${missing.join(', ')} — refusing to write a partial credential.`);
@@ -224,6 +274,7 @@ async function main(): Promise<void> {
       'text',
     ]);
     current = JSON.parse(raw) as Record<string, string>;
+    for (const value of Object.values(current)) if (value) sensitive.add(value);
   } catch (cause) {
     // AWS puts the reason on stderr, not in the Error message — without this the
     // report is "Command failed: aws secretsmanager get-secret-value", which does not
@@ -261,10 +312,20 @@ async function main(): Promise<void> {
   // three this task needs are overwritten together so a client can never end up
   // paired with a token from a different consent.
   const payload = JSON.stringify({ ...current, ...Object.fromEntries(KEYS.map((k) => [k, env[k]])) });
-  const written = await aws(
-    ['secretsmanager', 'put-secret-value', '--secret-id', SECRET_ID, '--secret-string', 'fileb:///dev/stdin'],
-    payload,
-  );
+  let written: string;
+  try {
+    written = await awsWithSecretFile(
+      ['secretsmanager', 'put-secret-value', '--secret-id', SECRET_ID, '--secret-string'],
+      payload,
+    );
+  } catch (cause) {
+    const stderr = (cause as { stderr?: string }).stderr?.trim();
+    const reason = stderr || (cause instanceof Error ? cause.message : String(cause));
+    fail(
+      `cannot write ${SECRET_ID} in ${REGION}:\n  ${scrub(reason)}\n` +
+        '  The secret still holds whatever it held; nothing is half-written.',
+    );
+  }
   const { VersionId } = JSON.parse(written) as { VersionId?: string };
 
   console.log(`\n✓ wrote version ${VersionId ?? '(unnamed)'} — the previous one is kept as AWSPREVIOUS`);
@@ -273,6 +334,8 @@ async function main(): Promise<void> {
 }
 
 main().catch((cause: unknown) => {
-  console.error(`\nsync:google-secret failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+  const message = cause instanceof Error ? cause.message : String(cause);
+  const stderr = (cause as { stderr?: string }).stderr?.trim();
+  console.error(`\nsync:google-secret failed: ${scrub(stderr ? `${message}\n${stderr}` : message)}`);
   process.exit(1);
 });

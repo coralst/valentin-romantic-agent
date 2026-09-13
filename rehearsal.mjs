@@ -68,6 +68,28 @@ const bodyMatches = re => waitFor(async () => re.test(await bodyText()), { label
 
 await p.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
+// The deployed app opens on a login gate; localhost does not. Without this the
+// script could only ever verify localhost — and the two things it most needs to
+// check are things ONLY the deployed app can show, because `resolveEngine` is
+// resolved per process rather than per request and it is the ALB that routes a
+// request to the second Fargate service.
+//
+// Raced rather than polled: an `isVisible()` straight after `domcontentloaded`
+// answers "no" on both surfaces, because React has rendered neither of them yet
+// — which is how a guarded login click can look like it ran and did nothing.
+// Waiting for whichever lands first costs the local run nothing and tells us
+// which surface we are standing on.
+const login = p.getByTestId('demo-login-button');
+const railGear = p.getByTestId('rail-demo-button');
+await Promise.race([
+  login.waitFor({ state: 'visible', timeout: 45000 }).catch(() => {}),
+  railGear.waitFor({ state: 'visible', timeout: 45000 }).catch(() => {}),
+]);
+if (await login.isVisible().catch(() => false)) {
+  await login.click();
+  await railGear.waitFor({ state: 'visible', timeout: 45000 });
+}
+
 // The demo controls live inside the rail's gear popover (IconRail.tsx), not on a
 // visible toolbar, so the popover has to be open before the seed and reset buttons
 // exist at all. The gear *toggles*, so this checks first — clicking it while the
@@ -103,6 +125,11 @@ const railIsPopulated = async () => !(await railIsEmpty());
 await openDemoMenu();
 ok('seed control present', await waitFor(() => seed.isVisible(), { label: 'seed button' }));
 await seed.click();
+// Polled from the moment of the click rather than read off a snapshot taken after
+// the rail fills, because the announcement is a toast that dismisses itself: by
+// the time the rail is populated it may already have gone, which reads as "never
+// announced" on a slower round trip.
+const announced = await bodyMatches(/demo profile loaded/i);
 // Was a flat 6s sleep; the rail filling up is the actual signal. The persona's
 // own details are asserted on the next line, which is what proves *which* profile
 // landed — this one only proves that one did.
@@ -110,7 +137,7 @@ ok('rail populated after seed', await waitFor(railIsPopulated, { label: 'rail po
 let body = await bodyText();
 ok('persona rendered (Samantha + Kyoto + sage)',
   body.includes('Samantha') && body.includes('Kyoto') && body.includes('sage'));
-ok('announced "Demo profile loaded"', /demo profile loaded/i.test(body));
+ok('announced "Demo profile loaded"', announced);
 await closeDemoMenu();
 
 // 2. architecture drawer + live message
@@ -126,13 +153,15 @@ body = await bodyText();
 if (CHECK_LIVE) {
   ok('real resource names drawn',
     body.includes('ValentinTable-dev') && body.includes('valentin-alb-dev'));
-  // A socket exists here, so `useArchitectureMode` should have flipped to Live on
-  // the first event rather than sitting on the scripted flow.
-  ok('followed real traffic into live mode', !/Scripted walkthrough/.test(body));
 } else {
   skip('real resource names drawn (--no-live-resources)');
-  skip('followed real traffic into live mode (--no-live-resources)');
 }
+// `followed real traffic into live mode` and `still says which engine is
+// answering` used to be asserted here, which is before this script has caused any
+// traffic — the drawer is correctly still on the script at this point, so the
+// first read either failed for the wrong reason or (spelled in sentence case
+// against uppercase-rendered text) could not fail at all. Both moved below the
+// chat turn, where there is real traffic to have followed.
 
 // The diagram itself now carries the comparison that a separate "Why AgentCore" sheet
 // used to make in prose, and the two controls in front of it are gone: the sheet was a
@@ -146,10 +175,6 @@ ok('no scoreboard sheet competing with the diagram',
   && !(await p.getByTestId('scoreboard-toggle').isVisible().catch(() => false)));
 ok('no data-source switch to get stuck in the wrong half of',
   !/\bLive\b\s*\/?\s*\bDemo\b/.test(drawerText) && !/Data source/i.test(drawerText));
-// The chip stayed, because unlike the switch it reports something only the running
-// system knows: which engine actually answered.
-ok('still says which engine is answering',
-  await p.getByTestId('architecture-serving-chip').isVisible().catch(() => false));
 
 // One table and one set of provider APIs, drawn once and shared. This is the
 // duplication the room kept tripping over: two cards bearing `ValentinTable-dev` read
@@ -192,8 +217,40 @@ await composer.fill('She loves late-night jazz and hiking at sunrise.');
 await p.keyboard.press('Enter');
 // One real Bedrock round trip. Was a flat 16s sleep; it typically lands in ~5s,
 // so poll with a ceiling well above the slow case.
-ok('reply travelled through the diagram', await bodyMatches(/agent_message/));
-ok('preference learned in feed', await bodyMatches(/preference_update/));
+//
+// Asserted on the beats the feed RENDERS, not on wire event names. These used to
+// look for `agent_message` and `preference_update`, which are websocket `type`
+// values that never reach the DOM — the feed groups spans into readable beats
+// ("writes a reply", "learns something new"). Both assertions were therefore
+// unfalsifiable-in-reverse: they could only ever fail, and locally they did, for
+// the unrelated reason that this IAM user cannot call Bedrock. That masked the
+// question they are here to answer.
+ok('reply travelled through the diagram', await bodyMatches(/writes a reply/i));
+ok('preference learned in feed', await bodyMatches(/learns something new/i));
+
+// Now that this script has caused traffic, the two things that could not be
+// asked before it did.
+ok('followed real traffic into live mode',
+  await waitFor(async () => !/scripted walkthrough/i.test(await drawer.innerText()),
+    { label: 'live mode' }));
+// The chip stayed, because unlike the deleted switch it reports something only the
+// running system knows: which engine actually answered, and whether it was
+// downgraded to get there.
+const servingChip = p.getByTestId('architecture-serving-chip');
+ok('still says which engine is answering',
+  await waitFor(() => servingChip.isVisible(), { label: 'serving chip' }));
+
+// The DIY engine calls Converse twice on every turn — once for the reply with
+// tools, once to extract preferences — and the count on the feed header is where
+// that stops being a claim and becomes a number a room can read. Polled rather
+// than read once: the extraction call is the second of the two, so the count is
+// legitimately 1 for a few seconds before it is 2.
+const countedBoth = await bodyMatches(/2 model calls/i);
+ok('the feed counts both of engine A’s model calls', countedBoth);
+if (!countedBoth) {
+  const summary = (await drawer.innerText()).match(/\d+ spans? · \d+ model calls?/i);
+  console.log(`  (feed header said: ${summary ? summary[0] : 'no span/model summary on screen'})`);
+}
 // Never a preference value on a projected screen — only its category and key.
 ok('no raw preference value in the feed', !/late-night jazz/i.test(
   await p.getByTestId('aws-flow-feed').innerText().catch(() => ''),

@@ -56,6 +56,7 @@ export const SAFE_INPUT_KEYS: ReadonlySet<string> = new Set([
   'near',
   'occasion',
   'offer_id',
+  'on_date',
   'party_size',
   'query',
   'radius_km',

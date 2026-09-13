@@ -163,7 +163,7 @@
   },
   {
     "name": "find_occasions",
-    "description": "Look in the user's Google Calendar for dates that matter — birthdays, anniversaries, trips already booked. Use this before suggesting a date, so you know what is already happening and when the occasion actually is. Read-only. Pass a query to search for something specific, or omit it to see upcoming occasions.",
+    "description": "Look in the user's Google Calendar for dates that matter — birthdays, anniversaries, trips already booked. Use this before suggesting a date, so you know what is already happening and when the occasion actually is. Read-only. To check whether one specific day is free, pass on_date — never put a date in query, which only searches the text of titles and locations.",
     "requiresConfirmation": false,
     "inputSchema": {
       "type": "object",
@@ -176,13 +176,17 @@
           "type": "string",
           "description": "The conversation session id"
         },
+        "on_date": {
+          "type": "string",
+          "description": "One civil date as YYYY-MM-DD, e.g. \"2026-09-23\". Returns everything in the diary that day, in Israel time — use this to check for a clash before proposing a date or time."
+        },
         "query": {
           "type": "string",
-          "description": "Free text to search titles and locations, e.g. \"anniversary\". Omit to list upcoming occasions."
+          "description": "Free text to search titles and locations, e.g. \"anniversary\". Matches words, NOT dates. Omit to list upcoming occasions."
         },
         "days_ahead": {
           "type": "number",
-          "description": "How far ahead to look. Defaults to 120."
+          "description": "How far ahead to look. Defaults to 120. Ignored with on_date."
         }
       },
       "required": [

@@ -40,6 +40,25 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** How far ahead `find_occasions` looks when not told. */
 const DEFAULT_HORIZON_DAYS = 120;
 
+/** A bare civil date, which is the only thing `on_date` accepts. */
+const CIVIL_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * The civil date after this one, by UTC arithmetic on the *fields* only.
+ *
+ * Used to build the exclusive end of a one-day window. Deliberately not
+ * `start + 24h`: an Israeli civil day is 23 or 25 hours long twice a year, and on
+ * those two days a fixed offset would either hide an event or borrow one from the
+ * neighbouring day.
+ */
+function nextCivilDate(date: string): string {
+  const [year, month, day] = date.split('-').map(Number);
+  const next = new Date(Date.UTC(year, month - 1, day + 1));
+  const mm = String(next.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(next.getUTCDate()).padStart(2, '0');
+  return `${next.getUTCFullYear()}-${mm}-${dd}`;
+}
+
 /**
  * Words that mark an event as an occasion rather than a meeting.
  *
@@ -196,20 +215,27 @@ export const findOccasionsTool: AgentTool = {
     "Look in the user's Google Calendar for dates that matter — birthdays, " +
     'anniversaries, trips already booked. Use this before suggesting a date, so ' +
     'you know what is already happening and when the occasion actually is. ' +
-    'Read-only. Pass a query to search for something specific, or omit it to see ' +
-    'upcoming occasions.',
+    'Read-only. To check whether one specific day is free, pass on_date — never ' +
+    'put a date in query, which only searches the text of titles and locations.',
   input_schema: {
     type: 'object',
     properties: {
+      on_date: {
+        type: 'string',
+        description:
+          'One civil date as YYYY-MM-DD, e.g. "2026-09-23". Returns everything in ' +
+          'the diary that day, in Israel time — use this to check for a clash ' +
+          'before proposing a date or time.',
+      },
       query: {
         type: 'string',
         description:
-          'Free text to search titles and locations, e.g. "anniversary". Omit to ' +
-          'list upcoming occasions.',
+          'Free text to search titles and locations, e.g. "anniversary". Matches ' +
+          'words, NOT dates. Omit to list upcoming occasions.',
       },
       days_ahead: {
         type: 'number',
-        description: `How far ahead to look. Defaults to ${DEFAULT_HORIZON_DAYS}.`,
+        description: `How far ahead to look. Defaults to ${DEFAULT_HORIZON_DAYS}. Ignored with on_date.`,
       },
     },
     required: [],
@@ -221,12 +247,29 @@ export const findOccasionsTool: AgentTool = {
       typeof input.days_ahead === 'number' && input.days_ahead > 0
         ? Math.min(Math.round(input.days_ahead), 400)
         : DEFAULT_HORIZON_DAYS;
-    const query = typeof input.query === 'string' && input.query.trim() ? input.query.trim() : undefined;
+    const asked = typeof input.query === 'string' && input.query.trim() ? input.query.trim() : undefined;
+
+    // A model asked "is the 23rd free?" reaches for the only date-shaped argument it
+    // has, and before `on_date` existed that was `query` — which becomes Google's
+    // free-text `q` and matches the *titles* of events, not their dates. It found
+    // nothing, every time, and the tool then said "nothing in the calendar matches"
+    // — which the model relayed as "your calendar is free". A date arriving in
+    // `query` is therefore read as a date, not passed on as a search term.
+    const onDate =
+      typeof input.on_date === 'string' && CIVIL_DATE.test(input.on_date.trim())
+        ? input.on_date.trim()
+        : asked && CIVIL_DATE.test(asked)
+          ? asked
+          : undefined;
+    const query = onDate ? undefined : asked;
+
+    const dayStart = onDate ? parseInZone(`${onDate}T00:00`, REMINDER_ZONE) : null;
+    const dayEnd = onDate ? parseInZone(`${nextCivilDate(onDate)}T00:00`, REMINDER_ZONE) : null;
 
     const now = Date.now();
     const events = await listEvents({
-      timeMin: new Date(now).toISOString(),
-      timeMax: new Date(now + days * DAY_MS).toISOString(),
+      timeMin: (dayStart ?? new Date(now)).toISOString(),
+      timeMax: (dayEnd ?? new Date(now + days * DAY_MS)).toISOString(),
       q: query,
       limit: 25,
     });
@@ -243,9 +286,14 @@ export const findOccasionsTool: AgentTool = {
     if (events.length === 0) {
       return {
         ok: true,
-        summary: query
-          ? `Nothing in the calendar matches "${query}" in the next ${days} days. Ask the user for the date.`
-          : `The calendar has nothing at all in the next ${days} days. Say so plainly.`,
+        summary: onDate
+          ? `Nothing at all in the diary on ${onDate} (checked every calendar, Israel time). That day is genuinely free.`
+          : query
+            ? `No event's title or location contains "${query}" in the next ${days} days. This ` +
+              `searched TEXT, not dates — it is not evidence that any day is free. If you were ` +
+              `checking a date, call find_occasions again with on_date="YYYY-MM-DD". Otherwise ` +
+              `ask the user for the date.`
+            : `The calendar has nothing at all in the next ${days} days. Say so plainly.`,
         data: { events: [] },
       };
     }
@@ -267,13 +315,16 @@ export const findOccasionsTool: AgentTool = {
     const rest = query ? events : events.filter((event) => !isOccasion(event));
     const ordered = [...occasions, ...rest];
 
-    const headline = query
-      ? `${ordered.length} matching "${query}" in the next ${days} days`
-      : occasions.length > 0
-        ? `${occasions.length} occasion(s) and ${rest.length} other entr(ies) in the next ${days} days` +
-          ` — occasions first`
-        : `No birthdays or anniversaries in the next ${days} days, but ${rest.length} other ` +
-          `entr(ies) are in the diary — use them to judge when the user is busy or travelling`;
+    const headline = onDate
+      ? `${ordered.length} entr(ies) already in the diary on ${onDate} — times are Israel time, so ` +
+        `check them against the hour the user asked about before calling the day free`
+      : query
+        ? `${ordered.length} matching "${query}" in the next ${days} days`
+          : occasions.length > 0
+            ? `${occasions.length} occasion(s) and ${rest.length} other entr(ies) in the next ${days} days` +
+              ` — occasions first`
+            : `No birthdays or anniversaries in the next ${days} days, but ${rest.length} other ` +
+              `entr(ies) are in the diary — use them to judge when the user is busy or travelling`;
 
     return {
       ok: true,

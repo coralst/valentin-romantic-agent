@@ -533,9 +533,13 @@ export function startSpanBridge(emit: SpanEmitter): () => void {
       return;
     }
 
-    // The hop first, because it happened first: the feed is newest-first, so
-    // emitting the Gateway before the partner it routed to reads down the page in
-    // the order the request actually travelled.
+    // The hop first, because it happened first — and because the feed is
+    // newest-first, that puts the Gateway directly BELOW the partner it routed to.
+    // That is the intended arrangement: the drawer's one ordering rule is "higher
+    // is newer", and a pair that broke it would be a pair whose two rows could not
+    // be trusted against the timestamps beside them. Read the feed in its
+    // chronological direction — upwards — and the request travels Gateway then
+    // partner, which is what happened.
     const hop = logRecordToGatewayHop(record);
     if (hop) emit(userId, { type: 'aws_span', payload: hop, timestamp });
 

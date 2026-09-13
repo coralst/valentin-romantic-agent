@@ -402,10 +402,12 @@ export function logRecordToSpan(record: ServerLogRecord): AwsSpan | undefined {
       const detail = target ? `via ${GATEWAY_TARGET_LAMBDAS[target] ?? target}` : undefined;
 
       /*
-       * An integration tool lights engine B's External APIs card rather than the
-       * Gateway one, and says which partner it reached — the same beat engine A
-       * draws from its own `integration.<service>` line, so the two routes tell
-       * the same story about the same Ontopo.
+       * An integration tool lights engine B's External APIs card and says which
+       * partner it reached — the same beat engine A draws from its own
+       * `integration.<service>` line, so the two routes tell the same story about
+       * the same Ontopo. It is not the *only* span such a call produces:
+       * {@link logRecordToGatewayHop} adds the Gateway hop that carried it, because
+       * otherwise the one resource engine B exists to demonstrate stayed dark.
        *
        * `durationMs` is absent on both branches and that asymmetry with
        * `agentcore.gateway.confirm` below is deliberate, not an oversight: this
@@ -465,6 +467,54 @@ export function logRecordToSpan(record: ServerLogRecord): AwsSpan | undefined {
     default:
       return integrationSpan(record);
   }
+}
+
+/**
+ * The Gateway hop an integration tool call travelled through, or undefined.
+ *
+ * A sibling of {@link logRecordToSpan} for the reason {@link logRecordToTurnMetrics}
+ * is one: one log line here genuinely describes **two** resources, and widening the
+ * return type to an array would have meant editing fifty existing tests to prove
+ * nothing new.
+ *
+ * The gap this closes was invisible from the code and obvious on a projector. Every
+ * tool the demo actually calls is in {@link GATEWAY_TOOL_SERVICES}, so every
+ * `agentcore.gateway` line took the partner branch above and reported
+ * `agentcore-integrations` — the tool Lambda. The `agentcore-gateway` id was left
+ * reachable only by a *profile* tool, or by `agentcore.gateway.confirm`, which fires
+ * only when someone confirms a proposal card. So on an ordinary engine-B turn the
+ * AgentCore Gateway card received no span, lit nothing, and appeared in no feed row:
+ * the one managed primitive the comparison is about was the one you could not point
+ * at. Both hops are real — the Runtime asked the Gateway, the Gateway invoked the
+ * Lambda — and the diagram draws them as two nodes, so telemetry says so too.
+ *
+ * Carries no `durationMs`, for the same reason the partner span carries none: this
+ * happened inside the Runtime and reaches the proxy only as a tool name in the
+ * reply. A hop with an invented number would be worse than a hop with none.
+ */
+export function logRecordToGatewayHop(record: ServerLogRecord): AwsSpan | undefined {
+  if (record.event !== 'agentcore.gateway') return undefined;
+
+  const { data } = record;
+  const sessionId = str(data, 'sessionId');
+  const name = str(data, 'tool');
+  if (!sessionId || !name) return undefined;
+
+  const { target, tool } = splitGatewayToolName(name);
+  // Only the partner branch needs a companion. A tool with no partner already
+  // reports the Gateway itself, and emitting this too would double every profile
+  // tool call in the feed.
+  if (!GATEWAY_TOOL_SERVICES[tool]) return undefined;
+
+  return {
+    sessionId,
+    resourceId: 'agentcore-gateway',
+    service: 'AgentCore Gateway',
+    resourceName: agentCoreGatewayName(),
+    operation: tool,
+    ok: record.level !== 'error',
+    detail: target ? `via ${GATEWAY_TARGET_LAMBDAS[target] ?? target}` : undefined,
+  };
 }
 
 /**
@@ -545,6 +595,16 @@ export function startSpanBridge(emit: SpanEmitter): () => void {
       emit(userId, { type: 'turn_metrics', payload: metrics, timestamp });
       return;
     }
+
+    // The hop first, because it happened first — and because the feed is
+    // newest-first, that puts the Gateway directly BELOW the partner it routed to.
+    // That is the intended arrangement: the drawer's one ordering rule is "higher
+    // is newer", and a pair that broke it would be a pair whose two rows could not
+    // be trusted against the timestamps beside them. Read the feed in its
+    // chronological direction — upwards — and the request travels Gateway then
+    // partner, which is what happened.
+    const hop = logRecordToGatewayHop(record);
+    if (hop) emit(userId, { type: 'aws_span', payload: hop, timestamp });
 
     emit(userId, {
       type: 'aws_span',

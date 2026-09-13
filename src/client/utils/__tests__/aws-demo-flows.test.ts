@@ -153,7 +153,7 @@ describe('DEMO_FLOWS', () => {
       FLOW_ACTION.extractsAPreference,
       // … where engine B has Memory do it, behind two hops of its own.
       FLOW_ACTION.storesAMemory,
-      FLOW_ACTION.callsAGatewayTool,
+      FLOW_ACTION.routesTheToolCall,
       FLOW_ACTION.readsWhatItKnows,
     ];
 

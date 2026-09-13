@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, act } from '@testing-library/react';
 import {
   ArchitectureEngineProvider,
+  resolveOpeningEngine,
   useArchitectureEngineContext,
 } from '../architecture-engine-context';
 
@@ -151,6 +152,59 @@ describe('ArchitectureEngineProvider', () => {
     });
     // Reachability is a property of the deployment right now, not of the engine.
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  });
+
+  /**
+   * How a *link* chooses an engine.
+   *
+   * From a real demo failure: a share link handed over to show engine B opened on
+   * DIY, because the selection was in-memory state initialised to `'valentin'` on
+   * every load and nothing in the link said otherwise. The signed share token cannot
+   * carry it — it is minted server-side, and the links already in people's hands are
+   * fixed — so a query parameter that can be appended to any of them does the job.
+   */
+  describe('which engine a page load opens on', () => {
+    it('takes the engine from the URL', () => {
+      expect(resolveOpeningEngine('?engine=agentcore', null)).toBe('agentcore');
+      expect(resolveOpeningEngine('?share=abc&engine=agentcore', null)).toBe('agentcore');
+    });
+
+    it('accepts the name the rail shows, because that is what people will type', () => {
+      // The toggle is labelled "DIY", not "valentin"; a URL saying `engine=diy` that
+      // silently did nothing would be worse than one that errored.
+      expect(resolveOpeningEngine('?engine=diy', null)).toBe('valentin');
+    });
+
+    it('falls back to the last selection, so a reload mid-demo does not undo it', () => {
+      expect(resolveOpeningEngine('', 'agentcore')).toBe('agentcore');
+    });
+
+    it('lets the URL override what was remembered', () => {
+      expect(resolveOpeningEngine('?engine=diy', 'agentcore')).toBe('valentin');
+    });
+
+    it('answers undefined for anything it does not recognise, rather than guessing', () => {
+      // Undefined and not `'valentin'`: the provider's own default is where engine A
+      // is decided, and two places deciding it is how they drift.
+      expect(resolveOpeningEngine('?engine=AgentCore', null)).toBeUndefined();
+      expect(resolveOpeningEngine('?engine=', null)).toBeUndefined();
+      expect(resolveOpeningEngine('', null)).toBeUndefined();
+      expect(resolveOpeningEngine('', 'bedrock')).toBeUndefined();
+    });
+
+    it('remembers a switch for the next load in this tab', async () => {
+      render(
+        <ArchitectureEngineProvider>
+          <Probe />
+        </ArchitectureEngineProvider>,
+      );
+      act(() => {
+        screen.getByRole('button').click();
+      });
+      await waitFor(() =>
+        expect(window.sessionStorage.getItem('valentin.architecture-engine')).toBe('agentcore'),
+      );
+    });
   });
 
   it('is inert without a provider, and confirms nothing', () => {

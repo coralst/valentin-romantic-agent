@@ -271,7 +271,7 @@ function spanAction(node: AwsNodeId, span: AwsSpan): string {
         ? FLOW_ACTION.recallsWhatItKnows
         : FLOW_ACTION.storesAMemory;
     case 'ac-gateway':
-      return FLOW_ACTION.callsAGatewayTool;
+      return FLOW_ACTION.routesTheToolCall;
     // Same words for both, because it is the same beat: a call out, with nothing
     // booked yet. The route differs, the story does not.
     case 'integrations':

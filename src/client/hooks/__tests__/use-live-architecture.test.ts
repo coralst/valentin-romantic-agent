@@ -261,6 +261,36 @@ describe('useLiveArchitecture', () => {
         );
       });
     });
+
+    /**
+     * The Gateway's beat is the *route*, and it needs its own words.
+     *
+     * It read "thinks" before it was mapped — which is what Bedrock does, and
+     * precisely the wrong claim for the one row that exists to show a managed
+     * primitive doing the tool dispatch the DIY engine hand-writes. Asserted because
+     * this is the row the whole engine comparison is pointed at.
+     */
+    it('captions an AgentCore Gateway span as a route, not as thinking', () => {
+      const { result } = renderHook(() => useLiveArchitecture());
+
+      act(() => {
+        publishInboundWsEvent(
+          makeSpan({
+            resourceId: 'agentcore-gateway',
+            service: 'AgentCore Gateway',
+            resourceName: 'valentin-gateway-dev',
+            operation: 'find_restaurants',
+            durationMs: undefined,
+            detail: 'via valentin-integration-tools',
+          }),
+        );
+      });
+
+      expect(result.current.currentBeat?.action).toBe(FLOW_ACTION.routesTheToolCall);
+      expect(result.current.currentBeat?.service).toBe('AgentCore Gateway');
+      // Nothing timed this hop, and a `0` would read as a free call.
+      expect(result.current.currentBeat?.durationMs).toBeUndefined();
+    });
   });
 
   describe('events', () => {

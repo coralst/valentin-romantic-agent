@@ -97,8 +97,16 @@ export const FLOW_ACTION = {
   asksTheOutsideWorld: 'asks the outside world',
   offersSomethingToConfirm: 'offers something to confirm',
   confirmsIt: 'confirms it',
-  /** Engine B: a tool call over MCP. */
-  callsAGatewayTool: 'calls a Gateway tool',
+  /**
+   * Engine B: the Gateway hop, which is dispatch and nothing else.
+   *
+   * Deliberately not "asks the outside world" or "learns something new", the beats
+   * either side of it: the Gateway asked nobody anything and learned nothing — it
+   * looked up a registered tool and handed the call to a Lambda. That route is the
+   * entire point of engine B's right-hand side, and it is the one row that exists to
+   * show a managed primitive doing dispatch the DIY engine hand-writes.
+   */
+  routesTheToolCall: 'routes the tool call',
   /** Engine B: `CreateEvent` — AgentCore Memory extracting and storing for us. */
   storesAMemory: 'stores a memory',
   /** Engine B: `ListMemoryRecords`. */
@@ -439,7 +447,7 @@ const AGENTCORE_LEARNS_SOMETHING: readonly DemoStep[] = [
     category: 'ml',
     durationMs: 94,
     actor: 'Valentin',
-    action: FLOW_ACTION.callsAGatewayTool,
+    action: FLOW_ACTION.routesTheToolCall,
   },
   // The hop that is the whole point of engine B's right-hand side: the Gateway
   // does not hold the tool, it *routes* to one of our two Lambdas. `get_partner_profile`

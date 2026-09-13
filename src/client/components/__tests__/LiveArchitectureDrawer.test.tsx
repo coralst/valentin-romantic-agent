@@ -259,6 +259,68 @@ describe('LiveArchitectureDrawer', () => {
       // something only the running system knows: `/api/config` is what fills it in.
       expect(DRAWER_COPY.servingUnknown.length).toBeGreaterThan(0);
     });
+
+    /*
+     * A verb where the switch was, and only the one that leads somewhere.
+     *
+     * Deleting the switch outright had a consequence worth a suite of its own:
+     * `use-websocket.ts` pings every thirty seconds, so within half a minute every
+     * session is in live mode permanently — and the scripted walkthrough, which is
+     * how the architecture gets explained when there is no traffic to point at, would
+     * have been unreachable for the rest of the session. These tests pin the door
+     * open, and pin that it is one door and not a mode pair wearing new labels: each
+     * control is absent whenever it would lead to the state you are already in.
+     */
+    it('offers the walkthrough only once live traffic is what you would be watching', async () => {
+      const user = userEvent.setup();
+      renderDrawer();
+      await openDrawer(user);
+
+      // Nothing has arrived: the script is already on screen, so there is nothing to
+      // walk to and nothing to come back from.
+      expect(
+        screen.queryByRole('button', { name: DRAWER_COPY.walkFlow }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: DRAWER_COPY.backToLive }),
+      ).not.toBeInTheDocument();
+
+      goLive();
+      expect(screen.getByRole('button', { name: DRAWER_COPY.walkFlow })).toBeInTheDocument();
+    });
+
+    it('walks the flow on request, even after the socket has taken over', async () => {
+      const user = userEvent.setup();
+      renderDrawer();
+      await openDrawer(user);
+      goLive();
+      expect(screen.queryByTestId('architecture-step-count')).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: DRAWER_COPY.walkFlow }));
+
+      expect(screen.getByTestId('architecture-step-count')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: DRAWER_COPY.next })).toBeInTheDocument();
+    });
+
+    it('holds the walkthrough against arriving traffic, then hands it back', async () => {
+      // The presenter's escape hatch, which is the whole reason `setMode` marks the
+      // choice as the user's: a heartbeat mid-sentence must not yank the script away.
+      const user = userEvent.setup();
+      renderDrawer();
+      await openDrawer(user);
+      goLive();
+      await user.click(screen.getByRole('button', { name: DRAWER_COPY.walkFlow }));
+
+      goLive();
+      expect(screen.getByTestId('architecture-step-count')).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: DRAWER_COPY.backToLive }));
+      expect(screen.queryByTestId('architecture-step-count')).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: DRAWER_COPY.backToLive }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: DRAWER_COPY.walkFlow })).toBeInTheDocument();
+    });
   });
 
   describe('demo mode', () => {

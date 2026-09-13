@@ -163,6 +163,19 @@ export const DRAWER_COPY = {
   liveEmpty: 'Waiting for traffic. Send a message and it will appear here.',
   /** Says out loud that demo durations are authored, so nobody reads them as measured. */
   demoNote: 'Scripted walkthrough · representative durations',
+  /**
+   * Starts the scripted walkthrough from live mode, and leaves it again.
+   *
+   * One verb apiece rather than a Live/Demo pair. The distinction is not cosmetic:
+   * a mode pair asks a presenter to pick a data source before the drawer will show
+   * them anything, and both buttons stay lit and clickable at all times, which is
+   * how the drawer used to end up on a script while real traffic scrolled past. A
+   * verb only appears when there is something to do — walking the flow is offered
+   * only while live is what you would otherwise be looking at, and the way back
+   * only exists once there is live traffic to go back to.
+   */
+  walkFlow: 'Walk the flow',
+  backToLive: 'Back to live traffic',
   /** Prefix for the chip naming the engine that actually answered. */
   serving: 'Serving',
   /** Shown while `/api/config` on the selected route has not answered yet. */
@@ -551,16 +564,23 @@ export function LiveArchitectureDrawer() {
   // mid-session would repaint the bar under whoever is presenting.
   const theme = useMemo(() => resolveBarTheme(), []);
   /*
-   * Read, never set: there is no Live/Demo control any more.
+   * No Live/Demo pair any more — the drawer picks for itself and offers a verb.
    *
    * The hook already does the only thing the switch was ever used for. It opens on
    * the script — a blank diagram in front of a room is the worst available failure,
    * and at open time we cannot know whether a socket exists — and flips to live
    * traffic the instant any WebSocket event arrives. Two buttons that a presenter
    * had to remember to press to get the behaviour they were already going to get
-   * were two buttons of stage risk, so the automatic path is now the only path.
+   * were two buttons of stage risk, so the automatic path is the default path.
+   *
+   * `setMode` survives for one case the automatic path cannot cover. Because
+   * `use-websocket.ts` pings every thirty seconds, *every* session is in live mode
+   * within half a minute of opening, permanently — so the scripted walkthrough, which
+   * is how the architecture gets explained when there is nothing to point at yet,
+   * would be unreachable for the rest of the session. `Walk the flow` is that door,
+   * and `clearOverride` is the way back out to whatever the traffic is doing now.
    */
-  const { mode } = useArchitectureMode();
+  const { mode, hasLiveTraffic, isUserChosen, setMode, clearOverride } = useArchitectureMode();
   // The engine switch lives in the icon rail, next to the other things a presenter
   // reaches for mid-sentence; the drawer only reads the choice.
   const { engine, servingEngine, isDowngraded } = useArchitectureEngineContext();
@@ -568,6 +588,14 @@ export function LiveArchitectureDrawer() {
 
   const flow = demoFlow(defaultDemoFlowIdFor(engine));
   const isDemo = mode === 'demo';
+  /**
+   * Whether the script is on screen *because someone asked for it*.
+   *
+   * The difference decides whether a way back is offered at all: before any traffic
+   * has arrived the script is simply the only thing there is to show, and a `Back to
+   * live traffic` button then leads to the blank panel this drawer exists to avoid.
+   */
+  const isWalkthrough = isDemo && isUserChosen && hasLiveTraffic;
 
   /**
    * The user action being replayed, if any.
@@ -852,6 +880,31 @@ export function LiveArchitectureDrawer() {
                   disabled ◀ beside real events invites the question of why it does
                   nothing — which is exactly why replaying an action gets them
                   back even though the mode switch still says Live. */}
+              {/* The one door into the script, and the one door out. Each appears only
+                  when it leads somewhere: `Walk the flow` while live traffic is what
+                  you would otherwise be watching, and `Back to live traffic` only once
+                  there is traffic to return to. A replay has its own chip to exit by,
+                  so neither is offered over the top of one. */}
+              {!isDemo && !isReplaying && (
+                <button
+                  type="button"
+                  style={buttonStyle}
+                  onClick={() => setMode('demo')}
+                  aria-label={DRAWER_COPY.walkFlow}
+                >
+                  {DRAWER_COPY.walkFlow}
+                </button>
+              )}
+              {isWalkthrough && !isReplaying && (
+                <button
+                  type="button"
+                  style={buttonStyle}
+                  onClick={clearOverride}
+                  aria-label={DRAWER_COPY.backToLive}
+                >
+                  ↩ Live
+                </button>
+              )}
               {(isDemo || isReplaying) && (
                 <>
                   <button

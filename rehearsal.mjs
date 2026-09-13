@@ -134,22 +134,49 @@ if (CHECK_LIVE) {
   skip('followed real traffic into live mode (--no-live-resources)');
 }
 
-// The engine comparison sheet. Opened here, while the drawer is in live mode, and
-// checked for the property that matters most: it must not print a number nobody
-// measured. On a laptop no turn has completed yet, so every measured tile is an em
-// dash and the two counted tiles carry their real figures.
-const scoreboardToggle = p.getByTestId('scoreboard-toggle');
-ok('comparison sheet has a trigger in the drawer', await scoreboardToggle.isVisible());
-await scoreboardToggle.click();
-const scoreboard = p.getByTestId('engine-scoreboard');
-ok('comparison sheet opens', await waitFor(() => scoreboard.isVisible(), { label: 'scoreboard' }));
-const scoreboardText = await scoreboard.innerText();
-ok('unmeasured tiles show an em dash, not a zero', scoreboardText.includes('—'));
-ok('the sheet says where glue code wins', /Glue code wins at/.test(scoreboardText));
-ok('the sheet does not claim AgentCore removes Fargate',
-  /still answers behind a Fargate proxy/.test(scoreboardText));
-await p.screenshot({ path: `${SHOT_DIR}/rehearsal-${RUN}-scoreboard.png` });
-await scoreboardToggle.click();
+// The diagram itself now carries the comparison that a separate "Why AgentCore" sheet
+// used to make in prose, and the two controls in front of it are gone: the sheet was a
+// second surface arguing what the picture is for, and the Live/Demo pair only offered
+// a presenter the chance to be in the wrong mode mid-sentence. Both absences are
+// asserted, because a control that comes back in a later refactor comes back on a
+// projector.
+const drawerText = await drawer.innerText();
+ok('no scoreboard sheet competing with the diagram',
+  !(await p.getByTestId('engine-scoreboard').isVisible().catch(() => false))
+  && !(await p.getByTestId('scoreboard-toggle').isVisible().catch(() => false)));
+ok('no data-source switch to get stuck in the wrong half of',
+  !/\bLive\b\s*\/?\s*\bDemo\b/.test(drawerText) && !/Data source/i.test(drawerText));
+// The chip stayed, because unlike the switch it reports something only the running
+// system knows: which engine actually answered.
+ok('still says which engine is answering',
+  await p.getByTestId('architecture-serving-chip').isVisible().catch(() => false));
+
+// One table and one set of provider APIs, drawn once and shared. This is the
+// duplication the room kept tripping over: two cards bearing `ValentinTable-dev` read
+// as two tables, and the question it prompted was which one her preferences were in.
+ok('one shared table, not one per engine',
+  await p.getByTestId('aws-node-dynamodb').count() === 1);
+ok('one shared provider card, with one strip of logos',
+  await p.getByTestId('aws-node-integrations').count() === 1
+  && await p.getByTestId('aws-provider-strip').count() === 1);
+
+// And the Gateway's registry, which is the thing an architecture diagram usually
+// cannot show: not that a Gateway exists but what is registered on it. Greyed on
+// engine A, where the same schemas are rebuilt in-process every turn — so the panel is
+// present and captioned rather than blank.
+const toolPanel = p.getByTestId('aws-tool-panel');
+ok('the Gateway’s registered entry points are on the diagram',
+  await waitFor(() => toolPanel.isVisible(), { label: 'tool panel' }));
+const toolPanelText = await toolPanel.innerText();
+ok('the registry names the Lambdas behind it',
+  toolPanelText.includes('valentin-profile-tools-dev')
+  && toolPanelText.includes('valentin-integration-tools-dev'));
+// Case-insensitive on purpose: the heading is `text-transform: uppercase`, and
+// `innerText` reports text as rendered rather than as written.
+ok('the registry is greyed while engine A is selected, and says why',
+  await toolPanel.getAttribute('data-state') === 'muted'
+  && /no tool registry/i.test(toolPanelText));
+await p.screenshot({ path: `${SHOT_DIR}/rehearsal-${RUN}-topology.png` });
 
 const composer = p.locator('textarea, input[type="text"]').first();
 ok('composer usable with drawer open', await composer.isVisible().catch(() => false));
@@ -172,8 +199,14 @@ ok('no raw preference value in the feed', !/late-night jazz/i.test(
   await p.getByTestId('aws-flow-feed').innerText().catch(() => ''),
 ));
 
-// 2b. demo mode has to work as a standalone instrument
-await drawer.getByRole('button', { name: 'Demo' }).click();
+// 2b. the scripted walkthrough has to work as a standalone instrument
+//
+// Reached by a verb now, not by a data-source switch — and reachable at all is the
+// point of the test. The socket pings every thirty seconds, so by this line the drawer
+// has been in live mode for a while; without this door the walkthrough would be gone
+// for the rest of the session, which is the one thing the drawer is for when there is
+// no traffic to point at yet.
+await drawer.getByRole('button', { name: 'Walk the flow' }).click();
 const stepCount = p.getByTestId('architecture-step-count');
 ok('demo mode offers step controls',
   await waitFor(() => stepCount.isVisible(), { label: 'step count' }));
@@ -215,7 +248,7 @@ await p.screenshot({ path: `${SHOT_DIR}/rehearsal-${RUN}.png` });
 await b.close();
 
 const secs = ((Date.now() - started) / 1000).toFixed(1);
-console.log(`  screenshots: ${SHOT_DIR}/rehearsal-${RUN}.png, ${SHOT_DIR}/rehearsal-${RUN}-drawer.png, ${SHOT_DIR}/rehearsal-${RUN}-scoreboard.png`);
+console.log(`  screenshots: ${SHOT_DIR}/rehearsal-${RUN}.png, ${SHOT_DIR}/rehearsal-${RUN}-drawer.png, ${SHOT_DIR}/rehearsal-${RUN}-topology.png`);
 console.log(fail.length
   ? `RESULT ${RUN}: ${fail.length} FAILED in ${secs}s -> ${fail.join('; ')}`
   : `RESULT ${RUN}: ALL PASS in ${secs}s`);

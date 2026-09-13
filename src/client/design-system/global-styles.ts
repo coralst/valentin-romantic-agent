@@ -212,9 +212,20 @@ export const globalStyles = `@import url('https://fonts.googleapis.com/css2?fami
     border-radius: ${radii.panel}px;
   }
 
-  /* Only a pinned glow pulses. A hover is a still ring — see \`GlowStrength\`. */
+  /*
+   * Only a pinned glow pulses. A hover is a still ring — see \`GlowStrength\`.
+   *
+   * Three beats and then it holds, rather than pulsing for as long as the
+   * selection lasts. The pulse's job is to *catch* the eye, and the ring's job is
+   * to hold the mark; once you have looked, continued motion beside a transcript
+   * someone is reading is a distraction with nothing left to say. It is the same
+   * shape as \`LearnedStatus\`, which announces itself and then stops.
+   *
+   * The selection is unaffected — \`forwards\` holds the last keyframe, so the ring
+   * stays until the row is clicked again. Only the motion is finite.
+   */
   [data-glow="pin"] {
-    animation: valentin-glow-pulse 1600ms ease-in-out infinite;
+    animation: valentin-glow-pulse 1600ms ease-in-out 3 forwards;
   }
 
   /*

@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { LiveArchitectureDrawer, DRAWER_COPY } from '../LiveArchitectureDrawer';
 import { ArchitectureToggle } from '../ArchitectureToggle';
 import { ArchitectureDrawerProvider } from '../../context/architecture-drawer-context';
+import { ZoomProvider } from '../../context/zoom-context';
 import { ArchitectureEngineProvider, ENGINE_COPY } from '../../context/architecture-engine-context';
 import { publishInboundWsEvent, resetWsObservers } from '../../utils/ws-event-observer';
 import { demoFlow, DEFAULT_DEMO_FLOW_ID } from '../../utils/aws-demo-flows';
@@ -1199,5 +1200,138 @@ describe('LiveArchitectureDrawer — resizing', () => {
     // stray focusable control sitting in the tab order behind a hidden drawer.
     renderDrawer();
     expect(screen.queryByTestId('architecture-drawer-resize')).not.toBeInTheDocument();
+  });
+});
+
+describe('the drawer’s own zoom', () => {
+  /** The drawer inside the zoom provider, which is how the shell mounts it. */
+  function renderZoomableDrawer() {
+    localStorage.clear();
+    return render(
+      <ZoomProvider>
+        <ArchitectureDrawerProvider>
+          <ArchitectureToggle />
+          <LiveArchitectureDrawer />
+        </ArchitectureDrawerProvider>
+      </ZoomProvider>,
+    );
+  }
+
+  const canvasZoom = () =>
+    Number(screen.getByTestId('architecture-zoom-canvas').dataset.zoom);
+  const readout = () => screen.getByLabelText(DRAWER_COPY.zoomReset);
+
+  /** Cmd+− with the pointer outside the drawer — the shell's zoom, not the drawer's. */
+  function zoomTheShellOut() {
+    act(() => {
+      document.body.dispatchEvent(new Event('pointerover', { bubbles: true }));
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { key: '-', metaKey: true, cancelable: true }),
+      );
+    });
+  }
+
+  it('marks itself as the region the accelerator drives', async () => {
+    const user = userEvent.setup();
+    renderZoomableDrawer();
+    await openDrawer(user);
+
+    expect(screen.getByTestId('architecture-drawer').dataset.zoomRegion).toBe(
+      'architecture',
+    );
+  });
+
+  it('steps the diagram up and down from the header', async () => {
+    const user = userEvent.setup();
+    renderZoomableDrawer();
+    await openDrawer(user);
+
+    await user.click(screen.getByLabelText(DRAWER_COPY.zoomIn));
+    expect(readout()).toHaveTextContent('110%');
+    expect(canvasZoom()).toBeCloseTo(1.1);
+
+    await user.click(screen.getByLabelText(DRAWER_COPY.zoomOut));
+    expect(readout()).toHaveTextContent('100%');
+    expect(canvasZoom()).toBe(1);
+  });
+
+  it('puts the diagram back when the readout is pressed', async () => {
+    const user = userEvent.setup();
+    renderZoomableDrawer();
+    await openDrawer(user);
+
+    await user.click(screen.getByLabelText(DRAWER_COPY.zoomIn));
+    await user.click(screen.getByLabelText(DRAWER_COPY.zoomIn));
+    expect(readout()).toHaveTextContent('125%');
+
+    await user.click(readout());
+
+    expect(readout()).toHaveTextContent('100%');
+    expect(canvasZoom()).toBe(1);
+  });
+
+  it('disables the stepper that has nowhere left to go', async () => {
+    const user = userEvent.setup();
+    renderZoomableDrawer();
+    await openDrawer(user);
+
+    for (let i = 0; i < 12; i += 1) {
+      const button = screen.getByLabelText(DRAWER_COPY.zoomIn);
+      if (button.hasAttribute('disabled')) break;
+      await user.click(button);
+    }
+
+    expect(readout()).toHaveTextContent('300%');
+    expect(screen.getByLabelText(DRAWER_COPY.zoomIn)).toBeDisabled();
+    expect(screen.getByLabelText(DRAWER_COPY.zoomOut)).not.toBeDisabled();
+  });
+
+  it('holds the diagram’s size while the shell zooms out from under it', async () => {
+    // The whole feature in one assertion: more transcript on screen must not shrink
+    // the diagram. `zoom` compounds down the tree, so the canvas divides the page's
+    // back out.
+    const user = userEvent.setup();
+    renderZoomableDrawer();
+    await openDrawer(user);
+    expect(canvasZoom()).toBe(1);
+
+    zoomTheShellOut();
+
+    // 1 ÷ 0.9: the canvas zooms *in* by exactly what the page zoomed out, so what is
+    // painted is unchanged.
+    expect(canvasZoom()).toBeCloseTo(1 / 0.9);
+  });
+
+  it('keeps the diagram at 100% of the screen, not of the shrunken shell', async () => {
+    const user = userEvent.setup();
+    renderZoomableDrawer();
+    await openDrawer(user);
+    zoomTheShellOut();
+
+    await user.click(screen.getByLabelText(DRAWER_COPY.zoomIn));
+
+    // The readout is the absolute level, and the canvas is that level net of the page.
+    expect(readout()).toHaveTextContent('110%');
+    expect(canvasZoom()).toBeCloseTo(1.1 / 0.9);
+  });
+
+  it('offers a grab surface over the diagram and not over the feed', async () => {
+    const user = userEvent.setup();
+    renderZoomableDrawer();
+    await openDrawer(user);
+
+    const surface = screen.getByTestId('architecture-pan-surface');
+    expect(surface.style.cursor).toBe('grab');
+    // The diagram is inside it; the feed is not.
+    expect(surface).toContainElement(screen.getByTestId('aws-topology-diagram'));
+    expect(surface).not.toContainElement(screen.getByTestId('aws-flow-feed'));
+  });
+
+  it('scrolls rather than clips, so a zoomed-in diagram can be reached', async () => {
+    const user = userEvent.setup();
+    renderZoomableDrawer();
+    await openDrawer(user);
+
+    expect(screen.getByTestId('architecture-viewport').style.overflow).toBe('auto');
   });
 });

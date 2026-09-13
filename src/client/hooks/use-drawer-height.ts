@@ -103,8 +103,20 @@ function writeStored(height: number | null): void {
   }
 }
 
-export function useDrawerHeight(): UseDrawerHeightResult {
-  const viewportHeight = useViewportHeight();
+/**
+ * @param pageZoom The shell's zoom, from `useZoom().zoom.page`.
+ *
+ * Every number in this file is a CSS pixel *inside the zoomed page*, while
+ * `window.innerHeight` is a real device-independent pixel. Left unconverted, the two
+ * floors would be enforced against the wrong screen: at a page zoom of 1.4 a drawer
+ * that measured a comfortable 454 against a 900px viewport would paint 636 real pixels
+ * and bury the composer that `MIN_SHELL_AUTO` exists to protect. Dividing the
+ * measurement once, here, is what keeps both floors meaning what they say.
+ */
+export function useDrawerHeight(pageZoom = 1): UseDrawerHeightResult {
+  const measured = useViewportHeight();
+  const viewportHeight =
+    measured === undefined || pageZoom <= 0 ? measured : measured / pageZoom;
   const [chosen, setChosen] = useState<number | null>(() => readStored());
 
   const bounds = useMemo(() => drawerHeightBounds(viewportHeight), [viewportHeight]);

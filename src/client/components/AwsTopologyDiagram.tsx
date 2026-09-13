@@ -15,7 +15,9 @@ import {
   AWS_NODE_BOXES,
   AWS_NODE_CARD,
   AWS_NODE_VISUALS,
+  AWS_PROVIDER_STRIP,
   AWS_TIER_LABELS,
+  AWS_TOOL_PANEL,
   AWS_VPC_BOX,
   FLOW_COLORS,
   MARCHING_ANTS,
@@ -23,6 +25,7 @@ import {
   awsSegmentGeometry,
 } from '../utils/aws-diagram-layout';
 import { prefersReducedMotion } from '../utils/motion-preference';
+import { BrandMark, type BrandMarkId } from '../design-system/brand-marks';
 import { colors, typography } from '../design-system/tokens';
 
 /**
@@ -392,6 +395,138 @@ function NodeCard({
   );
 }
 
+/**
+ * The eight provider logos, above the shared External APIs card.
+ *
+ * Drawn once, like the card they belong to, and *unshaded on both engines* — which
+ * is the whole argument of the shared column. Spotify and Gmail are the same
+ * Spotify and Gmail whichever engine is answering; what differs is the route, and
+ * the route is already drawn: engine A arrives on the flat line from the task
+ * ('NAT · public internet'), engine B climbs from the tool Lambda ('provider keys ·
+ * Secrets Manager'). The marks are the integrations panel's own `BrandMark`s rather
+ * than a second set, so the eight here cannot drift from the eight in the panel.
+ */
+function ProviderStrip({ providers }: { providers: readonly BrandMarkId[] }) {
+  return (
+    <div
+      data-testid="aws-provider-strip"
+      style={{
+        position: 'absolute',
+        left: AWS_PROVIDER_STRIP.x,
+        top: AWS_PROVIDER_STRIP.top,
+        display: 'flex',
+        gap: AWS_PROVIDER_STRIP.gap,
+        alignItems: 'center',
+      }}
+    >
+      {providers.map((id) => (
+        <BrandMark key={id} id={id} size={AWS_PROVIDER_STRIP.markSize} />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The Gateway's registered tool entry points, listed by the Lambda behind them.
+ *
+ * The thing an architecture diagram usually cannot show and the room always asks
+ * for: not "there is a Gateway" but *what is registered on it*. These names come
+ * from the nodes' `toolEntryPoints`, which are the schemas in
+ * `infra/lib/agentcore-stack.ts` — so a tool added to the stack and not to the
+ * agent shows up here as a name nobody recognises, which is the useful failure.
+ *
+ * Greyed on engine A rather than hidden, and that is the comparison stated in one
+ * panel: engine A has no registry at all. Its tool schemas are assembled in-process
+ * and described to Bedrock inside the Converse request, on every single turn, so
+ * there is nothing to point at — which is exactly what an empty, greyed panel says.
+ */
+function ToolEntryPanel({ engine }: { engine: ArchitectureEngine }) {
+  const targets = AWS_NODES.filter((node) => node.toolEntryPoints !== undefined);
+  const active = engine === 'agentcore';
+
+  return (
+    <div
+      data-testid="aws-tool-panel"
+      data-state={active ? 'active-engine' : 'muted'}
+      style={{
+        position: 'absolute',
+        left: AWS_TOOL_PANEL.x,
+        top: AWS_TOOL_PANEL.top,
+        width: AWS_TOOL_PANEL.width,
+        height: AWS_TOOL_PANEL.height,
+        fontFamily: typography.bodyFontFamily,
+        opacity: active ? 1 : 0.32,
+        filter: active ? undefined : 'grayscale(1)',
+        transition: 'opacity 280ms cubic-bezier(0.4, 0, 0.2, 1)',
+      }}
+    >
+      <div
+        style={{
+          fontSize: 9,
+          fontWeight: 700,
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
+          color: '#A3959C',
+        }}
+      >
+        {active ? TOOL_PANEL_COPY.heading : TOOL_PANEL_COPY.headingIdle}
+      </div>
+      {targets.map((node) => (
+        <div key={node.id} style={{ marginTop: 7 }}>
+          <div
+            style={{
+              fontSize: 9.5,
+              fontWeight: 700,
+              color: '#ED7100',
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            }}
+          >
+            {node.resourceName}
+            <span style={{ color: '#A3959C', fontWeight: 600 }}>
+              {' · '}
+              {node.toolEntryPoints?.length} entry points
+            </span>
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '2px 4px',
+              marginTop: 3,
+            }}
+          >
+            {node.toolEntryPoints?.map((tool) => (
+              <span
+                key={tool}
+                data-testid={`aws-tool-entry-${tool}`}
+                style={{
+                  fontSize: 8.5,
+                  lineHeight: 1.45,
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                  color: '#756A70',
+                  background: colors.surface,
+                  border: '1px solid #EFE4DD',
+                  borderRadius: 3,
+                  padding: '0 3px',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {tool}
+              </span>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Copy for the tool panel, in one place so the two states read as one sentence. */
+const TOOL_PANEL_COPY = {
+  heading: 'Registered on the Gateway',
+  headingIdle: 'No tool registry — schemas sent inline every turn',
+} as const;
+
 export function AwsTopologyDiagram({
   litNode,
   litIsResponse = false,
@@ -652,6 +787,14 @@ export function AwsTopologyDiagram({
             />
           );
         })}
+
+        {/* After the cards, so the marks sit above the External APIs card rather
+            than behind whatever paints last. */}
+        {AWS_NODES.map((node) =>
+          node.providers ? <ProviderStrip key={node.id} providers={node.providers} /> : null,
+        )}
+
+        <ToolEntryPanel engine={engine} />
       </div>
     </div>
   );

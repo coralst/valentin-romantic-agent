@@ -2065,15 +2065,24 @@ async function runEngineB(page: Page, composer: Locator, feed: Locator): Promise
   );
 
   /*
-   * The scoreboard here, once both engines hold turns from this run — so neither column
-   * can read "not yet run" and every number on it was measured minutes ago, on camera.
+   * The tool registry, while engine B is still the one answering.
+   *
+   * Read off the panel rather than written into the caption: how many entry points the
+   * Gateway advertises is a fact about the deployed stack, and a hardcoded number is a
+   * sentence that goes wrong on camera the first time a tool is added. Nothing is
+   * asserted here — the panel is a still, not a claim about a turn — so a missing panel
+   * skips the beat instead of failing the take.
    */
-  const scoreboard = page.getByTestId('scoreboard-toggle');
-  if (await showing(scoreboard)) {
-    await humanClick(page, scoreboard, 'open the engine scoreboard');
-    await caption(page, 'The two engines, measured — every number from turns this run just played');
+  const toolPanel = page.getByTestId('aws-tool-panel');
+  if (await showing(toolPanel)) {
+    const entries = await page.locator('[data-testid^="aws-tool-entry-"]').count();
+    console.log(`  gateway tool panel lists ${entries} registered entry point(s)`);
+    await caption(
+      page,
+      `${entries} tool entry points registered on the Gateway — behind two Lambdas that hold the keys`,
+    );
     await hold(6_000);
-    await shot(page, 'inspector-scoreboard');
+    await shot(page, 'inspector-gateway-tools');
   }
 
   await humanClick(page, page.getByTestId('rail-engine-valentin'), 'switch back to the glue code');

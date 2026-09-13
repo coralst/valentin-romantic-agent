@@ -246,7 +246,18 @@ export function MessageBubble({ message, animate = false }: MessageBubbleProps) 
 
   if (isAgent) {
     return (
-      <div style={agentWrapperStyle} data-testid="message-bubble" data-sender="agent">
+      <div
+        style={agentWrapperStyle}
+        data-testid="message-bubble"
+        data-sender="agent"
+        /*
+         * The transcript's only stable handle on one turn from outside this
+         * component. React's `key` emits no attribute, so before this there was no
+         * way to point at a message — which is what the architecture drawer needs
+         * in order to light up the reply a feed row wrote.
+         */
+        data-message-id={message.id}
+      >
         <div style={avatarStyle}>
           <img src="/logo.png" alt="Valentin" style={avatarImageStyle} />
         </div>
@@ -263,7 +274,12 @@ export function MessageBubble({ message, animate = false }: MessageBubbleProps) 
   }
 
   return (
-    <div style={userWrapperStyle} data-testid="message-bubble" data-sender="user">
+    <div
+      style={userWrapperStyle}
+      data-testid="message-bubble"
+      data-sender="user"
+      data-message-id={message.id}
+    >
       <div style={userBubbleStyle}>{renderContent(message.content)}</div>
     </div>
   );

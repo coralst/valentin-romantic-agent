@@ -131,6 +131,13 @@ export function GoodToKnow({ chips, onChipClick }: GoodToKnowProps) {
               onClick={() => onChipClick?.(chip.fieldId)}
               data-testid="brief-chip"
               data-empty={isEmpty ? 'true' : 'false'}
+              /*
+               * The chip's own id in the DOM, following `brief-pinned-${date.id}`
+               * and `brief-action-${task.id}` rather than the shared `brief-chip`
+               * testid — which names every chip and so can identify none of them.
+               * This is how a learned fact in the architecture feed finds its chip.
+               */
+              data-field-id={chip.fieldId}
               title={isEmpty ? undefined : `${chip.label}: ${spoken}`}
               aria-label={isEmpty ? `Add ${chip.label}` : `${chip.label}: ${spoken}`}
             >

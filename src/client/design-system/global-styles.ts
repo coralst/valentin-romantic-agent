@@ -162,6 +162,73 @@ export const globalStyles = `@import url('https://fonts.googleapis.com/css2?fami
   }
 
   /*
+   * The glow: pointing at a step in the architecture feed lights up the thing
+   * that step produced — the reply it wrote, the fact it recorded, the
+   * integration it called.
+   *
+   * Here rather than in a component for the reason stated above, and one more:
+   * the glow lands on nodes owned by five unrelated components
+   * (\`MessageBubble\`, the \`Noted\` badge, a brief-rail chip, a proposal card, an
+   * integration tile), and \`use-glow-painter.ts\` reaches them by setting one
+   * attribute. Which means the look is declared once, here, instead of five
+   * times as inline style in five files that share nothing else.
+   *
+   * Named with the \`valentin-glow-\` prefix so the reduced-motion block below
+   * switches it off with everything else.
+   *
+   * The pulse fades the ring *outward* to nothing rather than throbbing the
+   * outline itself: on a projector a shadow that grows and dissolves reads from
+   * the back of the room, while a border that changes width by a pixel does not.
+   */
+  @keyframes valentin-glow-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(140, 47, 69, 0.34); }
+    50%      { box-shadow: 0 0 0 8px rgba(140, 47, 69, 0); }
+  }
+
+  /*
+   * Every strength gets the ring. \`outline\` rather than \`border\`, because a
+   * border takes part in layout and would move the element it is marking — and
+   * these elements are in the middle of a transcript somebody is reading.
+   *
+   * No \`border-radius\` here: an outline already follows whatever radius the
+   * element has, and forcing one would visibly deform the two targets that carry
+   * their own — the brief-rail chips and the integration tiles.
+   */
+  [data-glow] {
+    outline: 2px solid ${colors.claret};
+    outline-offset: 3px;
+    /* Keeps the ring above a neighbour's background rather than under it. */
+    position: relative;
+    z-index: 1;
+  }
+
+  /*
+   * The one exception to the radius note above: a message wrapper is a bare
+   * layout row with no radius of its own, so its ring would be a hard rectangle
+   * around a rounded bubble. This rounds the outline and nothing else — there is
+   * no background or border on this element for it to affect.
+   */
+  [data-glow][data-testid="message-bubble"] {
+    border-radius: ${radii.panel}px;
+  }
+
+  /*
+   * Only a pinned glow pulses. A hover is a still ring — see \`GlowStrength\`.
+   *
+   * Three beats and then it holds, rather than pulsing for as long as the
+   * selection lasts. The pulse's job is to *catch* the eye, and the ring's job is
+   * to hold the mark; once you have looked, continued motion beside a transcript
+   * someone is reading is a distraction with nothing left to say. It is the same
+   * shape as \`LearnedStatus\`, which announces itself and then stops.
+   *
+   * The selection is unaffected — \`forwards\` holds the last keyframe, so the ring
+   * stays until the row is clicked again. Only the motion is finite.
+   */
+  [data-glow="pin"] {
+    animation: valentin-glow-pulse 1600ms ease-in-out 3 forwards;
+  }
+
+  /*
    * Her file's top band: two halves that become one column when the *board* is
    * narrow, not when the window is.
    *
@@ -209,7 +276,14 @@ export const globalStyles = `@import url('https://fonts.googleapis.com/css2?fami
   @media (prefers-reduced-motion: reduce) {
     [style*="integration-panel-in"],
     [style*="integration-sheet-rise"],
-    [style*="integration-edge-flow"] {
+    [style*="integration-edge-flow"],
+    /*
+       Matched on the attribute rather than on \`[style*=…]\` like its neighbours,
+       because this animation is declared in a rule above and never inlined. The
+       ring survives — losing the pulse costs nothing, but losing the mark would
+       leave the feature with no visible result at all.
+    */
+    [data-glow="pin"] {
       animation: none !important;
     }
   }

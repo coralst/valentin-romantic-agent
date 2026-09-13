@@ -345,7 +345,17 @@ export function MessageHistory({
                 }
               />
               {noted && (
-                <div style={msg.sender === 'agent' ? agentBadgeSlotStyle : undefined}>
+                <div
+                  style={msg.sender === 'agent' ? agentBadgeSlotStyle : undefined}
+                  /*
+                   * Keyed on the message rather than on the preferences, because that
+                   * is the join the index already made: `buildNotedIndex` groups facts
+                   * by `sourceMessageId`, so one badge stands for every fact that
+                   * message taught. A `preference_update` row in the architecture feed
+                   * finds its badge here without the index having to carry ids.
+                   */
+                  data-noted-for={msg.id}
+                >
                   <NotedBadge values={noted} align={msg.sender === 'user' ? 'end' : 'start'} />
                 </div>
               )}

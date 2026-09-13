@@ -569,3 +569,86 @@ describe('runToolLoop and the conversation link placeholder', () => {
     expect(result.text).not.toContain(CONVERSATION_LINK_PLACEHOLDER);
   });
 });
+
+/**
+ * The 2026-09-13 live bug: with `create_conversation_link` and `propose_email`
+ * both on the list it was handed, the model called neither and told the user it
+ * had no access to a link and no way to send email. Replaying the same transcript
+ * against the same model produced the correct chain 12 times running, so this is a
+ * sampling outcome rather than a prompt that forgot to say it — which is why the
+ * loop now gets one shot at making the model look again.
+ */
+describe('runToolLoop and a denied capability', () => {
+  /** What the live app actually said, so the test moves if the wording does. */
+  const REFUSAL =
+    "I can send you an email, but I don't have access to a link to this specific " +
+    "conversation — that's not something the system gives me.";
+
+  it('retries once when the model denies a capability it has, and keeps the second answer', async () => {
+    const link = readTool({ name: 'create_conversation_link', service: 'sharing' });
+    const { client, calls } = clientReturning([
+      textTurn(REFUSAL),
+      toolTurn({ name: 'create_conversation_link' }),
+      textTurn('Here it is — the link is good for 7 days.'),
+    ]);
+
+    const result = await run(registryOf(link), client);
+
+    expect(result.text).toBe('Here it is — the link is good for 7 days.');
+    expect(link.execute).toHaveBeenCalledOnce();
+    // Three round trips: the refusal, the retry that called the tool, the answer.
+    expect(result.iterations).toBe(3);
+
+    // The nudge is a transcript-only turn. It must name the tool the model
+    // claimed not to have, and must never be what the user reads.
+    const nudge = JSON.stringify(calls[1]?.messages ?? []);
+    expect(nudge).toContain('create_conversation_link');
+    expect(result.text).not.toMatch(/Before you answer/);
+  });
+
+  it('nudges at most once, so a model that stands by its answer is not looped', async () => {
+    const link = readTool({ name: 'create_conversation_link', service: 'sharing' });
+    // Every turn is the same refusal — the client repeats its last turn forever.
+    const { client } = clientReturning([textTurn(REFUSAL)]);
+
+    const result = await run(registryOf(link), client);
+
+    expect(result.text).toBe(REFUSAL);
+    expect(result.iterations).toBe(2);
+    expect(result.truncated).toBe(false);
+    expect(link.execute).not.toHaveBeenCalled();
+  });
+
+  it('does not argue with a failure a tool actually reported', async () => {
+    const email = readTool({
+      name: 'propose_email',
+      service: 'gmail',
+      execute: vi.fn(async () => ({ ok: false, summary: 'Gmail refused the message.' })),
+    });
+    const { client } = clientReturning([
+      toolTurn({ name: 'propose_email' }),
+      textTurn("Gmail wouldn't send that message, so it hasn't gone out."),
+    ]);
+
+    const result = await run(registryOf(email), client);
+
+    expect(result.text).toBe("Gmail wouldn't send that message, so it hasn't gone out.");
+    expect(result.iterations).toBe(2);
+  });
+
+  it('leaves a turn alone when there is no tool that could have helped', async () => {
+    const { client } = clientReturning([textTurn(REFUSAL)]);
+
+    const result = await runToolLoop({
+      client,
+      messages: [{ role: 'user', content: [{ text: 'mail me a link' }] }],
+      systemPrompt: 'be Valentin',
+      registry: registryOf(),
+      sessionId: 'sess-1',
+      userId: 'user-1',
+    });
+
+    expect(result.text).toBe(REFUSAL);
+    expect(result.iterations).toBe(1);
+  });
+});

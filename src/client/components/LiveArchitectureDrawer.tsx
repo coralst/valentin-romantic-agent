@@ -8,6 +8,8 @@ import { ENGINE_COPY, useArchitectureEngineContext } from '../context/architectu
 import { useFlowPlayback } from '../hooks/use-flow-playback';
 import { useFlowTraversal } from '../hooks/use-flow-traversal';
 import { PANEL_SLIDE_MS } from '../hooks/use-inspector-focus';
+import { useGlow } from '../context/glow-context';
+import type { GlowTarget } from '../utils/glow-target';
 import {
   defaultDemoFlowIdFor,
   demoFlow,
@@ -409,6 +411,15 @@ export function formatBeatTime(at: number | undefined): string | undefined {
 interface FeedEntry {
   key: string;
   beat: FlowBeat;
+  /**
+   * What this beat put on screen, carried beside the beat rather than inside it.
+   *
+   * `FlowBeat` is the shape a *scripted* step shares with a real one, and a
+   * scripted step produced nothing — it describes traffic that never happened. So
+   * the targets ride alongside, present on live entries and absent on demo ones,
+   * instead of adding a field to `FlowBeat` that authored flows could never fill.
+   */
+  targets?: readonly GlowTarget[];
 }
 
 interface ReplaySelection {
@@ -581,6 +592,13 @@ export function LiveArchitectureDrawer() {
    * and `clearOverride` is the way back out to whatever the traffic is doing now.
    */
   const { mode, hasLiveTraffic, isUserChosen, setMode, clearOverride } = useArchitectureMode();
+  /*
+   * The glow lives above this panel, not in it: the feed row that is pointed at is
+   * in the window's footer and the reply it lights up is inside the window, so
+   * neither end can own the state. Falls back to an inert value with no provider,
+   * which is what keeps the drawer's own unit tests from needing one.
+   */
+  const { pinnedKey, togglePin, preview } = useGlow();
   // The engine switch lives in the icon rail, next to the other things a presenter
   // reaches for mid-sentence; the drawer only reads the choice.
   const { engine, servingEngine, isDowngraded } = useArchitectureEngineContext();
@@ -626,7 +644,7 @@ export function LiveArchitectureDrawer() {
       // an action out of the log and replay it is worth more than the reveal.
       return flow.steps.map((step, index) => ({ key: `${flow.id}-${index}`, beat: step }));
     }
-    return live.beats.map((beat) => ({ key: beat.key, beat }));
+    return live.beats.map((beat) => ({ key: beat.key, beat, targets: beat.targets }));
   }, [isDemo, flow, live.beats]);
 
   /** Playback walks the replayed action when there is one, the script otherwise. */
@@ -759,7 +777,41 @@ export function LiveArchitectureDrawer() {
     // Absent on every demo step, for the same reason `traceId` is: a scripted beat
     // happened at no particular time.
     timeLabel: formatBeatTime(entry.beat.at),
+    targets: entry.targets,
   }));
+
+  /** The union of what a group's steps produced — a group is a run of them. */
+  const targetsForGroup = (group: FeedGroup): readonly GlowTarget[] =>
+    group.rows.flatMap((row) => row.targets ?? []);
+
+  const previewGroup = useCallback(
+    (group: FeedGroup | null) => {
+      preview(group ? { key: group.id, targets: targetsForGroup(group) } : null);
+    },
+    [preview],
+  );
+
+  const previewRow = useCallback(
+    (row: FeedRow | null) => {
+      preview(row ? { key: row.key, targets: row.targets ?? [] } : null);
+    },
+    [preview],
+  );
+
+  /**
+   * Hold one step's glow on.
+   *
+   * Only the steps do this on their own. Choosing a *group* is already the replay
+   * gesture, so the group's glow is pinned by `selectGroup` alongside it — one
+   * click, both things, because "replay this action" and "show me what it did" are
+   * the same request asked twice.
+   */
+  const pinRow = useCallback(
+    (row: FeedRow) => {
+      togglePin({ key: row.key, targets: row.targets ?? [] });
+    },
+    [togglePin],
+  );
 
   /**
    * Replay the chosen action, or step out of a replay by choosing it again.
@@ -770,6 +822,13 @@ export function LiveArchitectureDrawer() {
    */
   const selectGroup = useCallback(
     (group: FeedGroup) => {
+      /*
+       * Before the early return, so choosing the same group twice puts both halves
+       * back: the replay stops and the glow lets go. Leaving this below would strand
+       * a pulsing reply with nothing selected in the feed.
+       */
+      togglePin({ key: group.id, targets: targetsForGroup(group) });
+
       if (replay?.id === group.id) {
         setReplay(null);
         return;
@@ -782,7 +841,7 @@ export function LiveArchitectureDrawer() {
 
       setReplay({ id: group.id, label: `${group.actor} ${group.action}`, entries: chosen });
     },
-    [entries, replay?.id],
+    [entries, replay?.id, togglePin],
   );
 
   const exitReplay = useCallback(() => setReplay(null), []);
@@ -991,6 +1050,10 @@ export function LiveArchitectureDrawer() {
               emptyMessage={isDemo ? undefined : DRAWER_COPY.liveEmpty}
               onSelectGroup={selectGroup}
               selectedGroupId={replay?.id ?? null}
+              onHoverGroup={previewGroup}
+              onSelectRow={pinRow}
+              onHoverRow={previewRow}
+              glowingKey={pinnedKey}
             />
           </div>
         </section>

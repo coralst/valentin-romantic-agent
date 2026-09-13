@@ -11,6 +11,10 @@
  *   --out=PATH       JSONL destination. REQUIRED.
  *   --base=URL       origin. Defaults to the deployed CloudFront distribution.
  *   --limit=N        only the first N conversations (smoke tests).
+ *   --only=ID        a single conversation by corpus id, e.g. `c11-chatter-short`. Overrides
+ *                    --limit. Added for the cold-start probe, which needs to choose a
+ *                    stimulus by its tool-call behaviour rather than by corpus position;
+ *                    like --limit it marks the run `smoke`, so it can never be priced.
  *   --turns=N        only the first N turns of each conversation. Smoke tests ONLY — it
  *                    breaks the 120-turn usage assumption and the ordering contracts the
  *                    corpus documents, so a run using it is not a measurement.
@@ -77,6 +81,7 @@ interface Options {
   out: string;
   base: string;
   limit: number;
+  only: string | null;
   turnLimit: number;
   thinkMs: number;
   notifyEmail: string;
@@ -103,6 +108,7 @@ function parseArgs(argv: string[]): Options {
     out,
     base: (flags.get('base') ?? DEFAULT_BASE).replace(/\/+$/, ''),
     limit: Number(flags.get('limit') ?? EXPERIMENT_CONVERSATIONS.length),
+    only: flags.get('only') ?? null,
     turnLimit: Number(flags.get('turns') ?? Number.POSITIVE_INFINITY),
     thinkMs: Number(flags.get('think') ?? 4) * 1000,
     notifyEmail: flags.get('to') ?? DEFAULT_NOTIFY_EMAIL,
@@ -424,7 +430,12 @@ function percentile(values: number[], p: number): number {
 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
-  const conversations = EXPERIMENT_CONVERSATIONS.slice(0, options.limit);
+  const conversations = options.only
+    ? EXPERIMENT_CONVERSATIONS.filter((conversation) => conversation.id === options.only)
+    : EXPERIMENT_CONVERSATIONS.slice(0, options.limit);
+  if (options.only && conversations.length === 0) {
+    throw new Error(`--only=${options.only} matches no conversation in the corpus`);
+  }
   const recorder = new Recorder(options.out);
 
   const startedAt = now();

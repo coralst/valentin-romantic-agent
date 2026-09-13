@@ -166,6 +166,57 @@ export function MessageHistory({
 
   const lastMessage = messages[messages.length - 1];
 
+  /**
+   * Which cards sit under which message, and which are still live at the foot.
+   *
+   * A card is raised mid-turn, so it is born with no anchor and belongs at the
+   * tail — nothing renders below it, so its arrival cannot push the sentence being
+   * read off the screen. Once the turn's reply lands the reducer anchors it, and
+   * from then on it renders beside that exchange. Before this, `proposals` was
+   * rendered at the tail unconditionally and every card ever raised stayed stacked
+   * above the composer for the life of the session, detached from the conversation
+   * that produced it.
+   *
+   * An anchor naming a message this transcript does not hold falls back to the
+   * tail rather than vanishing: a Confirm button that is not on screen at all is
+   * far worse than one in the wrong place.
+   */
+  const { anchoredProposals, liveProposals } = useMemo(() => {
+    const known = new Set(messages.map((msg) => msg.id));
+    const anchored = new Map<string, ProposalEntry[]>();
+    const live: ProposalEntry[] = [];
+
+    for (const entry of proposals) {
+      const anchor = entry.anchorMessageId;
+      if (anchor === null || !known.has(anchor)) {
+        live.push(entry);
+        continue;
+      }
+      const bucket = anchored.get(anchor);
+      if (bucket) bucket.push(entry);
+      else anchored.set(anchor, [entry]);
+    }
+
+    return { anchoredProposals: anchored, liveProposals: live };
+  }, [messages, proposals]);
+
+  /**
+   * One card, rendered identically wherever it sits.
+   *
+   * A card anchored under its turn and a card still live at the foot are the same
+   * card in the same state — only its position differs — so there is one call
+   * site's worth of markup and no chance of the two drifting apart.
+   */
+  const renderProposal = (entry: ProposalEntry) => (
+    <ProposalCard
+      key={entry.proposal.proposalId}
+      proposal={entry.proposal}
+      status={entry.status}
+      onConfirm={(id) => onConfirmProposal?.(id)}
+      onDismiss={(id) => onDismissProposal?.(id)}
+    />
+  );
+
   useEffect(() => {
     const fresh = visiblePreferences.filter(
       (pref) =>
@@ -308,6 +359,9 @@ export function MessageHistory({
                   <NotedBadge values={noted} align={msg.sender === 'user' ? 'end' : 'start'} />
                 </div>
               )}
+              {/* The cards raised by this turn, staying beside it as the
+                  conversation carries on past them. */}
+              {anchoredProposals.get(msg.id)?.map((entry) => renderProposal(entry))}
             </div>
           );
         })}
@@ -318,21 +372,14 @@ export function MessageHistory({
         */}
         <LearnedStatus announcement={announcement} />
         {/*
-          Proposals sit at the tail rather than beside the message that raised
-          them, for the same reason: nothing renders below the newest one, so a
-          card appearing cannot push the sentence being read up off the screen.
-          They are also the live part of the transcript — whatever is still
-          awaiting a yes should be the last thing on screen.
+          Only the cards with nowhere to sit yet. A proposal arrives mid-turn, so
+          for the rest of that turn it lives here: nothing renders below it, so its
+          appearing cannot push the sentence being read up off the screen, and
+          whatever is still awaiting a yes is the last thing on screen. The reply
+          that ends the turn anchors it, and it moves up beside that exchange —
+          which is where it stays, however long the conversation runs on.
         */}
-        {proposals.map((entry) => (
-          <ProposalCard
-            key={entry.proposal.proposalId}
-            proposal={entry.proposal}
-            status={entry.status}
-            onConfirm={(id) => onConfirmProposal?.(id)}
-            onDismiss={(id) => onDismissProposal?.(id)}
-          />
-        ))}
+        {liveProposals.map((entry) => renderProposal(entry))}
         {/*
           Last, below the transient line and the cards, so the two things whose
           whole design premise is "nothing renders under me" keep it. The trail

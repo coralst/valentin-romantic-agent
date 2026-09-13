@@ -14,24 +14,26 @@ import type { IntegrationId } from '../../shared/interfaces/integrations';
  * process and Ontopo's availability endpoints need no authentication, so they
  * are live on every deployment and have nothing to connect. A recipe for them
  * would be a form that does nothing.
+ *
+ * Amadeus and WhatsApp used to have recipes here and no longer do, for the same
+ * reason their catalogue rows went: a form that hands over credentials for a row
+ * the panel does not offer is unreachable code that only looks like a feature.
+ * The server integrations still exist — see `src/server/integrations` — so
+ * restoring either is a catalogue row plus a recipe, not a rewrite.
  */
 
 /** The services whose credentials can be handed over from inside the app. */
-export type ConnectableId = 'amadeus' | 'whatsapp' | 'google' | 'spotify';
+export type ConnectableId = 'google' | 'spotify';
 
 /**
  * Which connect flow backs an integration id.
  *
  * Calendar and Gmail both map to `google` because they share one refresh token:
  * signing in once configures both, and offering two identical buttons would
- * suggest otherwise. Returns null for the two that need nothing.
+ * suggest otherwise. Returns null for everything the panel cannot connect.
  */
 export function connectableFor(id: IntegrationId): ConnectableId | null {
   switch (id) {
-    case 'amadeus':
-      return 'amadeus';
-    case 'whatsapp':
-      return 'whatsapp';
     case 'spotify':
       return 'spotify';
     case 'google-calendar':
@@ -98,19 +100,6 @@ export const CONNECT_RECIPES: Record<ConnectableId, ConnectRecipe> = {
     caution:
       'You will be asked to approve two scopes: read your calendar events, and send mail as you. Valentin never reads your inbox — sending is all it asks for, and every message still waits for you to press Confirm.',
   },
-  amadeus: {
-    id: 'amadeus',
-    provider: 'Amadeus',
-    fields: [
-      { name: 'clientId', label: 'API key', secret: false },
-      { name: 'clientSecret', label: 'API secret', secret: true },
-    ],
-    where:
-      'Amadeus for Developers → My Self-Service Workspace → your app. The free test keys are enough.',
-    href: 'https://developers.amadeus.com/my-apps',
-    caution:
-      'This build talks to the Amadeus test sandbox, so hotel and activity results are representative rather than bookable. Pointing it at production is a deliberate change, because those endpoints spend real money.',
-  },
   spotify: {
     id: 'spotify',
     provider: 'Spotify',
@@ -133,18 +122,5 @@ export const CONNECT_RECIPES: Record<ConnectableId, ConnectRecipe> = {
     needsConsent: true,
     caution:
       'Signing in asks for one scope — playlist-modify-private — and nothing else: he cannot read your listening history, and every playlist he makes is private. Whatever account you approve is the library the playlists land in, so use a spare rather than your main. Skip the sign-in and he can still choose the songs; he just hands them to you as links instead of saving them.',
-  },
-  whatsapp: {
-    id: 'whatsapp',
-    provider: 'WhatsApp',
-    fields: [
-      { name: 'phoneNumberId', label: 'Phone number ID', secret: false },
-      { name: 'token', label: 'Access token', secret: true },
-    ],
-    where:
-      'Meta for Developers → your app → WhatsApp → API Setup. Both values are on that page.',
-    href: 'https://developers.facebook.com/apps',
-    caution:
-      'A message sent outside a 24-hour reply window has to use a template Meta has approved, and that review takes days. Until one is approved, connecting proves the credentials work but a nudge will be refused.',
   },
 };

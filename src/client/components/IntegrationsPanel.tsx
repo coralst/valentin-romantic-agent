@@ -16,6 +16,11 @@ import { useSharedIntegrationReadiness } from '../context/integration-readiness-
 import { INTEGRATION_LABELS } from '../../shared/interfaces/integrations';
 import { IntegrationConsentSheet } from './IntegrationConsentSheet';
 import { useIntegrationConnect } from '../hooks/use-integration-connect';
+import {
+  IntegrationHealthDot,
+  healthAnchorStyle,
+  integrationHealth,
+} from './IntegrationHealthDot';
 
 /**
  * "What Valentin can reach": the agent at the hub, every capability fanning out
@@ -583,6 +588,7 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
             const connected = isConnected(service.id);
             const reach = capabilityReadiness(service.backing, readiness);
             const badge = readinessLabel(reach, service, readiness);
+            const health = integrationHealth(reach, readiness.state);
             return (
               <li key={service.id}>
                 <button
@@ -591,14 +597,22 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
                   onClick={() => open(service)}
                   data-testid={`integration-card-${service.id}`}
                   data-reach={reach}
+                  data-health={health}
                   aria-label={`${service.name}, ${connectionLabel(
                     connected,
                     reach,
                     state.grants[service.id]?.capUsd,
                   ).toLowerCase()}`}
                 >
-                  <span style={brandTileStyle(connected)} aria-hidden="true">
-                    <BrandMark id={service.mark} />
+                  <span style={healthAnchorStyle}>
+                    <span style={brandTileStyle(connected)} aria-hidden="true">
+                      <BrandMark id={service.mark} />
+                    </span>
+                    <IntegrationHealthDot
+                      health={health}
+                      name={service.name}
+                      testId={`integration-health-${service.id}`}
+                    />
                   </span>
                   <span style={{ minWidth: 0 }}>
                     <span style={nodeNameStyle}>{service.name}</span>
@@ -673,6 +687,7 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
             const connected = isConnected(service.id);
             const reach = capabilityReadiness(service.backing, readiness);
             const badge = readinessLabel(reach, service, readiness);
+            const health = integrationHealth(reach, readiness.state);
             const { x, y } = nodeLayout(index, total, size.width, fanHeight);
             return (
               <button
@@ -683,14 +698,22 @@ export function IntegrationsPanel({ isMobile, onClose }: IntegrationsPanelProps)
                 data-testid={`integration-node-${service.id}`}
                 data-connected={connected}
                 data-reach={reach}
+                data-health={health}
                 aria-label={`${service.name}, ${connectionLabel(
                   connected,
                   reach,
                   state.grants[service.id]?.capUsd,
                 ).toLowerCase()}`}
               >
-                <span style={brandTileStyle(connected)} aria-hidden="true">
-                  <BrandMark id={service.mark} />
+                <span style={healthAnchorStyle}>
+                  <span style={brandTileStyle(connected)} aria-hidden="true">
+                    <BrandMark id={service.mark} />
+                  </span>
+                  <IntegrationHealthDot
+                    health={health}
+                    name={service.name}
+                    testId={`integration-health-${service.id}`}
+                  />
                 </span>
                 <span style={{ minWidth: 0 }}>
                   <span style={nodeNameStyle}>{service.name}</span>

@@ -103,10 +103,11 @@ test.describe('Her file — the board', () => {
   test('fills every tile from the seeded profile', async ({ page }) => {
     await seedAndOpenHerFile(page);
 
-    // The measurements card, including the Hebrew row, right-to-left.
+    // The measurements card: both rows drawn from the seed, each with its own
+    // qualifier under the label.
     const sizes = page.getByTestId('dossier-her-sizes');
-    await expect(sizes).toContainText('34B');
-    await expect(sizes.locator('[lang="he"]')).toHaveAttribute('dir', 'rtl');
+    await expect(sizes).toContainText('UK 10');
+    await expect(sizes).toContainText('38 cm');
 
     // Four named swatches, the first of them the lead.
     await expect(page.getByTestId('palette-swatch')).toHaveCount(4);
@@ -146,7 +147,7 @@ test.describe('Her file — the board', () => {
   });
 
   test('has no progress meter anywhere in the window', async ({ page }) => {
-    // "21 of 21 known" was a score for the app rather than a fact about her, and it
+    // "20 of 20 known" was a score for the app rather than a fact about her, and it
     // was charged twice — in the board's header and in the rail's tally.
     await seedAndOpenHerFile(page);
     await expect(page.getByRole('progressbar')).toHaveCount(0);

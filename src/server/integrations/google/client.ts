@@ -321,10 +321,33 @@ export async function listEvents(query: EventSearchQuery): Promise<CalendarEvent
   const reachable = perCalendar.filter((events): events is CalendarEvent[] => events !== null);
   if (reachable.length === 0) return null;
 
-  return reachable
-    .flat()
+  return dedupe(reachable.flat())
     .sort((a, b) => a.start.localeCompare(b.start))
     .slice(0, limit);
+}
+
+/**
+ * Collapse the same entry appearing on two calendars into one row.
+ *
+ * Subscribed feeds overlap: this account holds both "Holidays in Israel" and its
+ * Hebrew twin "חגים בישראל", so every holiday arrived twice. That is not merely
+ * untidy — the fan-out is capped at `limit` rows *after* sorting by start, and
+ * all-day holidays sort ahead of timed appointments. Twenty of twenty-five rows
+ * went to holidays, fourteen of them exact duplicates, and the user's real diary
+ * was truncated away behind them. The model was then told, accurately, that it
+ * could see one appointment and a wall of festivals.
+ *
+ * Title plus start instant is the identity that matters here: two things with the
+ * same name at the same moment are one thing to the person being asked about them.
+ */
+function dedupe(events: CalendarEvent[]): CalendarEvent[] {
+  const seen = new Set<string>();
+  return events.filter((event) => {
+    const key = `${event.start} ${event.summary}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /** Events from one named calendar. `null` if that calendar could not be read. */

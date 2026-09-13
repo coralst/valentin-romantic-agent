@@ -429,6 +429,120 @@ describe('find_occasions', () => {
 
     expect(calls.every((call) => call.method === 'GET' || call.url.includes(TOKEN_URL))).toBe(true);
   });
+
+  /**
+   * The bug this guards is the one that made the app lie about a real event.
+   *
+   * A 17:00 entry was described to the model as "14:00" because the container runs
+   * UTC, so when the user asked whether the evening of the 23rd was free the model
+   * saw an afternoon appointment, reasoned correctly, and said yes. Rendering in a
+   * fixed zone is the fix; asserting across process zones is what keeps it fixed,
+   * because the wrong version passes on any laptop set to Israel time.
+   */
+  it('describes event times in Israel time whatever zone the process runs in', async () => {
+    const original = process.env.TZ;
+    const rendered: Record<string, string> = {};
+
+    try {
+      for (const tz of ['UTC', 'Asia/Jerusalem', 'America/Los_Angeles', 'Pacific/Kiritimati']) {
+        process.env.TZ = tz;
+        calls = [];
+        resetGoogleTokenCache();
+        stubEverything();
+        rendered[tz] = (await findOccasionsTool.execute({}, ctx)).summary;
+      }
+    } finally {
+      process.env.TZ = original;
+    }
+
+    // 09:30+03:00 is 09:30 in Israel and 06:30 in the container. The model must be
+    // told the former.
+    for (const [tz, summary] of Object.entries(rendered)) {
+      expect(summary, `wrong hour under TZ=${tz}`).toContain('09:30');
+      expect(summary, `rendered in the process zone under TZ=${tz}`).not.toContain('06:30');
+    }
+    expect(new Set(Object.values(rendered)).size).toBe(1);
+  });
+
+  it('reads on_date as one Israeli civil day and does not search for it', async () => {
+    stubEverything();
+    await findOccasionsTool.execute({ on_date: '2026-09-23' }, ctx);
+    const url = calls.at(-1)!.url;
+
+    // Israel is +03:00 in September, so the civil day runs 21:00Z to 21:00Z.
+    expect(url).toContain(`timeMin=${encodeURIComponent('2026-09-22T21:00:00.000Z')}`);
+    expect(url).toContain(`timeMax=${encodeURIComponent('2026-09-23T21:00:00.000Z')}`);
+    expect(url).not.toContain('q=');
+  });
+
+  /**
+   * Asked "is the 23rd free?", a model with no date argument puts the date in
+   * `query` — and `query` becomes Google's free-text `q`, which matches titles, not
+   * dates. It found nothing every time, and "nothing matches" was relayed to the
+   * user as "your calendar is free".
+   */
+  it('treats a date-shaped query as a date rather than a search term', async () => {
+    stubEverything();
+    await findOccasionsTool.execute({ query: '2026-09-23' }, ctx);
+    const url = calls.at(-1)!.url;
+
+    expect(url).not.toContain('q=');
+    expect(url).toContain(`timeMin=${encodeURIComponent('2026-09-22T21:00:00.000Z')}`);
+  });
+
+  it('does not let a fruitless text search pass as proof that a day is free', async () => {
+    stubFetch((url) => (url.includes(TOKEN_URL) ? TOKEN_OK : { items: [] }));
+    const result = await findOccasionsTool.execute({ query: '23 September' }, ctx);
+
+    // "23 September" is not a word in any title, so `q` finds nothing — and the old
+    // wording of this branch was what the model turned into "your calendar is free".
+    expect(result.summary).toContain('searched TEXT, not dates');
+    expect(result.summary).toContain('on_date');
+  });
+
+  it('answers a free day instead of asking the user for the date it was given', async () => {
+    stubFetch((url) => (url.includes(TOKEN_URL) ? TOKEN_OK : { items: [] }));
+    const result = await findOccasionsTool.execute({ on_date: '2026-09-23' }, ctx);
+
+    expect(result.ok).toBe(true);
+    expect(result.summary).toContain('2026-09-23');
+    expect(result.summary).toContain('genuinely free');
+    expect(result.summary).not.toContain('Ask the user for the date');
+  });
+
+  it('spends the row budget on the diary, not on a calendar subscribed to twice', async () => {
+    // Two holiday feeds carrying the same entries, plus one real appointment —
+    // which is this account's actual shape, and how a real diary got truncated
+    // away behind fourteen duplicate festivals.
+    const holidays = Array.from({ length: 25 }, (_, i) => ({
+      id: `h-${i}`,
+      summary: `Holiday ${i}`,
+      start: { date: `2026-09-${String(i + 1).padStart(2, '0')}` },
+    }));
+    stubFetch((url) => {
+      if (url.includes(TOKEN_URL)) return TOKEN_OK;
+      if (url.includes('calendarList')) {
+        return {
+          items: [
+            { id: 'en@group.calendar.google.com', summary: 'Holidays in Israel' },
+            { id: 'he@group.calendar.google.com', summary: 'חגים בישראל' },
+            { id: 'primary', summary: 'me@example.test', primary: true },
+          ],
+        };
+      }
+      if (url.includes('/calendars/primary/events')) {
+        return { items: [{ id: 'real', summary: 'busy evening', start: { dateTime: '2026-09-23T17:00:00+03:00' } }] };
+      }
+      return { items: holidays };
+    });
+
+    const result = await findOccasionsTool.execute({}, ctx);
+    const data = result.data as { events: Array<{ summary: string }> };
+
+    expect(data.events.filter((event) => event.summary === 'Holiday 0')).toHaveLength(1);
+    expect(result.summary).toContain('busy evening');
+    expect(result.summary).toContain('17:00');
+  });
 });
 
 describe('propose_calendar_event', () => {

@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import { REMINDER_ZONE } from '../../../shared/interfaces/reminder';
 import type { ActionProposal, AgentTool, ToolContext, ToolResult } from '../tool-registry';
+import { inZone, parseInZone } from '../hebcal/client';
+import { checkAvailability } from './availability';
 import {
   GOOGLE_PROPOSAL_TTL_MS,
   insertEvent,
@@ -7,8 +10,6 @@ import {
   sendMessage,
   type CalendarEvent,
 } from './client';
-import { REMINDER_ZONE } from '../../../shared/interfaces/reminder';
-import { parseInZone } from '../hebcal/client';
 import {
   NOTIFY_EMAIL_FIELD,
   looksLikeEmail,
@@ -92,16 +93,25 @@ function localDate(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+/**
+ * Which day the model meant, resolved in Israel time.
+ *
+ * Deliberately not the process timezone. A bare `YYYY-MM-DD` anchors to local noon
+ * so no offset can drag it either side of midnight, and a full timestamp is read in
+ * {@link REMINDER_ZONE} — because in a container running UTC, a `23:30+03:00` that
+ * the user means as tonight resolves to 20:30 the same day by luck, and a
+ * `00:30+03:00` they mean as tomorrow resolves to the day before.
+ */
 function parseDate(value: unknown): { iso: string; readable: string } | null {
   if (typeof value !== 'string' || value.trim() === '') return null;
   const text = value.trim();
-  const bare = /^\d{4}-\d{2}-\d{2}$/.test(text);
-  const parsed = new Date(bare ? `${text}T12:00:00` : text);
-  if (Number.isNaN(parsed.getTime())) return null;
+  const at = /^\d{4}-\d{2}-\d{2}$/.test(text) ? parseInZone(text, REMINDER_ZONE) : new Date(text);
+  if (at === null || Number.isNaN(at.getTime())) return null;
 
   return {
-    iso: localDate(parsed),
-    readable: parsed.toLocaleDateString('en-GB', {
+    iso: inZone(at, REMINDER_ZONE).localDate,
+    readable: at.toLocaleDateString('en-GB', {
+      timeZone: REMINDER_ZONE,
       weekday: 'long',
       day: 'numeric',
       month: 'long',
@@ -137,29 +147,52 @@ function addMinutes(localIso: string, minutes: number): string {
 }
 
 /**
- * One event as a line the model reads.
+ * When an event runs, in Israel time, as the model should read it.
  *
- * `timeZone` is not optional and the reason is worth the comment: without it
- * `toLocaleString` renders in *the process's* zone, which is Asia/Jerusalem on the
- * laptop this was written on and UTC in the container it runs in. A 17:00 event
- * was therefore described to the model as "14:00" in production only — so when the
- * user asked whether the evening of the 23rd was free, the model looked at an
- * afternoon entry, correctly concluded it did not clash with an evening, and told
- * them their calendar was clear. The event was right there in the tool result. The
- * three hours were the whole bug, and it was invisible anywhere it would be tested
- * by hand.
+ * The `timeZone` is not decoration. Without it `toLocaleString` renders in the
+ * *process* timezone, and the container this ships in runs UTC while every event
+ * in this account is `+03:00` — so the model was told a working day that starts at
+ * 08:00 began at 05:00, and reported that to the user with total confidence. It
+ * looked correct in local development for the worst possible reason: a laptop set
+ * to Asia/Jerusalem agrees with the data by coincidence.
+ *
+ * The end time is included because a start alone cannot answer the only question
+ * ever asked of the diary — whether some later hour is free.
  */
+function describeSpan(event: CalendarEvent): string {
+  const startAt = new Date(event.start);
+  const startText = startAt.toLocaleString('en-GB', {
+    timeZone: REMINDER_ZONE,
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  const endAt = new Date(event.end);
+  if (Number.isNaN(endAt.getTime()) || endAt <= startAt) return startText;
+
+  const sameDay =
+    inZone(startAt, REMINDER_ZONE).localDate === inZone(endAt, REMINDER_ZONE).localDate;
+  const endText = endAt.toLocaleString('en-GB', {
+    timeZone: REMINDER_ZONE,
+    ...(sameDay ? {} : { weekday: 'short', day: 'numeric', month: 'short' }),
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  return `${startText}–${endText}`;
+}
+
+/** "16:00, 18:00 or 20:00" — read aloud by the model, so it reads like a sentence. */
+function listOptions(options: string[]): string {
+  if (options.length <= 1) return options.join('');
+  return `${options.slice(0, -1).join(', ')} or ${options[options.length - 1]}`;
+}
+
 function describeEvent(event: CalendarEvent): string {
-  const when = event.allDay
-    ? event.start
-    : new Date(event.start).toLocaleString('en-GB', {
-        timeZone: REMINDER_ZONE,
-        weekday: 'short',
-        day: 'numeric',
-        month: 'short',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
+  const when = event.allDay ? event.start : describeSpan(event);
   const where = event.location ? ` (${event.location})` : '';
   // The calendar name is worth its tokens: the user asks "did you check Yonatan &
   // Coral?" by name, and the model can only answer that if it was told.
@@ -324,7 +357,10 @@ export const proposeCalendarEventTool: AgentTool = {
     "Offer to add something to the user's Google Calendar — a dinner " +
     'reservation, a reminder to buy flowers, the occasion itself. This does NOT ' +
     'write anything: it shows a card, and the entry is created only after they ' +
-    'confirm. Omit the time for an all-day entry like an anniversary.',
+    'confirm. Omit the time for an all-day entry like an anniversary. ' +
+    'For a timed entry it checks the calendar first: if the slot is already taken ' +
+    'it offers no card and comes back with the clash and some free times instead, ' +
+    'so you can tell the user and let them pick.',
   input_schema: {
     type: 'object',
     properties: {
@@ -340,6 +376,12 @@ export const proposeCalendarEventTool: AgentTool = {
       },
       location: { type: 'string', description: 'Where, if it has a place.' },
       notes: { type: 'string', description: 'Anything else to put in the entry body.' },
+      ignore_conflicts: {
+        type: 'boolean',
+        description:
+          'Only set this after you have told the user about a clash and they have ' +
+          'said to book it anyway. Skips the availability check.',
+      },
     },
     required: ['title', 'date'],
   },
@@ -373,6 +415,44 @@ export const proposeCalendarEventTool: AgentTool = {
 
     const location = typeof input.location === 'string' && input.location.trim() ? input.location.trim() : undefined;
     const notes = typeof input.notes === 'string' && input.notes.trim() ? input.notes.trim() : undefined;
+
+    // Read the diary before offering the slot, not after.
+    //
+    // Skipped for an all-day entry, which cannot double-book anything, and when the
+    // user has already been told about a clash and said to go ahead. A `null` report
+    // means the calendar could not be read — that must not block the offer, so the
+    // proposal goes out and the model is simply not told the slot was checked.
+    if (!allDay && input.ignore_conflicts !== true) {
+      const availability = await checkAvailability({ startLocal: start, endLocal: end });
+
+      if (availability && availability.clashes.length > 0) {
+        const clashText = availability.clashes.map(describeEvent).join(' | ');
+        const options = availability.alternatives;
+
+        return {
+          ok: true,
+          summary:
+            `Did NOT offer "${title}" for ${date.readable} at ${time} — the diary already has ` +
+            `something in that slot: ${clashText}. Tell the user about the clash, name what is ` +
+            `in the way and when it ends, and ` +
+            (options.length > 0
+              ? `offer ${listOptions(options)} instead (free that day). Call this tool again ` +
+                `with whichever they pick.`
+              : `ask what they would like to do — nothing else fits on that day between ` +
+                `08:00 and 23:00, so suggest another day.`) +
+            ` If they say to book it anyway, call this tool again with ignore_conflicts true.`,
+          data: {
+            conflict: true,
+            clashes: availability.clashes.map((event) => ({
+              summary: event.summary,
+              start: event.start,
+              end: event.end,
+            })),
+            alternatives: options,
+          },
+        };
+      }
+    }
 
     const when = allDay ? date.readable : `${date.readable} at ${time}`;
     const proposal: ActionProposal = {

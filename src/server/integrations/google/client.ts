@@ -115,8 +115,32 @@ export interface CalendarEvent {
   summary: string;
   /** `YYYY-MM-DD` for an all-day entry, an ISO timestamp otherwise. */
   start: string;
+  /**
+   * When it finishes, same spelling as {@link start}.
+   *
+   * Absent from this shape until it caused the bug it now prevents: a working day
+   * blocked out 08:00–16:00 was handed to the model as "08:00" and nothing else,
+   * so a 13:00 dinner looked like it landed in an empty afternoon. An event's
+   * *start* alone cannot answer "is the user free then", which is the only
+   * question the diary is ever consulted for.
+   *
+   * Falls back to `start` when Google omits it — a zero-length entry overlaps
+   * nothing, which is the safe reading of "we do not know how long this runs".
+   * For an all-day entry Google's `end` date is exclusive, as it is on the way in.
+   */
+  end: string;
   /** True when Google returned a `date` rather than a `dateTime`. */
   allDay: boolean;
+  /**
+   * Whether this entry actually occupies its owner.
+   *
+   * False for anything Google marks "free" (`transparency: 'transparent'`), which
+   * is how subscribed feeds and most holiday entries are published. Those belong
+   * in the diary the model reads — Yom Kippur changes what to suggest — but they
+   * must not be treated as a double booking, or every suggestion in a holiday
+   * month gets refused for a clash that does not exist.
+   */
+  busy: boolean;
   location?: string;
   /**
    * Which calendar this came out of, for the model to attribute it.
@@ -260,14 +284,26 @@ function readEvent(raw: unknown): CalendarEvent | null {
     id?: unknown;
     summary?: unknown;
     location?: unknown;
+    status?: unknown;
+    transparency?: unknown;
     start?: { date?: unknown; dateTime?: unknown };
+    end?: { date?: unknown; dateTime?: unknown };
   };
   if (typeof record.id !== 'string') return null;
+  // A cancelled instance of a recurring series still comes back on some feeds.
+  // Reporting it is worse than dropping it: the user deleted that occurrence, and
+  // being told they are busy then is a clash they cannot find in their own diary.
+  if (record.status === 'cancelled') return null;
 
   const date = record.start?.date;
   const dateTime = record.start?.dateTime;
   const start = typeof dateTime === 'string' ? dateTime : typeof date === 'string' ? date : '';
   if (start === '') return null;
+
+  const endDate = record.end?.date;
+  const endDateTime = record.end?.dateTime;
+  const end =
+    typeof endDateTime === 'string' ? endDateTime : typeof endDate === 'string' ? endDate : start;
 
   return {
     id: record.id,
@@ -275,7 +311,9 @@ function readEvent(raw: unknown): CalendarEvent | null {
     // else, so it gets a name here rather than an empty string downstream.
     summary: typeof record.summary === 'string' && record.summary ? record.summary : '(untitled)',
     start,
+    end,
     allDay: typeof date === 'string',
+    busy: record.transparency !== 'transparent',
     location: typeof record.location === 'string' ? record.location : undefined,
   };
 }
@@ -321,33 +359,44 @@ export async function listEvents(query: EventSearchQuery): Promise<CalendarEvent
   const reachable = perCalendar.filter((events): events is CalendarEvent[] => events !== null);
   if (reachable.length === 0) return null;
 
-  return dedupe(reachable.flat())
-    .sort((a, b) => a.start.localeCompare(b.start))
-    .slice(0, limit);
+  return mergeFairly(reachable, limit).sort((a, b) => a.start.localeCompare(b.start));
 }
 
 /**
- * Collapse the same entry appearing on two calendars into one row.
+ * Spend the result budget across calendars rather than across the first fortnight.
  *
- * Subscribed feeds overlap: this account holds both "Holidays in Israel" and its
- * Hebrew twin "חגים בישראל", so every holiday arrived twice. That is not merely
- * untidy — the fan-out is capped at `limit` rows *after* sorting by start, and
- * all-day holidays sort ahead of timed appointments. Twenty of twenty-five rows
- * went to holidays, fourteen of them exact duplicates, and the user's real diary
- * was truncated away behind them. The model was then told, accurately, that it
- * could see one appointment and a wall of festivals.
+ * A flat sort-then-slice looks right and is not. This account subscribes to the
+ * Israeli holiday feed twice — once in Hebrew, once in English — and between them
+ * they publish an entry on most days of Tishrei. Sorted chronologically and cut at
+ * 25, a 120-day window ended on day 18 and held nothing but holidays: the marathon
+ * trip, the flights, six hotel stays, two restaurant bookings and two court dates
+ * were all past the cut. The model was told, accurately, that it had been handed 25
+ * events, and had no way to notice that none of them were the user's own diary.
  *
- * Title plus start instant is the identity that matters here: two things with the
- * same name at the same moment are one thing to the person being asked about them.
+ * Taking one from each calendar in turn means a quiet personal calendar is still
+ * represented next to a noisy subscription.
  */
-function dedupe(events: CalendarEvent[]): CalendarEvent[] {
+function mergeFairly(perCalendar: CalendarEvent[][], limit: number): CalendarEvent[] {
+  const taken: CalendarEvent[] = [];
   const seen = new Set<string>();
-  return events.filter((event) => {
-    const key = `${event.start} ${event.summary}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  const longest = perCalendar.reduce((max, events) => Math.max(max, events.length), 0);
+
+  for (let index = 0; index < longest && taken.length < limit; index += 1) {
+    for (const events of perCalendar) {
+      if (taken.length >= limit) break;
+      const event = events[index];
+      if (!event) continue;
+      // Those two holiday feeds are one feed in two languages, and both publish
+      // English titles, so the same day arrives twice under the same name. One row
+      // per occasion: the duplicate spends budget telling the model what it knows.
+      const key = `${event.summary}|${event.start}|${event.end}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      taken.push(event);
+    }
+  }
+
+  return taken;
 }
 
 /** Events from one named calendar. `null` if that calendar could not be read. */

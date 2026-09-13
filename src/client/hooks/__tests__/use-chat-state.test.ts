@@ -251,7 +251,95 @@ describe('chatReducer — proposals', () => {
   it('holds a proposal open when it arrives', () => {
     const next = chatReducer(stateOn('sess-1'), { type: 'RECEIVE_PROPOSAL', proposal });
 
-    expect(next.proposals).toEqual([{ proposal, status: 'open' }]);
+    // Unanchored: the reply this card belongs under has not been said yet, so for
+    // now it lives at the foot of the transcript.
+    expect(next.proposals).toEqual([{ proposal, status: 'open', anchorMessageId: null }]);
+  });
+
+  /**
+   * A card belongs to the exchange that raised it, and stays there.
+   *
+   * `onProposal` fires from inside the agent loop, so a card arrives before the
+   * reply that describes it. It sits at the foot of the transcript until that
+   * reply lands, then anchors to it — which is what keeps it beside its own turn
+   * once the conversation has run on past it. Without the anchor every card ever
+   * raised stacked above the composer for the life of the session.
+   */
+  function agentMessage(id: string, timestamp: string): ChatMessage {
+    return {
+      id,
+      sessionId: 'sess-1',
+      sender: 'agent',
+      content: 'Here is what I found.',
+      timestamp,
+    };
+  }
+
+  it("anchors an open proposal to the reply that ends its turn", () => {
+    const open = chatReducer(stateOn('sess-1'), { type: 'RECEIVE_PROPOSAL', proposal });
+
+    const next = chatReducer(open, {
+      type: 'RECEIVE_MESSAGE',
+      message: agentMessage('msg-1', '2026-09-05T18:00:00.000Z'),
+    });
+
+    expect(next.proposals[0]?.anchorMessageId).toBe('msg-1');
+  });
+
+  it('leaves an anchored proposal where it is when later replies arrive', () => {
+    let state = chatReducer(stateOn('sess-1'), { type: 'RECEIVE_PROPOSAL', proposal });
+    state = chatReducer(state, {
+      type: 'RECEIVE_MESSAGE',
+      message: agentMessage('msg-1', '2026-09-05T18:00:00.000Z'),
+    });
+    state = chatReducer(state, {
+      type: 'RECEIVE_MESSAGE',
+      message: agentMessage('msg-2', '2026-09-05T18:05:00.000Z'),
+    });
+
+    // The bug this fixes: dragging the card forward to every new reply is exactly
+    // how it ended up permanently pinned above the composer.
+    expect(state.proposals[0]?.anchorMessageId).toBe('msg-1');
+  });
+
+  it('anchors each proposal to its own turn', () => {
+    const second = { ...proposal, proposalId: 'p2' };
+    let state = chatReducer(stateOn('sess-1'), { type: 'RECEIVE_PROPOSAL', proposal });
+    state = chatReducer(state, {
+      type: 'RECEIVE_MESSAGE',
+      message: agentMessage('msg-1', '2026-09-05T18:00:00.000Z'),
+    });
+    state = chatReducer(state, { type: 'RECEIVE_PROPOSAL', proposal: second });
+    state = chatReducer(state, {
+      type: 'RECEIVE_MESSAGE',
+      message: agentMessage('msg-2', '2026-09-05T18:05:00.000Z'),
+    });
+
+    expect(state.proposals.map((entry) => entry.anchorMessageId)).toEqual([
+      'msg-1',
+      'msg-2',
+    ]);
+  });
+
+  it('keeps a resolved proposal anchored where it was raised', () => {
+    let state = chatReducer(stateOn('sess-1'), { type: 'RECEIVE_PROPOSAL', proposal });
+    state = chatReducer(state, {
+      type: 'RECEIVE_MESSAGE',
+      message: agentMessage('msg-1', '2026-09-05T18:00:00.000Z'),
+    });
+    state = chatReducer(state, {
+      type: 'RESOLVE_PROPOSAL',
+      proposalId: 'p1',
+      status: 'confirmed',
+    });
+
+    // Confirming is what the user reported seeing break: the card jumped to the
+    // bottom and stayed there.
+    expect(state.proposals[0]).toEqual({
+      proposal,
+      status: 'confirmed',
+      anchorMessageId: 'msg-1',
+    });
   });
 
   it('drops a proposal addressed to another conversation', () => {
@@ -280,7 +368,9 @@ describe('chatReducer — proposals', () => {
 
     // Kept, not deleted: this is the only record in the transcript that a table
     // was actually booked.
-    expect(next.proposals).toEqual([{ proposal, status: 'confirmed' }]);
+    expect(next.proposals).toEqual([
+      { proposal, status: 'confirmed', anchorMessageId: null },
+    ]);
   });
 
   it('leaves other proposals alone when one is resolved', () => {

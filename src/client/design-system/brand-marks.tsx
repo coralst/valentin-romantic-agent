@@ -27,12 +27,14 @@ import type { ReactNode } from 'react';
 import { colors, radii, typography } from './tokens';
 
 /**
- * The marks that exist, which is one per catalogue row.
+ * The marks that exist, which is exactly one per catalogue row — pinned by
+ * `integration-catalogue.test.ts`, because the failure mode is silent. A mark for
+ * a row that no longer exists costs nothing visible and so survives indefinitely:
+ * the Amadeus and WhatsApp marks outlived their rows by a release, drawn by
+ * nothing and shipped in every bundle.
  *
- * Every id but `spotify` is also an `IntegrationId`, and that is not a
- * coincidence — the catalogue is now one row per provider. `spotify` is here
- * without a server counterpart because the Spotify row is still unbuilt, and a
- * row badged "not built yet" still has to be recognisable.
+ * Every id is also an `IntegrationId`, which is not a coincidence — the catalogue
+ * is one row per provider, and the row's id is the service behind it.
  */
 export type BrandMarkId =
   | 'ontopo'
@@ -40,9 +42,7 @@ export type BrandMarkId =
   | 'google-places'
   | 'wolt'
   | 'spotify'
-  | 'amadeus'
   | 'gmail'
-  | 'whatsapp'
   | 'hebcal'
   | 'web-search';
 
@@ -70,7 +70,12 @@ function monogram(letter: string, fill: string, rounded: 'square' | 'circle'): R
   );
 }
 
-const MARKS: Record<BrandMarkId, ReactNode> = {
+/**
+ * Exported only so `integration-catalogue.test.ts` can enumerate the marks at
+ * runtime and assert none of them has outlived its row. A `BrandMarkId` union
+ * cannot be walked in a test, and that is precisely how two dead marks survived.
+ */
+export const MARKS: Record<BrandMarkId, ReactNode> = {
   // Ontopo's own mark is a wordmark on near-black, so a monogram in the same ink
   // is the closest honest reduction.
   ontopo: monogram('O', '#22252B', 'circle'),
@@ -121,8 +126,6 @@ const MARKS: Record<BrandMarkId, ReactNode> = {
     </>
   ),
 
-  amadeus: monogram('a', '#005EB8', 'circle'),
-
   // The envelope whose fold makes an M, in Gmail's red on white.
   gmail: (
     <>
@@ -134,18 +137,6 @@ const MARKS: Record<BrandMarkId, ReactNode> = {
         strokeWidth="2.2"
         strokeLinejoin="round"
         strokeLinecap="round"
-      />
-    </>
-  ),
-
-  // Handset in a green disc. Not the tailed bubble — a tail this small closes up
-  // into a blob and stops reading as WhatsApp at all.
-  whatsapp: (
-    <>
-      <circle cx="12" cy="12" r="10.5" fill="#25D366" />
-      <path
-        d="M8.7 7.3c.55-.22 1.16.03 1.4.57l.6 1.4c.2.45.09.98-.27 1.31l-.36.33a7.1 7.1 0 0 0 2.29 2.29l.33-.36c.33-.36.86-.47 1.31-.27l1.4.6c.54.24.79.85.57 1.4-.33.83-1.17 1.36-2.06 1.28-3.1-.28-5.57-2.75-5.85-5.85-.08-.89.45-1.73 1.28-2.06Z"
-        fill="#ffffff"
       />
     </>
   ),

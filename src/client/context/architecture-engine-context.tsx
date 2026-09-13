@@ -40,20 +40,102 @@ export interface ArchitectureEngineContextValue extends UseArchitectureEngineRes
 
 const ArchitectureEngineContext = createContext<ArchitectureEngineContextValue | null>(null);
 
+/** `?engine=agentcore` — the one way a *link* can choose which architecture it opens on. */
+export const ENGINE_PARAM = 'engine';
+
+/** Where the last selection is kept, so a reload does not silently undo it. */
+const ENGINE_STORAGE_KEY = 'valentin.architecture-engine';
+
+function asEngine(value: string | null | undefined): ArchitectureEngine | undefined {
+  if (value === 'agentcore' || value === 'valentin') return value;
+  // What the rail calls the engine is what a presenter will type into a URL.
+  if (value === 'diy') return 'valentin';
+  return undefined;
+}
+
+/**
+ * Which engine this page load opened on: the URL, then the last selection, then A.
+ *
+ * Read at module load, for the reason `share-view.ts` spells out at length —
+ * `cognito-oauth.ts` finishes a sign-in with
+ * `window.history.replaceState({}, '', window.location.pathname)`, which wipes the
+ * *whole* query string, and `ShareEntry` cleans the URL after spending its token. A
+ * provider that read `window.location` in an effect would find the parameter already
+ * gone on exactly the two entry paths that matter.
+ *
+ * The parameter exists because of a real demo failure: a share link handed to
+ * somebody to show engine B opened on **DIY**, because the engine was in-memory
+ * state initialised to `'valentin'` on every load and nothing in the link said
+ * otherwise. The signed share token cannot carry it — it is minted server-side and
+ * the links already in people's hands are fixed — but a query parameter can be
+ * appended to any of those links, including a `?share=` one.
+ *
+ * Storage is `sessionStorage`, not `localStorage`: surviving a reload mid-demo is
+ * the point, and a machine that opens the app tomorrow should start from the
+ * default rather than from a choice nobody remembers making.
+ */
+export const openedOnEngine: ArchitectureEngine | undefined = readOpeningEngine();
+
+/**
+ * The decision itself, separated from where the two inputs come from.
+ *
+ * Pure and exported so it can be tested at all: {@link openedOnEngine} is evaluated
+ * when this module is imported, which is before any test can set a URL, and a test
+ * that reassigned it would be asserting against its own seam rather than the rule.
+ *
+ * The URL beats storage because it is the more deliberate of the two: somebody typed
+ * or pasted it for this page load, while storage only remembers what was clicked
+ * earlier.
+ */
+export function resolveOpeningEngine(
+  search: string,
+  stored: string | null,
+): ArchitectureEngine | undefined {
+  return asEngine(new URLSearchParams(search).get(ENGINE_PARAM)) ?? asEngine(stored);
+}
+
+function readOpeningEngine(): ArchitectureEngine | undefined {
+  if (typeof window === 'undefined') return undefined;
+
+  try {
+    return resolveOpeningEngine(
+      window.location.search,
+      window.sessionStorage.getItem(ENGINE_STORAGE_KEY),
+    );
+  } catch {
+    // A blocked storage API is not a reason to fail to boot.
+    return undefined;
+  }
+}
+
+function rememberEngine(engine: ArchitectureEngine): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.setItem(ENGINE_STORAGE_KEY, engine);
+  } catch {
+    // Private-mode Safari throws on write. The toggle still works for this load.
+  }
+}
+
 export function ArchitectureEngineProvider({
   children,
   /**
-   * Which engine to start on. The app always starts on A; this is the seam that
-   * lets a test render a surface already switched over, without reaching through
-   * the icon rail to click the switch it does not mount.
+   * Which engine to start on. Defaults to whatever {@link openedOnEngine} read off
+   * the URL and the last selection, and is also the seam that lets a test render a
+   * surface already switched over, without reaching through the icon rail to click
+   * the switch it does not mount.
    */
-  initialEngine = 'valentin',
+  initialEngine = openedOnEngine ?? 'valentin',
 }: {
   children: React.ReactNode;
   initialEngine?: ArchitectureEngine;
 }) {
   const engine = useEngineState(initialEngine);
   const servingEngine = useServingEngine(engine.engine);
+
+  useEffect(() => {
+    rememberEngine(engine.engine);
+  }, [engine.engine]);
 
   return (
     <ArchitectureEngineContext.Provider

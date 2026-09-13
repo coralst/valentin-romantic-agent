@@ -76,7 +76,37 @@ interface TurnTally {
    */
   usageReports: number;
   ok: boolean;
+  /**
+   * Work the turn started and deliberately did not await — engine A's extractor,
+   * engine B's Memory write-back.
+   *
+   * Registered by {@link recordSideWork} so {@link withTurn} can wait for it before
+   * publishing. Without this the tally was emitted while the second Converse was
+   * still in flight and engine A reported **one** model call per turn: the extraction
+   * call is fire-and-forget by design, so its `recordModelCall` arrived after `emit`.
+   * That is the single number this whole module exists to report, and it was the one
+   * number that was wrong.
+   */
+  sideWork: Promise<unknown>[];
+  /**
+   * Milliseconds to the reply, frozen when `fn` settled.
+   *
+   * Frozen rather than measured at emit time, because emit now happens *after* the
+   * side work: timing it at publication would have charged engine A's latency tile
+   * for the extraction call the user never waited on, trading an undercounted call
+   * for an overcounted second. The reply is what the person on stage watched land.
+   */
+  replyLatencyMs?: number;
 }
+
+/**
+ * How long to wait for side work before publishing anyway.
+ *
+ * An extraction Converse is 1–3s. Ten seconds is not a latency budget — nothing is
+ * waiting on this — it is the point past which something is wrong and a turn with no
+ * metrics is worse than a turn with incomplete ones.
+ */
+const SIDE_WORK_TIMEOUT_MS = 10_000;
 
 const turnScope = new AsyncLocalStorage<TurnTally>();
 
@@ -88,10 +118,11 @@ const turnScope = new AsyncLocalStorage<TurnTally>();
  * needs to know a socket exists — the same seam every other piece of telemetry here
  * rides on.
  *
- * The scope stays open for the whole of `fn`, which matters because the preference
- * extractor is deliberately *not* awaited by the orchestrator. Callers that want the
- * extractor's model call counted must keep it inside this scope; see the note at the
- * call site in `ws-gateway.ts`.
+ * The scope stays open for the whole of `fn`, and then for whatever `fn` registered
+ * with {@link recordSideWork} — the memory work both orchestrators start and
+ * deliberately do not await. `fn` returning is the *reply*; it is not the end of what
+ * the turn spent. Nothing user-facing waits on this: the reply was already sent from
+ * inside `fn`, so the extra wait delays only the metrics line.
  */
 export async function withTurn<T>(context: TurnContext, fn: () => Promise<T>): Promise<T> {
   const resolved = resolveProcessContext();
@@ -106,6 +137,7 @@ export async function withTurn<T>(context: TurnContext, fn: () => Promise<T>): P
     outputTokens: 0,
     usageReports: 0,
     ok: true,
+    sideWork: [],
   };
 
   return turnScope.run(tally, async () => {
@@ -118,9 +150,61 @@ export async function withTurn<T>(context: TurnContext, fn: () => Promise<T>): P
       // In `finally` rather than after the `await`, so a turn that threw is still
       // counted. A failed turn still cost model calls and store reads, and a panel
       // that only counted successes would flatter whichever engine fails more.
+      tally.replyLatencyMs = Date.now() - tally.startedAt;
+      await settleSideWork(tally);
       emit(tally);
     }
   });
+}
+
+/**
+ * Register work the turn started without awaiting, so its cost is counted.
+ *
+ * Takes the promise the caller already owns rather than wrapping the call, so the
+ * orchestrators keep their fire-and-forget shape exactly: the reply does not wait for
+ * this, and a memory outage still costs the profile update instead of the answer.
+ *
+ * Rejections are swallowed here. The callers already log their own failures, and a
+ * failed extraction must not mark the *turn* not-ok — the user got their reply.
+ */
+export function recordSideWork(work: Promise<unknown>): void {
+  const tally = currentTurn();
+  if (!tally) return;
+
+  tally.sideWork.push(work.catch(() => undefined));
+}
+
+/**
+ * Wait for registered side work, or give up loudly.
+ *
+ * The timeout logs rather than failing silently: publishing an undercounted tally is
+ * precisely the bug this function was added to fix, so on the one path where it can
+ * still happen it says so and names the count it is about to publish.
+ */
+async function settleSideWork(tally: TurnTally): Promise<void> {
+  if (tally.sideWork.length === 0) return;
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = Symbol('timeout');
+  const expiry = new Promise<typeof timedOut>((resolve) => {
+    timer = setTimeout(() => resolve(timedOut), SIDE_WORK_TIMEOUT_MS);
+    // Do not hold the process open for a tally nobody is waiting on.
+    timer.unref?.();
+  });
+
+  try {
+    const outcome = await Promise.race([Promise.all(tally.sideWork), expiry]);
+    if (outcome === timedOut) {
+      logger.warn('agent.turn_side_work_timeout', {
+        sessionId: tally.sessionId,
+        engine: tally.engine,
+        pending: tally.sideWork.length,
+        modelCalls: tally.modelCalls,
+      });
+    }
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 /**
@@ -168,7 +252,9 @@ function emit(tally: TurnTally): void {
     storeBackend: tally.storeBackend,
     modelCalls: tally.modelCalls,
     storeReads: tally.storeReads,
-    replyLatencyMs: Date.now() - tally.startedAt,
+    // `??` for the one caller that can reach `emit` without `fn` having settled: none
+    // today, but a future one would otherwise publish a `NaN` latency.
+    replyLatencyMs: tally.replyLatencyMs ?? Date.now() - tally.startedAt,
     ok: tally.ok,
   };
 

@@ -107,6 +107,22 @@ export interface ToolResult {
    * which the loop learns *where* it just sent him.
    */
   booking?: BookingRecord;
+  /**
+   * Something made *for her* that a later message can hand over.
+   *
+   * The second narrow channel out of a confirm, and it exists for the same reason
+   * `booking` does: a reminder fires days later with nobody in the conversation, so
+   * anything it mentions has to have been written down at the moment it became true.
+   * A playlist saved on Thursday is only a surprise on the following Monday if
+   * Monday's mail can still find it.
+   *
+   * Set only by a confirm that produced a real, openable artefact — `spotify/tools.ts`
+   * sets it on the one branch where Spotify actually saved the playlist and returned a
+   * URL, and not on the fixture branch, which has nothing to open. Every other tool
+   * and every failed confirm leave it undefined, which is what keeps the mail's
+   * surprise paragraph from ever appearing over a dead link.
+   */
+  keepsake?: Keepsake;
 }
 
 /** What a confirmed booking tells us about the place. */
@@ -117,6 +133,22 @@ export interface BookingRecord {
   city?: string | null;
   /** ISO date the outing happens on, `YYYY-MM-DD`. */
   occursOn?: string | null;
+}
+
+/**
+ * A made thing, and where to open it.
+ *
+ * `kind` is a closed set rather than a free string because the reminder renders each
+ * one with its own sentence — "I put a playlist together" is not a phrasing a gift or
+ * a booking could share — so a new kind must arrive with a paragraph, not just a
+ * value.
+ */
+export interface Keepsake {
+  kind: 'playlist';
+  /** What it is called, as the provider saved it. Never rewritten. */
+  title: string;
+  /** Where the reader opens it. Required: a keepsake with no link is not one. */
+  url: string;
 }
 
 /** Everything a tool may need about the turn it is running inside. */

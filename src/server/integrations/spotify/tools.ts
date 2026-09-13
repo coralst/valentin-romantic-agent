@@ -572,6 +572,18 @@ export const proposePlaylistTool: AgentTool = {
       };
     }
 
+    /*
+     * The whole tracklist, numbered, above the link.
+     *
+     * A saved playlist used to answer with the link and "it opens with X and Y",
+     * which reads as a summary of something the user cannot see: the card that
+     * listed the songs belongs to the *proposal*, and by the time this reply
+     * arrives the tracks are only inside Spotify. Naming all of them here means
+     * the conversation itself is the record — the songs stay readable and the
+     * link stays clickable, which is the pair the user asked for.
+     */
+    const listed = titles.map((title, index) => `${index + 1}. ${title}`).join('\n');
+
     return {
       ok: true,
       /*
@@ -582,17 +594,34 @@ export const proposePlaylistTool: AgentTool = {
        */
       summary:
         `Saved "${name}" to their library with ${created.trackCount} track(s). ` +
-        `Give them the link — ${created.url} — and name a couple of the songs: ` +
-        `${titles.slice(0, 3).join(' | ')}.`,
+        // Spelled as an instruction because a later turn asking "give me the link"
+        // is answered from the transcript, and a model that paraphrased the URL
+        // away has nothing to answer with.
+        `Give them the playlist link verbatim — ${created.url} — and list all ` +
+        `${titles.length} song(s): ${titles.join(' | ')}. The link is the point of the ` +
+        `whole request, so never reply about this playlist without it.`,
       reply:
-        `Saved — "${name}" is in your Spotify library with ${created.trackCount} track(s):\n\n` +
-        `${created.url}\n\nIt opens with ${titles.slice(0, 2).join(' and ')}.`,
+        `Saved — "${name}" is in your Spotify library, ${created.trackCount} track(s), ` +
+        `ready to play:\n\n${created.url}\n\n${listed}`,
       data: {
         saved: true,
         name,
         url: created.url,
         trackCount: created.trackCount,
+        tracks: titles,
       },
+      /*
+       * Only here. This is the single branch on which a playlist exists, has songs
+       * in it and has a URL that opens — the empty-playlist branch above returns
+       * before this, and the fixture branch deliberately has no link at all. A
+       * reminder that promised a surprise and linked to one of those would be worse
+       * than one that promised nothing.
+       *
+       * `created.url` is optional on the client's return type, so it is checked
+       * rather than asserted: a save that somehow came back without a link still
+       * gets its reply, and just leaves no keepsake behind.
+       */
+      ...(created.url ? { keepsake: { kind: 'playlist' as const, title: name, url: created.url } } : {}),
     };
   },
 };

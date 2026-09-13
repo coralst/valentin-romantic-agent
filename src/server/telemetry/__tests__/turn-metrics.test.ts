@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import {
   withTurn,
   recordModelCall,
+  recordSideWork,
   recordStoreRead,
   isInTurn,
   resetProcessContext,
@@ -103,6 +104,61 @@ describe('turn-metrics', () => {
     const byName = new Map(turns().map((r) => [r.data?.sessionId, r.data]));
     expect(byName.get('a')).toMatchObject({ modelCalls: 1, storeReads: 1 });
     expect(byName.get('b')).toMatchObject({ modelCalls: 0, storeReads: 2 });
+  });
+
+  /*
+   * The bug these cover, in the shape it shipped in: engine A answers, then launches
+   * `extractor.extract()` without awaiting it — a second forced-tool Converse. The
+   * tally was published the moment the reply returned, so the emitted line said
+   * `modelCalls: 1` on the engine whose defining cost is that every turn makes two.
+   */
+  describe('side work the turn started but did not await', () => {
+    it('counts a deferred model call', async () => {
+      await withTurn({ sessionId: 's1' }, async () => {
+        recordModelCall({ inputTokens: 100, outputTokens: 20 }); // the reply
+        recordSideWork(
+          (async () => {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            recordModelCall({ inputTokens: 80, outputTokens: 10 }); // extract-preferences
+          })(),
+        );
+      });
+
+      expect(turns()).toHaveLength(1);
+      expect(turns()[0].data).toMatchObject({
+        modelCalls: 2,
+        inputTokens: 180,
+        outputTokens: 30,
+      });
+    });
+
+    it('does not charge the reply latency for waiting on it', async () => {
+      await withTurn({ sessionId: 's1' }, async () => {
+        recordModelCall();
+        recordSideWork(new Promise((resolve) => setTimeout(resolve, 60)));
+      });
+
+      // The reply landed immediately; only the metrics line waited. A latency tile
+      // that absorbed the extraction would trade an undercounted call for an
+      // overcounted second, which is not an improvement.
+      const latency = turns()[0].data?.replyLatencyMs as number;
+      expect(latency).toBeLessThan(50);
+    });
+
+    it('still emits when side work rejects, and keeps the turn ok', async () => {
+      await withTurn({ sessionId: 's1' }, async () => {
+        recordModelCall();
+        recordSideWork(Promise.reject(new Error('Memory is down')));
+      });
+
+      // The user got their reply; a failed profile update is not a failed turn.
+      expect(turns()[0].data).toMatchObject({ modelCalls: 1, ok: true });
+    });
+
+    it('is a no-op outside a turn', () => {
+      recordSideWork(Promise.resolve());
+      expect(turns()).toHaveLength(0);
+    });
   });
 
   it('is a no-op outside a turn, so tests and boot-time reads emit nothing', () => {

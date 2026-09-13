@@ -35,6 +35,24 @@ export type ProposalStatus = 'open' | 'confirmed' | 'dismissed';
 export interface ProposalEntry {
   proposal: ActionProposalPayload;
   status: ProposalStatus;
+  /**
+   * The message this card belongs under, or `null` while it is still the live
+   * one at the foot of the transcript.
+   *
+   * A proposal is raised from inside the agent loop — `onProposal` fires on the
+   * tool call, before the reply that describes it exists — so at arrival there is
+   * nothing to anchor it to yet, and `null` is the honest answer. The next
+   * `RECEIVE_MESSAGE` is that turn's reply, and the card adopts it.
+   *
+   * Without this every card stayed at the tail for the life of the session,
+   * so confirmed cards from ten turns ago stacked above the composer instead of
+   * staying beside the exchange that raised them.
+   *
+   * An anchor can be guessed safely here in a way it could not be for
+   * {@link buildNotedIndex}: `SWITCH_SESSION` drops proposals outright, so every
+   * entry in this array was born during this mount and its turn was observed.
+   */
+  anchorMessageId: string | null;
 }
 
 /**
@@ -232,6 +250,19 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         messages: sortByTimestamp([...state.messages, action.message]),
         activity: [],
         liveMessageIds: new Set([...state.liveMessageIds, action.message.id]),
+        /*
+         * This reply closes the turn, so it is what any card raised during that
+         * turn belongs under. Anchoring here is what stops a card from living at
+         * the foot of the transcript forever — see `ProposalEntry.anchorMessageId`.
+         *
+         * Only the still-unanchored ones: an older card already has its message
+         * and must not be dragged forward to this one.
+         */
+        proposals: state.proposals.map((entry) =>
+          entry.anchorMessageId === null
+            ? { ...entry, anchorMessageId: action.message.id }
+            : entry,
+        ),
       };
 
     case 'SET_TYPING':
@@ -269,7 +300,12 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
 
       return {
         ...state,
-        proposals: [...state.proposals, { proposal: action.proposal, status: 'open' }],
+        proposals: [
+          ...state.proposals,
+          // Unanchored on purpose — see `ProposalEntry.anchorMessageId`. The reply
+          // that this card belongs under has not been said yet.
+          { proposal: action.proposal, status: 'open', anchorMessageId: null },
+        ],
       };
     }
 

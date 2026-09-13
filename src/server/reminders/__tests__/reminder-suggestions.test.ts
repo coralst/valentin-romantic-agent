@@ -411,3 +411,69 @@ describe('the composed reminder, end to end', () => {
     expect(sender.sent[0].email.body).toContain('I have not found anything worth suggesting yet');
   });
 });
+
+/*
+ * A confirmed venue for *this* evening changes what the mail is, so the matching rule
+ * is worth pinning: the date, and nothing else. There is no nearest-match and no
+ * scoring — an outing for another evening is not this evening's plan, and promoting one
+ * would put a venue he chose in March at the top of a mail about September.
+ */
+describe('composeReminderContext — an evening already decided', () => {
+  const thatEvening = outing({ occursOn: BIRTHDAY.occursOn, venueName: 'Claro', rating: null });
+
+  it('names the venue and suppresses the suggestions', () => {
+    const context = composeReminderContext(input({ outings: [thatEvening] }));
+
+    expect(context.reservation).toEqual({ venueName: 'Claro', city: 'Tel Aviv' });
+    expect(context.suggestions).toEqual([]);
+    // The criteria line describes a list nobody is being shown.
+    expect(context.criteria).toEqual([]);
+  });
+
+  it('ignores an outing on any other evening', () => {
+    const context = composeReminderContext(input({ outings: [outing({ occursOn: '2026-07-04' })] }));
+
+    expect(context.reservation).toBeNull();
+    expect(context.suggestions.length).toBeGreaterThan(0);
+  });
+
+  it('takes the most recent decision when he changed his mind', () => {
+    const context = composeReminderContext(
+      input({
+        outings: [
+          thatEvening,
+          outing({
+            id: 'outing-2',
+            occursOn: BIRTHDAY.occursOn,
+            venueName: 'Yaffo Tel Aviv',
+            confirmedAt: '2026-06-05T09:00:00.000Z',
+          }),
+        ],
+      }),
+    );
+
+    expect(context.reservation?.venueName).toBe('Yaffo Tel Aviv');
+  });
+
+  it('keeps an errand free of both — he asked to be reminded, not taken out', () => {
+    const context = composeReminderContext(
+      input({
+        reminder: { ...BIRTHDAY, kind: 'custom', title: 'Call the florist' },
+        outings: [thatEvening],
+        surprise: { title: 'A playlist', url: 'https://open.spotify.com/playlist/abc' },
+      }),
+    );
+
+    expect(context.reservation).toBeNull();
+    expect(context.surprise).toBeNull();
+  });
+
+  it('carries the surprise through both dinner-out shapes', () => {
+    const surprise = { title: 'For her', url: 'https://open.spotify.com/playlist/abc' };
+
+    expect(composeReminderContext(input({ surprise })).surprise).toEqual(surprise);
+    expect(
+      composeReminderContext(input({ surprise, outings: [thatEvening] })).surprise,
+    ).toEqual(surprise);
+  });
+});

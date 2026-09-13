@@ -45,6 +45,25 @@ async function openDrawer(user: ReturnType<typeof userEvent.setup>) {
 }
 
 /**
+ * Put the drawer into live mode the way the deployed app does.
+ *
+ * There is no live/demo button any more — two buttons in front of a room is a thing
+ * to explain and a thing to click by mistake, and the drawer already knew the answer:
+ * it opens on the script so it is never blank, and follows the socket the moment the
+ * socket says anything. So the way into live mode is for traffic to arrive.
+ *
+ * A heartbeat is used deliberately rather than a span. `useArchitectureMode` flips on
+ * *any* observed event, while `useLiveArchitecture` drops the heartbeat before it
+ * becomes a beat — so this changes the mode and adds no row that a later assertion
+ * about the feed would then have to allow for.
+ */
+function goLive() {
+  act(() => {
+    publishInboundWsEvent({ type: 'pong', payload: {}, timestamp: '2026-08-21T00:00:00.000Z' });
+  });
+}
+
+/**
  * Unfold every action in the feed.
  *
  * The feed opens folded — captions only — so any assertion about the *rows* has to
@@ -212,16 +231,95 @@ describe('LiveArchitectureDrawer', () => {
       expect(screen.getByText(DRAWER_COPY.subtitle)).toBeInTheDocument();
     });
 
-    it('offers a live/demo switch instead of the stale logical tabs', async () => {
+    /*
+     * No data-source switch, and no scoreboard sheet.
+     *
+     * Both were removable because neither had a decision behind it. The drawer already
+     * opens on the script and follows the socket the instant traffic arrives, so the
+     * Live/Demo pair only offered a presenter the chance to put the drawer into the
+     * wrong one mid-sentence. The "Why AgentCore" sheet was a second, competing surface
+     * for an argument the diagram itself is supposed to be making.
+     *
+     * Asserted rather than merely deleted, because a control that reappears in a later
+     * refactor would be back on a projector before anyone noticed.
+     */
+    it('offers no data-source switch and no scoreboard sheet to get lost in', async () => {
       const user = userEvent.setup();
       renderDrawer();
       await openDrawer(user);
 
-      expect(screen.getByRole('group', { name: 'Data source' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: DRAWER_COPY.liveMode })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: DRAWER_COPY.demoMode })).toBeInTheDocument();
+      expect(screen.queryByRole('group', { name: 'Data source' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /why agentcore/i })).not.toBeInTheDocument();
       // The model this replaced named code modules, not AWS resources.
       expect(screen.queryByRole('button', { name: /logical/i })).not.toBeInTheDocument();
+    });
+
+    it('still says which engine is answering, which is the one claim worth a chip', () => {
+      // The chip stayed while the switch and the sheet went, because it reports
+      // something only the running system knows: `/api/config` is what fills it in.
+      expect(DRAWER_COPY.servingUnknown.length).toBeGreaterThan(0);
+    });
+
+    /*
+     * A verb where the switch was, and only the one that leads somewhere.
+     *
+     * Deleting the switch outright had a consequence worth a suite of its own:
+     * `use-websocket.ts` pings every thirty seconds, so within half a minute every
+     * session is in live mode permanently — and the scripted walkthrough, which is
+     * how the architecture gets explained when there is no traffic to point at, would
+     * have been unreachable for the rest of the session. These tests pin the door
+     * open, and pin that it is one door and not a mode pair wearing new labels: each
+     * control is absent whenever it would lead to the state you are already in.
+     */
+    it('offers the walkthrough only once live traffic is what you would be watching', async () => {
+      const user = userEvent.setup();
+      renderDrawer();
+      await openDrawer(user);
+
+      // Nothing has arrived: the script is already on screen, so there is nothing to
+      // walk to and nothing to come back from.
+      expect(
+        screen.queryByRole('button', { name: DRAWER_COPY.walkFlow }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: DRAWER_COPY.backToLive }),
+      ).not.toBeInTheDocument();
+
+      goLive();
+      expect(screen.getByRole('button', { name: DRAWER_COPY.walkFlow })).toBeInTheDocument();
+    });
+
+    it('walks the flow on request, even after the socket has taken over', async () => {
+      const user = userEvent.setup();
+      renderDrawer();
+      await openDrawer(user);
+      goLive();
+      expect(screen.queryByTestId('architecture-step-count')).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: DRAWER_COPY.walkFlow }));
+
+      expect(screen.getByTestId('architecture-step-count')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: DRAWER_COPY.next })).toBeInTheDocument();
+    });
+
+    it('holds the walkthrough against arriving traffic, then hands it back', async () => {
+      // The presenter's escape hatch, which is the whole reason `setMode` marks the
+      // choice as the user's: a heartbeat mid-sentence must not yank the script away.
+      const user = userEvent.setup();
+      renderDrawer();
+      await openDrawer(user);
+      goLive();
+      await user.click(screen.getByRole('button', { name: DRAWER_COPY.walkFlow }));
+
+      goLive();
+      expect(screen.getByTestId('architecture-step-count')).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: DRAWER_COPY.backToLive }));
+      expect(screen.queryByTestId('architecture-step-count')).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: DRAWER_COPY.backToLive }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: DRAWER_COPY.walkFlow })).toBeInTheDocument();
     });
   });
 
@@ -231,10 +329,11 @@ describe('LiveArchitectureDrawer', () => {
       renderDrawer();
       await openDrawer(user);
 
-      expect(screen.getByRole('button', { name: DRAWER_COPY.demoMode })).toHaveAttribute(
-        'aria-pressed',
-        'true',
-      );
+      // Read off the step controls, which only demo mode has: with the switch gone
+      // there is no button whose pressed state to interrogate, and the controls are
+      // the thing a presenter actually sees and reaches for.
+      expect(screen.getByTestId('architecture-step-count')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: DRAWER_COPY.next })).toBeInTheDocument();
     });
 
     it('starts on the first step', async () => {
@@ -381,16 +480,17 @@ describe('LiveArchitectureDrawer', () => {
   });
 
   describe('live mode', () => {
-    it('switches to live on request', async () => {
+    it('follows the socket into live mode as soon as anything arrives', async () => {
       const user = userEvent.setup();
       renderDrawer();
       await openDrawer(user);
 
-      await user.click(screen.getByRole('button', { name: DRAWER_COPY.liveMode }));
-      expect(screen.getByRole('button', { name: DRAWER_COPY.liveMode })).toHaveAttribute(
-        'aria-pressed',
-        'true',
-      );
+      expect(screen.getByTestId('architecture-step-count')).toBeInTheDocument();
+      goLive();
+
+      // The scripted walkthrough gives way to the real thing without being asked to.
+      expect(screen.queryByTestId('architecture-step-count')).not.toBeInTheDocument();
+      expect(screen.getByText(DRAWER_COPY.liveEmpty)).toBeInTheDocument();
     });
 
     /**
@@ -401,7 +501,7 @@ describe('LiveArchitectureDrawer', () => {
       const user = userEvent.setup();
       renderDrawer();
       await openDrawer(user);
-      await user.click(screen.getByRole('button', { name: DRAWER_COPY.liveMode }));
+      goLive();
 
       expect(screen.queryByRole('button', { name: DRAWER_COPY.next })).not.toBeInTheDocument();
       expect(screen.queryByTestId('architecture-step-count')).not.toBeInTheDocument();
@@ -411,7 +511,7 @@ describe('LiveArchitectureDrawer', () => {
       const user = userEvent.setup();
       renderDrawer();
       await openDrawer(user);
-      await user.click(screen.getByRole('button', { name: DRAWER_COPY.liveMode }));
+      goLive();
 
       expect(screen.getByText(DRAWER_COPY.liveEmpty)).toBeInTheDocument();
     });
@@ -420,7 +520,7 @@ describe('LiveArchitectureDrawer', () => {
       const user = userEvent.setup();
       renderDrawer();
       await openDrawer(user);
-      await user.click(screen.getByRole('button', { name: DRAWER_COPY.liveMode }));
+      goLive();
 
       act(() => {
         publishInboundWsEvent(makeSpan());
@@ -445,7 +545,7 @@ describe('LiveArchitectureDrawer', () => {
       const user = userEvent.setup();
       renderDrawer();
       await openDrawer(user);
-      await user.click(screen.getByRole('button', { name: DRAWER_COPY.liveMode }));
+      goLive();
 
       act(() => {
         publishInboundWsEvent(makeSpan());
@@ -459,7 +559,7 @@ describe('LiveArchitectureDrawer', () => {
       const user = userEvent.setup();
       renderDrawer();
       await openDrawer(user);
-      await user.click(screen.getByRole('button', { name: DRAWER_COPY.liveMode }));
+      goLive();
 
       act(() => {
         publishInboundWsEvent(
@@ -471,7 +571,9 @@ describe('LiveArchitectureDrawer', () => {
       expect(screen.getByText('2 spans · 1 model call')).toBeInTheDocument();
     });
 
-    it('flips to live by itself when traffic arrives before the user chooses', async () => {
+    it('shows a real span the moment it lands, with no mode change to make first', async () => {
+      // The path a demo actually takes now: the drawer is open on the script, someone
+      // sends a message, and the first span both switches the view and fills it.
       const user = userEvent.setup();
       renderDrawer();
       await openDrawer(user);
@@ -479,29 +581,19 @@ describe('LiveArchitectureDrawer', () => {
       act(() => {
         publishInboundWsEvent(makeSpan());
       });
+      await expandFeed(user);
 
-      expect(screen.getByRole('button', { name: DRAWER_COPY.liveMode })).toHaveAttribute(
-        'aria-pressed',
-        'true',
-      );
+      expect(screen.queryByTestId('architecture-step-count')).not.toBeInTheDocument();
+      expect(screen.getAllByTestId('aws-feed-row')).toHaveLength(1);
     });
 
-    /** An arriving heartbeat must not yank the view out from under a presenter. */
-    it('stays in demo once the user has chosen it, whatever arrives', async () => {
-      const user = userEvent.setup();
-      renderDrawer();
-      await openDrawer(user);
-      await user.click(screen.getByRole('button', { name: DRAWER_COPY.demoMode }));
-
-      act(() => {
-        publishInboundWsEvent(makeSpan());
-      });
-
-      expect(screen.getByRole('button', { name: DRAWER_COPY.demoMode })).toHaveAttribute(
-        'aria-pressed',
-        'true',
-      );
-    });
+    /*
+     * The presenter's escape hatch — "an arriving heartbeat must not yank the view out
+     * from under me" — is not asserted here any more, because with the switch gone
+     * there is no way to express it through this component. `useArchitectureMode` still
+     * implements it for a caller that passes a chosen mode, and its own test file pins
+     * it. Removing it from both places is what would have lost the behaviour.
+     */
   });
 
   describe('collapsing', () => {
@@ -551,7 +643,7 @@ describe('LiveArchitectureDrawer', () => {
       const user = userEvent.setup();
       renderDrawer();
       await openDrawer(user);
-      await user.click(screen.getByRole('button', { name: DRAWER_COPY.liveMode }));
+      goLive();
 
       act(() => {
         publishInboundWsEvent(makeSpan());
@@ -644,7 +736,7 @@ describe('LiveArchitectureDrawer', () => {
       const user = userEvent.setup();
       renderDrawer(composer);
       await openDrawer(user);
-      await user.click(screen.getByRole('button', { name: DRAWER_COPY.liveMode }));
+      goLive();
 
       const input = screen.getByLabelText('Type a message');
       await user.click(input);
@@ -711,7 +803,7 @@ describe('the serving-engine chip', () => {
   /** Open it and switch to live, which is the only mode an engine answers in. */
   async function openLive(user: ReturnType<typeof userEvent.setup>) {
     await openDrawer(user);
-    await user.click(screen.getByRole('button', { name: DRAWER_COPY.liveMode }));
+    goLive();
   }
 
   beforeEach(() => {
@@ -892,7 +984,7 @@ describe('replaying a chosen action', () => {
     const user = userEvent.setup();
     renderDrawer();
     await openDrawer(user);
-    await user.click(screen.getByRole('button', { name: DRAWER_COPY.liveMode }));
+    goLive();
 
     act(() => {
       publishInboundWsEvent(makeSpan());
@@ -910,7 +1002,7 @@ describe('replaying a chosen action', () => {
     const user = userEvent.setup();
     renderDrawer();
     await openDrawer(user);
-    await user.click(screen.getByRole('button', { name: DRAWER_COPY.liveMode }));
+    goLive();
 
     act(() => {
       publishInboundWsEvent(makeSpan());

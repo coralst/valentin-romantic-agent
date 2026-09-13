@@ -81,6 +81,19 @@ export interface ReminderSuggestion {
   previousRating?: number | null;
 }
 
+/** A table that is actually held, as the confirmed outing recorded it. */
+export interface ReminderReservation {
+  venueName: string;
+  /** As stored. Omitted from the sentence when unknown rather than guessed. */
+  city?: string | null;
+}
+
+/** A made thing, and where to open it. Mirrors `Keepsake` in `tool-registry.ts`. */
+export interface ReminderSurprise {
+  title: string;
+  url: string;
+}
+
 export interface ReminderEmailInput {
   /** What the occasion is, in the user's own words — "her birthday". */
   occasion: string;
@@ -135,6 +148,28 @@ export interface ReminderEmailInput {
    * guessed schedule is the worst thing this mail could contain.
    */
   timingNote?: string | null;
+  /**
+   * The table he has already confirmed for this evening, when there is one.
+   *
+   * Changes what this mail *is*. With no reservation it is a prompt — here are three
+   * places, say the word. With one it is a confirmation, and the suggestion list is not
+   * merely redundant but wrong: offering alternatives to a table he already holds reads
+   * as though we lost track of it.
+   *
+   * Sourced from a confirmed outing whose date matches the occasion, so the venue name
+   * is one Ontopo returned and the reader chose — never a suggestion promoted to a fact.
+   * See `composeReminderContext`.
+   */
+  reservation?: ReminderReservation | null;
+  /**
+   * Something made for her that this mail hands over at the end.
+   *
+   * Deliberately the last thing in the body, after the link and before the signature,
+   * because that is where a surprise belongs — a reader who opens the mail for the date
+   * finds it on the way out. Rendered only when the URL exists; see
+   * `keepsake-recorder.ts` for why it is stored at all.
+   */
+  surprise?: ReminderSurprise | null;
   /** Where the app lives. `PUBLIC_ORIGIN` in a container. */
   origin: string;
   /** The conversation to reopen. The whole reason the link is worth clicking. */
@@ -286,6 +321,22 @@ function activityOf(input: ReminderEmailInput): ReminderActivity {
 function buildSubject(input: ReminderEmailInput): string {
   const subject = headline(input);
 
+  /*
+   * The venue he settled on outranks a count of ideas: it is what he would want to see
+   * from a lock screen, and "three ideas" beside a decision already made implies we
+   * lost track of it.
+   *
+   * "the place you chose", never "booked" — and this is a claim about our own records,
+   * not about the restaurant's. A confirmed outing is written whether Ontopo completed
+   * the reservation or handed back a checkout link (see `BookingRecord`), so this mail
+   * cannot know a table is held, and the invariant in this file's header applies here
+   * exactly as it does to a suggestion.
+   */
+  const reservation = input.reservation;
+  if (reservation?.venueName) {
+    return `${capitalise(subject)} is ${describeGap(input.daysUntil)} — ${reservation.venueName} is the place you chose`;
+  }
+
   // An evening in has ideas and no suggestions; the subject should still say there is
   // something to act on, because that is what decides whether it is opened.
   const offered =
@@ -321,8 +372,28 @@ export function buildReminderEmail(input: ReminderEmailInput): ReminderEmail {
   parts.push('');
 
   const hisOwnReminder = activity === 'errand';
+  const reservation = input.reservation?.venueName ? input.reservation : null;
 
-  if (activity === 'at_home') {
+  if (reservation) {
+    /*
+     * He has already decided, so this mail confirms rather than suggests. The
+     * suggestion list is skipped entirely — not appended after the confirmation —
+     * because three alternatives under a decision he already made is the mail arguing
+     * with him.
+     *
+     * The last sentence is the honest half. We know he confirmed a venue and we do not
+     * know the restaurant is holding a table, so it says where to check instead of
+     * asserting either.
+     */
+    const where = input.reservation?.city?.trim();
+    parts.push(
+      `You chose ${reservation.venueName}${where ? ` in ${where}` : ''} for that evening.`,
+    );
+    parts.push('');
+    parts.push(
+      'The confirmation details are in our conversation — open it if you need the link again.',
+    );
+  } else if (activity === 'at_home') {
     /*
      * He said he wants to stay in, so this must not answer with restaurants. There is
      * nothing to book and therefore nothing to offer to hold — only what he has
@@ -376,15 +447,38 @@ export function buildReminderEmail(input: ReminderEmailInput): ReminderEmail {
 
   parts.push('');
   // "Pick one" only makes sense when a choice was offered. An evening in was not a
-  // list of options, so it gets an offer of help rather than an instruction to choose.
+  // list of options, so it gets an offer of help rather than an instruction to choose;
+  // and a decision already made needs neither.
   parts.push(
-    hisOwnReminder && suggestions.length === 0
-      ? 'Pick up where we left off:'
-      : activity === 'at_home'
-        ? 'Reply and I will help you put it together:'
-        : 'Pick one, or tell me what you would rather:',
+    reservation
+      ? 'Everything we planned is here:'
+      : hisOwnReminder && suggestions.length === 0
+        ? 'Pick up where we left off:'
+        : activity === 'at_home'
+          ? 'Reply and I will help you put it together:'
+          : 'Pick one, or tell me what you would rather:',
   );
   parts.push(resumeLink(input.origin, input.sessionId));
+
+  /*
+   * The surprise, last.
+   *
+   * After the link on purpose: a reader who came for the date has already got what they
+   * came for by this point, which is exactly what makes this land as a gift rather than
+   * as another row of content. Rendered only from a stored URL — see
+   * `keepsake-recorder.ts` — so there is no branch in which this paragraph promises
+   * something that does not exist.
+   */
+  const surprise = input.surprise;
+  if (surprise?.url && surprise.title.trim()) {
+    parts.push('');
+    parts.push('One more thing — I have a surprise for you.');
+    parts.push(
+      `I put a playlist together for her, "${surprise.title.trim()}". Have it ready for the drive:`,
+    );
+    parts.push(surprise.url);
+  }
+
   parts.push('');
   parts.push('— Valentin');
 

@@ -18,13 +18,83 @@ One command, watched live:
 npm run demo:drive -- --to=<their email>
 ```
 
-It opens a headed Chromium on **the login page**, signs in, starts a new profile,
-holds the eleven-turn conversation at typing speed, shows the rail filling in,
-opens the architecture drawer and the integrations panel, waits out the
-60-second scheduler sweep while the real email is sent, and ends on the
-day-after survey. Roughly **12–15 minutes** at `--speed=1`.
+It opens a headed Chromium on **the login page** and plays **four acts**:
+
+1. **The entrance** — the landing page, the way in, and a profile that knows
+   nothing yet.
+2. **The conversation** — everything else the product does, in one unbroken
+   thread. The facts about her, typed at human speed; the rail filling in and the
+   countdown; the live architecture drawer, opened once and never closed; two
+   memory questions on the Glue code and the same two on AgentCore; the
+   scoreboard; her file; the integrations panel; then the plan — a **Google
+   Calendar** clash check, an **Ontopo** table and a **Spotify** playlist he asks
+   to keep as a surprise, each confirmed on camera; his own address; and a change
+   of notice period to a fortnight, which is what makes the reminder due. The
+   last thing this act does is **post a letter**: the 60-second sweep fires and
+   the real mail goes out.
+3. **The inbox** — his actual Gmail, opened in the same browser. The newest
+   message, the restaurant he chose confirmed back to him, and the surprise
+   playlist link opened.
+4. **The day-after survey** — the one substituted beat.
+
+The anniversary date is **computed at launch**, at least **eight days out** and
+never Shabbat, so the script can be run on any day. Eight is a floor and not a
+taste: `leadTimeDays` defaults to a week and `syncReminders` arms the row the
+moment the date lands on the profile, so a nearer occasion is already overdue at
+turn 1 and the sweep mails at ninety seconds — before there is a restaurant or a
+playlist to put in it. Act 2's closing turn asks for **two weeks'** notice, and
+that is what brings the row due on camera. A fortnight and not "five days":
+`REMINDER_LEAD_OPTIONS` has no five-day entry and `leadTimeDays` silently falls
+back to a week, so that ask would look like it worked and never come due.
+
+### The four marked inspection moments
+
+The drawer is opened once, early, and at four points the caption **turns blue**
+to say *this is the bit to look at*. Each one is read off the screen and then
+**asserted**, so a take that would ship a false claim dies instead of the claim
+being discovered in review:
+
+1. **Engine A spends two Bedrock calls on one turn** — the reply plus the
+   forced-tool `extract-preferences` pass. Fails the take if the newest group
+   holds fewer than two `Converse` rows.
+2. **That call replayed hop by hop** through the drawer's step control. Fails if
+   there is no step counter to step.
+3. **Engine B spends none on extraction** — AgentCore Memory's managed strategy
+   holds the fact, so there is no extraction span at all. Fails if an extraction
+   row appears, *and* fails on an empty group, which would make the claim true
+   for the wrong reason.
+4. **One `check_availability` span per restaurant offered**, with a real clock
+   time in the reply. Fails on zero spans: those times would then have to have
+   come from the model, which is the one thing the beat claims cannot happen.
+
+Her file is checked too — the music card must exist before the playlist beat, so
+the Nina Simone chain cannot break silently between being stored and being used.
+
+Roughly **22–28 minutes** at `--speed=1`, most of it model reply time.
+
+**The run reviews itself.** Every scripted turn carries reply assertions —
+the restaurant turn must talk about restaurants, the music turn must not, a
+reply that names a weekday must name the *right* one. A reply that violates one
+**fails the take immediately** with the offending text in the log, instead of
+the failure being discovered in video review afterwards.
 
 The browser window stays open at the end on purpose. Ctrl-C closes it.
+
+## Recording it
+
+```bash
+npm run demo:drive -- --to=<their email> --record
+```
+
+Same run, written to `screenshots/demo/video/` as `.webm` **and** `.mp4` (ffmpeg
+converts it; Keynote and Slack will not play the webm). Recording implies
+headless — the pointer and captions are drawn into the page, so the frames are
+identical and nobody's screen is held for twenty minutes. Add `--headed` to watch
+it being made.
+
+`--record` also implies `--no-hold`, and must: the video file is only finalised by
+`context.close()`, so a run left holding at the end and then Ctrl-C'd leaves a
+truncated file.
 
 ## Before you run it
 
@@ -34,19 +104,38 @@ The browser window stays open at the end on purpose. Ctrl-C closes it.
    checkout):
 
    ```bash
-   AWS_PROFILE=dev-devops-agent AWS_REGION=us-east-1 PORT=3101 npx tsx src/server/dev-server.ts
+   AWS_PROFILE=dev-devops-agent AWS_REGION=us-east-1 PORT=3101 \
+     REMINDER_CHANNEL=gmail npx tsx src/server/dev-server.ts
    PORT=3101 VITE_PORT=5273 npx vite
    ```
 
    Bedrock needs `AWS_PROFILE=dev-devops-agent`; without it every turn silently
-   returns an error fallback and the demo is worthless.
+   returns an error fallback and the demo is worthless. `REMINDER_CHANNEL=gmail`
+   is what makes act 2's last beat and the whole of act 3 possible — the default
+   channel is `log`, which renders the reminder and never sends it.
 
-2. **You need their email address.** `--to` is required and must never be guessed
+   Vite reads `PORT` to know where to proxy, so the two must agree.
+
+2. **The engine switch needs the deployed app, not localhost.** `resolveEngine` is
+   per *process*, not per request — it reads `AGENT_ENGINE` and ignores what the
+   request asked for, because `compute-stack.ts` runs two Fargate services off one
+   image and the **ALB** is what routes `X-Valentin-Engine: agentcore` to the
+   second. So a single `dev-server.ts` serves one engine however the rail is
+   flipped, and against `localhost` the engine-B act correctly captions an amber
+   downgrade and skips inspection moment 3.
+
+   Do **not** "fix" this by setting `AGENT_ENGINE=agentcore` on the local server:
+   that serves engine B for the *whole* run, including the beats whose entire point
+   is engine A's double Bedrock call. Record the take against the deployed app if
+   you need all four inspection moments. (Prod has a login gate — the driver clicks
+   `demo-login-button` before waiting for the icon rail.)
+
+3. **You need their email address.** `--to` is required and must never be guessed
    or assembled — the run sends a real reminder, and mail to an invented address
    reaches a stranger and cannot be un-sent. If you do not have it, ask for it, or
    offer `--no-mail` to rehearse without the send.
 
-3. **Say what will happen** before starting a run that sends mail. One line is
+4. **Say what will happen** before starting a run that sends mail. One line is
    enough: it will take about a quarter of an hour and will email that address.
 
 ## Flags
@@ -60,10 +149,58 @@ The browser window stays open at the end on purpose. Ctrl-C closes it.
 | `--no-survey` | Skip the final substituted beat. |
 | `--no-hold` | Exit instead of leaving the window open. For checking the script itself. |
 | `--base=url` | Point at a different origin (default `http://localhost:5273`). |
+| `--record` | Write a video as well. Implies headless and `--no-hold`. |
+| `--headed` | Show the window during a `--record` run. |
+| `--gmail-login` | Open Gmail and wait for a human to sign in, then exit. One-time setup for act 3 — see below. |
+| `--no-inbox` | Skip act 3. Implied by `--no-mail`: there is nothing to read. |
+| `--profile-dir=path` | Where the reused browser profile lives. Default `.demo-chrome-profile/` (gitignored). |
+
+## Act 3 needs a signed-in browser profile
+
+Reading the mail means reading *his* mailbox, so the run reuses one Chrome
+profile (`launchPersistentContext`) instead of a fresh one. Sign in by hand,
+once:
+
+```bash
+npm run demo:drive -- --gmail-login    # opens Gmail; sign in, then close the window
+```
+
+The session then survives across runs. Nothing about this is scripted — no
+credentials are typed by the driver and none are stored in the repo; the profile
+directory is gitignored because it holds a live Google session.
+
+If the profile is not signed in when act 3 arrives, the run **captions an amber
+SKIPPED and carries on**. That is deliberate: a run that dies at minute eighteen
+on a Gmail selector costs the whole take, and a missing act costs one beat.
+`--no-inbox` skips it outright.
+
+`--record` prefers the real `chrome` channel over bundled Chromium — Google's
+automation checks are friendlier to it — and falls back with a log line if Chrome
+is not installed.
+
+## What the plan beats need, and what they do when they do not have it
+
+These beats are written to degrade honestly rather than to be skipped, because a
+missing credential is a normal state of this app and pretending otherwise is the
+one thing the script must not do.
+
+- **Calendar** needs `GOOGLE_*` in `.env`; the clash check is read-only either way.
+- **Ontopo** needs nothing — but `confirm` only *books* when a full
+  `ONTOPO_GUEST_*` identity is set, which no local `.env` has. Without it the
+  confirm mints a checkout link and hands it over, which is why it is safe to press
+  Confirm on camera. **Do not set the guest variables to make the demo look
+  better** — that books a real table at a real restaurant.
+- **Spotify** searches on the client-credentials pair alone; without
+  `SPOTIFY_REFRESH_TOKEN` a confirmed playlist hands over track links instead of
+  saving into a library, and says so.
+- **The engine switch** reads the serving chip back before captioning it. If
+  AgentCore is not wired on the deployment, the caption says so in amber and the
+  engine-B turn is skipped, rather than narrating engine A's answers as AgentCore's.
 
 ## Afterwards
 
-Screenshots land in `screenshots/demo/` (gitignored), numbered in play order.
+Screenshots land in `screenshots/demo/` (gitignored), numbered in play order; the
+video, if any, in `screenshots/demo/video/`.
 
 To prove the email arrived from the mailbox side rather than trusting the log:
 

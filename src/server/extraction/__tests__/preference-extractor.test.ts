@@ -305,7 +305,9 @@ describe('PreferenceExtractor — one row per field, whatever the category', () 
     category: 'important_dates',
     key: 'partner_name',
     fieldId: 'partner_name',
-    value: 'Maya',
+    // A different spelling than the incoming turn's, so the update path runs:
+    // an identical value is a restatement and is deliberately skipped.
+    value: 'Mia',
     confidence: 0.9,
     sourceMessageId: 'msg-0',
     createdAt: new Date().toISOString(),
@@ -370,6 +372,30 @@ describe('PreferenceExtractor — one row per field, whatever the category', () 
     );
   });
 
+  it('skips the write entirely when the restated value is unchanged', async () => {
+    // Every turn re-extracts facts already visible in the history. Writing the
+    // same value again moved `sourceMessageId` onto the current message, so the
+    // "Noted" badge under a sentence about food claimed her name and both dates.
+    vi.mocked(storage.getPreferencesBySession).mockResolvedValue([
+      { ...strayRow, value: 'Maya' },
+    ]);
+
+    await extractor.extract(makeMessage({ id: 'msg-later' }), []);
+
+    expect(storage.updatePreference).not.toHaveBeenCalled();
+    expect(storage.savePreference).not.toHaveBeenCalled();
+  });
+
+  it('treats a case-and-spacing variant as the same value, not an update', async () => {
+    vi.mocked(storage.getPreferencesBySession).mockResolvedValue([
+      { ...strayRow, value: '  maya ' },
+    ]);
+
+    await extractor.extract(makeMessage({ id: 'msg-later' }), []);
+
+    expect(storage.updatePreference).not.toHaveBeenCalled();
+  });
+
   it('does not cross-match rows that resolved to no field', async () => {
     // Without a field id there is nothing to match on but the natural key, and
     // matching on anything less would merge two unrelated facts.
@@ -388,6 +414,85 @@ describe('PreferenceExtractor — one row per field, whatever the category', () 
     await extractor.extract(makeMessage(), []);
 
     expect(storage.savePreference).toHaveBeenCalled();
+  });
+});
+
+/**
+ * Date-bearing fields are canonicalised before storage.
+ *
+ * The reminder planner reads dates out of stored values with a regex anchored to
+ * a four-digit year, and nothing else. A real run stored one birthday three ways
+ * across three turns — "2 March", "03-02", "2026-03-02" — and the first two were
+ * invisible to the planner, so the reminder they should have armed never existed.
+ */
+describe('PreferenceExtractor — date canonicalisation', () => {
+  let bedrock: BedrockClient;
+  let storage: StorageInterface;
+  let extractor: PreferenceExtractor;
+
+  const extracting = (value: string, field = 'birthday') => {
+    vi.mocked(bedrock.extractWithTool).mockResolvedValue({
+      toolName: 'extract_preferences',
+      input: {
+        preferences: [
+          { category: 'important_dates', key: field, field, value, confidence: 1 },
+        ],
+      },
+    });
+  };
+
+  const savedValue = (): string =>
+    vi.mocked(storage.savePreference).mock.calls[0][0].value;
+
+  beforeEach(() => {
+    bedrock = createMockBedrock();
+    storage = createMockStorage();
+    extractor = new PreferenceExtractor(bedrock, storage, {});
+    vi.mocked(storage.findPreference).mockResolvedValue(null);
+    vi.mocked(storage.getPreferencesBySession).mockResolvedValue([]);
+  });
+
+  it('resolves "2 March" to the NEXT 2 March, planner-readable and never past', async () => {
+    extracting('2 March');
+    await extractor.extract(makeMessage(), []);
+
+    const value = savedValue();
+    expect(value).toMatch(/^\d{4}-03-02$/);
+    // Next occurrence, today included — a birthday normalised to a date months
+    // in the past is exactly the bug this exists to prevent.
+    expect(value >= new Date().toISOString().slice(0, 10)).toBe(true);
+  });
+
+  it('resolves the model\'s year-less "03-02" the same way', async () => {
+    extracting('03-02');
+    await extractor.extract(makeMessage(), []);
+    expect(savedValue()).toMatch(/^\d{4}-03-02$/);
+  });
+
+  it('keeps a value that already carries an ISO date verbatim, original year and all', async () => {
+    // "2023-09-10" on an anniversary is the year they met. The planner rolls
+    // recurring dates forward itself; the stored year is information.
+    extracting('2023-09-10', 'anniversary');
+    await extractor.extract(makeMessage(), []);
+    expect(savedValue()).toBe('2023-09-10');
+  });
+
+  it('canonicalises the date half of a next_occasion and keeps the label as written', async () => {
+    extracting('10 September@our third anniversary dinner', 'next_occasion');
+    await extractor.extract(makeMessage(), []);
+    expect(savedValue()).toMatch(/^\d{4}-09-10@our third anniversary dinner$/);
+  });
+
+  it('leaves an unparseable value alone — a bad parse is worse than no parse', async () => {
+    extracting('March, she\'s turning 30');
+    await extractor.extract(makeMessage(), []);
+    expect(savedValue()).toBe('March, she\'s turning 30');
+  });
+
+  it('never touches non-date fields, whatever their value looks like', async () => {
+    extracting('03-02', 'clothing_size');
+    await extractor.extract(makeMessage(), []);
+    expect(savedValue()).toBe('03-02');
   });
 });
 

@@ -159,7 +159,9 @@ describe('useLiveArchitecture', () => {
 
       // One hop at a time, taken from the real route — never the whole route at
       // once, which is what used to light seven cards simultaneously.
-      const route = routeBetween('fargate', 'dynamodb');
+      // `useLiveArchitecture()` defaults to engine A, so that is the tree the hook
+      // routed on and the tree this expectation must be built from.
+      const route = routeBetween('fargate', 'dynamodb', 'valentin');
       expect(result.current.activeHops).toEqual([]);
       walkToArrival(1);
       expect(result.current.activeHops).toEqual([route[0]]);

@@ -13,6 +13,7 @@ import {
 } from './agent-orchestrator';
 import { buildSystemPrompt, partnerNameFrom } from './prompts';
 import { readKnownFacts, readVisitedPlaces } from './partner-profile';
+import { recordSideWork } from '../telemetry/turn-metrics';
 import type {
   AgentCoreRuntime,
   GatewayProposal,
@@ -190,6 +191,8 @@ export class AgentCoreOrchestrator implements AgentOrchestratorInterface {
           // read side only, and this is where engine B gets it for free.
           false,
           await readVisitedPlaces(this.storage, sessionId),
+          new Date(),
+          content,
         ),
         history: context.recentMessages,
       });
@@ -233,7 +236,12 @@ export class AgentCoreOrchestrator implements AgentOrchestratorInterface {
     // Engine A's extractor is fire-and-forget for the same reason: memory work
     // must not sit between the model's answer and the user seeing it, and a
     // Memory outage must cost the profile update rather than the reply.
-    void this.rememberTurn(sessionId, userMessage, agentMessage);
+    //
+    // Registered with the turn for the same reason engine A's extraction is, and it
+    // has to be *both* or the fix becomes a thumb on the scale: counting engine A's
+    // deferred work while leaving engine B's uncounted would make the comparison this
+    // telemetry feeds flatter AgentCore by exactly the calls it also defers.
+    recordSideWork(this.rememberTurn(sessionId, userMessage, agentMessage));
 
     return agentMessage;
   }

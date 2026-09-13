@@ -134,7 +134,9 @@ test.describe('The engine toggle', () => {
     await openDrawer(page);
 
     const gateway = page.getByTestId('aws-node-ac-gateway');
-    const toolLambda = page.getByTestId('aws-node-ac-integrations');
+    // The Lambda that holds the provider keys — its own card now, rather than a tool
+    // count in the Gateway's caption.
+    const toolLambda = page.getByTestId('aws-node-ac-lambda-tools');
     const bedrock = page.getByTestId('aws-node-bedrock');
 
     // Engine A: the Gateway branch is greyed out. Nothing on engine A's path reaches
@@ -159,10 +161,11 @@ test.describe('The engine toggle', () => {
     await expect(bedrock).not.toHaveAttribute('data-state', 'muted');
   });
 
-  test('the Gateway card names the MCP endpoint and both Lambda targets', async ({ page }) => {
-    // The caption is the claim a room reads as the Gateway's benefit. A unit test
-    // pins the tool count against the generated schemas; this pins that the card
-    // actually says it on screen.
+  test('the Gateway names its endpoint and the two Lambdas name their tools', async ({ page }) => {
+    // The Gateway's caption used to carry the tool count for both targets behind it.
+    // The targets are cards of their own now, so the claim splits: the Gateway says
+    // what it is, and each Lambda says how many tools it answers for. Unit tests pin
+    // those counts against the generated schemas; this pins that they reach the screen.
     const app = new AppPage(page);
     await app.goto();
     await openDrawer(page);
@@ -171,7 +174,59 @@ test.describe('The engine toggle', () => {
     const gateway = page.getByTestId('aws-node-ac-gateway');
     await expect(gateway).toBeVisible({ timeout: 15_000 });
     await expect(gateway).toContainText('MCP');
-    await expect(gateway).toContainText('2 Lambda targets');
-    await expect(gateway).toContainText(/\d+ tools/);
+
+    await expect(page.getByTestId('aws-node-ac-lambda-profile')).toContainText(/\d+ tools/);
+    await expect(page.getByTestId('aws-node-ac-lambda-tools')).toContainText(/\d+ tools/);
+  });
+
+  test('lists the registered tool entry points, and only on the engine that has them', async ({
+    page,
+  }) => {
+    // "Show the entry points themselves that are registered as tools." The panel is
+    // the one place the diagram states what is *on* the Gateway rather than that a
+    // Gateway exists — and it greys out on engine A, where the same schemas are
+    // rebuilt in-process and described to Bedrock inside every Converse request.
+    const app = new AppPage(page);
+    await app.goto();
+    await openDrawer(page);
+
+    const panel = page.getByTestId('aws-tool-panel');
+    await expect(panel).toHaveAttribute('data-state', 'muted', { timeout: 15_000 });
+    await expect(panel).toContainText('No tool registry');
+
+    await selectEngine(page, 'agentcore');
+
+    await expect(panel).toHaveAttribute('data-state', 'active-engine', { timeout: 15_000 });
+    await expect(panel).toContainText('Registered on the Gateway');
+    // Two names a room can look up: one from each Lambda, so the panel is shown to be
+    // reading the model rather than printing a hard-coded sample.
+    await expect(page.getByTestId('aws-tool-entry-save_preference')).toBeVisible();
+    await expect(page.getByTestId('aws-tool-entry-find_music')).toBeVisible();
+    // And a confirm half, which is the pair the Gateway's registry makes visible:
+    // proposing and sending are two entry points because they are two authorities.
+    await expect(page.getByTestId('aws-tool-entry-confirm_email')).toBeVisible();
+  });
+
+  test('keeps one shared table, one shared provider card and one set of logos', async ({ page }) => {
+    // The duplication this replaced: a second DynamoDB card and a second External APIs
+    // card drawn inside engine B's band, which read as two tables and left the room
+    // asking which one her preferences were in. One card each now, on both engines —
+    // what differs is the route drawn into them.
+    const app = new AppPage(page);
+    await app.goto();
+    await openDrawer(page);
+
+    await expect(page.getByTestId('aws-node-dynamodb')).toHaveCount(1, { timeout: 15_000 });
+    await expect(page.getByTestId('aws-node-integrations')).toHaveCount(1);
+    await expect(page.getByTestId('aws-provider-strip')).toHaveCount(1);
+
+    await selectEngine(page, 'agentcore');
+
+    await expect(page.getByTestId('aws-node-dynamodb')).toHaveCount(1, { timeout: 15_000 });
+    await expect(page.getByTestId('aws-node-integrations')).toHaveCount(1);
+    await expect(page.getByTestId('aws-provider-strip')).toHaveCount(1);
+    // Shared means unshaded on both halves: greying the table when you switch would
+    // claim engine B keeps her preferences somewhere else.
+    await expect(page.getByTestId('aws-node-dynamodb')).not.toHaveAttribute('data-state', 'muted');
   });
 });

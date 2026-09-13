@@ -201,6 +201,106 @@ describe('loadRemoteCredentials', () => {
   });
 });
 
+/**
+ * The one exception to per-field precedence, and the reason it exists.
+ *
+ * A client id, its secret and a refresh token minted by that client are only
+ * valid as a set. Filling the empty one from a secret describing a *different*
+ * OAuth app produces a mixture that no side ever held — which is precisely what
+ * broke every deployed Spotify playlist save on 2026-09-05: the old app's id and
+ * secret from the env, the new app's refresh token from the secret, and a
+ * `400 invalid_client` from Spotify that read to the user as "Spotify didn't
+ * save it".
+ */
+describe('a coupled credential set is filled all-or-nothing', () => {
+  it('adopts the secret whole when the environment names a different client and is incomplete', async () => {
+    // Exactly the production state: id and secret injected from the canonical
+    // secret, refresh token empty, and the runtime secret holding all three for
+    // another app.
+    config.integrations.spotifyClientId = 'old-app-id';
+    config.integrations.spotifyClientSecret = 'old-app-secret';
+    config.integrations.spotifyRefreshToken = undefined;
+    stubSecrets({
+      spotify: {
+        clientId: 'new-app-id',
+        clientSecret: 'new-app-secret',
+        refreshToken: 'new-app-refresh',
+      },
+    });
+
+    await loadRemoteCredentials();
+
+    // All three from one app, not two from one and one from the other.
+    expect(config.integrations.spotifyClientId).toBe('new-app-id');
+    expect(config.integrations.spotifyClientSecret).toBe('new-app-secret');
+    expect(config.integrations.spotifyRefreshToken).toBe('new-app-refresh');
+  });
+
+  it('leaves a complete environment set alone, because that one already works', async () => {
+    config.integrations.spotifyClientId = 'env-id';
+    config.integrations.spotifyClientSecret = 'env-secret';
+    config.integrations.spotifyRefreshToken = 'env-refresh';
+    stubSecrets({
+      spotify: { clientId: 'other-id', clientSecret: 'other-secret', refreshToken: 'other-refresh' },
+    });
+
+    await loadRemoteCredentials();
+
+    expect(config.integrations.spotifyClientId).toBe('env-id');
+    expect(config.integrations.spotifyClientSecret).toBe('env-secret');
+    expect(config.integrations.spotifyRefreshToken).toBe('env-refresh');
+  });
+
+  it('fills nothing when the disagreeing secret is itself incomplete', async () => {
+    // Neither set can work, so the honest outcome is the one that stays
+    // diagnosable: the env's own pairing, untouched.
+    config.integrations.googleClientId = 'env-id';
+    config.integrations.googleClientSecret = 'env-secret';
+    config.integrations.googleRefreshToken = undefined;
+    stubSecrets({ google: { clientId: 'other-id', refreshToken: 'orphan-refresh' } });
+
+    await loadRemoteCredentials();
+
+    expect(config.integrations.googleClientId).toBe('env-id');
+    expect(config.integrations.googleClientSecret).toBe('env-secret');
+    expect(config.integrations.googleRefreshToken).toBeUndefined();
+  });
+
+  it('says so in the log either way, since silence is what made this expensive', async () => {
+    const lines = captureLogs();
+    config.integrations.spotifyClientId = 'old-app-id';
+    config.integrations.spotifyClientSecret = 'old-app-secret';
+    config.integrations.spotifyRefreshToken = undefined;
+    stubSecrets({
+      spotify: { clientId: 'new-app-id', clientSecret: 'new-app-secret', refreshToken: 'new-ref' },
+    });
+
+    await loadRemoteCredentials();
+
+    const mismatch = lines.filter((l) => l.includes('secret-client-mismatch'));
+    expect(mismatch).toHaveLength(1);
+    expect(mismatch[0]).toContain('"adopted":true');
+    // Still no credential in the line — the rule this module is built on.
+    expect(mismatch[0]).not.toContain('new-app-id');
+  });
+
+  it('still merges per field when both sides name the same client', async () => {
+    // The ordinary upgrade path: the panel's consent popup earns a refresh token
+    // for the client the deployment is already running.
+    config.integrations.spotifyClientId = 'same-id';
+    config.integrations.spotifyClientSecret = 'same-secret';
+    config.integrations.spotifyRefreshToken = undefined;
+    stubSecrets({
+      spotify: { clientId: 'same-id', clientSecret: 'ignored', refreshToken: 'earned-refresh' },
+    });
+
+    await loadRemoteCredentials();
+
+    expect(config.integrations.spotifyClientSecret).toBe('same-secret');
+    expect(config.integrations.spotifyRefreshToken).toBe('earned-refresh');
+  });
+});
+
 describe('putRemoteCredentials', () => {
   it('writes the whole field set under the service’s own secret', async () => {
     const { writes } = stubSecrets({});

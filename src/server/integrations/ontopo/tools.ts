@@ -3,6 +3,7 @@ import type {
   ActionProposal,
   AgentTool,
   BookingRecord,
+  ToolContext,
   ToolResult,
 } from '../tool-registry';
 import {
@@ -29,9 +30,10 @@ import { RESTAURANT_STYLE_OPTIONS } from '../../../shared/constants/profile-fiel
 // radius needs a coordinate, and `geocode` is where coordinates come from. `venues.ts`
 // stays pure so the bookable list has no dependency on a Maps key.
 import { geocode } from '../google-places/client';
-import { resolveAnyVenue, venuesInCity, knownCities } from './discovery';
+import { resolveAnyVenue, venuesInCity, knownCities, venuePageUrl } from './discovery';
 import { describeVenueWebLead, findVenueOwnPage } from './venue-web-fallback';
 import { completeCheckout, type CheckoutGuest } from './checkout-form';
+import { sendReservationSummary } from './reservation-email';
 import { config } from '../../config';
 import { logger } from '../../logging';
 
@@ -636,6 +638,21 @@ export const proposeReservationTool: AgentTool = {
         time: slot.time,
         size,
         area: slot.area,
+        /*
+         * The next three exist for the confirmation mail, and are carried rather
+         * than re-derived at confirm time for the same reason `propose_email`
+         * carries its body: what the user agreed to is what should be reported.
+         *
+         * `place` and `city` are separate because they answer different questions.
+         * `place` is the human line — a neighbourhood if the venue has one, else
+         * the city — and `city` is what `venuePageUrl` needs to look up an Ontopo
+         * city slug, which a neighbourhood would fail. Both come from the resolved
+         * venue, so a *discovered* venue gets a working page link too, where
+         * reading the curated list in `confirm` would have found nothing.
+         */
+        place: placeOf(venue) ?? null,
+        city: venue.city ?? null,
+        occasion: typeof input.occasion === 'string' ? input.occasion.trim() : null,
       },
     };
 
@@ -655,7 +672,7 @@ export const proposeReservationTool: AgentTool = {
     };
   },
 
-  async confirm(proposal): Promise<ToolResult> {
+  async confirm(proposal, ctx): Promise<ToolResult> {
     const payload = proposal.payload ?? {};
     const slug = typeof payload.slug === 'string' ? payload.slug : null;
     const date = typeof payload.date === 'string' ? payload.date : null;
@@ -664,6 +681,9 @@ export const proposeReservationTool: AgentTool = {
     const size = typeof payload.size === 'number' ? payload.size : 2;
     const venueName = typeof payload.venueName === 'string' ? payload.venueName : 'the restaurant';
     const readableDate = typeof payload.readableDate === 'string' ? payload.readableDate : '';
+    const place = typeof payload.place === 'string' ? payload.place : null;
+    const city = typeof payload.city === 'string' ? payload.city : null;
+    const occasion = typeof payload.occasion === 'string' ? payload.occasion : null;
 
     if (!slug || !date || !time || !area) {
       return {
@@ -694,10 +714,13 @@ export const proposeReservationTool: AgentTool = {
       };
     }
 
-    const stillThere = availability.slots.some(
+    // The slot itself rather than a boolean: `areaLabel` is Ontopo's display name
+    // for the area and the payload only carries the opaque identifier, which is
+    // frequently Hebrew and does not belong in an English confirmation mail.
+    const heldSlot = availability.slots.find(
       (slot) => slot.time === time && slot.area === area && slot.bookable,
     );
-    if (!stillThere) {
+    if (!heldSlot) {
       return {
         ok: false,
         summary:
@@ -755,6 +778,61 @@ export const proposeReservationTool: AgentTool = {
     };
 
     /*
+     * Put the reservation in his inbox, whichever way this ends.
+     *
+     * Called from all three terminal outcomes below rather than once here, because
+     * `booked` is the one field that differs between them and it is the field the
+     * whole message turns on — the two bodies are different documents. Defined here,
+     * above the branch, so the eleven facts they share are written once.
+     *
+     * `sent` gates one sentence in the reply and nothing else. A mail that did not
+     * go must not cost the reservation or the reply that reports it, so
+     * `sendReservationSummary` never throws and every failure simply leaves the
+     * inbox unmentioned. See its header for why the channel is Gmail readiness
+     * rather than `REMINDER_CHANNEL`.
+     */
+    const mailTheReservation = async (
+      booked: boolean,
+      guestName?: string | null,
+    ): Promise<string> => {
+      try {
+        const outcome = await sendReservationSummary(
+          {
+            venueName,
+            place,
+            readableDate,
+            time: formatSlotTime(time),
+            partySize: size,
+            area: heldSlot.areaLabel || heldSlot.area,
+            occasion,
+            booked,
+            guestName,
+            checkoutUrl: checkout.url,
+            venuePageUrl: venuePageUrl({ slug, city }),
+          },
+          ctx,
+        );
+        return outcome.sent ? ` I've emailed you the details.` : '';
+      } catch (err) {
+        /*
+         * Belt and braces, and worth the four lines.
+         *
+         * `sendReservationSummary` is documented never to throw, but a table is
+         * held by the time we are here and this reply is the only place the user
+         * learns about it — so the reservation must not depend on that promise
+         * being kept by a module someone else may edit. `observed` in
+         * `tool-registry.ts` would otherwise turn a mail bug into "I could not
+         * complete that booking" for a booking that completed.
+         */
+        logger.warn('ontopo.confirmation_mail_threw', {
+          venue: venueName,
+          cause: (err instanceof Error ? err.message : String(err)).slice(0, 200),
+        });
+        return '';
+      }
+    };
+
+    /*
      * Finish the form ourselves when we can, and hand over the link when we cannot.
      *
      * `guestForCheckout` returns null unless a full identity is configured, so the
@@ -766,6 +844,7 @@ export const proposeReservationTool: AgentTool = {
     if (guest) {
       const outcome = await completeCheckout(checkout.url, guest);
       if (outcome.booked) {
+        const mailed = await mailTheReservation(true, outcome.guestName);
         return {
           ok: true,
           summary:
@@ -776,7 +855,7 @@ export const proposeReservationTool: AgentTool = {
           reply:
             `Booked — ${venueName}${when} for ${size}, under the name ${outcome.guestName}. ` +
             `Ontopo sends the confirmation and the cancellation link by SMS and email, so you ` +
-            `can change it from there if you need to.`,
+            `can change it from there if you need to.${mailed}`,
           data: {
             booked: true,
             venue: venueName,
@@ -794,6 +873,7 @@ export const proposeReservationTool: AgentTool = {
         venue: venueName,
         cause: (outcome.reason ?? 'unknown').slice(0, 200),
       });
+      const mailed = await mailTheReservation(false);
       return {
         ok: true,
         summary:
@@ -803,7 +883,7 @@ export const proposeReservationTool: AgentTool = {
         reply:
           `I couldn't finish the booking form for ${venueName}${when}, so nothing is booked ` +
           `yet — but the page is open and holding it:\n\n${checkout.url}\n\nFinish it there ` +
-          `and the table is yours.`,
+          `and the table is yours.${mailed}`,
         data: {
           booked: false,
           venue: venueName,
@@ -815,6 +895,7 @@ export const proposeReservationTool: AgentTool = {
       };
     }
 
+    const mailed = await mailTheReservation(false);
     return {
       ok: true,
       summary:
@@ -822,7 +903,7 @@ export const proposeReservationTool: AgentTool = {
         `link and be clear that the table is theirs once they finish the form there.`,
       reply:
         `Ontopo's booking page is open for ${venueName}${when} for ${size}:\n\n${checkout.url}` +
-        `\n\nThe table is yours once you finish the form there.`,
+        `\n\nThe table is yours once you finish the form there.${mailed}`,
       data: { booked: false, url: checkout.url, venue: venueName, time: formatSlotTime(time) },
       booking,
     };

@@ -10,12 +10,8 @@ import {
   sendMessage,
   type CalendarEvent,
 } from './client';
-import {
-  NOTIFY_EMAIL_FIELD,
-  looksLikeEmail,
-  resolveNotifyEmail,
-} from '../../reminders/notify-email';
-import { profileFieldValue } from '../../reminders/reminder-sync';
+import { looksLikeEmail } from '../../reminders/notify-email';
+import { notifyAddressForTool } from '../notify-address';
 
 /**
  * Calendar and Gmail — the two tools that touch someone's own account.
@@ -522,29 +518,6 @@ export const proposeCalendarEventTool: AgentTool = {
   },
 };
 
-/**
- * The user's own address: his profile's if he has given one, else the owner's.
- *
- * Two reads, and only on the turns where the model left `to` out — a mail to a
- * restaurant costs nothing here. Failures are swallowed on purpose: a throttled
- * table must cost the *fallback* address, not the offer to send, and
- * `resolveNotifyEmail` already answers with the deployment owner when it is handed
- * nothing. A deployment with no store on the tool path lands in the same place.
- */
-async function ownerAddress(ctx: ToolContext): Promise<string | null> {
-  if (!ctx.storage) return resolveNotifyEmail(null);
-
-  try {
-    const [preferences, manual] = await Promise.all([
-      ctx.storage.getPreferencesBySession(ctx.sessionId),
-      ctx.storage.getManualValues(ctx.sessionId),
-    ]);
-    return resolveNotifyEmail(profileFieldValue(NOTIFY_EMAIL_FIELD, manual, preferences));
-  } catch {
-    return resolveNotifyEmail(null);
-  }
-}
-
 /** Trim a body down for the card while keeping it recognisable. */
 function preview(body: string, limit = 400): string {
   const flat = body.trim();
@@ -615,7 +588,7 @@ export const proposeEmailTool: AgentTool = {
      * has to keep working, and quietly redirecting a third-party mail to the owner
      * would be worse than refusing it.
      */
-    const to = asked || (await ownerAddress(ctx));
+    const to = asked || (await notifyAddressForTool(ctx));
 
     if (!to) {
       return {

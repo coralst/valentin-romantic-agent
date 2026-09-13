@@ -1,7 +1,7 @@
 import type { Outing } from '../../shared/interfaces/outing';
 import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
 import type { Reminder } from '../../shared/interfaces/reminder';
-import { citySlugFor } from '../integrations/ontopo/discovery';
+import { venuePageUrl } from '../integrations/ontopo/discovery';
 import { isRestaurantStyle, findVenues } from '../integrations/ontopo/venues';
 import type { CuratedVenue } from '../integrations/ontopo/venues';
 import type { StorageInterface } from '../persistence/storage-interface';
@@ -205,22 +205,9 @@ function ratingFor(venue: CuratedVenue, outings: readonly Outing[]): number | nu
   return typeof match?.rating === 'number' ? match.rating : null;
 }
 
-/**
- * The venue's own Ontopo page, when its city is one Ontopo has a page for.
- *
- * Built from `citySlugFor` — a pure lookup over `CITY_SLUGS`, no request — and the
- * slug the curated entry already carries, which is the same slug `availability_search`
- * books against. Omitted rather than guessed when the city is unknown: a 404 in a
- * reminder is worse than a name he can search himself.
- */
-function pageUrl(venue: CuratedVenue): string | null {
-  const citySlug = citySlugFor(venue.city);
-  return citySlug ? `https://ontopo.com/en/il/${citySlug}/page/${venue.slug}` : null;
-}
-
 function toSuggestion(venue: CuratedVenue, outings: readonly Outing[]): ReminderSuggestion {
   const previousRating = ratingFor(venue, outings);
-  const url = pageUrl(venue);
+  const url = venuePageUrl(venue);
   return {
     name: venue.name,
     ...(url === null ? {} : { url }),

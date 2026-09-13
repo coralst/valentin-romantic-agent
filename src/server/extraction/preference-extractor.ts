@@ -225,7 +225,16 @@ function nextIsoOccurrence(month: number, day: number, now: Date): string {
   }
 }
 
-function canonicalDateValue(fieldId: string | null, value: string, now: Date): string {
+/**
+ * Exported for engine B, which files preferences without going through this module.
+ *
+ * `agentcore-orchestrator.mirrorPreferences` writes what AgentCore Memory remembered
+ * straight into DynamoDB, and until it used this a birthday remembered as "March 14th"
+ * was stored verbatim — so the planner's `findDate`, which requires a four-digit year,
+ * produced no row and the reminder silently never existed. One implementation, so the
+ * two engines cannot canonicalise a date differently.
+ */
+export function canonicalDateValue(fieldId: string | null, value: string, now: Date): string {
   if (!fieldId || !DATE_FIELD_IDS.has(fieldId)) return value;
   if (/\d{4}-\d{2}-\d{2}/.test(value)) return value;
 

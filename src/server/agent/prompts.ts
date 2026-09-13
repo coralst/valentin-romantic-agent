@@ -102,7 +102,16 @@ Remember: you're helping someone become a more thoughtful, attentive partner. Ev
  *   interrogating a date nobody was unsure about. The default is stated
  *   explicitly for that reason: take the civil reading, do not ask.
  */
-export const TOOL_GUIDANCE = `
+/**
+ * Everything true of both engines' toolsets.
+ *
+ * Split out from {@link TOOL_GUIDANCE} because the two engines do not hold the same
+ * tools: `create_conversation_link` is withheld from the AgentCore Gateway (see
+ * `WITHHELD` in `infra/lib/agentcore-stack.ts`), so telling engine B's model to call
+ * it would be the mirror of the bug this split fixes — a model confidently offering
+ * something it cannot do. Assemble with {@link toolGuidanceFor}, never by hand.
+ */
+const TOOL_GUIDANCE_CORE = `
 USING YOUR TOOLS
 
 You can reach a few real services. Reach for them when the answer depends on
@@ -159,13 +168,43 @@ concierge who asks twice is a nag, and this must never become a tic you attach t
 every message. Her birthday, your anniversary and the occasion you are currently
 planning are already handled from her profile; do not offer to remind him of those.
 
+YOU CAN TELL HIM WHAT YOU ARE ALREADY REMINDING HIM ABOUT. Reminders outlive a
+conversation, and some of them were set in an earlier one — so when he asks what is
+set, whether something is covered, or before you offer a reminder that may already
+exist, call list_reminders and read the answer. Do not recall it from what was said
+in this chat; a reminder you merely offered is not one that is armed.
+
+If he wants one stopped, call cancel_reminder with whatever he called it. Some
+reminders come from her profile and are stopped by muting that kind rather than by
+deleting them; the tool works that out and tells you which it did. Report what it
+says happened rather than assuming it was a deletion.`;
+
+/**
+ * The one capability engine B does not have.
+ *
+ * Appended only when `create_conversation_link` is actually reachable — engine A
+ * always, engine B not at all, because the tools Lambda holds no share-token secret.
+ */
+const CONVERSATION_LINK_GUIDANCE = `
+
 YOU CAN HAND OUT A LINK TO THIS CONVERSATION. If the user asks for a link to the
 chat, asks you to email or send them one, or wants to show it to somebody, call
 create_conversation_link. It answers with the placeholder
 ${CONVERSATION_LINK_PLACEHOLDER} rather than with a URL: write that placeholder
 wherever the link belongs — in your reply, or in the body of propose_email — and
 the real signed link is filled in for you. Never write a URL of your own; they are
-signed, and one you compose will not open.
+signed, and one you compose will not open.`;
+
+/**
+ * The don't-deny-your-own-capabilities rule, in two versions.
+ *
+ * The rule names the specific claims that are untrue, because naming only the
+ * behaviour ("do not say you cannot") left the model wordings the rule did not cover.
+ * That makes it capability-specific: on an engine with no link tool, "I don't have
+ * access to a link to this conversation" is *true*, and listing it as a forbidden
+ * claim would push the model into inventing a URL instead.
+ */
+const CAPABILITY_DENIAL_WITH_LINK = `
 
 NEVER TELL HIM A CAPABILITY IS MISSING WHEN YOU HAVE A TOOL FOR IT. You can make
 a link to this conversation and you can email him, so "I don't have access to a
@@ -174,6 +213,41 @@ this version" are all untrue — and being told a thing is impossible when it is
 tool call away is worse than any error message. If you are unsure whether
 something will work, call the tool and find out. A real limit is one a tool came
 back and told you about, and then you say plainly what failed.`;
+
+const CAPABILITY_DENIAL_NO_LINK = `
+
+NEVER TELL HIM A CAPABILITY IS MISSING WHEN YOU HAVE A TOOL FOR IT. You can email
+him, you can set him a reminder and you can list the ones already set, so "I can't
+send email", "I don't have a reminder tool" and "that tool isn't available in this
+version" are all untrue — and being told a thing is impossible when it is one tool
+call away is worse than any error message. If you are unsure whether something will
+work, call the tool and find out. A real limit is one a tool came back and told you
+about, and then you say plainly what failed.`;
+
+/** Which optional tools this deployment actually holds. */
+export interface ToolAvailability {
+  /** Whether there are any tools at all. False silences the whole block. */
+  any: boolean;
+  /** Whether `create_conversation_link` is reachable. False on the AgentCore Gateway. */
+  conversationLink: boolean;
+}
+
+/** The guidance for a given toolset. */
+export function toolGuidanceFor(availability: ToolAvailability): string {
+  return availability.conversationLink
+    ? `${TOOL_GUIDANCE_CORE}${CONVERSATION_LINK_GUIDANCE}${CAPABILITY_DENIAL_WITH_LINK}`
+    : `${TOOL_GUIDANCE_CORE}${CAPABILITY_DENIAL_NO_LINK}`;
+}
+
+/**
+ * The full guidance, for a deployment holding every tool — which is engine A.
+ *
+ * Kept as a constant because `prompts-consistency.test.ts` reads it directly to check
+ * the prose against the code it describes: that the send time it promises matches
+ * `REMINDER_SEND_TIME_LOCAL`, and that every tool name it mentions is one a tool
+ * actually provides.
+ */
+export const TOOL_GUIDANCE = toolGuidanceFor({ any: true, conversationLink: true });
 
 /**
  * What day it is, for a model that would otherwise guess.
@@ -501,14 +575,23 @@ export function partnerNameFrom(facts: readonly KnownFact[]): string | null {
  */
 export function buildSystemPrompt(
   facts: readonly KnownFact[],
-  hasTools = false,
+  /**
+   * What this deployment can actually do.
+   *
+   * A bare boolean still means "all of it, or none", which is engine A and every
+   * existing caller. Engine B passes a {@link ToolAvailability} because its tools come
+   * from the Gateway, which withholds `create_conversation_link`.
+   */
+  hasTools: boolean | ToolAvailability = false,
   visited: readonly Outing[] = [],
   now: Date = new Date(),
   message = '',
 ): string {
+  const availability: ToolAvailability =
+    typeof hasTools === 'boolean' ? { any: hasTools, conversationLink: hasTools } : hasTools;
   // Appended, not interleaved, so the persona and the profile read the same
   // whether or not this deployment has any credentials.
-  const tools = hasTools ? `\n${TOOL_GUIDANCE}` : '';
+  const tools = availability.any ? `\n${toolGuidanceFor(availability)}` : '';
   const history = visitedBlock(visited);
   // Ahead of the state and the facts, because it is the frame they are read in: a
   // birthday "next month" means nothing until the model knows which month this is.

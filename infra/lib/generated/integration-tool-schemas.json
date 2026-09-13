@@ -1,5 +1,32 @@
 [
   {
+    "name": "cancel_reminder",
+    "description": "Stop a reminder the user no longer wants. Say which one in his own words — \"the florist\", \"her birthday\" — or pass the id from list_reminders. Call list_reminders first if you are not sure what is set.\n\nThis handles both kinds: a reminder he set by hand is dropped, and one that comes from her profile (her birthday, your anniversary, the occasion being planned) is muted so it does not come back. You do not need to know which is which. Report what actually happened rather than assuming it was a deletion.",
+    "requiresConfirmation": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Storage id of the signed-in user, supplied by the proxy service"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "The conversation session id"
+        },
+        "reminder": {
+          "type": "string",
+          "description": "Which reminder to stop: the id from list_reminders, or enough of what it is about to identify it — \"florist\", \"birthday\"."
+        }
+      },
+      "required": [
+        "user_id",
+        "session_id",
+        "reminder"
+      ]
+    }
+  },
+  {
     "name": "check_availability",
     "description": "Ask Ontopo which tables are actually free at one restaurant on a given date, for a given party size. Returns real bookable times grouped by seating area, including times either side of the one asked for. Always check this before proposing a reservation, and check Shabbat first for a Friday or Saturday — most of these kitchens are closed then. When Ontopo has nothing or does not answer, this also returns the restaurant's own site and phone number where it can find them — pass those on rather than ending on a no.",
     "requiresConfirmation": false,
@@ -321,6 +348,28 @@
         "anniversary_title": {
           "type": "string",
           "description": "What the anniversary is, e.g. \"their wedding anniversary\"."
+        }
+      },
+      "required": [
+        "user_id",
+        "session_id"
+      ]
+    }
+  },
+  {
+    "name": "list_reminders",
+    "description": "List the reminders currently set for the user — what each one is about, the date it concerns, and when the email goes out. Call this whenever he asks what you are reminding him about, whether something is already set, or before you offer to remind him of something that may already be covered. Read the answer rather than recalling it from the conversation: reminders persist across conversations and some of these were set long before this one.",
+    "requiresConfirmation": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Storage id of the signed-in user, supplied by the proxy service"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "The conversation session id"
         }
       },
       "required": [
@@ -751,6 +800,48 @@
         "user_id",
         "session_id",
         "query"
+      ]
+    }
+  },
+  {
+    "name": "set_reminder",
+    "description": "Set a reminder for the user about something on a specific date. He gets an email at 08:30 Israel time with a link back to this conversation, or at a time he names. Use this whenever he asks to be reminded of something, to be mailed about it, or accepts your offer to remind him.\n\nThe date must be absolute (YYYY-MM-DD). Work out \"next Tuesday\", \"the 4th\" or \"in two weeks\" against the current date given at the top of your instructions — never guess a year, and if you cannot tell which date he means, ask.\n\nBy default the mail goes out on the morning of the date itself. Set remind_days_before when he wants warning ahead of it (\"a week before the anniversary\" is remind_days_before: 7).\n\nHer birthday, your anniversary and the next occasion being planned are already reminded about automatically from her profile — do not duplicate those here. This is for everything else: an errand, a booking to make, a dinner, someone else's birthday.\n\nIf he asks for something recurring or annual: the anniversary and her birthday already recur every year on their own, so say that plainly rather than claiming you cannot do recurring reminders — you are not being asked to. How much warning those built-in ones give is a preference on her profile, not something this tool sets; if he wants it changed, say so plainly instead of filing a one-off copy.",
+    "requiresConfirmation": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Storage id of the signed-in user, supplied by the proxy service"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "The conversation session id"
+        },
+        "title": {
+          "type": "string",
+          "description": "What to remind him of, in his own words, as he would want to read it back: \"Call the florist\", \"Book the Italian place for the 18th\". Do not make it possessive or add her name."
+        },
+        "date": {
+          "type": "string",
+          "description": "The day the thing happens, as YYYY-MM-DD. An absolute date, resolved against the current date in your instructions."
+        },
+        "remind_days_before": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 365,
+          "description": "How many days of warning he wants. Omit for the morning of the date itself, which is the default. 7 for \"a week before\"."
+        },
+        "at_time": {
+          "type": "string",
+          "description": "The time of day to send it, as 24-hour HH:MM in Israel time, when he names one — \"mail me at seven that morning\" is \"07:00\". Omit for the default of 08:30. This is the time the *mail* goes out, not the time of the thing itself."
+        }
+      },
+      "required": [
+        "user_id",
+        "session_id",
+        "title",
+        "date"
       ]
     }
   }

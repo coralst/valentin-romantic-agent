@@ -247,6 +247,16 @@ export class AgentCoreStack extends cdk.Stack {
         // Switches `credential-store.ts` on. Unset — locally, and in `npm test` —
         // the whole remote-credential path is a no-op.
         INTEGRATION_SECRETS_PREFIX: props.integrationSecretsPrefix,
+        /*
+         * So a reminder this Lambda writes records the channel it will go out on.
+         *
+         * Cosmetic, and deliberately so: nothing reads `Reminder.channel` at delivery
+         * time. The sweeper lives in the proxy (`startReminderScheduler`) and builds
+         * its sender from *its* own config, so a row stamped `log` is still emailed.
+         * Set anyway, because a stored field that contradicts what actually happens is
+         * a trap for whoever reads the table next.
+         */
+        REMINDER_CHANNEL: 'gmail',
       },
       // Ontopo and Amadeus are third-party HTTP calls behind a token exchange, so
       // 10s (what the profile tools get for a DynamoDB read) is too tight.

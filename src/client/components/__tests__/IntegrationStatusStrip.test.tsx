@@ -106,6 +106,26 @@ describe('IntegrationStatusStrip', () => {
     );
   });
 
+  it('names the services the overflow chip is standing in for', () => {
+    /*
+     * So the architecture drawer has something to point at. It glows the tile for
+     * a tool call, and on a deployment with more integrations than tiles the
+     * service Valentin actually called may have been folded away — which made the
+     * glow silently do nothing on dev while it worked locally.
+     */
+    render(<IntegrationStatusStrip readiness={loaded({})} />);
+
+    const chip = screen.getByTestId('integration-status-overflow');
+    const named = (chip.getAttribute('data-overflow-services') ?? '').split(' ').filter(Boolean);
+
+    expect(named).toHaveLength(INTEGRATION_CATALOGUE.length - MAX_TILES);
+    // Every name is a real service, and none of them has a tile of its own.
+    for (const id of named) {
+      expect(INTEGRATION_CATALOGUE.some((s) => s.id === id)).toBe(true);
+      expect(screen.queryByTestId(`integration-status-${id}`)).not.toBeInTheDocument();
+    }
+  });
+
   it('shows the configured services first, so they survive the overflow cut', () => {
     // Two configured, both last in catalogue order: they must still be inside the
     // visible six rather than cut by it.

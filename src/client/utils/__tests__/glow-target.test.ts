@@ -235,10 +235,14 @@ describe('glowSelectors', () => {
     expect(glowSelectors({ kind: 'preference', preferenceId: 'pref-1' })).toEqual([]);
   });
 
-  it('finds a tool call at the strip tile and at its own row in the trail', () => {
+  it('finds a tool call at the strip tile, its trail row, and the overflow chip', () => {
+    // The chip is the anchor of last resort: on a deployment with more
+    // integrations than the strip has tiles, the service Valentin called may have
+    // no tile of its own, and glowing nothing at all is the failure this avoids.
     expect(glowSelectors({ kind: 'tool', service: 'ontopo' })).toEqual([
       '[data-testid="integration-status-ontopo"]',
       '[data-service="ontopo"]',
+      '[data-overflow-services~="ontopo"]',
     ]);
   });
 

@@ -71,8 +71,8 @@ describe('manual values over the API', () => {
   });
 
   it('ignores a row whose value is not a string, rather than rendering it', async () => {
-    stubFetch({ manualValues: { ring_size: { nested: true }, bra_size: '34B' } });
-    expect(Object.keys(await fetchManualValues('s1'))).toEqual(['bra_size']);
+    stubFetch({ manualValues: { ring_size: { nested: true }, clothing_size: 'UK 10' } });
+    expect(Object.keys(await fetchManualValues('s1'))).toEqual(['clothing_size']);
   });
 
   it('answers with nothing when the session has no corrections', async () => {
@@ -82,26 +82,26 @@ describe('manual values over the API', () => {
 
   it('PUTs one correction to the field’s own route', async () => {
     stubFetch({ saved: true });
-    await pushManualValue('s1', 'bra_size', '34B');
+    await pushManualValue('s1', 'clothing_size', 'UK 10');
     expect(calls[0]).toMatchObject({
-      url: '/api/session/s1/manual/bra_size',
+      url: '/api/session/s1/manual/clothing_size',
       method: 'PUT',
-      body: { value: '34B' },
+      body: { value: 'UK 10' },
     });
   });
 
   it('DELETEs a correction he has taken back', async () => {
     stubFetch({ deleted: true });
-    await clearManualValueOnServer('s1', 'bra_size');
+    await clearManualValueOnServer('s1', 'clothing_size');
     expect(calls[0]).toMatchObject({
-      url: '/api/session/s1/manual/bra_size',
+      url: '/api/session/s1/manual/clothing_size',
       method: 'DELETE',
     });
   });
 
   it('throws a message fit for a projector when the server refuses', async () => {
     stubFetch({}, false);
-    await expect(pushManualValue('s1', 'bra_size', '34B')).rejects.toThrow(
+    await expect(pushManualValue('s1', 'clothing_size', 'UK 10')).rejects.toThrow(
       /could not complete/,
     );
   });

@@ -5,18 +5,12 @@ import { tileHeadStyle, tileStyle, tileTitleStyle } from './tile-tones';
 import type { ProfileFieldValue } from '../../hooks/use-profile-store';
 
 /**
- * What fits her: three measurements, in the order a shop asks for them.
+ * What fits her: the two measurements a shop asks for first.
  *
- * Three, not the five that are on file. `ring_size` and `shoe_size` are still
+ * Two, not the four that are on file. `ring_size` and `shoe_size` are still
  * extracted, still stored, still shown as ordinary rows in "Everything I know" —
- * they are simply not what this tile is for. A tile is a *glance*, and five rows
+ * they are simply not what this tile is for. A tile is a *glance*, and four rows
  * of numbers is a table you have to read.
- *
- * `bra_size` is labelled in Hebrew because that is the label that was asked for,
- * and it is the one row on the board with a direction of its own. `dir="rtl"` gets
- * the two words in the right order; `textAlign: 'left'` pulls the line back to the
- * label side of the row, so this row lines up with the two English ones instead of
- * mirroring the whole label/value pairing.
  *
  * Deliberately read-only. Editing lives in one place — `EverythingIKnow`'s
  * `ProfileField`, which owns the validation, the enum handling and the
@@ -25,16 +19,13 @@ import type { ProfileFieldValue } from '../../hooks/use-profile-store';
  * offers `Ask` and the field list stays where you type one in.
  */
 
-/** The three rows, and how each is labelled. */
+/** The two rows, and how each is labelled. */
 const SIZE_ROWS: ReadonlyArray<{
   fieldId: string;
   label: string;
   /** The clause under the label, when the value itself does not carry one. */
   qualifier: string | null;
-  /** Set for the Hebrew row only. */
-  lang?: string;
 }> = [
-  { fieldId: 'bra_size', label: 'מידת חזיה', qualifier: null, lang: 'he' },
   { fieldId: 'clothing_size', label: 'Trousers', qualifier: 'Sizes up for knits' },
   { fieldId: 'shoulder_width', label: 'Shoulders', qualifier: 'For anything tailored' },
 ];
@@ -69,13 +60,6 @@ const labelStyle: React.CSSProperties = {
 };
 
 /** The Hebrew label is the row's own name, so it carries the ink of a value. */
-const hebrewLabelStyle: React.CSSProperties = {
-  ...labelStyle,
-  fontWeight: typography.weights.semibold,
-  color: colors.ink,
-  textAlign: 'left',
-};
-
 const qualifierStyle: React.CSSProperties = {
   display: 'block',
   fontFamily: typography.bodyFontFamily,
@@ -147,16 +131,10 @@ export function HerSizes({ getFieldValue, onAsk }: HerSizesProps) {
             data-testid={`dossier-size-${row.fieldId}`}
             data-known={row.value !== null}
           >
-            <span
-              style={row.lang === 'he' ? hebrewLabelStyle : labelStyle}
-              lang={row.lang}
-              dir={row.lang === 'he' ? 'rtl' : undefined}
-            >
+            <span style={labelStyle}>
               {row.label}
               {row.value && row.qualifier && (
-                <span style={qualifierStyle} dir="ltr">
-                  {row.qualifier}
-                </span>
+                <span style={qualifierStyle}>{row.qualifier}</span>
               )}
             </span>
             {row.figure ? (
@@ -183,15 +161,8 @@ export function HerSizes({ getFieldValue, onAsk }: HerSizesProps) {
   );
 }
 
-/**
- * What Valentin is asked to raise, in English.
- *
- * The Hebrew label is what *he* reads on the card; asking Valentin to "ask me
- * about her מידת חזיה" would put a Hebrew phrase into an English sentence in the
- * composer, which is not how he would say it out loud.
- */
+/** What Valentin is asked to raise, phrased the way he would say it out loud. */
 function askLabel(fieldId: string, label: string): string {
-  if (fieldId === 'bra_size') return 'bra size';
   if (fieldId === 'shoulder_width') return 'shoulder measurement';
   return `${label.toLowerCase()} size`;
 }

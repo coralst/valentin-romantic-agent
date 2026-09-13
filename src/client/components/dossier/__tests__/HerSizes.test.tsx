@@ -12,30 +12,17 @@ function lookup(values: Record<string, string>) {
       : null;
 }
 
-const ALL = { bra_size: '34B', clothing_size: 'UK 10', shoulder_width: '38 cm' };
+const ALL = { clothing_size: 'UK 10', shoulder_width: '38 cm' };
 
 describe('HerSizes — what fits her', () => {
-  it('shows the three measurements the tile is for, and only those', () => {
+  it('shows the measurements the tile is for, and only those', () => {
     render(<HerSizes getFieldValue={lookup(ALL)} onAsk={() => {}} />);
 
-    expect(screen.getByTestId('dossier-her-sizes')).toHaveAttribute('data-known', '3');
+    expect(screen.getByTestId('dossier-her-sizes')).toHaveAttribute('data-known', '2');
     // Ring and shoe sizes are still extracted and still on file — they appear as
     // ordinary rows in "Everything I know". They are not what a glance is for.
     expect(screen.queryByTestId('dossier-size-ring_size')).not.toBeInTheDocument();
     expect(screen.queryByTestId('dossier-size-shoe_size')).not.toBeInTheDocument();
-  });
-
-  it('sets the Hebrew row right-to-left but keeps it aligned with the English ones', () => {
-    render(<HerSizes getFieldValue={lookup(ALL)} onAsk={() => {}} />);
-
-    const row = screen.getByTestId('dossier-size-bra_size');
-    const label = row.querySelector('[lang="he"]') as HTMLElement;
-    // `dir` gets the two words in the right order; left alignment is what stops the
-    // row mirroring the whole label/value pairing and reading backwards against the
-    // two rows under it.
-    expect(label).toHaveAttribute('dir', 'rtl');
-    expect(label.textContent).toContain('מידת חזיה');
-    expect(label.style.textAlign).toBe('left');
   });
 
   it('offers to ask rather than showing a dash for a measurement it does not have', async () => {
@@ -44,12 +31,10 @@ describe('HerSizes — what fits her', () => {
 
     // A "—" in a figure slot reads as a rendering fault. An `Ask` pill is the one
     // thing that can actually change the state.
-    expect(screen.getByTestId('dossier-size-bra_size')).toHaveAttribute('data-known', 'false');
-
-    await userEvent.click(screen.getByTestId('dossier-size-ask-bra_size'));
-    // In English, not Hebrew: the label is what *he* reads on the card, and asking
-    // Valentin to raise "her מידת חזיה" would put it into an English sentence.
-    expect(onAsk).toHaveBeenCalledWith('bra size');
+    expect(screen.getByTestId('dossier-size-shoulder_width')).toHaveAttribute(
+      'data-known',
+      'false',
+    );
 
     await userEvent.click(screen.getByTestId('dossier-size-ask-shoulder_width'));
     expect(onAsk).toHaveBeenLastCalledWith('shoulder measurement');
@@ -97,7 +82,7 @@ describe('splitSize', () => {
 
   it('leaves a bare measurement whole', () => {
     // Including one with a slash in it: "UK 10 / EU 38" is one figure, not two.
-    expect(splitSize('34B')).toEqual(['34B', null]);
+    expect(splitSize('38 cm')).toEqual(['38 cm', null]);
     expect(splitSize('UK 10 / EU 38')).toEqual(['UK 10 / EU 38', null]);
   });
 });

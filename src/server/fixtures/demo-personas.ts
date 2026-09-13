@@ -63,7 +63,7 @@ export interface DemoPersona {
    * Her family, seeded alongside the preferences.
    *
    * A separate list rather than more preferences because a family is a set of
-   * records and the registry holds twenty-one single-valued fields — see
+   * records and the registry holds twenty single-valued fields — see
    * `shared/interfaces/person.ts`. Optional, so "start fresh" stays empty
    * without having to spell out an empty tree.
    */

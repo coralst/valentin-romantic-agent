@@ -17,10 +17,10 @@ import { parseWeeklyRhythm } from './list-field-parsing';
  *
  * ## Why sentences and not a table
  *
- * The board already has the table: `EverythingIKnow` lists all twenty-one fields
+ * The board already has the table: `EverythingIKnow` lists all twenty fields
  * with their values. What it cannot do is read as a person. The paragraph exists
  * to be the thing you skim before a date, so it is prose, and the fields that do
- * not make prose (ring size, bra size) are deliberately not in it.
+ * not make prose (ring size, shoulder width) are deliberately not in it.
  */
 
 /** What to look up. Matches `profile-store-context`'s accessor shape. */

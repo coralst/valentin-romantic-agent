@@ -165,7 +165,7 @@ describe('dossier surface routing', () => {
   /*
    * There were two doors into her file and now there are three, none of which is
    * the brief's old footer link. The tally footer that carried it is deleted —
-   * "21 of 21 known" was a score for the app, not a fact about her — so the ways
+   * "20 of 20 known" was a score for the app, not a fact about her — so the ways
    * in are her portrait, the pinned thread in the conversation list, and the ◆.
    */
   it('has no "Full profile" link left in the brief, because the tally is gone', () => {

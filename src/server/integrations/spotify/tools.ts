@@ -310,7 +310,7 @@ export const proposePlaylistTool: AgentTool = {
     /*
      * `track_ids` is the schema's spelling; `trackIds` is accepted too.
      *
-     * The schema said `trackIds` — the one camelCase property among twenty-one
+     * The schema said `trackIds` — the one camelCase property among twenty
      * tools — so a model that had learned the house style from every other schema
      * would send `track_ids` and be told "no track ids were given" right after
      * searching for them. Renaming the property fixes the cause; accepting both

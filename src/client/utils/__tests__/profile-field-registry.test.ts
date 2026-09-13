@@ -70,16 +70,15 @@ describe('PROFILE_FIELD_REGISTRY', () => {
   });
 
   /**
-   * The three measurements the dossier's "What fits her" card draws.
+   * The measurements the dossier's "What fits her" card draws.
    *
    * Pinned separately from the gift sizes above because the card shows exactly
-   * these three, in this order, and a tidy-up that renamed `clothing_size` back
-   * to "Clothing Size" would leave the card claiming a generic word for a row
-   * sitting beside a bra size.
+   * these two, in this order, and a tidy-up that renamed `clothing_size` back to
+   * "Clothing Size" would leave the card claiming a generic word for a row
+   * sitting beside a shoulder measurement.
    */
-  it('holds the three measurements the card shows, labelled for it', () => {
+  it('holds the measurements the card shows, labelled for it', () => {
     const expected: Array<[string, string]> = [
-      ['bra_size', 'מידת חזיה'],
       ['clothing_size', 'Trousers'],
       ['shoulder_width', 'Shoulders'],
     ];

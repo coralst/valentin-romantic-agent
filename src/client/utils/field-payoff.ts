@@ -135,17 +135,13 @@ export const FIELD_PAYOFFS: Readonly<Record<string, FieldPayoff>> = {
     reason: 'Her style keeps me from suggesting something she would never put on.',
   },
   /*
-   * The five sizes sit as a contiguous cluster between style (26) and colour
+   * The four sizes sit as a contiguous cluster between style (26) and colour
    * (20) rather than on the 5-spacing, because in practice they are one
    * question — nobody asks for a shoe size on Tuesday and a dress size on
    * Thursday. Keeping their ranks adjacent means the queue offers them
    * together, and keeping them integers means the ordering stays total without
    * relying on the registry tie-break.
    */
-  bra_size: {
-    rank: 25,
-    reason: 'If you know it, I will hold it — it is the one size nobody wants to ask twice.',
-  },
   clothing_size: {
     rank: 24,
     reason: 'Her trouser size is the difference between a gift she wears and one she returns.',

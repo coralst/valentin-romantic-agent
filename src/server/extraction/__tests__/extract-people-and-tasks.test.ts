@@ -222,7 +222,7 @@ describe('learning her people from a conversation', () => {
     });
 
     // The brief reads `preferenceCount` as field coverage. A sister is not one of
-    // the twenty-one, so "21 of 21" must not become "22 of 21".
+    // the twenty, so "20 of 20" must not become "21 of 20".
     const session = await store.getSession(sessionId);
     expect(session?.preferenceCount ?? 0).toBe(0);
   });

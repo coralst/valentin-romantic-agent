@@ -1099,11 +1099,11 @@ describe('createHttpRoutes', () => {
     });
 
     it('stores the user\'s own answer for a field', async () => {
-      const result = await routes.setManualValue(sessionId, 'bra_size', { value: '34B' });
+      const result = await routes.setManualValue(sessionId, 'clothing_size', { value: 'UK 10' });
 
       expect(result.status).toBe(200);
       expect((await routes.getManualValues(sessionId)).body).toEqual({
-        manualValues: { bra_size: '34B' },
+        manualValues: { clothing_size: 'UK 10' },
       });
     });
 
@@ -1119,15 +1119,15 @@ describe('createHttpRoutes', () => {
 
     it('rejects a blank value, since clearing has its own verb', async () => {
       expect(
-        (await routes.setManualValue(sessionId, 'bra_size', { value: '  ' })).status,
+        (await routes.setManualValue(sessionId, 'clothing_size', { value: '  ' })).status,
       ).toBe(400);
     });
 
     it('clears one value and leaves the others', async () => {
-      await routes.setManualValue(sessionId, 'bra_size', { value: '34B' });
+      await routes.setManualValue(sessionId, 'clothing_size', { value: 'UK 10' });
       await routes.setManualValue(sessionId, 'shoe_size', { value: 'UK 6' });
 
-      await routes.clearManualValue(sessionId, 'bra_size');
+      await routes.clearManualValue(sessionId, 'clothing_size');
 
       expect((await routes.getManualValues(sessionId)).body).toEqual({
         manualValues: { shoe_size: 'UK 6' },
@@ -1151,8 +1151,8 @@ describe('createHttpRoutes', () => {
 
     it('leaves reminders alone for a field no reminder is derived from', async () => {
       // The gate matters: a re-plan is two reads and up to four writes, and almost
-      // every correction ("34B") has nothing to do with a date.
-      await routes.setManualValue(sessionId, 'bra_size', { value: '34B' });
+      // every correction ("UK 10") has nothing to do with a date.
+      await routes.setManualValue(sessionId, 'clothing_size', { value: 'UK 10' });
 
       expect(await store.getRemindersBySession(sessionId)).toEqual([]);
     });
@@ -1537,9 +1537,9 @@ describe('createHttpRoutes', () => {
 
       const corrected = await routes.handleRequest({
         method: 'PUT',
-        url: `/session/${sessionId}/manual/bra_size`,
+        url: `/session/${sessionId}/manual/clothing_size`,
         params: {},
-        body: { value: '34B' },
+        body: { value: 'UK 10' },
       });
       expect(corrected.status).toBe(200);
 

@@ -599,11 +599,11 @@ describe('manual corrections', () => {
     const store = newStore();
     const sessionId = await store.createSession();
 
-    await store.setManualValue(sessionId, 'bra_size', '34B');
+    await store.setManualValue(sessionId, 'clothing_size', 'UK 10');
     await store.setManualValue(sessionId, 'shoe_size', 'UK 6');
 
     expect(await store.getManualValues(sessionId)).toEqual({
-      bra_size: '34B',
+      clothing_size: 'UK 10',
       shoe_size: 'UK 6',
     });
   });
@@ -613,27 +613,27 @@ describe('manual corrections', () => {
     // landed second the winner, so a re-extraction would overwrite the user.
     const store = newStore();
     const sessionId = await store.createSession();
-    await store.setManualValue(sessionId, 'bra_size', '34B');
+    await store.setManualValue(sessionId, 'clothing_size', 'UK 10');
 
     await store.savePreference({
       sessionId,
       category: 'gifts',
-      fieldId: 'bra_size',
-      key: 'bra size',
+      fieldId: 'clothing_size',
+      key: 'clothing size',
       value: '36C',
       confidence: 0.6,
       sourceMessageId: 'm1',
     });
 
-    expect((await store.getManualValues(sessionId)).bra_size).toBe('34B');
+    expect((await store.getManualValues(sessionId)).clothing_size).toBe('UK 10');
   });
 
   it('clearing one lets Valentin’s own guess show again', async () => {
     const store = newStore();
     const sessionId = await store.createSession();
-    await store.setManualValue(sessionId, 'bra_size', '34B');
+    await store.setManualValue(sessionId, 'clothing_size', 'UK 10');
 
-    await store.clearManualValue(sessionId, 'bra_size');
+    await store.clearManualValue(sessionId, 'clothing_size');
 
     expect(await store.getManualValues(sessionId)).toEqual({});
   });
@@ -665,7 +665,7 @@ describe('a reset sweeps every item type', () => {
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
     });
-    await store.setManualValue(sessionId, 'bra_size', '34B');
+    await store.setManualValue(sessionId, 'clothing_size', 'UK 10');
 
     await store.clearSession(sessionId);
 

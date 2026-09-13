@@ -139,7 +139,7 @@ describe('BriefRail — zero state', () => {
   });
 
   it('carries no tally, and no progress meter of any kind', () => {
-    // "0 of 21 known" is a score for the app rather than a fact about her, and it
+    // "0 of 20 known" is a score for the app rather than a fact about her, and it
     // was charged twice — once here, once in the dossier's header. Both are gone;
     // the nudge is what turns the same information into a question.
     renderRail();

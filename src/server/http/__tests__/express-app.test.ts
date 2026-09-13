@@ -652,7 +652,7 @@ describe('her people, his tasks and his corrections over HTTP', () => {
     );
 
     expect(removed.status).toBe(200);
-    expect(await removed.json()).toEqual({
+    expect(await removed.json()).toMatchObject({
       reminderId: 'custom-2026-10-04-1f2e3d4c',
       deleted: true,
     });

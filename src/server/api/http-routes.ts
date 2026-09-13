@@ -47,7 +47,7 @@ import {
   syncReminders,
   touchesReminders,
 } from '../reminders/reminder-sync';
-import { isPlannerKind } from '../../shared/interfaces/reminder';
+import { cancelReminderDurably } from '../reminders/cancel';
 import { buildConversationEmail } from '../reminders/conversation-email';
 import { NOTIFY_EMAIL_FIELD, resolveNotifyEmail } from '../reminders/notify-email';
 import { resolveSender } from '../reminders/sender';
@@ -725,42 +725,29 @@ export function createHttpRoutes(storage: StorageInterface, userId?: string) {
     },
 
     /**
-     * DELETE /session/:id/reminders/:reminderId — drop one reminder.
+     * DELETE /session/:id/reminders/:reminderId — stop one reminder.
      *
-     * Only honoured for a `custom` row. A planner row — birthday, anniversary,
-     * occasion — is re-derived from the profile by `syncReminders` on the next edit
-     * to any reminder field, so deleting it here would appear to work and then
-     * silently come back. Muting the kind via `reminders_muted` is the write that
-     * actually sticks, and `reapSuperseded` then removes the row for us; so this
-     * refuses with the field to set rather than doing something that does not last.
+     * "Stop", not literally "delete the row": a planner reminder is derived from her
+     * profile and is silenced by muting its kind, because a deleted one is re-planned
+     * by `syncReminders` on the next profile edit. Which write that is belongs to
+     * `cancelReminderDurably`, shared with the agent's `cancel_reminder` — see that
+     * module on why the branch must not be duplicated at the call site.
      *
-     * 409 rather than 400: the request is well-formed and the row exists, it is the
-     * state of that row that makes the delete wrong.
+     * `action` is reported back rather than left implicit, so a caller is never told
+     * "deleted" about a row that was actually muted. Unknown ids stay a no-op success,
+     * matching `deleteTask`/`deleteOuting` and the store's own contract: a client
+     * retrying a cancel must not get an error.
      */
     async deleteReminder(sessionId: string, reminderId: string): Promise<HttpResponse> {
       if (!(await storage.getSession(sessionId))) {
         return { status: 404, body: { error: 'Session not found' } };
       }
 
-      const existing = (await storage.getRemindersBySession(sessionId)).find(
-        (reminder) => reminder.id === reminderId,
-      );
-
-      // Unknown id is a no-op success, matching `deleteTask`/`deleteOuting` and the
-      // store's own contract — a client retrying a delete must not get an error.
-      if (existing && isPlannerKind(existing.kind)) {
-        return {
-          status: 409,
-          body: {
-            error: `A ${existing.kind} reminder comes from her profile and would be re-planned. Mute it instead by setting reminders_muted.`,
-            muteField: 'reminders_muted',
-            kind: existing.kind,
-          },
-        };
-      }
-
-      await storage.deleteReminder(sessionId, reminderId);
-      return { status: 200, body: { reminderId, deleted: true } };
+      const outcome = await cancelReminderDurably(storage, sessionId, reminderId);
+      return {
+        status: 200,
+        body: { reminderId, deleted: true, action: outcome.action, muted: outcome.muted },
+      };
     },
 
     /** GET /session/:id/manual — every value the user typed themselves */

@@ -55,11 +55,11 @@ import {
   pendingReminders,
   type Reminder,
 } from '../../shared/interfaces/reminder';
-import { mutedReminderKinds } from '../../shared/constants/profile-fields';
 import type { AgentTool, ToolContext, ToolResult } from '../integrations/tool-registry';
 import { config } from '../config';
+import { cancelReminderDurably } from './cancel';
 import { dueInstant } from './planner';
-import { plannedChannel, profileFieldValue, syncReminders } from './reminder-sync';
+import { plannedChannel, profileFieldValue } from './reminder-sync';
 import { NOTIFY_EMAIL_FIELD, resolveNotifyEmail } from './notify-email';
 
 /** `YYYY-MM-DD`, and nothing else. */
@@ -570,45 +570,35 @@ export const cancelReminderTool: AgentTool = {
     const [reminder] = matches;
     const what = reminder.title?.trim() || reminder.occasion;
 
-    if (isPlannerKind(reminder.kind)) {
-      // Muted by kind, and the existing value is preserved: muting the birthday must
-      // not un-mute an anniversary he silenced last week.
-      const manual = await storage.getManualValues(ctx.sessionId);
-      const preferences = await storage.getPreferencesBySession(ctx.sessionId);
-      const already = mutedReminderKinds(
-        profileFieldValue(MUTED_FIELD, manual, preferences),
-      );
-      const muted = [...new Set([...already, reminder.kind])];
+    // Which write actually lasts is `cancelReminderDurably`'s decision, not this
+    // tool's — see that module on why the branch cannot live at the call site.
+    const outcome = await cancelReminderDurably(storage, ctx.sessionId, reminder.id);
 
-      await storage.setManualValue(ctx.sessionId, MUTED_FIELD, muted.join(', '));
-      // The mute is only half the write: `syncReminders` is what reaps the row that
-      // is already armed. Without it the reminder stays in the due-index and mails
-      // anyway, which is exactly the failure this tool exists to prevent.
-      await syncReminders(storage, ctx.sessionId);
-
+    if (outcome.action === 'muted') {
       return {
         ok: true,
         summary:
           `Done — ${reminder.kind} reminders are muted now, so the one about ${what} on ` +
           `${reminder.occursOn} will not go out and no new one will be armed. He can have ` +
           'them back by asking. Confirm it in your own words.',
-        data: { id: reminder.id, kind: reminder.kind, action: 'muted', muted },
+        data: {
+          id: reminder.id,
+          kind: reminder.kind,
+          action: outcome.action,
+          muted: outcome.muted,
+        },
       };
     }
 
-    await storage.deleteReminder(ctx.sessionId, reminder.id);
     return {
       ok: true,
       summary:
         `Done — the reminder "${what}" for ${reminder.occursOn} is cancelled and will not ` +
         'be sent. Confirm it in your own words.',
-      data: { id: reminder.id, kind: reminder.kind, action: 'deleted' },
+      data: { id: reminder.id, kind: reminder.kind, action: outcome.action },
     };
   },
 };
-
-/** The profile field holding the muted kinds, as `mutedReminderKinds` parses it. */
-const MUTED_FIELD = 'reminders_muted';
 
 /**
  * The pending rows a user's phrase refers to.

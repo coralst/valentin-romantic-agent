@@ -7,6 +7,7 @@ import { AuthProvider } from './context/auth-context';
 import { PeopleProvider } from './context/people-context';
 import { TasksProvider } from './context/tasks-context';
 import { OutingsProvider } from './context/outings-context';
+import { RemindersProvider } from './context/reminders-context';
 import { ArchitectureEngineProvider } from './context/architecture-engine-context';
 import { flattenPreferences, useSessionPersistence } from './hooks/use-session-persistence';
 import { AppLayout } from './components/AppLayout';
@@ -247,7 +248,9 @@ function HerRecordsProviders({ children }: { children: React.ReactNode }) {
   return (
     <PeopleProvider sessionId={state.sessionId}>
       <TasksProvider sessionId={state.sessionId}>
-        <OutingsProvider sessionId={state.sessionId}>{children}</OutingsProvider>
+        <OutingsProvider sessionId={state.sessionId}>
+          <RemindersProvider sessionId={state.sessionId}>{children}</RemindersProvider>
+        </OutingsProvider>
       </TasksProvider>
     </PeopleProvider>
   );

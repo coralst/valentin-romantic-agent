@@ -4,6 +4,11 @@ import { daysUntilBirthday } from './people-derivation';
 import type { Occasion } from './occasion-derivation';
 import { getDaysUntilOccasion, occasionFallsOnDay } from './occasion-derivation';
 import type { RhythmEntry } from './list-field-parsing';
+import {
+  REMINDER_ZONE,
+  pendingReminders,
+  type Reminder,
+} from '../../shared/interfaces/reminder';
 
 /**
  * The four weeks in front of him, as 28 cells.
@@ -29,7 +34,17 @@ export type DayMark =
   /** Something on his list is due. */
   | 'deadline'
   /** Her own week: pottery Tuesdays, her mother's Sunday call. */
-  | 'rhythm';
+  | 'rhythm'
+  /**
+   * The day Valentin will actually email him.
+   *
+   * Distinct from `occasion` on purpose, and both can land on one cell: the grid's
+   * job is to show her dates *and* what is being done about them, and before this
+   * the page could draw a birthday three weeks out while saying nothing about
+   * whether he would be told. Read off an armed row's `dueAt`, never derived from
+   * the occasion and a lead time — see the module note on inventing markers.
+   */
+  | 'reminder';
 
 export interface CalendarDay {
   /** Local midnight, so `isToday` compares like with like. */
@@ -67,6 +82,8 @@ export interface FourWeeksInput {
   people?: Person[];
   tasks?: Task[];
   rhythm?: RhythmEntry[];
+  /** Armed reminder rows, so a cell can show the morning he will be told. */
+  reminders?: readonly Reminder[];
 }
 
 const DAY_MS = 86_400_000;
@@ -119,6 +136,24 @@ function isDueOn(task: Task, isoDay: string): boolean {
   return !task.done && task.due === isoDay;
 }
 
+/**
+ * The calendar day a reminder's instant falls on, in the zone it is pinned to.
+ *
+ * `en-CA` because it formats as `YYYY-MM-DD`, which is the shape the cell's own
+ * `isoDay` produces — so the two are directly comparable without either being parsed
+ * back into a `Date`.
+ */
+function sendDayInZone(dueAt: string): string {
+  const at = new Date(dueAt);
+  if (Number.isNaN(at.getTime())) return '';
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: REMINDER_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(at);
+}
+
 /** The local date as `YYYY-MM-DD`, which is what a `due` is stored as. */
 function isoDay(date: Date): string {
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -132,9 +167,22 @@ export function buildFourWeeks({
   people = [],
   tasks = [],
   rhythm = [],
+  reminders = [],
 }: FourWeeksInput = {}): FourWeeks {
   const first = startOfWeek(now);
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+
+  /*
+   * The local days a reminder actually goes out on.
+   *
+   * Built from `dueAt` through the send zone, then compared as a `YYYY-MM-DD` string
+   * against the cell's own local day — the same reason `isDueOn` compares strings: a
+   * `new Date(dueAt)` reduced to its local date would land a cell early for a viewer
+   * west of Israel, marking the wrong morning.
+   */
+  const reminderDays = new Set(
+    pendingReminders(reminders).map((reminder) => sendDayInZone(reminder.dueAt)),
+  );
 
   /*
    * The one occasion allowed to light a cell: the soonest one that falls inside
@@ -174,6 +222,8 @@ export function buildFourWeeks({
       if (isDeadline) marks.push('deadline');
 
       if (rhythmDays.has(date.getDay())) marks.push('rhythm');
+
+      if (reminderDays.has(day)) marks.push('reminder');
 
       const isKey = key !== null && onThisDay.some((occasion) => occasion === key);
 

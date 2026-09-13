@@ -1159,28 +1159,29 @@ describe('createHttpRoutes', () => {
       ]);
     });
 
-    it('deletes a hand-set reminder', async () => {
+    it('deletes a hand-set reminder, and says that is what it did', async () => {
       await store.saveReminder(sessionId, reminder());
 
       const response = await routes.deleteReminder(sessionId, 'custom-2026-10-04-1f2e3d4c');
 
       expect(response.status).toBe(200);
-      expect(response.body).toEqual({
+      expect(response.body).toMatchObject({
         reminderId: 'custom-2026-10-04-1f2e3d4c',
-        deleted: true,
+        action: 'deleted',
       });
       expect((await routes.getSessionReminders(sessionId)).body).toEqual({ reminders: [] });
     });
 
     /*
-     * The refusal that keeps the UI honest.
+     * The case that makes this route a "stop" rather than a "delete".
      *
      * A birthday row is re-derived from her profile by `syncReminders` on the next edit
-     * to any reminder field, so a delete here would succeed and then silently undo
-     * itself. 409 rather than 400: the request is well-formed and the row exists — it
-     * is the row's kind that makes the delete the wrong write.
+     * to any reminder field, so deleting the row would succeed and then silently undo
+     * itself. Muting the kind is the write that lasts, and the response says `muted` so
+     * a caller is never told "deleted" about a row that was not.
      */
-    it('refuses to delete a profile-derived reminder, naming the field that works', async () => {
+    it('mutes a profile-derived reminder rather than deleting a row that comes back', async () => {
+      await store.setManualValue(sessionId, 'birthday', '2026-10-04');
       await store.saveReminder(
         sessionId,
         reminder({ id: 'birthday-2026-10-04', kind: 'birthday', title: null }),
@@ -1188,20 +1189,18 @@ describe('createHttpRoutes', () => {
 
       const response = await routes.deleteReminder(sessionId, 'birthday-2026-10-04');
 
-      expect(response.status).toBe(409);
-      expect(response.body).toMatchObject({ muteField: 'reminders_muted', kind: 'birthday' });
-      // Still armed — the refusal must not half-apply.
-      expect(
-        ((await routes.getSessionReminders(sessionId)).body as { reminders: Reminder[] })
-          .reminders,
-      ).toHaveLength(1);
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({ action: 'muted', muted: ['birthday'] });
+      expect((await store.getManualValues(sessionId)).reminders_muted).toBe('birthday');
+      // Gone now, and still gone after the re-plan that used to bring it back.
+      expect((await routes.getSessionReminders(sessionId)).body).toEqual({ reminders: [] });
     });
 
-    it('treats deleting an unknown reminder as a no-op success', async () => {
+    it('treats cancelling an unknown reminder as a no-op success', async () => {
       const response = await routes.deleteReminder(sessionId, 'never-armed');
 
       expect(response.status).toBe(200);
-      expect(response.body).toEqual({ reminderId: 'never-armed', deleted: true });
+      expect(response.body).toMatchObject({ reminderId: 'never-armed', action: 'not-found' });
     });
 
     it('rides along on the session detail, so the board draws in one frame', async () => {
@@ -1711,7 +1710,7 @@ describe('createHttpRoutes', () => {
         params: {},
         body: null,
       });
-      expect(dropped.body).toEqual({
+      expect(dropped.body).toMatchObject({
         reminderId: 'custom-2026-10-04-1f2e3d4c',
         deleted: true,
       });

@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { GATEWAY_TOOL_SERVICES, logRecordToSpan, startSpanBridge } from '../span-bridge';
+import {
+  GATEWAY_TOOL_SERVICES,
+  logRecordToGatewayHop,
+  logRecordToSpan,
+  startSpanBridge,
+} from '../span-bridge';
 import integrationToolSchemas from '../../../../infra/lib/generated/integration-tool-schemas.json';
 import { logger, resetServerLogSubscribers, withUserScope } from '../../logging';
 import { resolveBroadcastSessionId } from '../../index';
@@ -442,6 +447,74 @@ describe('logRecordToSpan', () => {
       });
     });
 
+    it('reports the Gateway hop as well, so the Gateway card is not dark', () => {
+      /*
+       * The regression this file did not catch. Every tool the demo calls is in
+       * `GATEWAY_TOOL_SERVICES`, so every `agentcore.gateway` line took the partner
+       * branch and reported the Lambda; `agentcore-gateway` was reachable only from
+       * a profile tool or a confirm. The result was that the one managed primitive
+       * engine B exists to demonstrate lit nothing on an ordinary turn — and the
+       * assertions above all passed while it did.
+       */
+      const hop = logRecordToGatewayHop(
+        record('agentcore.gateway', {
+          sessionId: 's-5',
+          tool: 'valentin-integrations___find_restaurants',
+        }),
+      );
+      expect(hop).toMatchObject({
+        sessionId: 's-5',
+        resourceId: 'agentcore-gateway',
+        service: 'AgentCore Gateway',
+        operation: 'find_restaurants',
+        detail: 'via valentin-integration-tools',
+      });
+      // Same rule as the partner span beside it: nothing here was timed.
+      expect(hop?.durationMs).toBeUndefined();
+    });
+
+    it('adds no hop for a tool that already reports the Gateway', () => {
+      // A profile tool takes the fallback branch, so `logRecordToSpan` is already a
+      // Gateway span; a companion would list the same call twice in the feed.
+      expect(
+        logRecordToGatewayHop(
+          record('agentcore.gateway', {
+            sessionId: 's-5',
+            tool: 'valentin-profile___get_partner_profile',
+          }),
+        ),
+      ).toBeUndefined();
+    });
+
+    it('adds no hop for records that are not a Gateway read', () => {
+      expect(
+        logRecordToGatewayHop(
+          record('agentcore.gateway.confirm', {
+            sessionId: 's-6',
+            tool: 'valentin-integrations___confirm_reservation',
+            durationMs: 9,
+          }),
+        ),
+      ).toBeUndefined();
+      expect(
+        logRecordToGatewayHop(record('integration.ontopo', { sessionId: 's-9', durationMs: 5 })),
+      ).toBeUndefined();
+      expect(
+        logRecordToGatewayHop(record('agentcore.gateway', { sessionId: 's-5' })),
+      ).toBeUndefined();
+    });
+
+    it('fails the hop when the Gateway call itself errored', () => {
+      const hop = logRecordToGatewayHop(
+        record(
+          'agentcore.gateway',
+          { sessionId: 's-5', tool: 'valentin-integrations___find_restaurants' },
+          'error',
+        ),
+      );
+      expect(hop?.ok).toBe(false);
+    });
+
     it('names a partner for every tool the stack declares', () => {
       /*
        * The drift guard. `GATEWAY_TOOL_SERVICES` is hand-written — the proxy cannot
@@ -580,6 +653,49 @@ describe('startSpanBridge', () => {
     expect(emitted).toHaveLength(1);
     expect(emitted[0].type).toBe('aws_span');
     expect((emitted[0].payload as AwsSpan).resourceId).toBe('dynamodb');
+  });
+
+  /**
+   * One log line, two resources — the only record that emits twice.
+   *
+   * Order is asserted, not incidental: the feed is newest-first, so emitting the
+   * Gateway before the partner it routed to is what makes the two rows read down the
+   * page in the order the request travelled. Emitted the other way round the drawer
+   * would claim Ontopo was reached and *then* the Gateway was consulted.
+   */
+  it('emits both the Gateway hop and the partner call, hop first', () => {
+    const { emitted, routedTo, stop } = bridge();
+
+    logAs('u-1', () =>
+      logger.info('agentcore.gateway', {
+        sessionId: 's-5',
+        tool: 'valentin-integrations___find_restaurants',
+      }),
+    );
+
+    stop();
+    expect(emitted.map((event) => (event.payload as AwsSpan).resourceId)).toEqual([
+      'agentcore-gateway',
+      'agentcore-integrations',
+    ]);
+    // Both halves belong to the same person; a hop routed anywhere else would put a
+    // Gateway row on a screen whose conversation never made the call.
+    expect(routedTo).toEqual(['u-1', 'u-1']);
+  });
+
+  it('emits once for a Gateway call that already reports the Gateway', () => {
+    const { emitted, stop } = bridge();
+
+    logAs('u-1', () =>
+      logger.info('agentcore.gateway', {
+        sessionId: 's-5',
+        tool: 'valentin-profile___get_partner_profile',
+      }),
+    );
+
+    stop();
+    expect(emitted).toHaveLength(1);
+    expect((emitted[0].payload as AwsSpan).resourceId).toBe('agentcore-gateway');
   });
 
   it('stamps a timestamp on the envelope', () => {

@@ -43,9 +43,78 @@ export interface DemoStep {
   ok?: boolean;
   /** Who is acting, e.g. `User` / `Valentin`. Groups the feed. */
   actor: string;
-  /** What they are doing, e.g. `learns something new`. Captions the group. */
+  /** What they are doing, e.g. `saves a preference`. Captions the group. */
   action: string;
 }
+
+/**
+ * Every caption the feed can show, in one place, for demo mode and live mode alike.
+ *
+ * ## Why these words and not friendlier ones
+ *
+ * The captions used to be four: `opens the app`, `sends a message in chat`, `writes a
+ * reply` and `learns something new`. They read well and they were wrong about what
+ * they captioned. A turn produced two groups called "writes a reply" — one of which
+ * was the *typing indicator*, a WebSocket frame that turns on three animated dots and
+ * makes no model call at all — and the actual Bedrock calls landed under `thinks`,
+ * twice, with nothing to say that the first wrote the reply and the second was a
+ * separate extraction pass. A DynamoDB `PutItem` said `learns something new` whether
+ * it stored a preference or a line of the transcript.
+ *
+ * So a caption here names the operation, not the mood. `starts the typing dots` is
+ * less charming than `writes a reply` and it is the difference between a feed a
+ * builder in the room can trust and one they have to correct you about.
+ *
+ * ## Why one list shared by both modes
+ *
+ * Demo mode is the explanation and live mode is the proof (see the note at the top of
+ * this file). If a beat is `writes the reply` on the scripted flow and `thinks` on the
+ * real one, the room reads the two as different systems. Both sides import from here
+ * so the compiler is what keeps them saying the same thing.
+ */
+export const FLOW_ACTION = {
+  opensTheApp: 'opens the app',
+  sendsAMessage: 'sends a message in chat',
+  /** The three animated dots. A frame to the browser — no model call yet. */
+  startsTypingDots: 'starts the typing dots',
+  stopsTypingDots: 'stops the typing dots',
+  /** The Converse call that composes the answer. */
+  writesTheReply: 'writes the reply',
+  /** The Converse call that came back asking for a tool. */
+  picksATool: 'picks a tool',
+  /** The reply, arriving in the browser. Delivery, not composition. */
+  deliversTheReply: 'delivers the reply',
+  /** The second Converse call of the turn, which runs after the reply is on screen. */
+  extractsAPreference: 'extracts a preference',
+  /** A `PREF#…` write. */
+  savesAPreference: 'saves a preference',
+  /** A `MSG#…` write — the transcript, not the profile. */
+  savesTheConversation: 'saves the conversation',
+  /** A read of the table: what Valentin already knew, coming back. */
+  readsWhatItKnows: 'reads what it knows',
+  /** The browser being told a preference changed, which is what moves the panel. */
+  showsTheNewPreference: 'shows the new preference',
+  asksTheOutsideWorld: 'asks the outside world',
+  offersSomethingToConfirm: 'offers something to confirm',
+  confirmsIt: 'confirms it',
+  /** Engine B: a tool call over MCP. */
+  callsAGatewayTool: 'calls a Gateway tool',
+  /** Engine B: `CreateEvent` — AgentCore Memory extracting and storing for us. */
+  storesAMemory: 'stores a memory',
+  /** Engine B: `ListMemoryRecords`. */
+  recallsWhatItKnows: 'recalls what it knows',
+  /**
+   * A model call whose purpose the span did not say.
+   *
+   * The fallback, and deliberately vague rather than guessing at `writes the reply`:
+   * a caption that names the wrong call is worse than one that admits it does not
+   * know which call this was.
+   */
+  callsTheModel: 'calls the model',
+  reportsAProblem: 'reports a problem',
+  /** Last resort for an unrecognised span or event. */
+  isWorking: 'is working',
+} as const;
 
 /** A step with `from` filled in, which is what the view actually consumes. */
 export interface ResolvedDemoStep extends DemoStep, FlowBeat {
@@ -89,7 +158,7 @@ const PAGE_LOAD: readonly DemoStep[] = [
     detail: 'cold load',
     category: 'network',
     actor: 'User',
-    action: 'opens the app',
+    action: FLOW_ACTION.opensTheApp,
   },
   {
     to: 'cloudfront',
@@ -99,7 +168,7 @@ const PAGE_LOAD: readonly DemoStep[] = [
     category: 'network',
     durationMs: 3,
     actor: 'User',
-    action: 'opens the app',
+    action: FLOW_ACTION.opensTheApp,
   },
   {
     to: 's3',
@@ -110,7 +179,7 @@ const PAGE_LOAD: readonly DemoStep[] = [
     durationMs: 11,
     ok: true,
     actor: 'User',
-    action: 'opens the app',
+    action: FLOW_ACTION.opensTheApp,
   },
   {
     from: 's3',
@@ -120,7 +189,7 @@ const PAGE_LOAD: readonly DemoStep[] = [
     detail: 'React 19 SPA boots',
     category: 'network',
     actor: 'User',
-    action: 'opens the app',
+    action: FLOW_ACTION.opensTheApp,
   },
 ];
 
@@ -132,7 +201,7 @@ const CHAT_REPLY: readonly DemoStep[] = [
     detail: 'ws frame',
     category: 'network',
     actor: 'User',
-    action: 'sends a message in chat',
+    action: FLOW_ACTION.sendsAMessage,
   },
   {
     to: 'cloudfront',
@@ -142,7 +211,7 @@ const CHAT_REPLY: readonly DemoStep[] = [
     category: 'network',
     durationMs: 2,
     actor: 'User',
-    action: 'sends a message in chat',
+    action: FLOW_ACTION.sendsAMessage,
   },
   {
     to: 'alb',
@@ -152,7 +221,7 @@ const CHAT_REPLY: readonly DemoStep[] = [
     category: 'network',
     durationMs: 1,
     actor: 'User',
-    action: 'sends a message in chat',
+    action: FLOW_ACTION.sendsAMessage,
   },
   {
     to: 'fargate',
@@ -162,7 +231,7 @@ const CHAT_REPLY: readonly DemoStep[] = [
     category: 'compute',
     durationMs: 1,
     actor: 'Valentin',
-    action: 'writes a reply',
+    action: FLOW_ACTION.startsTypingDots,
   },
   {
     to: 'bedrock',
@@ -172,7 +241,7 @@ const CHAT_REPLY: readonly DemoStep[] = [
     category: 'ml',
     durationMs: 412,
     actor: 'Valentin',
-    action: 'writes a reply',
+    action: FLOW_ACTION.writesTheReply,
   },
   {
     from: 'bedrock',
@@ -182,7 +251,7 @@ const CHAT_REPLY: readonly DemoStep[] = [
     detail: 'reply streamed',
     category: 'network',
     actor: 'Valentin',
-    action: 'writes a reply',
+    action: FLOW_ACTION.deliversTheReply,
   },
 ];
 
@@ -198,7 +267,7 @@ const LEARNS_SOMETHING: readonly DemoStep[] = [
     category: 'ml',
     durationMs: 380,
     actor: 'Valentin',
-    action: 'learns something new',
+    action: FLOW_ACTION.extractsAPreference,
   },
   {
     from: 'fargate',
@@ -210,7 +279,7 @@ const LEARNS_SOMETHING: readonly DemoStep[] = [
     durationMs: 18,
     ok: true,
     actor: 'Valentin',
-    action: 'learns something new',
+    action: FLOW_ACTION.savesAPreference,
   },
   {
     from: 'dynamodb',
@@ -220,7 +289,7 @@ const LEARNS_SOMETHING: readonly DemoStep[] = [
     detail: 'new · music',
     category: 'network',
     actor: 'Valentin',
-    action: 'learns something new',
+    action: FLOW_ACTION.showsTheNewPreference,
   },
 ];
 
@@ -250,7 +319,7 @@ const PROPOSES_A_TABLE: readonly DemoStep[] = [
     category: 'ml',
     durationMs: 486,
     actor: 'Valentin',
-    action: 'picks a tool',
+    action: FLOW_ACTION.picksATool,
   },
   {
     from: 'fargate',
@@ -262,7 +331,7 @@ const PROPOSES_A_TABLE: readonly DemoStep[] = [
     durationMs: 4,
     ok: true,
     actor: 'Valentin',
-    action: 'asks the outside world',
+    action: FLOW_ACTION.asksTheOutsideWorld,
   },
   {
     from: 'fargate',
@@ -274,7 +343,7 @@ const PROPOSES_A_TABLE: readonly DemoStep[] = [
     durationMs: 612,
     ok: true,
     actor: 'Valentin',
-    action: 'asks the outside world',
+    action: FLOW_ACTION.asksTheOutsideWorld,
   },
   {
     from: 'integrations',
@@ -284,7 +353,7 @@ const PROPOSES_A_TABLE: readonly DemoStep[] = [
     detail: 'a table to confirm',
     category: 'external',
     actor: 'Valentin',
-    action: 'offers something to confirm',
+    action: FLOW_ACTION.offersSomethingToConfirm,
   },
   {
     from: 'browser',
@@ -296,7 +365,7 @@ const PROPOSES_A_TABLE: readonly DemoStep[] = [
     durationMs: 388,
     ok: true,
     actor: 'User',
-    action: 'confirms it',
+    action: FLOW_ACTION.confirmsIt,
   },
 ] as const;
 
@@ -320,7 +389,7 @@ const AGENTCORE_LEARNS_SOMETHING: readonly DemoStep[] = [
     detail: 'ws frame · /ws/agentcore',
     category: 'network',
     actor: 'User',
-    action: 'sends a message in chat',
+    action: FLOW_ACTION.sendsAMessage,
   },
   {
     to: 'cloudfront',
@@ -330,7 +399,7 @@ const AGENTCORE_LEARNS_SOMETHING: readonly DemoStep[] = [
     category: 'network',
     durationMs: 2,
     actor: 'User',
-    action: 'sends a message in chat',
+    action: FLOW_ACTION.sendsAMessage,
   },
   {
     to: 'alb',
@@ -340,7 +409,7 @@ const AGENTCORE_LEARNS_SOMETHING: readonly DemoStep[] = [
     category: 'network',
     durationMs: 1,
     actor: 'User',
-    action: 'sends a message in chat',
+    action: FLOW_ACTION.sendsAMessage,
   },
   {
     to: 'ac-proxy',
@@ -350,7 +419,7 @@ const AGENTCORE_LEARNS_SOMETHING: readonly DemoStep[] = [
     category: 'compute',
     durationMs: 1,
     actor: 'Valentin',
-    action: 'writes a reply',
+    action: FLOW_ACTION.startsTypingDots,
   },
   {
     to: 'ac-runtime',
@@ -360,7 +429,7 @@ const AGENTCORE_LEARNS_SOMETHING: readonly DemoStep[] = [
     category: 'ml',
     durationMs: 486,
     actor: 'Valentin',
-    action: 'writes a reply',
+    action: FLOW_ACTION.writesTheReply,
   },
   {
     to: 'ac-gateway',
@@ -370,7 +439,7 @@ const AGENTCORE_LEARNS_SOMETHING: readonly DemoStep[] = [
     category: 'ml',
     durationMs: 94,
     actor: 'Valentin',
-    action: 'writes a reply',
+    action: FLOW_ACTION.callsAGatewayTool,
   },
   // The hop that is the whole point of engine B's right-hand side: the Gateway
   // does not hold the tool, it *routes* to one of our two Lambdas. `get_partner_profile`
@@ -384,7 +453,7 @@ const AGENTCORE_LEARNS_SOMETHING: readonly DemoStep[] = [
     durationMs: 21,
     ok: true,
     actor: 'Valentin',
-    action: 'writes a reply',
+    action: FLOW_ACTION.readsWhatItKnows,
   },
   {
     from: 'ac-runtime',
@@ -394,7 +463,7 @@ const AGENTCORE_LEARNS_SOMETHING: readonly DemoStep[] = [
     detail: 'reply streamed',
     category: 'network',
     actor: 'Valentin',
-    action: 'writes a reply',
+    action: FLOW_ACTION.deliversTheReply,
   },
   {
     from: 'ac-runtime',
@@ -406,7 +475,7 @@ const AGENTCORE_LEARNS_SOMETHING: readonly DemoStep[] = [
     durationMs: 37,
     ok: true,
     actor: 'Valentin',
-    action: 'learns something new',
+    action: FLOW_ACTION.storesAMemory,
   },
   {
     from: 'ac-gateway',
@@ -418,7 +487,7 @@ const AGENTCORE_LEARNS_SOMETHING: readonly DemoStep[] = [
     durationMs: 19,
     ok: true,
     actor: 'Valentin',
-    action: 'learns something new',
+    action: FLOW_ACTION.savesAPreference,
   },
   /*
    * And the shared table, reached from the *proxy* — not from the Lambda above.
@@ -439,7 +508,7 @@ const AGENTCORE_LEARNS_SOMETHING: readonly DemoStep[] = [
     durationMs: 19,
     ok: true,
     actor: 'Valentin',
-    action: 'learns something new',
+    action: FLOW_ACTION.savesAPreference,
   },
   {
     from: 'dynamodb',
@@ -449,7 +518,7 @@ const AGENTCORE_LEARNS_SOMETHING: readonly DemoStep[] = [
     detail: 'new · music',
     category: 'network',
     actor: 'Valentin',
-    action: 'learns something new',
+    action: FLOW_ACTION.showsTheNewPreference,
   },
 ];
 

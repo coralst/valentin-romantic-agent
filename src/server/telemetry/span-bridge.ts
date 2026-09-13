@@ -2,6 +2,11 @@ import { subscribeToServerLogs, type ServerLogRecord } from '../logging';
 import { config } from '../config';
 import { resolveEngine } from '../agent/engine';
 import type { EngineId } from '../../shared/interfaces/engine';
+import {
+  CONVERSE_DETAIL,
+  CONVERSE_TOOL_USE_SUFFIX,
+  SPAN_DETAIL_PREFIX,
+} from '../../shared/interfaces/ws-events';
 import type {
   AwsSpan,
   ServerEvent,
@@ -153,6 +158,37 @@ function tokenUsage(data: Record<string, unknown> | undefined): SpanTokenUsage |
 }
 
 /**
+ * Which model call this was, and what the model did with it.
+ *
+ * Two facts in one string because `operation` is already spoken for: the client counts
+ * model calls by `operation === 'Converse'`, so the API name has to stay there and the
+ * purpose goes here. The `· tool_use` suffix is what separates a tool-loop call that
+ * *wrote the reply* from one that *asked for a tool* — indistinguishable otherwise,
+ * since both are `chat-tools` with a similar duration, and the drawer captioned every
+ * reply "picks a tool" as a result.
+ *
+ * `stopReason` alone is not enough to caption from and is deliberately not forwarded
+ * raw: `end_turn`, `max_tokens` and `stop_sequence` all mean "no tool was asked for",
+ * and only the tool case changes the story.
+ */
+function converseDetail(data: Record<string, unknown> | undefined): string | undefined {
+  const operation = str(data, 'operation');
+  if (!operation) return undefined;
+
+  /*
+   * Not appended to the extraction call, whose stop reason carries no information.
+   *
+   * `extractPreferences` hands the model one tool and requires it, so it stops on
+   * `tool_use` every time by construction — marking that would say "picks a tool"
+   * about the one call that never chose anything.
+   */
+  if (operation === CONVERSE_DETAIL.extractPreferences) return operation;
+
+  const askedForATool = str(data, 'stopReason') === 'tool_use';
+  return askedForATool ? `${operation}${CONVERSE_TOOL_USE_SUFFIX}` : operation;
+}
+
+/**
  * Which engine this process serves.
  *
  * Resolved lazily and once. Per-process by design — see `agent/engine.ts` — so it
@@ -250,7 +286,34 @@ export function logRecordToSpan(record: ServerLogRecord): AwsSpan | undefined {
         ok: record.level !== 'error',
         // The sort key, not the value. This is projected in front of a room and
         // the values are a real person's private preferences.
-        detail: category ? `PREF#${category}` : undefined,
+        // A category-less write still keeps the bare prefix rather than dropping to
+        // `undefined`: the prefix is what the drawer reads to caption the row, and
+        // without it a preference write would caption as an unattributed PutItem.
+        detail: category
+          ? `${SPAN_DETAIL_PREFIX.preference}${category}`
+          : SPAN_DETAIL_PREFIX.preference,
+      };
+    }
+
+    case 'message.saved': {
+      const sessionId = str(data, 'sessionId');
+      const sender = str(data, 'sender');
+      const durationMs = num(data, 'durationMs');
+      if (!sessionId || durationMs === undefined) return undefined;
+
+      return {
+        sessionId,
+        resourceId: 'dynamodb',
+        service: 'Amazon DynamoDB',
+        resourceName: config.dynamoTableName,
+        operation: 'PutItem',
+        durationMs,
+        ok: record.level !== 'error',
+        // The sort-key prefix and the sender, which is what makes this row
+        // distinguishable from a `PREF#…` one at a glance. Never the message text:
+        // same rule as `preference.saved`, and here the text is the conversation
+        // itself.
+        detail: `${SPAN_DETAIL_PREFIX.message}${sender ?? 'message'}`,
       };
     }
 
@@ -269,7 +332,7 @@ export function logRecordToSpan(record: ServerLogRecord): AwsSpan | undefined {
         operation: 'Converse',
         durationMs,
         ok: data?.ok !== false,
-        detail: str(data, 'operation'),
+        detail: converseDetail(data),
         usage: tokenUsage(data),
         engine: spanEngine(),
       };

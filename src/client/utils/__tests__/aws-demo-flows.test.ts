@@ -7,6 +7,7 @@ import {
   demoStepDwellMs,
   frameForStep,
   stepLegCount,
+  FLOW_ACTION,
   FLOW_LEG_MS,
   type DemoFlowId,
 } from '../aws-demo-flows';
@@ -116,14 +117,59 @@ describe('DEMO_FLOWS', () => {
     }
   });
 
+  /**
+   * The comparison is only fair if the *user's* story is the same on both sides: a
+   * different narrative would let the room read the script as the platform.
+   *
+   * A spine, not set equality, and that is a deliberate weakening of what this used
+   * to assert. It used to compare the two flows' full caption sets and pass — but
+   * only because the captions were vague enough to cover anything: engine B's
+   * Gateway hop, its Lambda and its Memory write were all captioned "writes a reply"
+   * or "learns something new", the same four words engine A used. Now that a caption
+   * names the call it captions, engine B's captions differ exactly where engine B
+   * genuinely does something else, which is the difference the A/B demo exists to
+   * show. What must not differ is the arc the *person* sees, so that is what is
+   * pinned here — and every extra beat on either side has to be one of the named
+   * platform beats, so a stray caption still fails.
+   */
   it('tells the same story on both engines, beat for beat', () => {
-    // The comparison is only fair if the script is the same on both sides: a
-    // different narrative would let the room read the script as the platform.
     const engineA = demoFlow('learns-something');
     const engineB = demoFlow('agentcore-learns-something');
     const actions = (flow: typeof engineA) => [...new Set(flow.steps.map((step) => step.action))];
 
-    expect(actions(engineB)).toEqual(actions(engineA));
+    /** The beats that are about the user, in the order they happen to them. */
+    const spine: readonly string[] = [
+      FLOW_ACTION.sendsAMessage,
+      FLOW_ACTION.startsTypingDots,
+      FLOW_ACTION.writesTheReply,
+      FLOW_ACTION.deliversTheReply,
+      FLOW_ACTION.savesAPreference,
+      FLOW_ACTION.showsTheNewPreference,
+    ];
+
+    /** The beats that are about the platform, and so may differ between engines. */
+    const platformBeats: readonly string[] = [
+      // Engine A extracts with a second Converse call of its own …
+      FLOW_ACTION.extractsAPreference,
+      // … where engine B has Memory do it, behind two hops of its own.
+      FLOW_ACTION.storesAMemory,
+      FLOW_ACTION.callsAGatewayTool,
+      FLOW_ACTION.readsWhatItKnows,
+    ];
+
+    for (const flow of [engineA, engineB]) {
+      const captions = actions(flow);
+      // In order, and complete: `filter` then `toEqual` fails both on a missing beat
+      // and on two beats that swapped places.
+      expect(captions.filter((caption) => spine.includes(caption)), flow.id).toEqual(spine);
+      for (const caption of captions) {
+        expect(
+          spine.includes(caption) || platformBeats.includes(caption),
+          `${flow.id}: unaccounted caption "${caption}"`,
+        ).toBe(true);
+      }
+    }
+
     expect(engineB.steps[engineB.steps.length - 1].operation).toBe('preference_update');
   });
 

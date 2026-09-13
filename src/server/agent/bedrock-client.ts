@@ -10,7 +10,7 @@ import {
   type GuardrailConfiguration,
 } from '@aws-sdk/client-bedrock-runtime';
 import type { ChatMessage } from '../../shared/interfaces/message';
-import type { SpanTokenUsage } from '../../shared/interfaces/ws-events';
+import type { ConverseDetail, SpanTokenUsage } from '../../shared/interfaces/ws-events';
 import { LlmError } from '../../shared/errors/llm-error';
 import { config } from '../config';
 import { logger } from '../logging';
@@ -527,7 +527,13 @@ export class AwsBedrockClient implements BedrockClient {
    */
   private async sendTimed(
     command: ConverseCommand,
-    operation: string,
+    /**
+     * Which call this is. A closed union, not a string: it reaches the drawer as the
+     * span's `detail` and is the only thing that distinguishes the reply call from
+     * the extraction pass that follows it, so a typo here would silently caption a
+     * real model call as an unrecognised one.
+     */
+    operation: ConverseDetail,
     sessionId: string,
   ): Promise<ConverseCommandOutput> {
     const startedAt = Date.now();
@@ -559,6 +565,11 @@ export class AwsBedrockClient implements BedrockClient {
         modelId: this.modelId,
         durationMs: Date.now() - startedAt,
         ok: true,
+        // What the model did with the turn, which `operation` cannot say: tools are
+        // on for almost every reply, so a `chat-tools` call is the one that writes
+        // the answer *and* the one that asks for a tool. The drawer captioned both
+        // "picks a tool" until this was reported.
+        stopReason: response.stopReason,
         ...usageFields,
       });
       return response;

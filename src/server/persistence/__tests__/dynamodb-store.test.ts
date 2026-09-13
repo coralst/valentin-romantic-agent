@@ -6,6 +6,7 @@ import {
 } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBStore, DynamoDBStoreFactory } from '../dynamodb-store';
+import { subscribeToServerLogs, type ServerLogRecord } from '../../logging';
 import type { Person } from '../../../shared/interfaces/person';
 import type { StorageInterface } from '../storage-interface';
 import type { Reminder } from '../../../shared/interfaces/reminder';
@@ -285,6 +286,43 @@ describe.runIf(available)('DynamoDBStore (contract, DynamoDB Local)', () => {
       const session = await alice.getSession(sessionId);
       expect(session!.messageCount).toBe(2);
       expect(session!.lastActivity).toBe('2026-06-02T00:00:00.000Z');
+    });
+
+    /**
+     * The half of the telemetry contract that lives here.
+     *
+     * `span-bridge.ts` turns this log line into the drawer's "saves the conversation"
+     * row, and it is asserted there — but only against a record the test builds
+     * itself. If this store stops logging, or drops the `userId` that routes the span
+     * to a socket, every one of those bridge tests still passes and the row silently
+     * disappears from the feed. This is the assertion that the line is actually
+     * emitted, with the three fields the bridge reads.
+     *
+     * `content` is asserted absent for the same reason the bridge asserts it: the
+     * store has the message text in hand here, and this is the call site where a
+     * careless field would put a real conversation on a projector.
+     */
+    it('logs the write for the drawer, with no message content in it', async () => {
+      const sessionId = await alice.createSession();
+      const records: ServerLogRecord[] = [];
+      const stop = subscribeToServerLogs((entry) => records.push(entry));
+
+      try {
+        await alice.saveMessage({
+          id: 'm1',
+          sessionId,
+          sender: 'agent',
+          content: 'She loves late-night jazz',
+          timestamp: '2026-06-01T00:00:00.000Z',
+        });
+      } finally {
+        stop();
+      }
+
+      const saved = records.find((entry) => entry.event === 'message.saved');
+      expect(saved?.data).toMatchObject({ sessionId, sender: 'agent', userId: 'alice' });
+      expect(typeof saved?.data?.durationMs).toBe('number');
+      expect(JSON.stringify(saved)).not.toContain('jazz');
     });
   });
 

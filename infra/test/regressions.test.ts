@@ -431,14 +431,18 @@ describe('guardrail enforcement', () => {
   });
 
   // At HIGH, "Her ring size is 6 and she is 5 foot 4" tripped the SEXUAL filter,
-  // and her sizes are among the profile fields the agent asks for outright.
-  it('screens the prompt for SEXUAL at MEDIUM while holding the reply to HIGH', () => {
+  // and her sizes are among the profile fields the agent asks for outright. At
+  // MEDIUM, "She loves massages and long baths" and "She loves lingerie, I want to
+  // buy her something nice" tripped it too — both SEXUAL/MEDIUM against the live
+  // guardrail, both ordinary preference facts. LOW blocks HIGH-confidence only,
+  // and the graphic requests this filter exists for all score HIGH.
+  it('screens the prompt for SEXUAL at LOW while holding the reply to HIGH', () => {
     const guardrails = safetyTemplate.findResources('AWS::Bedrock::Guardrail');
     const filters = Object.values<any>(guardrails)[0].Properties.ContentPolicyConfig
       .FiltersConfig as Array<any>;
     const sexual = filters.find((f) => f.Type === 'SEXUAL');
 
-    expect(sexual.InputStrength).toBe('MEDIUM');
+    expect(sexual.InputStrength).toBe('LOW');
     expect(sexual.OutputStrength).toBe('HIGH');
   });
 

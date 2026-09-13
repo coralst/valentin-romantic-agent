@@ -1,4 +1,5 @@
 import { colors, radii, insets, layout } from '../design-system/tokens';
+import { useZoom } from '../context/zoom-context';
 
 export type AppWindowVariant = 'desktop' | 'mobile';
 
@@ -57,10 +58,37 @@ export const DESKTOP_COLUMNS = [
   `${layout.briefRailWidth}px`,
 ].join(' ');
 
-function getPageStyle(variant: AppWindowVariant): React.CSSProperties {
+function getPageStyle(variant: AppWindowVariant, pageZoom: number): React.CSSProperties {
   return {
     boxSizing: 'border-box',
-    height: '100vh',
+    /*
+     * `zoom`, not `transform: scale()`.
+     *
+     * A transform paints the same layout at a different size, so zooming out would
+     * shrink the window and leave linen around it — the transcript would show exactly
+     * the messages it showed before, only smaller. `zoom` re-runs layout at the new
+     * size, which is the thing actually being asked for: a smaller page fits *more*
+     * chat on screen. It is also why this is the page and not the frame — the frame's
+     * `100%` then resolves against an already-zoomed box and needs no arithmetic.
+     */
+    zoom: pageZoom,
+    /*
+     * The height is divided by the zoom and the width is not, and the asymmetry is
+     * real rather than an oversight.
+     *
+     * Under `zoom`, a *percentage* resolves against a containing block that has
+     * already been converted into the zoomed coordinate space, so `width: 100%` comes
+     * out at exactly 100% of the real box at every zoom and needs no correction —
+     * dividing it too was measured overflowing the frame 393px past a 1600px viewport
+     * and carrying the brief rail off the right-hand edge with it.
+     *
+     * `vh`, like `px`, is an absolute length that `zoom` then multiplies. Left at
+     * `100vh` the window would stand 125% of the viewport tall at the top of the
+     * ladder and lose its bottom — composer included — behind `overflow: hidden`, and
+     * stop short of the bottom with a band of linen under it at 0.6. So this one is
+     * divided, and the frame renders exactly one screen at every rung.
+     */
+    height: `${100 / pageZoom}vh`,
     width: '100%',
     overflow: 'hidden',
     backgroundColor: colors.linen,
@@ -143,8 +171,16 @@ export function AppWindow({
   bottomInset,
   children,
 }: AppWindowProps) {
+  const { zoom } = useZoom();
+
   return (
-    <div style={getPageStyle(variant)} data-testid="app-window-page">
+    <div
+      style={getPageStyle(variant, zoom.page)}
+      data-testid="app-window-page"
+      // The zoom is asserted on the element carrying it, so a test cannot pass by
+      // reading a number the layout is not actually using.
+      data-page-zoom={zoom.page}
+    >
       <div
         style={getFrameStyle(variant, columns, bottomInset)}
         data-testid="app-window"

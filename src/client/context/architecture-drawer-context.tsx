@@ -6,6 +6,7 @@ import {
   useDrawerHeight,
   type UseDrawerHeightResult,
 } from '../hooks/use-drawer-height';
+import { useZoom } from './zoom-context';
 
 /**
  * Whether the Live Architecture drawer is showing.
@@ -35,7 +36,10 @@ export function ArchitectureDrawerProvider({ children }: { children: React.React
   // transition, which is what lets the drawer animate out and keep its step
   // instead of unmounting and restarting the walkthrough.
   const panel = useSlidePanel(false);
-  const sizing = useDrawerHeight();
+  // The height is in the zoomed page's pixels, so the clamp has to be told what the
+  // zoom is — see the note on `useDrawerHeight`.
+  const { zoom } = useZoom();
+  const sizing = useDrawerHeight(zoom.page);
 
   const value = useMemo(() => ({ ...panel, ...sizing }), [panel, sizing]);
 

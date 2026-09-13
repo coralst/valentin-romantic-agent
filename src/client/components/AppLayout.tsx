@@ -22,6 +22,7 @@ import {
   useArchitectureDrawer,
 } from '../context/architecture-drawer-context';
 import { GlowProvider } from '../context/glow-context';
+import { ZoomProvider } from '../context/zoom-context';
 import { useSessionContext } from '../context/session-context';
 import { IntegrationsProvider } from '../context/integrations-context';
 import { IntegrationReadinessProvider } from '../context/integration-readiness-context';
@@ -112,25 +113,31 @@ export function AppLayout() {
           be readable by `WebSocketProvider`, which is above this component, because
           the engine decides which socket path the chat opens — so it lives in
           `App.tsx` instead. See the note there. */}
-      <ArchitectureDrawerProvider>
-        {/* Beside the drawer's own state, and above the layout, because the glow
-            spans both: the feed row that is pointed at is inside the drawer, and
-            the reply, badge, chip or tile it lights up is inside the window. */}
-        <GlowProvider>
-          {/* Above the layout for the same reason: the badge that counts grants
-              lives on the rail, and the panel that changes the count is mounted
-              beside the chat. */}
-          <IntegrationsProvider>
-            {/* Beside the grants for the same reason, and one level in: the panel
-                changes readiness by handing over credentials, and the conversation
-                header's status strip reads it. One instance, or the header goes
-                stale after the very action that changes it. */}
-            <IntegrationReadinessProvider>
-              <AppLayoutContent />
-            </IntegrationReadinessProvider>
-          </IntegrationsProvider>
-        </GlowProvider>
-      </ArchitectureDrawerProvider>
+      {/* Above the drawer's own state, because the drawer's height is clamped
+          against a viewport the page zoom has resized — see `useDrawerHeight`. And
+          above the window, because the shell's zoom and the drawer's are one pair of
+          numbers that the accelerator picks between. */}
+      <ZoomProvider>
+        <ArchitectureDrawerProvider>
+          {/* Beside the drawer's own state, and above the layout, because the glow
+              spans both: the feed row that is pointed at is inside the drawer, and
+              the reply, badge, chip or tile it lights up is inside the window. */}
+          <GlowProvider>
+            {/* Above the layout for the same reason: the badge that counts grants
+                lives on the rail, and the panel that changes the count is mounted
+                beside the chat. */}
+            <IntegrationsProvider>
+              {/* Beside the grants for the same reason, and one level in: the panel
+                  changes readiness by handing over credentials, and the conversation
+                  header's status strip reads it. One instance, or the header goes
+                  stale after the very action that changes it. */}
+              <IntegrationReadinessProvider>
+                <AppLayoutContent />
+              </IntegrationReadinessProvider>
+            </IntegrationsProvider>
+          </GlowProvider>
+        </ArchitectureDrawerProvider>
+      </ZoomProvider>
     </ProfileStoreProvider>
   );
 }

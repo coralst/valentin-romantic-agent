@@ -192,6 +192,45 @@ describe('useDrawerHeight', () => {
   });
 });
 
+describe('useDrawerHeight — under a page zoom', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('measures the viewport in the zoomed page’s own pixels', () => {
+    // Every number in the hook is a CSS pixel inside the zoomed page, while
+    // `innerHeight` is a real one. At 0.8 a 900px window is 1125 of the page's pixels,
+    // and the drawer can afford its full height there.
+    setViewportHeight(LAPTOP);
+    expect(renderHook(() => useDrawerHeight(1)).result.current.height).toBe(
+      LAPTOP - MIN_SHELL_AUTO,
+    );
+    expect(renderHook(() => useDrawerHeight(0.8)).result.current.height).toBe(
+      DEFAULT_DRAWER_HEIGHT,
+    );
+  });
+
+  it('keeps the shell’s floor honest when the page is zoomed in', () => {
+    // The failure this prevents: at 1.25 a drawer measured against the real viewport
+    // paints 125% of what it thought and buries the composer `MIN_SHELL_AUTO` protects.
+    setViewportHeight(LAPTOP);
+    const zoomed = renderHook(() => useDrawerHeight(1.25)).result.current.height;
+
+    expect(zoomed * 1.25).toBeLessThanOrEqual(LAPTOP - MIN_SHELL_AUTO + 1);
+  });
+
+  it('treats a nonsense zoom as no zoom rather than dividing by it', () => {
+    setViewportHeight(TALL);
+    expect(renderHook(() => useDrawerHeight(0)).result.current.height).toBe(
+      DEFAULT_DRAWER_HEIGHT,
+    );
+  });
+});
+
 describe('useDrawerHeight — storage that misbehaves', () => {
   beforeEach(() => {
     localStorage.clear();

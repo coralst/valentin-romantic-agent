@@ -9,6 +9,9 @@ import { useFlowPlayback } from '../hooks/use-flow-playback';
 import { useFlowTraversal } from '../hooks/use-flow-traversal';
 import { PANEL_SLIDE_MS } from '../hooks/use-inspector-focus';
 import { useGlow } from '../context/glow-context';
+import { useZoom } from '../context/zoom-context';
+import { useDragPan } from '../hooks/use-drag-pan';
+import { DEFAULT_ZOOM, formatZoom, ZOOM_BOUNDS } from '../utils/zoom-ladder';
 import type { GlowTarget } from '../utils/glow-target';
 import {
   defaultDemoFlowIdFor,
@@ -156,6 +159,16 @@ export const DRAWER_COPY = {
   next: 'Next step',
   previous: 'Previous step',
   restart: 'Restart flow',
+  /*
+   * The zoom control's three names.
+   *
+   * Each says "the architecture" out loud rather than just "Zoom in", because this
+   * zoom is deliberately not the page's — the accessible name is the only place a
+   * screen reader user is told which of the two they are about to change.
+   */
+  zoomIn: 'Zoom in on the architecture',
+  zoomOut: 'Zoom out of the architecture',
+  zoomReset: 'Reset the architecture zoom to 100%',
   liveHeading: 'Live flow',
   demoHeading: 'Demo flow',
   /** Heading while a chosen action is being replayed, in either mode. */
@@ -527,6 +540,86 @@ const ghostButtonStyle: React.CSSProperties = {
   color: '#756A70',
 };
 
+function stepperStyle(isDisabled: boolean): React.CSSProperties {
+  return {
+    ...ghostButtonStyle,
+    padding: '5px 9px',
+    fontSize: 14,
+    lineHeight: 1,
+    opacity: isDisabled ? 0.35 : 1,
+    cursor: isDisabled ? 'default' : 'pointer',
+  };
+}
+
+/**
+ * The drawer's zoom control: −, the level, +.
+ *
+ * On screen as well as on the keyboard because an accelerator nobody can see is an
+ * accelerator nobody finds, and because the readout is the only thing that says the
+ * diagram is not at its natural size. That makes the readout the obvious place to
+ * hang the reset, so it is a button too — 145% is both the answer to "why does this
+ * look odd" and the way to undo it.
+ *
+ * Reads the zoom straight from the context rather than taking props: it is rendered
+ * once, in a header that already has six buttons, and threading four more props
+ * through the drawer to reach it would buy nothing.
+ */
+function ArchitectureZoomControl() {
+  const { zoom, zoomIn, zoomOut, resetZoom } = useZoom();
+  const level = zoom.architecture;
+  const { min, max } = ZOOM_BOUNDS.architecture;
+  const atFloor = level <= min;
+  const atCeiling = level >= max;
+
+  return (
+    <div
+      data-testid="architecture-zoom"
+      // The level, for tests and for anyone reading the DOM to see why the diagram is
+      // the size it is.
+      data-zoom={level}
+      style={{ display: 'flex', alignItems: 'center', gap: 1 }}
+    >
+      <button
+        type="button"
+        style={stepperStyle(atFloor)}
+        onClick={() => zoomOut('architecture')}
+        disabled={atFloor}
+        aria-label={DRAWER_COPY.zoomOut}
+      >
+        −
+      </button>
+      <button
+        type="button"
+        onClick={() => resetZoom('architecture')}
+        aria-label={DRAWER_COPY.zoomReset}
+        style={{
+          ...ghostButtonStyle,
+          padding: '6px 2px',
+          // Wide enough for '100%' and for '300%', so stepping through the ladder does
+          // not shuffle the buttons either side of it.
+          minWidth: 42,
+          textAlign: 'center',
+          fontVariantNumeric: 'tabular-nums',
+          // Quiet at 100%, ink once it is not: the control should recede until it has
+          // something to tell you.
+          color: level === DEFAULT_ZOOM ? '#A3959C' : '#2A2226',
+        }}
+      >
+        {formatZoom(level)}
+      </button>
+      <button
+        type="button"
+        style={stepperStyle(atCeiling)}
+        onClick={() => zoomIn('architecture')}
+        disabled={atCeiling}
+        aria-label={DRAWER_COPY.zoomIn}
+      >
+        +
+      </button>
+    </div>
+  );
+}
+
 /**
  * The bar's state, as a zoom-in / zoom-out lens.
  *
@@ -571,6 +664,25 @@ export function LiveArchitectureDrawer() {
   const { height: drawerHeight, bounds, setHeight, reset, isCustom } = useArchitectureDrawer();
   /** True only while the edge is under the pointer — see the panel's `transition`. */
   const [isResizing, setResizing] = useState(false);
+
+  const { zoom, panResetToken } = useZoom();
+  /*
+   * The drawer's zoom, expressed relative to the page's.
+   *
+   * `zoom` compounds down the tree, so a wrapper inside an already-zoomed page would
+   * otherwise render at `page × architecture` — and zooming the shell out to fit more
+   * transcript would silently shrink the diagram with it. Dividing by the ancestor's
+   * zoom cancels it, which is what makes `architecture` an absolute level: 200% means
+   * 200% whatever the shell is doing.
+   */
+  const archZoom = zoom.page > 0 ? zoom.architecture / zoom.page : zoom.architecture;
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  /*
+   * Grab-and-drag on the diagram, scrolling the box it sits in. The scale is the
+   * page's zoom rather than the drawer's: the pointer's pixels have to be converted
+   * into the *scroller's* units, and the scroller is outside the drawer's own zoom.
+   */
+  const pan = useDragPan(viewportRef, { scale: zoom.page, resetToken: panResetToken });
   // Read once per mount: the candidate is chosen from the URL, and re-reading it
   // mid-session would repaint the bar under whoever is presenting.
   const theme = useMemo(() => resolveBarTheme(), []);
@@ -870,6 +982,10 @@ export function LiveArchitectureDrawer() {
           aria-label={DRAWER_COPY.title}
           data-testid="architecture-drawer"
           data-open={isOpen ? 'true' : 'false'}
+          // Which zoom Cmd+/− drives while the pointer or the focus is in here. An
+          // attribute rather than a ref comparison because this element unmounts with
+          // the drawer and remounts when it is reopened — see `zoom-context`.
+          data-zoom-region="architecture"
           style={{
             ...drawerStyle,
             // Must match what the layout reserved, or the panel covers the very
@@ -1006,6 +1122,7 @@ export function LiveArchitectureDrawer() {
                   </span>
                 </>
               )}
+              <ArchitectureZoomControl />
               <button
                 type="button"
                 style={ghostButtonStyle}
@@ -1017,44 +1134,89 @@ export function LiveArchitectureDrawer() {
             </div>
           </div>
 
+          {/* The pan viewport. Deliberately outside the zoom below it: this is the box
+              whose `scrollLeft`/`scrollTop` a drag moves, and a scroller that is itself
+              zoomed reports those in units the pointer's pixels do not match. */}
           <div
+            ref={viewportRef}
+            data-testid="architecture-viewport"
             style={{
               flex: 1,
-              display: 'flex',
-              gap: 20,
-              padding: '0 20px 18px',
               minHeight: 0,
-              overflowX: 'auto',
               /*
                * Scrolls rather than clips, now that the drawer's height is clamped
                * against the viewport. This row deliberately had no `overflowY` back
                * when `DRAWER_HEIGHT` was always tall enough to hold the whole
                * diagram — but on a short window the drawer gives up height to leave
                * the shell usable, and without this the bottom cards were cut off
-               * silently instead of being reachable.
+               * silently instead of being reachable. Zooming in past the drawer's
+               * height is now the ordinary way to reach that state, and the same
+               * `overflow` is what makes it pannable rather than lost.
                */
-              overflowY: 'auto',
+              overflow: 'auto',
             }}
           >
-            <AwsTopologyDiagram {...diagram} engine={engine} />
-            <AwsFlowFeed
-              rows={rows}
-              summary={summary}
-              heading={
-                isReplaying
-                  ? DRAWER_COPY.replayHeading
-                  : isDemo
-                    ? DRAWER_COPY.demoHeading
-                    : DRAWER_COPY.liveHeading
-              }
-              emptyMessage={isDemo ? undefined : DRAWER_COPY.liveEmpty}
-              onSelectGroup={selectGroup}
-              selectedGroupId={replay?.id ?? null}
-              onHoverGroup={previewGroup}
-              onSelectRow={pinRow}
-              onHoverRow={previewRow}
-              glowingKey={pinnedKey}
-            />
+            <div
+              data-testid="architecture-zoom-canvas"
+              // The zoom actually in force here, which is the drawer's level *net of*
+              // the page's. Asserted on rather than the style, so the test proves the
+              // cancellation rather than re-deriving it.
+              data-zoom={archZoom}
+              style={{
+                zoom: archZoom,
+                /*
+                 * Plain 100%, and deliberately not `100 / archZoom`.
+                 *
+                 * Under `zoom` a percentage resolves against a containing block already
+                 * converted into the zoomed space, so 100% here *is* the viewport at
+                 * every zoom — which is what keeps the canvas the size of the drawer
+                 * however far in the diagram is. What then overflows and pans is only
+                 * the content genuinely bigger than the box, the diagram's fixed
+                 * canvas, rather than the box itself dragging the feed off the right
+                 * edge for no reason. (Dividing, which the shell's `vh` does need,
+                 * would leave the canvas at 1/zoom² of the drawer.)
+                 */
+                width: '100%',
+                height: '100%',
+                boxSizing: 'border-box',
+                display: 'flex',
+                gap: 20,
+                padding: '0 20px 18px',
+              }}
+            >
+              {/* The grab surface. Only the diagram: dragging across the feed would
+                  fight the row it is trying to hover or pin. */}
+              <div
+                data-testid="architecture-pan-surface"
+                onPointerDown={pan.onPointerDown}
+                style={{
+                  flexShrink: 0,
+                  cursor: pan.isPanning ? 'grabbing' : 'grab',
+                  // Only while dragging, so the labels stay selectable at rest.
+                  userSelect: pan.isPanning ? 'none' : undefined,
+                }}
+              >
+                <AwsTopologyDiagram {...diagram} engine={engine} />
+              </div>
+              <AwsFlowFeed
+                rows={rows}
+                summary={summary}
+                heading={
+                  isReplaying
+                    ? DRAWER_COPY.replayHeading
+                    : isDemo
+                      ? DRAWER_COPY.demoHeading
+                      : DRAWER_COPY.liveHeading
+                }
+                emptyMessage={isDemo ? undefined : DRAWER_COPY.liveEmpty}
+                onSelectGroup={selectGroup}
+                selectedGroupId={replay?.id ?? null}
+                onHoverGroup={previewGroup}
+                onSelectRow={pinRow}
+                onHoverRow={previewRow}
+                glowingKey={pinnedKey}
+              />
+            </div>
           </div>
         </section>
       )}

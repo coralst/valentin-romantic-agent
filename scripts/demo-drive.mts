@@ -232,6 +232,120 @@ const OVERDUE_DAYS = CLOSING_LEAD_DAYS - daysToOccasion();
 /** Weekday names, for the wrong-weekday assertion. */
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
+const MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+/**
+ * Every date a reply names, in order, and whether each one is the occasion.
+ *
+ * Four spellings, because those are the four a real reply uses: `24 September`,
+ * `September 24`, `the 24th`, `24/9`. A bare ordinal counts — a reply that says
+ * "the 24th" is talking about the same evening as one that spells the month.
+ */
+function datesMentioned(reply: string): { index: number; end: number; isOccasion: boolean }[] {
+  const occasionDay = Number(OCCASION.iso.slice(8, 10));
+  const occasionMonth = Number(OCCASION.iso.slice(5, 7));
+  const months = MONTHS.join('|');
+  const pattern = new RegExp(
+    String.raw`\b(\d{1,2})(?:st|nd|rd|th)?\s+(${months})\b` +
+      String.raw`|\b(${months})\s+(\d{1,2})(?:st|nd|rd|th)?\b` +
+      String.raw`|\bthe\s+(\d{1,2})(?:st|nd|rd|th)\b` +
+      String.raw`|\b(\d{1,2})[./](\d{1,2})\b`,
+    'gi',
+  );
+
+  const found: { index: number; end: number; isOccasion: boolean }[] = [];
+  for (const m of reply.matchAll(pattern)) {
+    const [, dayThenMonth, monthName1, monthName2, monthThenDay, ordinalOnly, numericDay, numericMonth] = m;
+    let day: number | null = null;
+    let month: number | null = null;
+    if (dayThenMonth) {
+      day = Number(dayThenMonth);
+      month = MONTHS.findIndex((name) => name.toLowerCase() === monthName1.toLowerCase()) + 1;
+    } else if (monthThenDay) {
+      day = Number(monthThenDay);
+      month = MONTHS.findIndex((name) => name.toLowerCase() === monthName2.toLowerCase()) + 1;
+    } else if (ordinalOnly) {
+      day = Number(ordinalOnly);
+    } else if (numericDay) {
+      day = Number(numericDay);
+      month = Number(numericMonth);
+    }
+    if (day === null) continue;
+    // An unqualified ordinal is the occasion if the day matches — there is only one
+    // date in play at this point in the script.
+    found.push({
+      index: m.index ?? 0,
+      end: (m.index ?? 0) + m[0].length,
+      isOccasion: day === occasionDay && (month === null || month === occasionMonth),
+    });
+  }
+  return found;
+}
+
+/**
+ * The weekday a reply attaches to the occasion, when it gets it wrong.
+ *
+ * The blunt version of this check — "any weekday named anywhere must be the
+ * occasion's" — failed a take for a reply that was right: told the anniversary
+ * was the 24th, the model volunteered that the *Hebrew* date fell on the 20th,
+ * "which falls on a Sunday". The 20th genuinely was a Sunday. The claim under
+ * assertion is about one date, so the check has to be too, or it fails takes for
+ * being correct about a second one — which is how a guard stops being trusted.
+ *
+ * Attribution follows the two word orders English actually uses:
+ *
+ * - `Sunday the 20th`, `Thursday, September 24th` — the date runs straight on from
+ *   the weekday, so that date owns it. Only an adjacent date counts, or a comma
+ *   and two clauses later would capture it.
+ * - `20 September … which falls on a Sunday` — nothing follows the weekday, so it
+ *   belongs to the last date named before it.
+ *
+ * A weekday with no date on either side is about the occasion, because the
+ * occasion is the only date the turn put in play — which is exactly the recorded
+ * failure this guard was written for ("that's this coming Wednesday", no date
+ * restated, when the date was a Thursday).
+ */
+function misattributedWeekday(reply: string, expected: string): string | null {
+  const named = WEEKDAYS.flatMap((day) =>
+    [...reply.matchAll(new RegExp(String.raw`\b${day}\b`, 'gi'))].map((m) => ({
+      day,
+      index: m.index ?? 0,
+      end: (m.index ?? 0) + day.length,
+    })),
+  ).sort((a, b) => a.index - b.index);
+  if (named.length === 0) return null;
+
+  const dates = datesMentioned(reply);
+
+  for (const { day, index, end } of named) {
+    if (day.toLowerCase() === expected.toLowerCase()) continue;
+
+    // `Sunday the 20th` — nothing but a comma, a space or "the" between them.
+    const following = dates.find((d) => d.index >= end);
+    const adjacent =
+      following !== undefined && /^[\s,]*(the\s+)?$/i.test(reply.slice(end, following.index))
+        ? following
+        : undefined;
+    const owner = adjacent ?? dates.filter((d) => d.end <= index).pop();
+
+    if (!owner || owner.isOccasion) return day;
+  }
+  return null;
+}
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 /** Scale a duration by `--speed`. */
 const paced = (ms: number) => Math.round(ms / SPEED);
@@ -1053,10 +1167,10 @@ function assertReply(turn: SpokenTurn, reply: string): void {
     }
   }
   if (turn.expectWeekday) {
-    const named = WEEKDAYS.filter((day) => new RegExp(`\\b${day}\\b`, 'i').test(reply));
-    if (named.length > 0 && !named.includes(turn.expectWeekday)) {
+    const wrong = misattributedWeekday(reply, turn.expectWeekday);
+    if (wrong !== null) {
       throw new Error(
-        `TAKE FAILED — the reply named ${named.join(', ')} but the date is a ${turn.expectWeekday}.\n` +
+        `TAKE FAILED — the reply called the date a ${wrong}; it is a ${turn.expectWeekday}.\n` +
           `  asked: ${turn.say}\n  reply: ${reply.slice(0, 400)}`,
       );
     }

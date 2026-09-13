@@ -120,6 +120,35 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toMatch(/Ask once/);
   });
 
+  /*
+   * The sibling of the rule above, and the one that was missing.
+   *
+   * Observed on the deployed DIY engine: asked for a table and "which hours are
+   * actually free", it called `find_restaurants`, never called
+   * `check_availability`, and quoted a clock time regardless. Every neighbouring
+   * rule forbids claiming a write that did not happen; none forbade claiming a
+   * fact that was never looked up.
+   *
+   * Asserted on the prompt rather than on a model reply because that is where the
+   * rule can be pinned deterministically — the behaviour itself is asserted by
+   * inspection moment 4 in `scripts/demo-drive.mts`, which fails the take when a
+   * shortlist names times with no availability span behind it.
+   */
+  it('forbids naming an hour that no check_availability call returned', () => {
+    const prompt = buildSystemPrompt(samantha, true, [], lateOnTheThird);
+    expect(prompt).toMatch(/AN HOUR IS A FACT YOU HAVE TO FETCH/);
+    expect(prompt).toMatch(/unless a check_availability result in this\s+conversation said so/);
+    // And it must say what to do instead, or the model's only compliant move is to
+    // refuse the question it was asked.
+    expect(prompt).toMatch(/name the rooms and\s+offer to check the hours/);
+  });
+
+  it('says nothing about fetching hours when there are no tools to fetch them with', () => {
+    expect(buildSystemPrompt(samantha, false, [], lateOnTheThird)).not.toMatch(
+      /AN HOUR IS A FACT YOU HAVE TO FETCH/,
+    );
+  });
+
   it('keeps goal 1 live while the profile is thin — a name and two facts is not knowing her', () => {
     const prompt = buildSystemPrompt(samantha);
     expect(prompt).toMatch(/GOAL 1 is live/);

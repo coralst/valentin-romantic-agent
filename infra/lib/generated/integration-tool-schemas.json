@@ -331,7 +331,7 @@
   },
   {
     "name": "propose_calendar_event",
-    "description": "Offer to add something to the user's Google Calendar — a dinner reservation, a reminder to buy flowers, the occasion itself. This does NOT write anything: it shows a card, and the entry is created only after they confirm. Omit the time for an all-day entry like an anniversary.",
+    "description": "Offer to add something to the user's Google Calendar — a dinner reservation, a reminder to buy flowers, the occasion itself. This does NOT write anything: it shows a card, and the entry is created only after they confirm. Omit the time for an all-day entry like an anniversary. For a timed entry it checks the calendar first: if the slot is already taken it offers no card and comes back with the clash and some free times instead, so you can tell the user and let them pick.",
     "requiresConfirmation": true,
     "inputSchema": {
       "type": "object",
@@ -367,6 +367,10 @@
         "notes": {
           "type": "string",
           "description": "Anything else to put in the entry body."
+        },
+        "ignore_conflicts": {
+          "type": "boolean",
+          "description": "Only set this after you have told the user about a clash and they have said to book it anyway. Skips the availability check."
         }
       },
       "required": [

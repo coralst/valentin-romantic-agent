@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { config } from '../../../config';
+import { logger } from '../../../logging';
 import {
   GOOGLE_SCOPES,
   buildRawMessage,
@@ -54,11 +55,26 @@ function stubFetch(responder: (url: string, method: string) => unknown): void {
         headers: (init?.headers ?? {}) as Record<string, string>,
       });
 
+      // Both branches carry `text` as well as `json`, because a real `Response` has
+      // both and the client reads the body as text when it is logging a failure it
+      // cannot assume is JSON. A fake with only `json` passed for a long time and
+      // then failed 14 tests the moment the failure path started reporting itself.
       const payload = responder(url, method);
       if (payload === undefined) {
-        return { ok: false, status: 400, json: async () => ({ error: 'invalid_grant' }) };
+        const refusal = { error: 'invalid_grant', error_description: 'Token has been expired or revoked.' };
+        return {
+          ok: false,
+          status: 400,
+          json: async () => refusal,
+          text: async () => JSON.stringify(refusal),
+        };
       }
-      return { ok: true, status: 200, json: async () => payload };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => payload,
+        text: async () => JSON.stringify(payload),
+      };
     }),
   );
 }
@@ -141,12 +157,49 @@ describe('googleAccessToken', () => {
     await expect(googleAccessToken()).resolves.toBeNull();
   });
 
+  it('logs why Google refused, because the null it returns says nothing', async () => {
+    /*
+     * This is the regression test for a real outage, and the outage was the silence
+     * rather than the expiry.
+     *
+     * On 2026-09-13 the deployed refresh token was ten days dead. Calendar and Gmail
+     * both failed for the same reason, and both reported it as `null` — so
+     * `find_occasions` said "I could not reach the calendar", a reminder send said
+     * "Gmail accepted no message id", and neither named a cause. Tracing one expired
+     * string took an hour of log archaeology, and a recorded demo went out in the
+     * meantime captioning a mail that had never been sent.
+     *
+     * `invalid_grant` needs a person to mint a token; `invalid_client` needs a
+     * corrected secret. Callers cannot tell those apart and should not have to, but
+     * whoever is on the other end of the outage must be able to.
+     */
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    stubFetch(() => undefined);
+
+    await expect(googleAccessToken()).resolves.toBeNull();
+
+    expect(error).toHaveBeenCalledWith(
+      'google.auth_refused',
+      expect.objectContaining({ status: 400, error: 'invalid_grant' }),
+    );
+    // And it must say what to do about it, not merely that it happened.
+    const [, detail] = error.mock.calls[0] as [string, { hint?: string }];
+    expect(detail.hint).toMatch(/sync:google-secret/);
+  });
+
   it('returns null, and asks nothing, when unconfigured', async () => {
     config.integrations.googleRefreshToken = undefined;
     stubEverything();
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
 
     await expect(googleAccessToken()).resolves.toBeNull();
     expect(calls).toHaveLength(0);
+    // Which of the three is missing is the whole question when a container boots
+    // with an incomplete secret, so the flags are logged individually.
+    expect(warn).toHaveBeenCalledWith(
+      'google.auth_unconfigured',
+      expect.objectContaining({ refreshToken: false }),
+    );
   });
 
   it('asks for the calendar, sending mail, and reading it back — and nothing else', () => {

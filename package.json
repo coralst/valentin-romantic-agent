@@ -18,6 +18,7 @@
     "lint": "tsc --noEmit",
     "prove:integrations": "npx tsx scripts/prove-integrations.mts",
     "verify:reminder-mail": "npx tsx scripts/verify-reminder-mail.ts",
+    "sync:google-secret": "npx tsx scripts/sync-google-secret.mts",
     "generate:tool-schemas": "npx tsx scripts/generate-tool-schemas.mts",
     "verify:local": "bash scripts/verify-local.sh",
     "demo:drive": "npx tsx scripts/demo-drive.mts",

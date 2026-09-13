@@ -134,8 +134,6 @@ const DRAWER_COPY_NEXT = 'Next step';
 
 /** How long to wait for one model turn before giving up on the whole run. */
 const REPLY_TIMEOUT_MS = 90_000;
-/** The scheduler's sweep interval, plus room for the send itself. */
-const SWEEP_WAIT_MS = 95_000;
 
 /**
  * The anniversary the demo plans for — computed at launch, never hardcoded.
@@ -540,16 +538,16 @@ const PROFILE_TURNS: Turn[] = [
 /**
  * The last three turns of act 2: where to write, and when.
  *
- * Held back to the very end, after the table is booked and the playlist is saved, and
- * the reason is {@link LEAD_FLOOR_DAYS}: these are the turns that make the reminder
- * *due*. Asked any earlier, the sweep fires while the conversation is still gathering
- * facts and the mail goes out with nothing in it to confirm.
+ * Held back to the very end, after the table is booked and the playlist is saved,
+ * because {@link postTheConversation} sends immediately after them and the letter is
+ * composed from the profile as it stands. Asked any earlier, the mail goes out with
+ * nothing in it to confirm — no restaurant, no playlist.
  *
- * So the order is exact. The address first, because a row that comes due with no target
- * is skipped without being claimed and would need a second sweep. Then the question
- * about notice, which is a real question — the answer comes off
- * `REMINDER_LEAD_OPTIONS`, not out of the model. Then the change to a fortnight, which
- * re-plans the row into the past and hands it to the next sweep.
+ * So the order is exact. The address first, because a send with no target is a 409 and
+ * fails the take rather than reaching anyone. Then the question about notice, which is a
+ * real question — the answer comes off `REMINDER_LEAD_OPTIONS`, not out of the model.
+ * Then the change to a fortnight, which is what makes the reminder overdue and so makes
+ * the beat's own sentence about the scheduler true.
  */
 const CLOSING_TURNS: Turn[] = [
   {
@@ -587,12 +585,12 @@ const CLOSING_TURNS: Turn[] = [
  * anniversary date. Asked in the other order they are three generic API calls with
  * a chat window around them.
  *
- * They also run *after* the mail beat rather than before it, which is not a
- * cosmetic choice: the reminder is armed the moment the anniversary is learned, and
- * the scheduler sweeps every 60 seconds. Any beat placed between the arming and the
- * sweep means the mail has already gone by the time the run announces it is waiting
- * for it — so the wait is taken first, while the conversation is still short, and
- * the audience sees the sweep fire rather than being told it fired earlier.
+ * They also run *before* the mail, which is not a cosmetic choice: the letter is
+ * composed from the profile at the moment of sending, so the table and the playlist
+ * have to already be in it. This paragraph used to argue the opposite ordering — that
+ * the wait be taken first, before the sweep could fire unannounced — which was written
+ * for a beat that waited on the scheduler. Nothing waits now, so the constraint that
+ * remains is the letter's contents.
  *
  * `confirms` is the point of the last two. A search is a read and reads are cheap;
  * the interesting claim this product makes is that **nothing is written without a
@@ -1759,32 +1757,7 @@ async function main(): Promise<void> {
 
     await playTurns(page, composer, CLOSING_TURNS, 'closing');
 
-    if (SEND_MAIL) {
-      /*
-       * The only beat in the demo with nothing to click, and that is its content: the
-       * two turns above changed a setting, and a timer nobody is watching turned that
-       * into a letter. Waited out on screen at full length for the same reason.
-       */
-      console.log('\n  the sweep, and the mail');
-      const overdue = OVERDUE_DAYS > 0
-        ? `${OVERDUE_DAYS} day${OVERDUE_DAYS === 1 ? '' : 's'} overdue`
-        : 'due now';
-      await caption(
-        page,
-        `Two weeks' notice makes this reminder ${overdue}. The scheduler sweeps every 60s…`,
-      );
-      await hold(4_000);
-      const until = Date.now() + SWEEP_WAIT_MS;
-      while (Date.now() < until) {
-        const left = Math.ceil((until - Date.now()) / 1000);
-        await caption(page, `Waiting for the 60-second sweep — ${left}s`);
-        await sleep(1_000);
-      }
-      await caption(page, `Gone. Sent by code, not by the model — it is in ${TO}`);
-      await hold(4_500);
-      await shot(page, 'after-sweep');
-      console.log(`  mail should now be in ${TO}`);
-    }
+    if (SEND_MAIL) await postTheConversation(page);
 
     if (DO_INBOX) await readTheInbox(page, context);
 
@@ -2261,11 +2234,89 @@ async function inspectMomentFour(page: Page, feed: Locator): Promise<void> {
  *
  * Because everything that *can* be verified already has been, in code — the reservation
  * and surprise branches are unit-tested in `email-body.test.ts`, and the send itself is
- * confirmed by the sweep. What is left is Google's own UI and a signed-in profile, and
- * neither is this project's to guarantee. A run that ends after the sweep is still a
+ * confirmed by {@link postTheConversation}, which fails the take if the app does not say
+ * it sent. What is left is Google's own UI and a signed-in profile, and
+ * neither is this project's to guarantee. A run that ends after the send is still a
  * complete demo of the product; a run that dies at minute eighteen on a Gmail selector
  * is not.
  */
+/**
+ * The mail — sent on camera, and checked before anything says it was.
+ *
+ * This beat used to be a 95-second wait on the reminder sweep that ended in the caption
+ * "Gone. Sent by code, not by the model — it is in <address>". It asserted nothing: the
+ * wait was a timer, and that sentence was a claim about the real world derived from the
+ * timer having expired. A take went out that way, and the service logs covering it hold
+ * no `reminder.sent` at all — the row never came due, no mail was ever sent, and the
+ * video said one was.
+ *
+ * That is the defect the pre-flight channel guard in `main` was written for, one level
+ * further in. The guard proves the server *could* send; this beat then claimed it *had*.
+ *
+ * So the send is now the thing the demo does rather than the thing it waits for.
+ * `POST /api/session/:id/email` is the reminder path with the clock taken out — the same
+ * `ReminderSender`, the same recipient resolution, the same rendered body — sitting
+ * behind the "Email it to me" button. It answers, its answer is on screen, and a take
+ * that cannot send fails here instead of narrating past it.
+ *
+ * The scheduler is still named, because it is the real mechanism and the rail has been
+ * counting down to it all run. It is simply no longer asked to prove itself inside a
+ * meeting, which is the one thing it cannot do.
+ */
+async function postTheConversation(page: Page): Promise<void> {
+  console.log('\n  the mail');
+  const overdue =
+    OVERDUE_DAYS > 0 ? `${OVERDUE_DAYS} day${OVERDUE_DAYS === 1 ? '' : 's'} overdue` : 'due now';
+  await caption(
+    page,
+    `Two weeks' notice makes this reminder ${overdue} — the scheduler sweeps for it every 60s`,
+  );
+  await hold(5_000);
+  await caption(page, 'And the same letter on demand — one button, the channel the timer uses');
+  await hold(3_500);
+
+  const trigger = page.getByTestId('share-trigger');
+  if (!(await showing(trigger))) {
+    throw new Error('TAKE FAILED — there is no share control, so the mail can be neither sent nor shown.');
+  }
+  await humanClick(page, trigger, 'open the share menu');
+
+  const button = page.getByTestId('share-email');
+  await button.waitFor({ state: 'visible', timeout: 15_000 });
+  await humanClick(page, button, 'email it to me');
+
+  /*
+   * Settled, not merely present. The button renders "Sending…" the instant it is
+   * pressed, so reading the outcome on first sight would take the pending state for
+   * the result — and "Sending…" contains no "sent", which would fail every take.
+   */
+  const outcome = page.getByTestId('share-outcome');
+  await outcome.waitFor({ state: 'visible', timeout: 60_000 }).catch(() => {});
+  let text = '';
+  const until = Date.now() + 60_000;
+  while (Date.now() < until) {
+    text = (await outcome.innerText().catch(() => '')).trim();
+    if (text && !/sending/i.test(text)) break;
+    await sleep(500);
+  }
+  console.log(`  the app says: ${text || '(nothing)'}`);
+
+  if (!/\bsent\b/i.test(text)) {
+    throw new Error(
+      'TAKE FAILED — the mail did not send, so nothing in this video may say it did.\n' +
+        `  the app said: ${text || '(nothing)'}\n` +
+        '  A 409 is no notify address on the profile; a 502 is the channel refusing the send.',
+    );
+  }
+
+  await caption(page, `Gone — sent by code, not by the model, and it is in ${TO}`);
+  await hold(5_000);
+  await shot(page, 'mail-sent');
+  // Dismissed so the popover is not sitting over the acts that follow.
+  await page.keyboard.press('Escape').catch(() => {});
+  console.log(`  mail sent to ${TO}`);
+}
+
 async function readTheInbox(page: Page, context: BrowserContext): Promise<void> {
   console.log('\nact 3 — the inbox');
   await caption(page, 'And now the part that left the building — his actual inbox');

@@ -94,21 +94,18 @@ export interface GatewayToolSchema {
 /**
  * Services engine B does not host, and why.
  *
- * `lambda-handler.ts` builds its `ToolContext` as `{sessionId, userId}` — there is
- * no store in that process, no table name in its environment and no IAM grant to
- * read one. A tool that writes our own DynamoDB table therefore *registers* there
- * but can only ever answer "I can't save that right now", and declaring it to the
- * Gateway would put a tool in the model's instruction set that fails every time it
- * is called. Not declaring it is the honest failure: engine B simply cannot set
- * reminders, which is a real difference between the two engines rather than a bug
- * in one of them.
+ * Empty, and deliberately kept rather than deleted — it is the one place that decides
+ * what engine B may not reach, and the next tool that writes somewhere the Lambda has
+ * no grant for belongs here.
  *
- * Keyed on `service` rather than tool name so a second reminders tool inherits the
- * decision instead of quietly appearing on the Gateway. Giving engine B reminders
- * means granting the tools Lambda the table — a deliberate infra change, and the
- * point at which this line comes back out.
+ * `reminders` sat here until the infra change its own note called for was made: the
+ * tools Lambda now gets `DYNAMO_TABLE_NAME` and builds a real store into its
+ * `ToolContext` (`lambda-handler.ts`), so `set_reminder`, `list_reminders` and
+ * `cancel_reminder` work there rather than answering "I can't save that right now".
+ * The table grant was already in place. Keyed on `service` rather than tool name, so a
+ * fourth reminders tool inherits whatever this decides instead of having to be listed.
  */
-const NOT_HOSTED_ON_GATEWAY = new Set(['reminders']);
+const NOT_HOSTED_ON_GATEWAY = new Set<string>();
 
 /**
  * Build the schema list.

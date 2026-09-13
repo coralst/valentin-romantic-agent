@@ -10,6 +10,7 @@ import { resolvePersona } from '../../fixtures/demo-personas';
 import { DEMO_PEOPLE } from '../../fixtures/demo-people';
 import { DEMO_TASKS } from '../../fixtures/demo-tasks';
 import { isGap } from '../../../shared/interfaces/person';
+import type { Reminder } from '../../../shared/interfaces/reminder';
 import type { IntegrationStatusResponse } from '../../../shared/interfaces/integrations';
 import { INTEGRATION_IDS } from '../../../shared/interfaces/integrations';
 import { PROFILE_FIELD_REGISTRY } from '../../../client/utils/profile-field-registry';
@@ -1091,6 +1092,139 @@ describe('createHttpRoutes', () => {
     });
   });
 
+  /*
+   * What Valentin is going to tell him. Read-and-cancel: the rows are written by
+   * `set_reminder` and by `syncReminders`, never by the browser, which is why there is
+   * no POST here to test.
+   */
+  describe('what he is going to be reminded about', () => {
+    let sessionId: string;
+
+    /** A pending reminder, shaped as the planner or the tool would write it. */
+    function reminder(overrides: Partial<Reminder> = {}): Reminder {
+      return {
+        id: 'custom-2026-10-04-1f2e3d4c',
+        sessionId,
+        userId: 'user-under-test',
+        kind: 'custom',
+        occursOn: '2026-10-04',
+        dueAt: '2026-10-04T05:30:00.000Z',
+        leadDays: 0,
+        title: 'call the florist',
+        occasion: 'call the florist',
+        channel: 'log',
+        target: 'him@example.com',
+        sentAt: null,
+        attempts: 0,
+        lastError: null,
+        createdAt: '2026-09-01T00:00:00.000Z',
+        ...overrides,
+      };
+    }
+
+    beforeEach(async () => {
+      sessionId = await store.createSession();
+    });
+
+    it('returns the session’s reminders under a named key', async () => {
+      await store.saveReminder(sessionId, reminder());
+
+      const response = await routes.getSessionReminders(sessionId);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({
+        reminders: [{ id: 'custom-2026-10-04-1f2e3d4c', title: 'call the florist' }],
+      });
+    });
+
+    // The base-table Query returns rows in sort-key order, which is the id — so
+    // alphabetical by kind, not by when the user will hear about it.
+    it('orders them by when the mail goes out, not by id', async () => {
+      await store.saveReminder(
+        sessionId,
+        reminder({ id: 'custom-2026-12-01-aaaa', dueAt: '2026-12-01T05:30:00.000Z' }),
+      );
+      await store.saveReminder(
+        sessionId,
+        reminder({ id: 'birthday-2026-10-04', kind: 'birthday', title: null }),
+      );
+
+      const { reminders } = (await routes.getSessionReminders(sessionId)).body as {
+        reminders: Reminder[];
+      };
+
+      expect(reminders.map((row) => row.id)).toEqual([
+        'birthday-2026-10-04',
+        'custom-2026-12-01-aaaa',
+      ]);
+    });
+
+    it('deletes a hand-set reminder, and says that is what it did', async () => {
+      await store.saveReminder(sessionId, reminder());
+
+      const response = await routes.deleteReminder(sessionId, 'custom-2026-10-04-1f2e3d4c');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({
+        reminderId: 'custom-2026-10-04-1f2e3d4c',
+        action: 'deleted',
+      });
+      expect((await routes.getSessionReminders(sessionId)).body).toEqual({ reminders: [] });
+    });
+
+    /*
+     * The case that makes this route a "stop" rather than a "delete".
+     *
+     * A birthday row is re-derived from her profile by `syncReminders` on the next edit
+     * to any reminder field, so deleting the row would succeed and then silently undo
+     * itself. Muting the kind is the write that lasts, and the response says `muted` so
+     * a caller is never told "deleted" about a row that was not.
+     */
+    it('mutes a profile-derived reminder rather than deleting a row that comes back', async () => {
+      await store.setManualValue(sessionId, 'birthday', '2026-10-04');
+      await store.saveReminder(
+        sessionId,
+        reminder({ id: 'birthday-2026-10-04', kind: 'birthday', title: null }),
+      );
+
+      const response = await routes.deleteReminder(sessionId, 'birthday-2026-10-04');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({ action: 'muted', muted: ['birthday'] });
+      expect((await store.getManualValues(sessionId)).reminders_muted).toBe('birthday');
+      // Gone now, and still gone after the re-plan that used to bring it back.
+      expect((await routes.getSessionReminders(sessionId)).body).toEqual({ reminders: [] });
+    });
+
+    it('treats cancelling an unknown reminder as a no-op success', async () => {
+      const response = await routes.deleteReminder(sessionId, 'never-armed');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({ reminderId: 'never-armed', action: 'not-found' });
+    });
+
+    it('rides along on the session detail, so the board draws in one frame', async () => {
+      await store.saveReminder(sessionId, reminder());
+
+      const body = (await routes.getSessionDetail(sessionId)).body as {
+        reminders: Reminder[];
+      };
+
+      expect(body.reminders.map((row) => row.title)).toEqual(['call the florist']);
+    });
+
+    it('404s every reminder route for a session this user does not own', async () => {
+      const stranger = await new InMemoryStoreFactory().forUser('someone-else').createSession();
+
+      for (const call of [
+        routes.getSessionReminders(stranger),
+        routes.deleteReminder(stranger, 'custom-2026-10-04-1f2e3d4c'),
+      ]) {
+        expect((await call).status).toBe(404);
+      }
+    });
+  });
+
   describe('manual corrections', () => {
     let sessionId: string;
 
@@ -1550,6 +1684,36 @@ describe('createHttpRoutes', () => {
         body: { title: 'Draft the card' },
       });
       expect(tasked.status).toBe(200);
+    });
+
+    /*
+     * The arm that is easy to get wrong: `/session/:id` is matched last on purpose, so
+     * a `/reminders` pattern registered after it would be swallowed and answer with the
+     * whole session detail instead — a 200 with the wrong body, which no status-code
+     * assertion elsewhere would catch.
+     */
+    it('routes the reminder paths rather than falling through to session detail', async () => {
+      const sessionId = await store.createSession();
+
+      const listed = await routes.handleRequest({
+        method: 'GET',
+        url: `/session/${sessionId}/reminders`,
+        params: {},
+        body: null,
+      });
+      expect(listed.status).toBe(200);
+      expect(Object.keys(listed.body as object)).toEqual(['reminders']);
+
+      const dropped = await routes.handleRequest({
+        method: 'DELETE',
+        url: `/session/${sessionId}/reminders/custom-2026-10-04-1f2e3d4c`,
+        params: {},
+        body: null,
+      });
+      expect(dropped.body).toMatchObject({
+        reminderId: 'custom-2026-10-04-1f2e3d4c',
+        deleted: true,
+      });
     });
   });
 });

@@ -24,6 +24,9 @@ import type { GatewayToolClient } from './gateway-client';
 import { recordOuting } from './outing-recorder';
 import type { ActionProposal, IntegrationId } from '../integrations/tool-registry';
 import type { Outing } from '../../shared/interfaces/outing';
+import { canonicalDateValue } from '../extraction/preference-extractor';
+import { resolveField } from '../../client/utils/preference-field-mapper';
+import { syncReminders, touchesReminders } from '../reminders/reminder-sync';
 
 /**
  * The MCP target the integration tools live behind.
@@ -187,9 +190,24 @@ export class AgentCoreOrchestrator implements AgentOrchestratorInterface {
         prompt: content,
         systemPrompt: buildSystemPrompt(
           await readKnownFacts(this.storage, sessionId),
-          // No tools on this engine, so no tool guidance — but the history is
-          // read side only, and this is where engine B gets it for free.
-          false,
+          /*
+           * Engine B has tools, and for a long time this said it did not.
+           *
+           * The line here used to be a bare `false` under the comment "No tools on
+           * this engine" — written when the Runtime was a bare model, and never
+           * revisited once the Gateway arrived. The effect was not just missing
+           * reminder prose: `TOOL_GUIDANCE` is one block, so engine B's model was
+           * never told the propose-then-confirm rule, never told that an hour is a
+           * fact it has to fetch, and never told the Shabbat and Hebrew-date rules —
+           * while holding the tools all of that is about. Everything it knew about
+           * its own tools came from each tool's `description` in the Gateway's list.
+           *
+           * `conversationLink` is false because `create_conversation_link` is in
+           * `WITHHELD` in `infra/lib/agentcore-stack.ts`: the tools Lambda has no
+           * share-token secret, so the tool is not on this engine's Gateway. Passing
+           * `true` here would swap one confident falsehood for another.
+           */
+          { any: true, conversationLink: false },
           await readVisitedPlaces(this.storage, sessionId),
           new Date(),
           content,
@@ -432,20 +450,39 @@ export class AgentCoreOrchestrator implements AgentOrchestratorInterface {
     sourceMessageId: string,
     remembered: readonly RememberedPreference[],
   ): Promise<void> {
+    /** Every field this turn wrote, as the identity the profile is read back by. */
+    const writtenFields: (string | null)[] = [];
+
     for (const pref of remembered) {
       try {
-        const existing = await this.storage.findPreference(
-          sessionId,
-          pref.category,
-          pref.key,
-        );
+        /*
+         * Filed the way engine A files it, not the way Memory phrased it.
+         *
+         * `profileFieldValue` — which is how `syncReminders` and the whole profile UI
+         * read a field — looks a preference up by `fieldId ?? key`. This mirror used to
+         * write Memory's raw key with no `fieldId`, so a birthday remembered as "her
+         * birthday" was stored under that string and *nothing* looking for `birthday`
+         * ever found it. The row existed and the field was empty.
+         *
+         * `canonicalDateValue` is the same reason one layer down: a date stored as
+         * "March 14th" has no four-digit year, so the planner's `findDate` returns
+         * nothing and no reminder is armed — silently, which is the failure mode this
+         * whole feature is about.
+         */
+        const fieldId = resolveField(pref.category, pref.key);
+        const key = fieldId ?? pref.key;
+        const value = canonicalDateValue(fieldId, pref.value, new Date());
+        writtenFields.push(key);
+
+        const existing = await this.storage.findPreference(sessionId, pref.category, key);
 
         if (!existing) {
           const saved = await this.storage.savePreference({
             sessionId,
             category: pref.category,
-            key: pref.key,
-            value: pref.value,
+            key,
+            fieldId,
+            value,
             confidence: pref.confidence,
             sourceMessageId,
           });
@@ -453,12 +490,12 @@ export class AgentCoreOrchestrator implements AgentOrchestratorInterface {
           continue;
         }
 
-        if (existing.value === pref.value) continue;
+        if (existing.value === value) continue;
 
         const updated = await this.storage.updatePreference(
-          { sessionId, category: pref.category, key: pref.key },
+          { sessionId, category: pref.category, key },
           {
-            value: pref.value,
+            value,
             confidence: pref.confidence,
             sourceMessageId,
           },
@@ -473,6 +510,24 @@ export class AgentCoreOrchestrator implements AgentOrchestratorInterface {
           error: err instanceof Error ? err.message : String(err),
         });
       }
+    }
+
+    /*
+     * Arm the reminders those facts imply — the step engine B was missing entirely.
+     *
+     * Engine A gets this from `preference-extractor.ts`, which calls `syncReminders`
+     * after every extraction. This orchestrator has no extractor: it mirrors what
+     * AgentCore Memory remembered straight into DynamoDB, and nothing downstream ever
+     * re-planned. So a birthday mentioned in conversation on engine B was *stored* and
+     * armed nothing, and the only thing that would ever arm it was a later edit in the
+     * profile panel. The date was on her file and no mail was coming.
+     *
+     * Gated on `touchesReminders` for the reason the panel routes are: a re-plan reads
+     * three tables, and a turn that only learned her favourite cuisine has nothing to
+     * re-plan. `syncReminders` swallows its own failures, so this cannot cost the reply.
+     */
+    if (touchesReminders(writtenFields)) {
+      await syncReminders(this.storage, sessionId);
     }
   }
 }

@@ -206,20 +206,60 @@ const ICON_BY_KIND: Readonly<Record<TimelineEntry['kind'], DossierIconName>> = {
   occasion: 'calendar',
   booking: 'clock',
   outing: 'pin',
+  // A reminder is a message that will arrive, not a date in itself.
+  reminder: 'chat',
+};
+
+/**
+ * The line saying when the mail lands, and the control that stops it.
+ *
+ * Quiet rather than gold: an armed reminder is reassurance, not a deadline, and the
+ * act-by chip beside it on the same row is the thing that wants the eye.
+ */
+const remindsAtStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  flexWrap: 'wrap',
+  margin: '6px 0 0',
+  fontFamily: typography.bodyFontFamily,
+  fontSize: dossierType.small,
+  color: colors.inkMuted,
+};
+
+const cancelStyle: React.CSSProperties = {
+  appearance: 'none',
+  border: 'none',
+  background: 'transparent',
+  padding: '2px 6px',
+  borderRadius: radii.pill,
+  fontFamily: typography.bodyFontFamily,
+  fontSize: dossierType.small,
+  fontWeight: typography.weights.semibold,
+  color: colors.claret,
+  cursor: 'pointer',
+  textDecoration: 'underline',
 };
 
 interface EventTimelineProps {
   timeline: Timeline;
   /** Records her answer on a past row. Same signature as `OutingHistory`. */
   onRate: (outingId: string, patch: OutingRatePatch) => void;
+  /**
+   * Stops one armed reminder. Optional: the dossier renders in tests with no
+   * reminders provider, and a row without a canceller simply states the send moment.
+   */
+  onCancelReminder?: (reminderId: string) => void;
 }
 
 function Row({
   entry,
   onRate,
+  onCancelReminder,
 }: {
   entry: TimelineEntry;
   onRate: (outingId: string, patch: OutingRatePatch) => void;
+  onCancelReminder?: (reminderId: string) => void;
 }) {
   const upcoming = entry.side === 'upcoming';
   const outing: Outing | undefined = entry.outing;
@@ -269,6 +309,35 @@ function Row({
           </span>
         )}
 
+        {/*
+          * What Valentin is actually going to do about this date.
+          *
+          * Present on a reminder's own row and on an occasion row that has one armed —
+          * it is the same row underneath either way, so cancelling from either is the
+          * same write. The wording follows the kind rather than the button: a derived
+          * reminder is *muted*, because deleting its row would only bring it back on
+          * the next profile edit, and calling that "cancel" would promise a delete
+          * that did not happen.
+          */}
+        {entry.remindsAt && (
+          <p style={remindsAtStyle} data-testid={`timeline-reminds-${entry.id}`}>
+            <span>I&nbsp;email you {entry.remindsAt}</span>
+            {onCancelReminder && entry.reminderId && (
+              <button
+                type="button"
+                style={cancelStyle}
+                onClick={() => onCancelReminder(entry.reminderId as string)}
+                aria-label={`${
+                  entry.reminderKind && entry.reminderKind !== 'custom' ? 'Mute' : 'Cancel'
+                } reminder: ${entry.title}`}
+                data-testid={`timeline-cancel-${entry.id}`}
+              >
+                {entry.reminderKind && entry.reminderKind !== 'custom' ? 'mute' : 'cancel'}
+              </button>
+            )}
+          </p>
+        )}
+
         {outing?.note && <p style={noteStyle}>{outing.note}</p>}
 
         {outing && rated && <OutingVerdictPill outing={outing} />}
@@ -279,7 +348,7 @@ function Row({
   );
 }
 
-export function EventTimeline({ timeline, onRate }: EventTimelineProps) {
+export function EventTimeline({ timeline, onRate, onCancelReminder }: EventTimelineProps) {
   const { upcoming, past } = timeline;
   const waiting = past.filter((entry) => entry.outing && !isRated(entry.outing)).length;
   const total = upcoming.length + past.length;
@@ -306,7 +375,12 @@ export function EventTimeline({ timeline, onRate }: EventTimelineProps) {
       ) : (
         <>
           {upcoming.map((entry) => (
-            <Row key={entry.id} entry={entry} onRate={onRate} />
+            <Row
+              key={entry.id}
+              entry={entry}
+              onRate={onRate}
+              onCancelReminder={onCancelReminder}
+            />
           ))}
 
           <div style={todayStyle} data-testid="timeline-today">

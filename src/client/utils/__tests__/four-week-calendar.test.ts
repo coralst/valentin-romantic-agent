@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { Person } from '../../../shared/interfaces/person';
 import type { Task } from '../../../shared/interfaces/task';
 import type { Occasion } from '../occasion-derivation';
+import type { Reminder } from '../../../shared/interfaces/reminder';
 import { buildAgenda, buildFourWeeks, startOfWeek } from '../four-week-calendar';
 
 /** A Friday, so the Monday-first arithmetic has something to get wrong. */
@@ -13,6 +14,26 @@ function occasion(overrides: Partial<Occasion> = {}): Occasion {
     label: 'Your anniversary',
     date: new Date(2021, 8, 18),
     recurrence: 'annual',
+    ...overrides,
+  };
+}
+
+function reminder(overrides: Partial<Reminder> = {}): Reminder {
+  return {
+    id: 'anniversary-2026-09-18',
+    sessionId: 'sess-1',
+    userId: 'user-1',
+    kind: 'anniversary',
+    occursOn: '2026-09-18',
+    dueAt: '2026-09-11T05:30:00.000Z',
+    leadDays: 7,
+    occasion: 'your anniversary',
+    channel: 'gmail',
+    target: 'him@example.com',
+    sentAt: null,
+    attempts: 0,
+    lastError: null,
+    createdAt: '2026-08-01T00:00:00.000Z',
     ...overrides,
   };
 }
@@ -135,6 +156,49 @@ describe('buildFourWeeks', () => {
     }).weeks.flat();
     // Four Tuesdays in four weeks.
     expect(days.filter((day) => day.marks.includes('rhythm'))).toHaveLength(4);
+  });
+
+  /*
+   * The marker the grid could not draw before: the morning he actually hears about it.
+   *
+   * `dueAt` is a UTC instant and the cell is a local day, so the comparison is made
+   * through Asia/Jerusalem — 05:30Z on the 11th is 08:30 there on the 11th. Read in a
+   * browser west of Israel, a naive conversion lands the dot on the 10th.
+   */
+  it('dots the day a reminder actually goes out', () => {
+    const days = buildFourWeeks({
+      now: NOW,
+      reminders: [reminder({ dueAt: '2026-09-11T05:30:00.000Z' })],
+    }).weeks.flat();
+
+    const marked = days.filter((day) => day.marks.includes('reminder'));
+    expect(marked).toHaveLength(1);
+    expect(marked[0].dayOfMonth).toBe(11);
+  });
+
+  // The whole point of a separate mark: the occasion and the notice about it are two
+  // different facts, and a same-day reminder puts both on one cell.
+  it('keeps the reminder dot distinct from the occasion’s own', () => {
+    const days = buildFourWeeks({
+      now: NOW,
+      occasions: [occasion()],
+      reminders: [reminder({ dueAt: '2026-09-18T05:30:00.000Z' })],
+    }).weeks.flat();
+
+    const eighteenth = days.find((day) => day.dayOfMonth === 18 && day.date.getMonth() === 8);
+    expect(eighteenth?.marks).toContain('occasion');
+    expect(eighteenth?.marks).toContain('reminder');
+  });
+
+  it('does not dot a reminder that has already gone out', () => {
+    const days = buildFourWeeks({
+      now: NOW,
+      reminders: [
+        reminder({ dueAt: '2026-09-11T05:30:00.000Z', sentAt: '2026-09-11T05:30:01.000Z' }),
+      ],
+    }).weeks.flat();
+
+    expect(days.some((day) => day.marks.includes('reminder'))).toBe(false);
   });
 
   it('labels only the first of a month, which is the grid’s one month cue', () => {

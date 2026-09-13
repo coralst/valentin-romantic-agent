@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Outing } from '../../../../shared/interfaces/outing';
+import type { Reminder } from '../../../../shared/interfaces/reminder';
 import { buildEventTimeline } from '../../../utils/event-timeline';
 import type { Occasion } from '../../../utils/occasion-derivation';
 import { EventTimeline } from '../EventTimeline';
@@ -31,18 +32,48 @@ const anniversary: Occasion = {
   recurrence: 'annual',
 };
 
+function reminder(
+  partial: Partial<Reminder> & { id: string; kind: Reminder['kind'] },
+): Reminder {
+  return {
+    sessionId: 'sess-1',
+    userId: 'user-1',
+    occursOn: '2026-09-10',
+    dueAt: '2026-09-03T05:30:00.000Z',
+    leadDays: 7,
+    occasion: 'her anniversary',
+    channel: 'gmail',
+    target: 'him@example.com',
+    sentAt: null,
+    attempts: 0,
+    lastError: null,
+    createdAt: '2026-09-01T00:00:00.000Z',
+    ...partial,
+  };
+}
+
 /** Render with the derivation the dossier uses, so the two cannot drift apart. */
 function renderTimeline({
   occasions = [],
   outings = [],
+  reminders = [],
   onRate = () => {},
+  onCancelReminder,
 }: {
   occasions?: Occasion[];
   outings?: Outing[];
+  reminders?: Reminder[];
   onRate?: (id: string, patch: { rating?: number | null }) => void;
+  onCancelReminder?: (reminderId: string) => void;
 } = {}) {
-  const timeline = buildEventTimeline({ occasions, outings, now: NOW });
-  return render(<EventTimeline timeline={timeline} onRate={onRate} />);
+  const timeline = buildEventTimeline({ occasions, outings, reminders, now: NOW });
+  return render(
+    <EventTimeline
+      timeline={timeline}
+      onRate={onRate}
+      onCancelReminder={onCancelReminder}
+    />,
+  );
 }
 
 describe('EventTimeline', () => {
@@ -143,5 +174,93 @@ describe('EventTimeline', () => {
     renderTimeline({ occasions: [anniversary] });
 
     expect(screen.getByTestId('timeline-no-past')).toBeInTheDocument();
+  });
+
+  describe('the reminder armed on a date', () => {
+    it('states the moment the mail lands, on the occasion’s own row', () => {
+      renderTimeline({
+        occasions: [anniversary],
+        reminders: [reminder({ id: 'anniversary-2026-09-10', kind: 'anniversary' })],
+      });
+
+      expect(
+        screen.getByTestId('timeline-reminds-occasion:anniversary'),
+      ).toHaveTextContent('I email you Thursday 3 September at 08:30');
+    });
+
+    /*
+     * The wording distinction that carries the whole design.
+     *
+     * A derived reminder is silenced by muting its kind, because deleting its row only
+     * brings it back on the next profile edit. Labelling that button "cancel" would
+     * promise a delete that does not happen — so the verb follows what the write
+     * actually is.
+     */
+    it('offers to mute a profile-derived reminder, not to cancel it', () => {
+      renderTimeline({
+        occasions: [anniversary],
+        reminders: [reminder({ id: 'anniversary-2026-09-10', kind: 'anniversary' })],
+        onCancelReminder: () => {},
+      });
+
+      const button = screen.getByTestId('timeline-cancel-occasion:anniversary');
+      expect(button).toHaveTextContent('mute');
+      expect(button).toHaveAttribute('aria-label', 'Mute reminder: Anniversary');
+    });
+
+    it('offers to cancel a hand-set one, which really is a delete', () => {
+      renderTimeline({
+        reminders: [
+          reminder({
+            id: 'custom-2026-09-12-abcd1234',
+            kind: 'custom',
+            title: 'call the florist',
+            occursOn: '2026-09-12',
+            dueAt: '2026-09-12T05:30:00.000Z',
+            leadDays: 0,
+          }),
+        ],
+        onCancelReminder: () => {},
+      });
+
+      const button = screen.getByTestId('timeline-cancel-reminder:custom-2026-09-12-abcd1234');
+      expect(button).toHaveTextContent('cancel');
+      expect(button).toHaveAttribute('aria-label', 'Cancel reminder: call the florist');
+    });
+
+    it('hands the row’s id back when the control is pressed', async () => {
+      const onCancelReminder = vi.fn();
+      renderTimeline({
+        occasions: [anniversary],
+        reminders: [reminder({ id: 'anniversary-2026-09-10', kind: 'anniversary' })],
+        onCancelReminder,
+      });
+
+      await userEvent.click(screen.getByTestId('timeline-cancel-occasion:anniversary'));
+
+      expect(onCancelReminder).toHaveBeenCalledWith('anniversary-2026-09-10');
+    });
+
+    // The dossier renders in tests and in states with no reminders provider mounted;
+    // a row without a canceller still has to state the send moment.
+    it('states the moment without a control when nothing can cancel', () => {
+      renderTimeline({
+        occasions: [anniversary],
+        reminders: [reminder({ id: 'anniversary-2026-09-10', kind: 'anniversary' })],
+      });
+
+      expect(screen.getByTestId('timeline-reminds-occasion:anniversary')).toBeInTheDocument();
+      expect(
+        screen.queryByTestId('timeline-cancel-occasion:anniversary'),
+      ).not.toBeInTheDocument();
+    });
+
+    it('says nothing about mail on a date with no reminder armed', () => {
+      renderTimeline({ occasions: [anniversary], onCancelReminder: () => {} });
+
+      expect(
+        screen.queryByTestId('timeline-reminds-occasion:anniversary'),
+      ).not.toBeInTheDocument();
+    });
   });
 });

@@ -78,6 +78,12 @@ export const GATEWAY_TOOL_SERVICES: Readonly<Record<string, IntegrationId>> = {
   search_activities: 'amadeus',
   search_hotels: 'amadeus',
   search_web: 'web-search',
+  // Ours, not a third party — but they go through the Gateway on engine B like
+  // everything else here, so a reminder set there has to show up in the Inspector
+  // rather than being the one tool call that leaves no span.
+  cancel_reminder: 'reminders',
+  list_reminders: 'reminders',
+  set_reminder: 'reminders',
 };
 
 /** Split `valentin-integrations___find_restaurants` into its two halves. */

@@ -175,6 +175,49 @@ describe('AgentCoreOrchestrator', () => {
       await settle();
       expect(reply.content).toBe('From AgentCore');
     });
+
+    /**
+     * The bug a live turn actually showed, and the reason this test is by name.
+     *
+     * Asked to set a recurring reminder on `?engine=agentcore`, Valentin replied "I
+     * actually don't have a set_reminder tool in my toolkit" — truthfully, twice over:
+     * the tool was withheld from the Gateway, *and* this orchestrator passed
+     * `hasTools: false` to `buildSystemPrompt` under a comment reading "No tools on
+     * this engine", written when the Runtime was a bare model and never revisited.
+     *
+     * The whole of `TOOL_GUIDANCE` is one block, so the cost was never just the
+     * reminder prose: engine B was also never told the propose-then-confirm rule or
+     * that an hour is a fact it has to fetch, while holding the tools all of that is
+     * about.
+     */
+    it('tells engine B about the tools it actually has', async () => {
+      await orchestrator.handleMessage('sess-1', 'hi');
+
+      const [turn] = (runtime.invoke as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(turn.systemPrompt).toContain('set_reminder');
+      expect(turn.systemPrompt).toContain('list_reminders');
+      expect(turn.systemPrompt).toMatch(/NOTHING YOU WRITE, SEND OR BOOK/);
+      expect(turn.systemPrompt).toMatch(/Shabbat/);
+    });
+
+    /*
+     * And not about the one it does not have.
+     *
+     * `create_conversation_link` is in `WITHHELD` in `agentcore-stack.ts` — the tools
+     * Lambda holds no share-token secret, so a link it signed could never be verified
+     * by the process serving the guest view. Telling engine B to call it would be the
+     * same class of bug in the opposite direction: a model confidently offering
+     * something that cannot happen.
+     */
+    it('does not offer engine B the share link the Gateway withholds', async () => {
+      await orchestrator.handleMessage('sess-1', 'hi');
+
+      const [turn] = (runtime.invoke as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(turn.systemPrompt).not.toContain('create_conversation_link');
+      // The capability-denial rule still arrives, minus the link claim it would
+      // otherwise forbid the model from making truthfully.
+      expect(turn.systemPrompt).toMatch(/NEVER TELL HIM A CAPABILITY IS MISSING/);
+    });
   });
 
   describe('mirroring extracted preferences into DynamoDB', () => {
@@ -192,7 +235,17 @@ describe('AgentCoreOrchestrator', () => {
       runtime.recallPreferences = vi.fn().mockResolvedValue(remembered);
     });
 
-    it('saves a fact DynamoDB has not seen and reports it as new', async () => {
+    /*
+     * Filed under the canonical field id, not the phrasing Memory used.
+     *
+     * The mirror used to write Memory's raw key with no `fieldId`, and that was quietly
+     * broken: `profileFieldValue` — how `syncReminders` and the whole profile UI read a
+     * field — looks a preference up by `fieldId ?? key`, so a fact stored under
+     * `favorite_genre` was invisible to everything looking for `music_genre`. The row
+     * existed and the field read as empty. `resolveField` is the same mapper engine A
+     * uses, so the two engines now file identically.
+     */
+    it('saves a fact under the canonical field id and reports it as new', async () => {
       await orchestrator.handleMessage('sess-1', 'she loves jazz');
       await settle();
 
@@ -200,7 +253,8 @@ describe('AgentCoreOrchestrator', () => {
         expect.objectContaining({
           sessionId: 'sess-1',
           category: 'music',
-          key: 'favorite_genre',
+          key: 'music_genre',
+          fieldId: 'music_genre',
           value: 'jazz',
           confidence: 0.8,
         }),
@@ -220,10 +274,57 @@ describe('AgentCoreOrchestrator', () => {
 
       expect(storage.savePreference).not.toHaveBeenCalled();
       expect(storage.updatePreference).toHaveBeenCalledWith(
-        { sessionId: 'sess-1', category: 'music', key: 'favorite_genre' },
+        { sessionId: 'sess-1', category: 'music', key: 'music_genre' },
         expect.objectContaining({ value: 'jazz' }),
       );
       expect(onPreferenceUpdate).toHaveBeenCalledWith(expect.anything(), false);
+    });
+
+    /*
+     * The other half of engine B's silent reminder gap.
+     *
+     * Storing the date was never the problem — arming anything about it was. This
+     * orchestrator has no extractor, so nothing called `syncReminders` and a birthday
+     * mentioned in conversation on engine B armed no reminder at all; only a later edit
+     * in the profile panel ever did. The date sat on her file with no mail coming.
+     */
+    it('arms reminders when the turn learned a date', async () => {
+      storage.getRemindersBySession = vi.fn().mockResolvedValue([]);
+      storage.getManualValues = vi.fn().mockResolvedValue({});
+      storage.getPreferencesBySession = vi
+        .fn()
+        .mockResolvedValue([
+          { fieldId: 'birthday', key: 'birthday', value: '2026-10-04' },
+        ] as PreferenceWithHistory[]);
+      storage.saveReminder = vi.fn().mockImplementation((_s, row) => Promise.resolve(row));
+
+      runtime.recallPreferences = vi.fn().mockResolvedValue([
+        {
+          category: 'important_dates' as const,
+          key: 'birthday',
+          value: '2026-10-04',
+          confidence: 0.9,
+          recordId: 'rec-date',
+        },
+      ]);
+
+      await orchestrator.handleMessage('sess-1', 'her birthday is 4 October');
+      await settle();
+
+      expect(storage.saveReminder).toHaveBeenCalled();
+      const [, row] = (storage.saveReminder as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(row).toMatchObject({ kind: 'birthday', occursOn: '2026-10-04' });
+    });
+
+    // The gate is not decoration: a re-plan reads three tables, and almost no turn
+    // changes any of the five profile values it depends on.
+    it('does not re-plan reminders for a turn that learned no date', async () => {
+      storage.saveReminder = vi.fn();
+
+      await orchestrator.handleMessage('sess-1', 'she loves jazz');
+      await settle();
+
+      expect(storage.saveReminder).not.toHaveBeenCalled();
     });
 
     it('skips an unchanged value rather than growing a fake revision trail', async () => {

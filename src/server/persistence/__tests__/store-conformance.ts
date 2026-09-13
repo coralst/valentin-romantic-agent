@@ -741,6 +741,46 @@ export function describeStoreConformance(
         expect(read.attempts).toBe(0);
       });
 
+      /*
+       * The field the DynamoDB mapper used to drop.
+       *
+       * `saveReminder` wrote `title` and `set_reminder` set it, but `toReminder` never
+       * read it back — so this passed against the in-memory store, which keeps the
+       * object by reference, and failed silently against the table. Nothing noticed
+       * because no case here asserted it, and the damage was downstream and quiet: a
+       * titleless custom row mails with `occasion` inflected into the possessive.
+       *
+       * `kind: 'custom'` because that is the only kind that carries a title, and the
+       * id has to move with it — a `custom` row is keyed by date *and* title hash.
+       */
+      it('round trips the title on a hand-set reminder', async () => {
+        const sessionId = await store.createSession();
+
+        await store.saveReminder(
+          sessionId,
+          reminder(sessionId, {
+            id: 'custom-2026-10-04-1f2e3d4c',
+            kind: 'custom',
+            title: 'call the florist',
+            occasion: 'call the florist',
+          }),
+        );
+
+        const [read] = await store.getRemindersBySession(sessionId);
+        expect(read.title).toBe('call the florist');
+      });
+
+      // A planner row has no title, and absent must read as null rather than
+      // undefined — the mail builder branches on its presence to pick its voice.
+      it('reads a planner reminder’s absent title as null', async () => {
+        const sessionId = await store.createSession();
+
+        await store.saveReminder(sessionId, reminder(sessionId));
+
+        const [read] = await store.getRemindersBySession(sessionId);
+        expect(read.title ?? null).toBeNull();
+      });
+
       it('re-planning the same occasion revises one row rather than adding a second', async () => {
         // The id is derived from (kind, occursOn), so changing the lead time has to
         // *move* this reminder. Keyed by anything else, the user gets two mails

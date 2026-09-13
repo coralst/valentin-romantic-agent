@@ -121,6 +121,16 @@ const MARK_INK: Readonly<Record<DayMark, string>> = {
   birthday: colors.claretLight,
   deadline: colors.gold,
   rhythm: 'rgba(140, 47, 69, 0.28)',
+  /*
+   * Ink, not claret and not gold.
+   *
+   * A reminder is the only mark that is *Valentin's* doing rather than a fact about
+   * her or a deadline of his, and it routinely shares a cell with one of them — a
+   * week-before reminder lands on an ordinary Tuesday, and a same-day one lands on
+   * the occasion itself. Reusing either colour would make the pair read as one
+   * heavier dot of that colour rather than as two different things.
+   */
+  reminder: colors.inkMuted,
 };
 
 function markStyle(mark: DayMark, onKeyCell: boolean): React.CSSProperties {

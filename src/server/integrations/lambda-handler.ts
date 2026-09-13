@@ -10,6 +10,8 @@ import {
   type ToolRegistry,
 } from './tool-registry';
 import { putProposal, takeProposal } from './proposal-store';
+import { DynamoDBStoreFactory } from '../persistence/dynamodb-store';
+import type { StorageInterface } from '../persistence/storage-interface';
 import { logger } from '../logging';
 
 /**
@@ -135,6 +137,50 @@ function registry(): Promise<ToolRegistry> {
 /** Forget the cached registry, so the next call re-reads. For tests only. */
 export function resetHandlerCacheForTests(): void {
   ready = null;
+  storeFactory = null;
+}
+
+/**
+ * The store handle a tool gets when it needs to write our own table.
+ *
+ * ## Why this exists at all
+ *
+ * `ToolContext.storage` used to be absent here, and the consequence was specific:
+ * `set_reminder` registers unconditionally, so on engine B it registered and then
+ * refused every call with "Reminders are not available on this deployment". That is
+ * why `generate-tool-schemas.mts` withheld the whole `reminders` service from the
+ * Gateway — a tool that always fails is worse than one that is absent. Giving the
+ * Lambda a store is what let that exclusion come out.
+ *
+ * ## Why `VALENTIN_TABLE_NAME` and not `config.dynamoTableName`
+ *
+ * The factory defaults to `config.dynamoTableName`, which reads `DYNAMO_TABLE_NAME` —
+ * a variable this function is not given. Rather than add a second spelling to the
+ * stack, this reads the one the Lambda already has, exactly as `proposal-store.ts`
+ * does. Two names for one table is how a deployment ends up writing to a table nobody
+ * is reading.
+ *
+ * Built lazily and cached per container, for the same reason the registry is: it holds
+ * an HTTP connection pool, and a Lambda is invoked many times per container.
+ */
+let storeFactory: DynamoDBStoreFactory | null = null;
+
+function scopedStore(userId: string): StorageInterface | undefined {
+  const tableName = process.env.VALENTIN_TABLE_NAME;
+  if (!tableName) {
+    /*
+     * Absent rather than thrown.
+     *
+     * Every tool that wants a store already handles its absence with a sentence the
+     * model can pass on, and the other seventeen tools do not need one at all — so a
+     * missing variable must not take the whole Gateway target down with it.
+     */
+    logger.warn('gateway.store-unavailable', { cause: 'VALENTIN_TABLE_NAME unset' });
+    return undefined;
+  }
+
+  storeFactory ??= new DynamoDBStoreFactory(undefined, tableName);
+  return storeFactory.forUser(userId);
 }
 
 /**
@@ -346,7 +392,13 @@ export async function handler(
     // link carries both the conversation and whose it is — not to authorise
     // anything. It is the id the proxy supplied, stripped from `input` above so
     // the model cannot substitute another one.
-    const result = await runTool(tool, input, { sessionId, userId });
+    // `storage` is scoped to the caller the proxy named, so a tool that writes our own
+    // table can only ever reach that user's rows — see `scopedStore`.
+    const result = await runTool(tool, input, {
+      sessionId,
+      userId,
+      storage: scopedStore(userId),
+    });
 
     // Written before the reply goes back, and awaited: the proxy may call
     // `confirm_*` as soon as the user clicks, and a row that was still being

@@ -1029,7 +1029,7 @@ describe('the integration-tools Lambda', () => {
 
 describe('the integrations Gateway target', () => {
   /*
-   * The twelve read-only tools, which the model may call freely.
+   * The fifteen ungated tools, which the model may call freely.
    *
    * The other fourteen are the seven `propose_*` tools and their paired
    * `confirm_*`. The pairing is what the tests below are actually about: a
@@ -1037,8 +1037,15 @@ describe('the integrations Gateway target', () => {
    * and a `confirm_*` the *model* can see is a language model authorising its own
    * spending — which is the one thing propose-then-confirm exists to prevent, and
    * is prevented in `agentcore/agent.py`, not here.
+   *
+   * Twelve of these are read-only. The three reminders tools are the exception and
+   * belong here anyway: they write, but only to the user's own reminder rows and only
+   * about himself, so nobody else is affected and there is nothing for a human to
+   * approve. `set_reminder`'s own header argues that at length; a gated tool on this
+   * service would also collide with `toolFor`'s by-service confirm resolution.
    */
-  const READ_ONLY = [
+  const UNGATED = [
+    'cancel_reminder',
     'check_availability',
     'check_shabbat',
     'find_gift_delivery',
@@ -1047,24 +1054,51 @@ describe('the integrations Gateway target', () => {
     'find_places_nearby',
     'find_restaurants',
     'get_hebrew_occasions',
+    'list_reminders',
     'read_webpage',
     'search_activities',
     'search_hotels',
     'search_web',
+    'set_reminder',
   ];
 
-  it('exposes the twelve read-only tools, unchanged by the confirm machinery', () => {
+  it('exposes the fifteen ungated tools, unchanged by the confirm machinery', () => {
     const names = gatewayToolNames('valentin-integrations');
-    expect(names.filter((n) => !/^(propose|confirm)_/.test(n))).toEqual(READ_ONLY);
+    expect(names.filter((n) => !/^(propose|confirm)_/.test(n))).toEqual(UNGATED);
   });
 
-  it('exposes exactly 26 tools: 12 read-only, 7 proposals, 7 confirms', () => {
+  it('exposes exactly 29 tools: 15 ungated, 7 proposals, 7 confirms', () => {
     // The total is asserted so an accidental addition is visible, and the split is
-    // asserted because the interesting failure is not the count but the balance.
+    // asserted because the interesting failure is not the count but the balance. Was
+    // 26 until the three reminders tools were hosted here — the generator withheld the
+    // whole service while the Lambda had no store to write to.
     const names = gatewayToolNames('valentin-integrations');
-    expect(names).toHaveLength(26);
+    expect(names).toHaveLength(29);
     expect(names.filter((n) => n.startsWith('propose_'))).toHaveLength(7);
     expect(names.filter((n) => n.startsWith('confirm_'))).toHaveLength(7);
+  });
+
+  /*
+   * The Lambda can actually serve them, which is what withheld them before.
+   *
+   * `set_reminder` writes our own table, and it needs two things from the stack to do
+   * that: the table grant (already present for proposals) and the table *name*. It
+   * reads `VALENTIN_TABLE_NAME` — the spelling `proposal-store.ts` already uses, not a
+   * second one — so declaring these tools without it would put three always-failing
+   * tools in the model's instruction set.
+   */
+  it('gives the integrations Lambda the table name its reminder tools need', () => {
+    const fns = Object.values(
+      agentCoreTemplate.findResources('AWS::Lambda::Function') as Record<string, any>,
+    );
+    const tools = fns.filter((f) =>
+      JSON.stringify(f.Properties.Environment?.Variables ?? {}).includes(
+        'INTEGRATION_SECRETS_PREFIX',
+      ),
+    );
+
+    expect(tools).toHaveLength(1);
+    expect(tools[0].Properties.Environment.Variables.VALENTIN_TABLE_NAME).toBeDefined();
   });
 
   it('withholds the share-link tool, which this Lambda cannot sign', () => {

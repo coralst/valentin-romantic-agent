@@ -1,5 +1,6 @@
 import type { ChatMessage } from '../../shared/interfaces/message';
 import type { PreferenceWithHistory } from '../../shared/interfaces/preference';
+import type { Reminder } from '../../shared/interfaces/reminder';
 import type { SessionData } from '../../shared/interfaces/session';
 import type { StoredSession } from '../hooks/use-session-store';
 import { apiFetch, apiGetJson, apiPostJson, describeFailure } from './api-client';
@@ -23,6 +24,15 @@ interface SessionDetailResponse {
   session: SessionData;
   messages: ChatMessage[];
   preferences: PreferenceWithHistory[];
+  /**
+   * What Valentin is going to tell him, riding along on the same round trip.
+   *
+   * Optional because this type is also satisfied by the list view's cut-down rows,
+   * and because `use-reminder-store` fetches the dedicated route rather than reading
+   * this — it is here so a caller reading the detail response is not surprised by a
+   * field the server does send.
+   */
+  reminders?: Reminder[];
 }
 
 /**

@@ -33,6 +33,7 @@ import { AlsoMentioned, groupUnmappedPreferences } from './dossier/AlsoMentioned
 import { useOptionalPeopleContext } from '../context/people-context';
 import { useOptionalTasksContext } from '../context/tasks-context';
 import { useOptionalOutingsContext } from '../context/outings-context';
+import { useOptionalRemindersContext } from '../context/reminders-context';
 import type { Person, PersonGeneration } from '../../shared/interfaces/person';
 import {
   parsePalette,
@@ -224,9 +225,19 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
   const people = useOptionalPeopleContext();
   const tasks = useOptionalTasksContext();
   const outings = useOptionalOutingsContext();
+  const reminders = useOptionalRemindersContext();
   const peopleList = people?.state.people ?? [];
   const taskList = tasks?.state.tasks ?? [];
   const outingList = outings?.state.outings ?? [];
+  /*
+   * The rows the server actually armed, not a second client-side derivation of them.
+   *
+   * Everything else dated on this board is derived here from her profile — which is
+   * why the board could draw a birthday three weeks out and say nothing about whether
+   * he would be told, and why it could imply a notice period no armed row carried.
+   * These are the rows the sweeper will read.
+   */
+  const reminderList = reminders?.state.reminders ?? [];
 
   const rhythm = useMemo(
     () => parseWeeklyRhythm(getFieldValue('weekly_rhythm')?.value),
@@ -234,8 +245,15 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
   );
 
   const calendar = useMemo(
-    () => buildFourWeeks({ occasions, people: peopleList, tasks: taskList, rhythm }),
-    [occasions, peopleList, taskList, rhythm],
+    () =>
+      buildFourWeeks({
+        occasions,
+        people: peopleList,
+        tasks: taskList,
+        rhythm,
+        reminders: reminderList,
+      }),
+    [occasions, peopleList, taskList, rhythm, reminderList],
   );
 
   const agenda = useMemo(
@@ -437,8 +455,8 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
    * cannot disagree about when the anniversary is.
    */
   const timeline = useMemo(
-    () => buildEventTimeline({ occasions, outings: outingList }),
-    [occasions, outingList],
+    () => buildEventTimeline({ occasions, outings: outingList, reminders: reminderList }),
+    [occasions, outingList, reminderList],
   );
 
   const tiles = (
@@ -543,7 +561,11 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
               `confirmedAt` and so listed a table booked for next Friday *above*
               an evening you actually had — under a heading reading "where you've
               been". The spine puts today between the two halves instead. */}
-          <EventTimeline timeline={timeline} onRate={rateOuting} />
+          <EventTimeline
+            timeline={timeline}
+            onRate={rateOuting}
+            onCancelReminder={reminders?.cancelReminder}
+          />
 
           {/*
             * Last, and quietest — but not dropped.

@@ -257,13 +257,17 @@ export const AWS_NODES: readonly AwsNode[] = [
     // The architectural fact, not the count: the provider secrets are read here,
     // from `INTEGRATION_SECRETS_PREFIX`, by a function the agent can only reach
     // through the Gateway.
-    caption: 'holds the keys · 26 tools',
+    caption: 'holds the keys · 29 tools',
     tier: 'data',
     engine: 'agentcore',
     /*
-     * Every entry point `valentin-integrations` advertises, in schema order: the 19
+     * Every entry point `valentin-integrations` advertises, in schema order: the 22
      * offered tools, then the 7 `confirm_*` halves the stack derives from the gated
      * ones. `create_conversation_link` is absent because the stack withholds it.
+     *
+     * The three reminders tools are here now: they were withheld by the generator
+     * until the Lambda was given a store, since a tool that fails every call is worse
+     * than one that is absent.
      *
      * The confirms are in the list and that is the point of listing them at all —
      * `agent.py` filters them out of what it shows the model, so they exist for the
@@ -271,6 +275,7 @@ export const AWS_NODES: readonly AwsNode[] = [
      * authorities, and here they are two tools.
      */
     toolEntryPoints: [
+      'cancel_reminder',
       'check_availability',
       'check_shabbat',
       'find_gift_delivery',
@@ -279,6 +284,7 @@ export const AWS_NODES: readonly AwsNode[] = [
       'find_places_nearby',
       'find_restaurants',
       'get_hebrew_occasions',
+      'list_reminders',
       'propose_calendar_event',
       'propose_email',
       'propose_gift',
@@ -290,6 +296,7 @@ export const AWS_NODES: readonly AwsNode[] = [
       'search_activities',
       'search_hotels',
       'search_web',
+      'set_reminder',
       'confirm_calendar_event',
       'confirm_email',
       'confirm_gift',

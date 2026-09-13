@@ -47,6 +47,7 @@ import {
   syncReminders,
   touchesReminders,
 } from '../reminders/reminder-sync';
+import { cancelReminderDurably } from '../reminders/cancel';
 import { buildConversationEmail } from '../reminders/conversation-email';
 import { NOTIFY_EMAIL_FIELD, resolveNotifyEmail } from '../reminders/notify-email';
 import { resolveSender } from '../reminders/sender';
@@ -541,10 +542,14 @@ export function createHttpRoutes(storage: StorageInterface, userId?: string) {
         return { status: 404, body: { error: 'Session not found' } };
       }
 
-      // All six in one round trip. They share the session's partition, and the
+      // All seven in one round trip. They share the session's partition, and the
       // dossier needs every one of them to draw a single frame — fetching them
-      // separately would show the board filling in five visible stages.
-      const [messages, preferences, people, tasks, manualValues, outings] = await Promise.all([
+      // separately would show the board filling in five visible stages. Reminders
+      // ride along for that reason: the calendar grid marks the day Valentin mails,
+      // so a second request would draw the dates first and the promise about them a
+      // beat later.
+      const [messages, preferences, people, tasks, manualValues, outings, reminders] =
+        await Promise.all([
         storage.getMessagesBySession(sessionId),
         // Account-wide, not this session's rows alone. The partner belongs to the
         // account, so a new conversation must not redraw her brief as a screen of
@@ -556,11 +561,21 @@ export function createHttpRoutes(storage: StorageInterface, userId?: string) {
         storage.getTasksBySession(sessionId),
         storage.getManualValues(sessionId),
         storage.getOutingsBySession(sessionId),
+        storage.getRemindersBySession(sessionId),
       ]);
 
       return {
         status: 200,
-        body: { session, messages, preferences, people, tasks, manualValues, outings },
+        body: {
+          session,
+          messages,
+          preferences,
+          people,
+          tasks,
+          manualValues,
+          outings,
+          reminders: [...reminders].sort((a, b) => a.dueAt.localeCompare(b.dueAt)),
+        },
       };
     },
 
@@ -687,6 +702,52 @@ export function createHttpRoutes(storage: StorageInterface, userId?: string) {
 
       await storage.deleteOuting(sessionId, outingId);
       return { status: 200, body: { outingId, deleted: true } };
+    },
+
+    /**
+     * GET /session/:id/reminders — what Valentin is going to tell him, and when.
+     *
+     * Every row, not just the pending ones: `pendingReminders` is the shared filter
+     * and the client applies it, so a caller that wants the sent ones (an audit of
+     * what actually went out) does not need a second route. Ordered by `dueAt` here
+     * rather than left to the store, because the base-table Query returns them in
+     * sort-key order — which is the id, and therefore alphabetical by kind.
+     */
+    async getSessionReminders(sessionId: string): Promise<HttpResponse> {
+      if (!(await storage.getSession(sessionId))) {
+        return { status: 404, body: { error: 'Session not found' } };
+      }
+      const reminders = await storage.getRemindersBySession(sessionId);
+      return {
+        status: 200,
+        body: { reminders: [...reminders].sort((a, b) => a.dueAt.localeCompare(b.dueAt)) },
+      };
+    },
+
+    /**
+     * DELETE /session/:id/reminders/:reminderId — stop one reminder.
+     *
+     * "Stop", not literally "delete the row": a planner reminder is derived from her
+     * profile and is silenced by muting its kind, because a deleted one is re-planned
+     * by `syncReminders` on the next profile edit. Which write that is belongs to
+     * `cancelReminderDurably`, shared with the agent's `cancel_reminder` — see that
+     * module on why the branch must not be duplicated at the call site.
+     *
+     * `action` is reported back rather than left implicit, so a caller is never told
+     * "deleted" about a row that was actually muted. Unknown ids stay a no-op success,
+     * matching `deleteTask`/`deleteOuting` and the store's own contract: a client
+     * retrying a cancel must not get an error.
+     */
+    async deleteReminder(sessionId: string, reminderId: string): Promise<HttpResponse> {
+      if (!(await storage.getSession(sessionId))) {
+        return { status: 404, body: { error: 'Session not found' } };
+      }
+
+      const outcome = await cancelReminderDurably(storage, sessionId, reminderId);
+      return {
+        status: 200,
+        body: { reminderId, deleted: true, action: outcome.action, muted: outcome.muted },
+      };
     },
 
     /** GET /session/:id/manual — every value the user typed themselves */
@@ -1178,6 +1239,17 @@ export function createHttpRoutes(storage: StorageInterface, userId?: string) {
       const outingMatch = req.url.match(/^\/session\/([^/]+)\/outings\/([^/]+)$/);
       if (req.method === 'DELETE' && outingMatch) {
         return this.deleteOuting(outingMatch[1], outingMatch[2]);
+      }
+
+      // /session/:id/reminders and /session/:id/reminders/:reminderId
+      const remindersMatch = req.url.match(/^\/session\/([^/]+)\/reminders$/);
+      if (req.method === 'GET' && remindersMatch) {
+        return this.getSessionReminders(remindersMatch[1]);
+      }
+
+      const reminderMatch = req.url.match(/^\/session\/([^/]+)\/reminders\/([^/]+)$/);
+      if (req.method === 'DELETE' && reminderMatch) {
+        return this.deleteReminder(reminderMatch[1], reminderMatch[2]);
       }
 
       // POST /session/:id/location

@@ -34,31 +34,54 @@ describe('the generated Gateway tool schemas', () => {
   it('declares every tool the registry holds when fully credentialled', async () => {
     const fresh = await generateToolSchemas();
 
-    // 20, having been 14 when the plan was written, 16 a day later, and 18 after
-    // that: Spotify's two arrived, then `find_places_nearby` and
-    // `create_conversation_link`, now `search_web` and `read_webpage`. An exact
-    // count so adding an integration is a deliberate change to engine B's surface
-    // rather than something that happens quietly — this number moving is the
-    // signal to look at what a merge just exposed to the model.
-    expect(fresh).toHaveLength(20);
-    expect(committed).toHaveLength(20);
+    // 23, having been 14 when the plan was written, then 16, 18 and 20 as Spotify's
+    // two arrived, then `find_places_nearby` and `create_conversation_link`, then
+    // `search_web` and `read_webpage` — and now the three reminders tools, which were
+    // withheld until the tools Lambda was given a store. An exact count so adding an
+    // integration is a deliberate change to engine B's surface rather than something
+    // that happens quietly — this number moving is the signal to look at what a merge
+    // just exposed to the model.
+    expect(fresh).toHaveLength(23);
+    expect(committed).toHaveLength(23);
   });
 
   /*
-   * The one tool deliberately withheld from engine B.
+   * The exclusion that came back out, and why it must not silently return.
    *
-   * `set_reminder` writes our own DynamoDB table, and `lambda-handler.ts` builds its
-   * ToolContext without a store — no table name in its environment, no IAM grant to
-   * read one. Declared to the Gateway it would be a tool that fails every call, so
-   * the generator filters the `reminders` service out. Asserted here because the
-   * count above cannot see the difference between "excluded on purpose" and "never
-   * written": both leave 18.
+   * All three reminders tools write our own DynamoDB table, and for a long time
+   * `lambda-handler.ts` built its `ToolContext` with no store — so `set_reminder`
+   * registered on engine B and refused every call with "Reminders are not available on
+   * this deployment". The generator therefore filtered the whole `reminders` service
+   * out, and a live turn on `?engine=agentcore` answered "I don't have a set_reminder
+   * tool in my toolkit", truthfully.
+   *
+   * The Lambda now builds a real store from `VALENTIN_TABLE_NAME`, so they are hosted.
+   * Asserted by name rather than left to the count above, which cannot tell "declared"
+   * from "declared something else": both leave 23.
    */
-  it('withholds the tools engine B has no store for', async () => {
+  it('hosts the reminders tools on engine B, now the Lambda has a store', async () => {
     const fresh = await generateToolSchemas();
 
-    expect(fresh.map((t) => t.name)).not.toContain('set_reminder');
-    expect(committed.map((t) => t.name)).not.toContain('set_reminder');
+    for (const name of ['set_reminder', 'list_reminders', 'cancel_reminder']) {
+      expect(fresh.map((t) => t.name)).toContain(name);
+      expect(committed.map((t) => t.name)).toContain(name);
+    }
+  });
+
+  /*
+   * None of them is gated, and that is structural rather than a preference.
+   *
+   * `toolFor` in `agent-orchestrator.ts` resolves a `confirm_*` call by scanning for
+   * the first tool with the matching `service` *and* `requiresConfirmation` — by
+   * service, not by name. A gated reminders tool would therefore be reachable by
+   * another reminders tool's confirmation, and the stack would derive a `confirm_*`
+   * entry for it that nothing routes correctly.
+   */
+  it('leaves every reminders tool ungated, so confirm resolution stays unambiguous', () => {
+    const reminders = committed.filter((t) => t.name.includes('reminder'));
+
+    expect(reminders).toHaveLength(3);
+    expect(reminders.every((t) => !t.requiresConfirmation)).toBe(true);
   });
 
   it('gates exactly the seven tools that spend money or send messages', () => {

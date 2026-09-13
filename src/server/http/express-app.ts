@@ -700,6 +700,21 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
     ),
   );
 
+  // What Valentin is going to tell him, and when. Read-and-cancel only: the rows
+  // are written by `set_reminder` and by `syncReminders`, never by the browser, so
+  // there is deliberately no POST here — see `getSessionReminders`.
+  app.get(
+    '/api/session/:id/reminders',
+    scoped(deps, (routes, req) => routes.getSessionReminders(pathParam(req, 'id'))),
+  );
+
+  app.delete(
+    '/api/session/:id/reminders/:reminderId',
+    scoped(deps, (routes, req) =>
+      routes.deleteReminder(pathParam(req, 'id'), pathParam(req, 'reminderId')),
+    ),
+  );
+
   app.get(
     '/api/session/:id/manual',
     scoped(deps, (routes, req) => routes.getManualValues(pathParam(req, 'id'))),

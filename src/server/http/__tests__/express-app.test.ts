@@ -627,6 +627,37 @@ describe('her people, his tasks and his corrections over HTTP', () => {
     expect(people[0]).toMatchObject({ name: 'Leah', birthday: '1988-09-09' });
   });
 
+  /*
+   * Over a socket for the same route-ordering reason as the person case above:
+   * '/api/session/:id' is registered last, and a '/reminders' path added after it
+   * would be swallowed and answer with the whole session detail — a 200 carrying the
+   * wrong body, which a status assertion alone would not notice.
+   */
+  it('reads reminders through the real route table rather than session detail', async () => {
+    const sessionId = await ownSession('ivan');
+
+    const response = await get(`/api/session/${sessionId}/reminders`, 'ivan');
+
+    expect(response.status).toBe(200);
+    expect(Object.keys((await response.json()) as object)).toEqual(['reminders']);
+  });
+
+  it('deletes a reminder by id over HTTP', async () => {
+    const sessionId = await ownSession('ivan');
+
+    const removed = await send(
+      `/api/session/${sessionId}/reminders/custom-2026-10-04-1f2e3d4c`,
+      'DELETE',
+      'ivan',
+    );
+
+    expect(removed.status).toBe(200);
+    expect(await removed.json()).toMatchObject({
+      reminderId: 'custom-2026-10-04-1f2e3d4c',
+      deleted: true,
+    });
+  });
+
   it('deletes a person by id', async () => {
     const sessionId = await ownSession('ivan');
     const created = await send(`/api/session/${sessionId}/people`, 'POST', 'ivan', {

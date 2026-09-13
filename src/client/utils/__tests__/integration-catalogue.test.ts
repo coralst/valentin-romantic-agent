@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { INTEGRATION_CATALOGUE, canSpend, findIntegration } from '../integration-catalogue';
+import { CONNECT_RECIPES, connectableFor } from '../integration-connect';
+import { MARKS } from '../../design-system/brand-marks';
 import { INTEGRATION_IDS, INTEGRATION_LABELS } from '../../../shared/interfaces/integrations';
 
 /*
@@ -150,6 +152,33 @@ describe('integration catalogue', () => {
       expect(service.backing ?? []).not.toContain('amadeus');
       expect(service.backing ?? []).not.toContain('whatsapp');
     }
+  });
+
+  /*
+   * The withdrawal above deleted two rows and left their drawings behind, and
+   * nothing noticed for a release: an unused `BrandMarkId` type-checks, renders
+   * nowhere, and still ships in the bundle. The reverse — a row naming a mark that
+   * does not exist — the compiler already catches, so this is the half that needs
+   * a test, and it has to enumerate `MARKS` at runtime because a union cannot be
+   * walked.
+   */
+  it('keeps exactly one brand mark per catalogue row, with none left over', () => {
+    const used = new Set(INTEGRATION_CATALOGUE.map((service) => service.mark));
+    expect([...Object.keys(MARKS)].sort()).toEqual([...used].sort());
+  });
+
+  /*
+   * And the same drift on the connect side: a recipe for a row the panel no longer
+   * shows is a credentials form nothing can open. `connectableFor` is what maps a
+   * row to a flow, so every recipe has to be reachable from some row.
+   */
+  it('keeps only connect recipes some catalogue row can reach', () => {
+    const reachable = new Set(
+      INTEGRATION_CATALOGUE.flatMap((service) =>
+        (service.backing ?? []).map((id) => connectableFor(id)).filter((flow) => flow !== null),
+      ),
+    );
+    expect(Object.keys(CONNECT_RECIPES).sort()).toEqual([...reachable].sort());
   });
 
   /*

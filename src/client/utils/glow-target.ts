@@ -134,7 +134,21 @@ export function glowSelectors(target: GlowTarget): readonly string[] {
     case 'tool': {
       const tile = attribute('data-testid', `integration-status-${target.service}`);
       const row = attribute('data-service', target.service);
-      return [tile, row].filter((selector): selector is string => selector !== null);
+      /*
+       * The `+N` chip, for a service the strip folded away.
+       *
+       * `MAX_TILES` in `IntegrationStatusStrip` means a deployment with more
+       * integrations than tiles has no tile for some of them — and dev has
+       * exactly that, so `check_shabbat` glowed nothing there while it glowed
+       * the hebcal tile locally. The chip is the only element on screen that
+       * honestly stands for a folded service, so it is the anchor of last
+       * resort rather than a silent no-op.
+       */
+      const overflow =
+        SAFE_ID.test(target.service) && target.service
+          ? `[data-overflow-services~="${target.service}"]`
+          : null;
+      return [tile, row, overflow].filter((selector): selector is string => selector !== null);
     }
     case 'proposal': {
       return [

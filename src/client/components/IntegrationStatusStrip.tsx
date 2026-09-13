@@ -242,7 +242,24 @@ export function IntegrationStatusStrip({ readiness, onOpen }: IntegrationStatusS
         </span>
       ))}
       {hidden.length > 0 ? (
-        <span style={overflowStyle} aria-hidden="true" data-testid="integration-status-overflow">
+        <span
+          style={overflowStyle}
+          aria-hidden="true"
+          data-testid="integration-status-overflow"
+          /*
+           * Which services this `+N` is standing in for.
+           *
+           * The strip shows `MAX_TILES` and folds the rest into a count, so a
+           * service that Valentin really called may have no tile of its own. The
+           * architecture drawer glows the tile for a tool call, and on a deployment
+           * with more integrations than tiles that glow had nothing to land on and
+           * silently did nothing. Naming the folded services here gives it the one
+           * element that honestly represents them.
+           *
+           * Space-separated so a selector can match one with `~=`.
+           */
+          data-overflow-services={hidden.map(({ service }) => service.id).join(' ')}
+        >
           +{hidden.length}
         </span>
       ) : null}

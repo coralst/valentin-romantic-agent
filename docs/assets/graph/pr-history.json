@@ -1,6 +1,6 @@
 {
- "commits": 176,
- "merges": 69,
+ "commits": 697,
+ "merges": 238,
  "prs": [
   {
    "add": 4590,
@@ -1601,14 +1601,2204 @@
    "labels": [
     "agent: infra"
    ],
-   "m": null,
+   "m": "2026-08-28T09:57:29Z",
    "n": 68,
    "nc": 0,
    "ref": "docs/infra-agent-contribution-graph",
-   "st": "OPEN",
+   "st": "MERGED",
    "t": "docs(infra): visualise the agent workflow from the real PR history",
    "thread": [],
    "by": {}
+  },
+  {
+   "add": 7064,
+   "c": "2026-08-21T19:07:51Z",
+   "cf": 53,
+   "del": 1639,
+   "labels": [],
+   "m": "2026-08-22T11:12:50Z",
+   "n": 69,
+   "nc": 0,
+   "ref": "feat/inspector-live-architecture-drawer",
+   "st": "MERGED",
+   "t": "feat(inspector): Live Architecture drawer with live and demo modes",
+   "thread": [],
+   "by": {}
+  },
+  {
+   "add": 2349,
+   "c": "2026-08-22T04:11:06Z",
+   "cf": 18,
+   "del": 176,
+   "labels": [],
+   "m": "2026-08-22T04:18:51Z",
+   "n": 70,
+   "nc": 0,
+   "ref": "worktree-fix+infra-audit-remediation",
+   "st": "MERGED",
+   "t": "fix(infra): remediate the dev infrastructure audit findings",
+   "thread": [],
+   "by": {}
+  },
+  {
+   "add": 35645,
+   "c": "2026-08-22T06:49:14Z",
+   "cf": 283,
+   "del": 5102,
+   "labels": [
+    "agent: architect",
+    "agent: frontend",
+    "agent: backend",
+    "agent: design",
+    "agent: infra"
+   ],
+   "m": "2026-08-22T11:12:48Z",
+   "n": 71,
+   "nc": 0,
+   "ref": "integration/inspector",
+   "st": "MERGED",
+   "t": "Final integration: auth, persistent history, the vitrine shell, the inspector, and a way in",
+   "thread": [],
+   "by": {}
+  },
+  {
+   "add": 507,
+   "c": "2026-08-22T06:50:09Z",
+   "cf": 12,
+   "del": 0,
+   "labels": [],
+   "m": "2026-08-28T09:57:29Z",
+   "n": 72,
+   "nc": 0,
+   "ref": "chore/claude-config-bridge",
+   "st": "MERGED",
+   "t": "chore(arch): bridge Kiro configuration into Claude Code",
+   "thread": [],
+   "by": {}
+  },
+  {
+   "add": 1287,
+   "c": "2026-08-22T09:00:32Z",
+   "cf": 15,
+   "del": 42,
+   "labels": [],
+   "m": "2026-08-28T09:57:29Z",
+   "n": 73,
+   "nc": 0,
+   "ref": "worktree-feat-fast-feedback-loop",
+   "st": "MERGED",
+   "t": "feat(workflow): collapse the dev feedback loop from ~25min to ~2min",
+   "thread": [],
+   "by": {}
+  },
+  {
+   "add": 5759,
+   "c": "2026-08-22T14:26:49Z",
+   "cf": 88,
+   "del": 795,
+   "labels": [
+    "agent: architect",
+    "agent: frontend",
+    "agent: backend",
+    "agent: design",
+    "agent: infra"
+   ],
+   "m": "2026-08-22T14:34:30Z",
+   "n": 74,
+   "nc": 0,
+   "ref": "fix/guardrail-place-names",
+   "st": "MERGED",
+   "t": "fix(safety): stop the guardrail reading place names as home addresses",
+   "thread": [],
+   "by": {}
+  },
+  {
+   "add": 395,
+   "c": "2026-08-22T17:02:25Z",
+   "cf": 19,
+   "del": 161,
+   "labels": [],
+   "m": "2026-08-28T09:57:29Z",
+   "n": 75,
+   "nc": 0,
+   "ref": "worktree-fix-profile-nav-and-rail",
+   "st": "MERGED",
+   "t": "fix(nav): open her profile from her portrait, drop the rail's heart, name the user",
+   "thread": [],
+   "by": {}
+  },
+  {
+   "add": 645,
+   "c": "2026-08-22T17:07:29Z",
+   "cf": 8,
+   "del": 101,
+   "labels": [],
+   "m": "2026-08-28T09:57:29Z",
+   "n": 76,
+   "nc": 0,
+   "ref": "worktree-fix-bottom-bar-polish",
+   "st": "MERGED",
+   "t": "Bottom bar: five candidate grounds, feathered edges, a lens that rides the drawer",
+   "thread": [],
+   "by": {}
+  },
+  {
+   "add": 371,
+   "c": "2026-08-22T17:10:49Z",
+   "cf": 11,
+   "del": 37,
+   "labels": [],
+   "m": "2026-08-28T09:57:29Z",
+   "n": 77,
+   "nc": 0,
+   "ref": "worktree-fix-responsive-scaling",
+   "st": "MERGED",
+   "t": "fix(layout): make the chat column scale as one centred measure",
+   "thread": [],
+   "by": {}
+  },
+  {
+   "add": 6180,
+   "c": "2026-08-22T17:21:05Z",
+   "cf": 31,
+   "del": 69,
+   "labels": [],
+   "m": "2026-08-28T09:57:29Z",
+   "n": 78,
+   "nc": 0,
+   "ref": "worktree-feat+profile-command-center-redesign",
+   "st": "MERGED",
+   "t": "feat(dossier): rebuild the profile page as a command centre",
+   "thread": [],
+   "by": {}
+  },
+  {
+   "add": 3051,
+   "c": "2026-08-22T17:25:19Z",
+   "cf": 19,
+   "del": 22,
+   "labels": [],
+   "m": "2026-08-28T09:57:29Z",
+   "n": 79,
+   "nc": 0,
+   "ref": "worktree-sidebar-concepts",
+   "st": "MERGED",
+   "t": "Integrations fan-out in the sidebar, and a rail that says what it does",
+   "thread": [],
+   "by": {}
+  },
+  {
+   "add": 13190,
+   "c": "2026-08-22T17:26:47Z",
+   "cf": 104,
+   "del": 446,
+   "labels": [
+    "agent: architect",
+    "agent: frontend",
+    "agent: backend",
+    "agent: design",
+    "agent: qa",
+    "agent: infra"
+   ],
+   "m": null,
+   "n": 80,
+   "nc": 0,
+   "ref": "integration/final",
+   "st": "CLOSED",
+   "t": "Final integration: every parallel session's work on one branch",
+   "thread": [],
+   "by": {}
+  },
+  {
+   "add": 5,
+   "c": "2026-08-28T09:27:33Z",
+   "cf": 1,
+   "del": 2,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-08-28T11:13:17Z",
+   "n": 81,
+   "nc": 0,
+   "ref": "chore/deploy-workflow-dispatch-only",
+   "st": "MERGED",
+   "t": "chore(ci): make the deploy workflow dispatch-only",
+   "thread": [],
+   "by": {}
+  },
+  {
+   "add": 20718,
+   "c": "2026-08-28T09:43:44Z",
+   "cf": 166,
+   "del": 1083,
+   "labels": [
+    "agent: architect",
+    "agent: frontend",
+    "agent: backend",
+    "agent: design",
+    "agent: qa",
+    "agent: infra"
+   ],
+   "m": "2026-08-28T09:57:27Z",
+   "n": 82,
+   "nc": 0,
+   "ref": "integration/group-a",
+   "st": "MERGED",
+   "t": "Integrate every open branch: the integrations rail, the profile command centre, and the guardrail place-name fix",
+   "thread": [],
+   "by": {}
+  },
+  {
+   "add": 13712,
+   "c": "2026-08-28T13:25:19Z",
+   "cf": 92,
+   "del": 207,
+   "labels": [
+    "agent: architect",
+    "agent: frontend",
+    "agent: backend",
+    "agent: design",
+    "agent: qa",
+    "agent: infra"
+   ],
+   "m": "2026-08-29T14:51:10Z",
+   "n": 83,
+   "nc": 0,
+   "ref": "feat/backend-integration-layer",
+   "st": "MERGED",
+   "t": "feat(backend): the integration layer \u2014 six services, propose-then-confirm, no AgentCore",
+   "thread": [],
+   "by": {}
+  },
+  {
+   "add": 14924,
+   "c": "2026-08-28T15:51:57Z",
+   "cf": 115,
+   "del": 2799,
+   "labels": [
+    "agent: architect",
+    "agent: frontend",
+    "agent: backend",
+    "agent: design",
+    "agent: qa",
+    "agent: infra"
+   ],
+   "m": "2026-08-28T16:04:10Z",
+   "n": 84,
+   "nc": 0,
+   "ref": "feat/dossier-one-page-redesign",
+   "st": "MERGED",
+   "t": "Her file: the approved mockup, on real ingested data",
+   "thread": [],
+   "by": {}
+  },
+  {
+   "add": 22372,
+   "c": "2026-08-29T14:43:41Z",
+   "cf": 131,
+   "del": 906,
+   "labels": [
+    "agent: architect",
+    "agent: frontend",
+    "agent: backend",
+    "agent: design",
+    "agent: qa",
+    "agent: infra"
+   ],
+   "m": "2026-08-29T14:51:09Z",
+   "n": 85,
+   "nc": 0,
+   "ref": "integration/agentcore-plus-integrations",
+   "st": "MERGED",
+   "t": "Integrate the integration layer and the AgentCore engine onto main",
+   "thread": [],
+   "by": {}
+  },
+  {
+   "add": 151,
+   "c": "2026-08-29T14:53:56Z",
+   "cf": 4,
+   "del": 8,
+   "labels": [
+    "agent: qa",
+    "agent: infra"
+   ],
+   "m": "2026-08-29T15:14:42Z",
+   "n": 86,
+   "nc": 0,
+   "ref": "chore/track-prod-rehearsal-driver",
+   "st": "MERGED",
+   "t": "chore(qa): track the prod rehearsal driver",
+   "thread": [],
+   "by": {}
+  },
+  {
+   "add": 20,
+   "c": "2026-08-29T15:54:54Z",
+   "cf": 2,
+   "del": 8,
+   "labels": [
+    "agent: frontend"
+   ],
+   "m": "2026-08-29T16:22:16Z",
+   "n": 87,
+   "nc": 0,
+   "ref": "fix/integrations-panel-three-states",
+   "st": "MERGED",
+   "t": "fix(integrations): stop telling the visitor a built capability contacts nobody",
+   "thread": [],
+   "by": {}
+  },
+  {
+   "add": 79,
+   "c": "2026-08-29T16:23:01Z",
+   "cf": 2,
+   "del": 2,
+   "labels": [
+    "agent: frontend"
+   ],
+   "m": "2026-08-29T16:27:18Z",
+   "n": 88,
+   "nc": 0,
+   "ref": "fix/frontend-empty-transcript-dead-space",
+   "st": "MERGED",
+   "t": "fix(frontend): fill the dead space an empty transcript left in the chat column",
+   "thread": [],
+   "by": {}
+  },
+  {
+   "add": 1876,
+   "c": "2026-09-01T17:36:19Z",
+   "cf": 15,
+   "del": 30,
+   "labels": [
+    "agent: architect",
+    "agent: backend"
+   ],
+   "m": "2026-09-01T17:42:26Z",
+   "n": 89,
+   "nc": 1,
+   "ref": "feat/backend-browser-tier",
+   "st": "MERGED",
+   "t": "feat(backend): a browser tier \u2014 Ontopo discovery beyond the curated list, and Wolt for flowers, wine and gifts",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-01T17:42:17Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 Lint, Unit Tests (2428 across 131 files), Build and E2E all pass; Scope Check satisfied by the `agent: backend` + `agent: architect` labels\n\u2705 No \u274c blocking issues\n\u2705 Verified against the real providers rather than mocks: browser tier launches and scrapes Ontopo's Ra'anana page in 3.6s, Buckaroo is bookable end to end, Wolt returns a real florist and off-licence\n\nServer-side only (`src/server/**`, `src/shared/**`), so no QA sign-off gate \u2014 the panel layout that will consume the new `transport` field is deliberately not in this PR.\n\nNoting the two carried-forward items so they are not lost: Playwright stays a devDependency, so shipping the browser tier to Fargate remains a deliberate image-size decision; and events discovery is blocked on client-rendered SPAs (Eventer serves an 8.8KB shell, Zappa does not resolve).\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 3365,
+   "c": "2026-09-01T17:59:26Z",
+   "cf": 67,
+   "del": 314,
+   "labels": [
+    "agent: architect",
+    "agent: frontend",
+    "agent: backend",
+    "agent: design",
+    "agent: qa",
+    "agent: infra"
+   ],
+   "m": "2026-09-01T18:11:35Z",
+   "n": 90,
+   "nc": 1,
+   "ref": "fix/frontend-bug-sweep-2026-08-29",
+   "st": "MERGED",
+   "t": "Close the 60-commit gap between main and the deployed app, and stop the janitor deleting the table",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-01T18:06:53Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\nAll nine checks green, including the four the ruleset requires (Lint \u00b7 Unit \u00b7 Build \u00b7 E2E). Scope Check needed all six lane labels \u2014 this is a genuine vertical slice: `infra/` for the janitor guard, `src/client/**` and `design-system/` for the sweep, `src/server/**` for the preference-row fix, `src/shared/interfaces/` for the integrations contract, and `src/test-setup.ts` for the jsdom pointer-capture stub.\n\n\u2705 CI green\n\u2705 No \u274c blocking issues\n\u2705 User-facing changes verified against the deployed app, not only locally \u2014 login, seeded conversations, a live Bedrock turn grounded in stored preferences, 121 items read back from the recreated table\n\nWorth recording why this one matters beyond the diff: production was returning 500 on every login this morning because SpringClean deleted `ValentinTable-dev` out of band, and `Valentin-Data-dev` went on reporting `UPDATE_COMPLETE` with the table listed as a member resource. Any future debugging session should check that a resource *exists* before trusting stack status.\n\nMerging, then deploying backend + frontend \u2014 production is on `6826032` (PR #82, Aug 28) and this puts it 61 commits forward onto `main`.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 364,
+   "c": "2026-09-01T19:53:39Z",
+   "cf": 6,
+   "del": 15,
+   "labels": [
+    "agent: backend",
+    "agent: infra"
+   ],
+   "m": "2026-09-01T19:58:54Z",
+   "n": 91,
+   "nc": 1,
+   "ref": "fix/infra-deploy-hardening",
+   "st": "MERGED",
+   "t": "Get main deployed, and make engine B actually work",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-01T19:58:50Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\nAll nine checks green. Verified against the deployed app rather than locally, which is the only way any of this was findable: engine B's three faults each masked the next, and the reporting bug meant a failed turn logged `ok: true`.\n\n\u2705 CI green (Lint \u00b7 Unit 2557 \u00b7 Build \u00b7 E2E, plus Infra 57, Smoke, Scope, Workflow)\n\u2705 No \u274c blocking issues\n\u2705 Engine A on CloudFront: login, seeded conversations, live Bedrock turn with full trace\n\u2705 Engine B on CloudFront: `agentcore.invoke`, `CreateEvent`, `ListMemoryRecords` all `ok: true`\n\u2705 8/8 stacks `*_COMPLETE`; both ECS services 1/1; recorded as rollback target `beee5ce`\n\nWorth keeping in mind for future debugging: `Valentin-Data-dev` reported `UPDATE_COMPLETE` this morning while the table it listed did not exist, and the proxy logged `ok: true` on turns that never produced a reply. Twice today the control plane and the logs both said healthy while the app was unusable \u2014 check that a thing *exists* and that a turn *produced content*, don't trust the status.\n\nThe `--scope=infra` tag conflation is called out in the description and left for a follow-up on purpose.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 188,
+   "c": "2026-09-01T20:31:43Z",
+   "cf": 7,
+   "del": 9,
+   "labels": [
+    "agent: frontend",
+    "agent: backend"
+   ],
+   "m": "2026-09-01T20:38:27Z",
+   "n": 92,
+   "nc": 1,
+   "ref": "fix/infra-deploy-hardening",
+   "st": "MERGED",
+   "t": "Every control on her file goes where it writes, and her brief shows the profile Valentin reads",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-01T20:38:24Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\nBoth reports reproduced on the deployed app before touching anything, and both turned out to be wider than the symptom named \u2014 thirteen controls, not one, and a profile scope mismatch rather than a missing profile.\n\n\u2705 Lint \u00b7 Unit 2560 \u00b7 Build \u00b7 E2E green (Infra Tests correctly skipped \u2014 no `infra/` paths in this PR)\n\u2705 Reported path verified live: her file \u2192 \"+ New conversation\" \u2192 `surface: chat`, composer present and focused\n\u2705 Header CTA verified live: lands in chat with the question written and the caret in it\n\u2705 Brand-new conversation verified live: brief shows Samantha, 12 June 1994, anniversary, sage green, Northern Italian \u2014 no placeholders\n\u2705 Both new tests confirmed failing when the fix is removed\n\nThe lesson worth keeping is the assertion shape. Every one of these buttons already had a test, and every one of those tests passed for the entire life of the bug, because they asserted the chat *state* the handler wrote rather than whether the user could see it. `DossierRouting.test.tsx` was the only file in the codebase asserting `data-surface` at all.\n\nSeven further findings from the same audit are listed in the description and deliberately left out of this change \u2014 Escape not being layered, the unreachable photo Remove, the invisible pending proposal, the lying narrow-desktop \u2630, the inert resize handle on short windows, silent active-conversation reassignment on delete, and a missing `preventDefault`. Each is real and each wants its own PR.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 828,
+   "c": "2026-09-01T20:48:02Z",
+   "cf": 8,
+   "del": 21,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-09-02T17:44:11Z",
+   "n": 93,
+   "nc": 1,
+   "ref": "docs/deck-agentcore-slides",
+   "st": "MERGED",
+   "t": "docs: AgentCore slides in the deck, and a reproducible pptx export",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-02T17:44:08Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all four required checks (Lint \u00b7 Unit \u00b7 Build \u00b7 E2E) plus Smoke and Workflow Regression\n\u2705 Scope check passes on `agent: infra`\n\u2705 No \u274c blocking issues\n\u2705 Docs/deck only \u2014 no runtime code, so no QA sign-off gate\n\nBranch was `BEHIND`; updated onto main and CI re-ran clean.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 117,
+   "c": "2026-09-01T20:54:08Z",
+   "cf": 5,
+   "del": 13,
+   "labels": [
+    "agent: frontend",
+    "agent: qa"
+   ],
+   "m": "2026-09-01T21:09:36Z",
+   "n": 94,
+   "nc": 1,
+   "ref": "fix/infra-deploy-hardening",
+   "st": "MERGED",
+   "t": "Make \"What Valentin can reach\" tell the truth about Wolt",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-01T21:09:32Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 Lint \u00b7 Unit 2564 \u00b7 Build \u00b7 E2E green (Infra and Smoke correctly skipped \u2014 no `infra/` or server paths)\n\u2705 Verified in the deployed bundle: both rows ship `backing:[\"wolt\"]` against a production readiness of `wolt: configured=true`\n\u2705 Every other row checked against live production rather than assumed \u2014 Music and Ride booking keep \"not built yet\" because that is accurate\n\nThree tests had encoded this bug, which is why it survived: two unit specs and one E2E all used `flowers` as their example of \"a capability that is only a drawing\". The E2E one failed on the *fix* \u2014 CI caught my change with an assertion that was itself wrong. That is the tell for this whole class: when a test names a specific row as unbuilt, it silently becomes a claim about the world that nothing re-checks.\n\nOne process note worth keeping: this looked broken locally after the fix, because the long-running dev server on :3001 predated the browser tier and returned six services with no `wolt` key at all \u2014 which the panel reads as \"needs credentials\". Production was correct the entire time. A stale local server can make a correct build look broken in the most time-wasting direction.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 223,
+   "c": "2026-09-01T21:09:57Z",
+   "cf": 7,
+   "del": 28,
+   "labels": [
+    "agent: frontend",
+    "agent: backend",
+    "agent: qa"
+   ],
+   "m": null,
+   "n": 95,
+   "nc": 1,
+   "ref": "fix/backend-wolt-gift-handoff",
+   "st": "CLOSED",
+   "t": "Wolt: send the gift card to a page that exists, and stop the panel claiming it can spend",
+   "thread": [
+    {
+     "by": null,
+     "at": "2026-09-01T21:17:04Z",
+     "body": "Superseded by #96. This branch was cut before #94 merged, so it carried a duplicate of `8a4091b` and conflicted with `392a2d5` on the E2E spec. #96 is the same two commits rebased cleanly onto the new `main`, with main's wording kept for the assertion both of us fixed."
+    }
+   ],
+   "by": {}
+  },
+  {
+   "add": 110,
+   "c": "2026-09-01T21:16:57Z",
+   "cf": 5,
+   "del": 17,
+   "labels": [
+    "agent: frontend",
+    "agent: backend",
+    "agent: qa"
+   ],
+   "m": "2026-09-01T21:32:21Z",
+   "n": 96,
+   "nc": 1,
+   "ref": "fix/backend-wolt-gift-link",
+   "st": "MERGED",
+   "t": "Wolt: send the gift card to a page that exists, and stop the panel claiming it can spend",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-01T21:25:34Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all nine jobs, including the four ruleset-required contexts (`Lint`, `Unit Tests`, `Build`, `E2E Tests`) and `Scope Check` against the three `agent:` labels this PR's paths map to\n\u2705 No \u274c blocking issues\n\u2705 QA sign-off \u2014 this is user-facing, and the evidence is behavioural rather than asserted: `find_gift_delivery` / `propose_gift` / `confirm` driven against the live Wolt API, 12 real venue links HTTP-checked, all 200, where all 12 were 404s before this change; panel and consent-sheet state read from the rendered DOM\n\nTwo notes worth keeping in the record:\n\n1. The `spend` scopes removed here were the more dangerous of the two defects. #94\n   was right to mark the Wolt rows `live`, but \"live\" beside \"place an order \u00b7 $80\"\n   asserts a standing authority to charge a card, and no such code exists. The panel's\n   footer promises that a live badge means real code against a real provider \u2014 so\n   every claim sitting next to that badge inherits the same burden.\n2. Both defects had a test pinning them in place. That is now the pattern to watch on\n   this surface: the assertions were written from the catalogue rather than from the\n   provider, so they encoded the copy instead of checking it.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging.\n"
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 643,
+   "c": "2026-09-02T17:42:36Z",
+   "cf": 7,
+   "del": 23,
+   "labels": [
+    "agent: backend",
+    "agent: infra"
+   ],
+   "m": "2026-09-02T17:50:10Z",
+   "n": 97,
+   "nc": 1,
+   "ref": "feat/backend-ontopo-auto-complete",
+   "st": "MERGED",
+   "t": "Ontopo: finish the booking instead of handing over a link",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-02T17:50:07Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all four required checks (Lint \u00b7 Unit \u00b7 Build \u00b7 E2E), plus Smoke and Workflow Regression\n\u2705 Scope check passes on `agent: backend` + `agent: infra`\n\u2705 No \u274c blocking issues\n\nReviewed the safety posture specifically, since this is the difference between\nminting a link and booking a real table: auto-completion needs all four\n`ONTOPO_GUEST_*` vars and they are unset by default, so the shipped default is the\nexisting link handoff. The all-four-or-none rule is the right call \u2014 a reservation\nwith a wrong phone number is one the restaurant cannot confirm and the guest cannot\ncancel. Human Confirm gate untouched.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 3297,
+   "c": "2026-09-02T17:45:25Z",
+   "cf": 22,
+   "del": 18,
+   "labels": [
+    "agent: architect",
+    "agent: frontend",
+    "agent: backend",
+    "agent: qa",
+    "agent: infra"
+   ],
+   "m": "2026-09-02T17:54:27Z",
+   "n": 98,
+   "nc": 1,
+   "ref": "feat/frontend-engine-scoreboard",
+   "st": "MERGED",
+   "t": "An engine scoreboard that compares the two engines honestly, and the telemetry behind it",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-02T17:54:23Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all four required checks (Lint \u00b7 Unit \u00b7 Build \u00b7 E2E), plus Smoke and Workflow Regression\n\u2705 Scope check passes across all five lanes\n\u2705 Unowned directories (`src/client/utils/`, `src/server/telemetry/`) claimed in the PR body\n\u2705 No \u274c blocking issues\n\nThis branch had never had a PR and was 29 commits behind, so I read the server hot\npaths rather than trusting the suite alone. The instrumentation is purely additive\nand the scoping decisions are the right ones: only `send_message` counts as a turn,\ntoken fields are spread conditionally so a missing `usage` does not read as a free\ncall, failed calls are counted without tokens, and the store counter wraps at the\nsingle construction site so both engines are measured identically. That last one\nmatters most \u2014 instrumenting one engine and not the other would have made the\ncounter the difference it claims to measure.\n\n`origin/main` merged in with no conflicts.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 284,
+   "c": "2026-09-03T14:58:41Z",
+   "cf": 3,
+   "del": 0,
+   "labels": [
+    "documentation",
+    "agent: infra"
+   ],
+   "m": "2026-09-03T15:03:52Z",
+   "n": 99,
+   "nc": 1,
+   "ref": "feat/infra-google-secrets",
+   "st": "MERGED",
+   "t": "feat(infra): inject Google OAuth credentials from Secrets Manager",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-03T15:03:46Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all nine jobs, including the four required contexts. The earlier\n`Build (vite)` red was a superseded run from before the labels landed, not a real\nfailure.\n\u2705 No \u274c blocking issues\n\u2705 Not user-facing in the QA sense \u2014 no `src/client` change, so no QA sign-off gate\n\nTwo things I checked specifically rather than took on trust, because both are the\nkind of mistake that only shows up on a projector:\n\n- **Nothing secret is in the template.** There's a test asserting no\n  `GOCSPX-`, no `apps.googleusercontent.com`, and no refresh-token-shaped literal\n  anywhere in the synthesised output. The secret is created empty and populated\n  out of band.\n- **The empty placeholder can't clobber a real value later.**\n  `generateSecretString` runs only at create time, so once the real credentials\n  are in, every subsequent `cdk deploy` leaves them alone.\n\nThe one thing this PR deliberately does *not* claim is that it's live. Deploying\nneeds `scripts/deploy.sh dev --scope=infra`, which can't run from a background\njob \u2014 and the ordering matters, since this deploy is what creates the secret.\n`docs/google-oauth-setup.md` has the sequence.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging.\n"
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 567,
+   "c": "2026-09-03T16:31:25Z",
+   "cf": 17,
+   "del": 27,
+   "labels": [
+    "agent: architect",
+    "agent: frontend",
+    "agent: backend"
+   ],
+   "m": "2026-09-03T16:41:06Z",
+   "n": 100,
+   "nc": 1,
+   "ref": "feat/backend-google-oauth-autoload",
+   "st": "MERGED",
+   "t": "feat(backend): autoload Google credentials and sign in with the client the server already has",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-03T16:41:00Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\nReviewed the whole diff. The part worth calling out is that this fixes a defect the test\nsuite could not have caught: `.env` was never read at boot, so every unit test passed while\nthe running app quietly forgot its Google credentials on restart. The fix is verified by a\nreal chat turn invoking the Calendar API, not by an assertion \u2014 `integration.google-calendar\noperation:find_occasions ok:true` in the backend log.\n\nTwo design calls I checked specifically and agree with:\n\n- `oauthClientPresent` is a **boolean**, so `GET /api/integrations` still never echoes a\n  credential \u2014 the existing leak assertions in `express-app.test.ts` and `http-routes.test.ts`\n  were widened to allow the new key on the two Google ids only, and the leak regex does not\n  match its name.\n- `credentials.ts` reads `config.integrations` directly rather than calling\n  `googleOAuthClientPresent()`, which would have pulled `./index` and every tool module in\n  for one boolean. Right trade.\n\n\u2705 CI green \u2014 Lint, Unit (2607 tests), Build, E2E all pass on the current run\n\u2705 `Smoke Test` and `Workflow Automation Regression` green; `Infra Tests` correctly skips\n   (no `infra/**` files in this PR \u2014 that wiring is already on `main`)\n\u2705 `Scope Check` green against `agent: backend` / `agent: frontend` / `agent: architect`\n\u2705 No \u274c blocking issues\n\u2705 User-facing behaviour verified in a live browser session, not just in tests\n\nCarrying forward as follow-ups, not blockers: the deployed app still needs a backend deploy\nplus the `valentin/dev/google-oauth` secret, and the `/connect` + `/disconnect` routes are\nstill only behind the demo bearer token every visitor receives.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging.\n"
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 179,
+   "c": "2026-09-03T16:41:28Z",
+   "cf": 4,
+   "del": 19,
+   "labels": [
+    "agent: backend"
+   ],
+   "m": "2026-09-03T16:54:51Z",
+   "n": 101,
+   "nc": 1,
+   "ref": "fix/backend-calendar-blind",
+   "st": "MERGED",
+   "t": "fix(backend): stop Valentin calling a full calendar empty",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-03T16:54:41Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all nine jobs, including the four required gates (Lint \u00b7 Unit \u00b7 Build \u00b7 E2E) and Scope Check\n\u2705 All \u274c blocking issues resolved\n\u2705 Verified against the live Google account, not just mocks: the degraded path returns the 17 real events that previously came back as \"empty\"\n\nNotes for the record:\n\n- The Scope Check failure earlier in this PR was not a scope problem. It two-dot-diffs `base.sha`..`head.sha`, and #100 landed on `main` after this branch was cut, so #100's own five files showed up inverted in the comparison while GitHub's Files-changed tab (merge-base) correctly showed four. Updating the branch cleared it. Worth knowing: any PR cut before a merge to `main` will fail this check for reasons that have nothing to do with its own paths.\n- #100 touched no `google/` files, so there was no semantic overlap with this change. Re-ran the suite on the merged state: 2608 passing.\n- No QA sign-off gate applied: the change is to a tool's return value and the model's prose, with no UI surface. The E2E suite passes unchanged.\n\nOne follow-up that is a **user action, not code**: shared calendars need a refresh token carrying the new `calendar.readonly` scope. Until Google is reconnected from the integrations panel, this degrades to primary-only \u2014 which is exactly today's behaviour, so merging carries no regression.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging.\n"
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 3160,
+   "c": "2026-09-03T16:45:29Z",
+   "cf": 24,
+   "del": 319,
+   "labels": [
+    "agent: architect",
+    "agent: frontend",
+    "agent: backend",
+    "agent: design",
+    "agent: qa",
+    "agent: infra"
+   ],
+   "m": "2026-09-03T17:19:01Z",
+   "n": 102,
+   "nc": 1,
+   "ref": "integration/spotify-all",
+   "st": "MERGED",
+   "t": "Spotify: Valentin builds her the playlist, and the panel names the account it reaches",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-03T17:18:52Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all nine jobs, including the four required contexts (Lint \u00b7 Unit \u00b7 Build \u00b7 E2E)\n\u2705 All \u274c blocking issues resolved\n\u2705 QA signed off \u2014 `integrations-propose-confirm.spec.ts` covers the eight provider rows and Spotify's deployment-dependent badge\n\nTwo gates had to be earned rather than waited out:\n\n- **Scope Check** wanted `agent: infra` \u2014 `.env.example` maps to the infra lane, and the PR carried the other five labels but not that one.\n- **E2E** failed on `panel.getByText('not built yet')` \u2192 `toHaveCount(0)`. Not a badge: `getByText` matches substrings, and the desktop footer explains all three readiness states in prose, so the explainer was indistinguishable from a row. Scoped the assertion to `[data-testid^=\"integration-readiness-\"]`, which is what it always meant.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging.\n"
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 215,
+   "c": "2026-09-03T17:57:03Z",
+   "cf": 4,
+   "del": 0,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-09-03T18:09:02Z",
+   "n": 103,
+   "nc": 1,
+   "ref": "fix/infra-secret-grant-ordering",
+   "st": "MERGED",
+   "t": "fix(infra): grant the secret before the service that needs it",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-03T18:08:57Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all nine jobs, including `Scope Check` after the branch was updated\nfrom `main` (the first failure was a stale-base artifact: the check diffed against\na `main` this branch predated, so it attributed twelve unrelated commits' files to\nthis PR).\n\n\u2705 The ordering fix is asserted where it counts. `DependsOn` on the synthesized\ntemplate is the only thing CloudFormation reads, and that is what the two new\ntests check \u2014 not the construct tree. `forceExecutionRolePolicyFirst` throwing on\na renamed `DefaultPolicy` child is the right call: a silent no-op here reproduces\nexactly the failure we just spent an hour diagnosing.\n\n\u2705 The SpringClean guard closes a real hole rather than restating the existing\none. `applySpringCleanExemption(app)` was never wrong \u2014 it just cannot reach\n`cdk bootstrap` resources, and the `cdk-hnb659fds-container-assets-*` repository\nholds every backend image *and* every rollback target. 33 resources were bare;\nthey are not any more.\n\n\u26a0\ufe0f Not blocking, but the next Compute deploy will still fail until the orphaned\n`valentin/dev/google-oauth` secret is cleared \u2014 two rollbacks left it in Secrets\nManager but out of the stack, so CloudFormation tries to create it and gets\n`AlreadyExists`. Documented in the PR body; the credential values are safe in the\ngitignored `.env`.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging.\n"
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 91,
+   "c": "2026-09-03T18:05:06Z",
+   "cf": 3,
+   "del": 7,
+   "labels": [
+    "agent: backend"
+   ],
+   "m": "2026-09-03T18:19:24Z",
+   "n": 104,
+   "nc": 1,
+   "ref": "fix/backend-spotify-search-limit",
+   "st": "MERGED",
+   "t": "fix(backend): stop find_music asking Spotify for more tracks than it will give",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-03T18:09:21Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 Lint, Unit (2697), Build, E2E all pass; Scope Check satisfied by the `agent: backend` label; Smoke and Workflow Regression green, Infra skipped (no `infra/**` in the diff).\n\u2705 No \u274c blocking issues.\n\u2705 Behaviour verified against the live API rather than inferred: the exact prompt that failed twice now returns real tracks, three `find_music` calls all `ok:true`.\n\nThe part of this I care about most isn't the clamp \u2014 it's the logging. A silent `return null` made a 400 look exactly like an unset credential, and that's why the first diagnosis of this (\"transient, probably a refused token mint\") was wrong. The clamp fixes one bug; the log lines are what will make the next one take minutes instead of an afternoon.\n\nFollowing up separately, both out of scope here: `compute-stack.ts` passes no `SPOTIFY_*` to the container, so the deployed app still can't reach Spotify; and `IntegrationsPanel.tsx`'s desktop footer still explains \"not built yet\" rows when no row is one.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 210,
+   "c": "2026-09-03T18:39:23Z",
+   "cf": 3,
+   "del": 1,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-09-03T18:48:52Z",
+   "n": 105,
+   "nc": 1,
+   "ref": "feat/infra-spotify-secret",
+   "st": "MERGED",
+   "t": "feat(infra): inject Spotify credentials into both engines from Secrets Manager",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-03T18:48:47Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\nInfra-only change, and it closes the last of the three deployed-credential gaps \u2014\nGmail, Calendar, now Spotify. Reviewed against the same question that made #103\nnecessary: does anything here depend on CloudFormation doing two things in an\norder it never promised? It doesn't. The secret rides the `sharedSecrets` map that\n#103 already ordered behind each execution role's `DefaultPolicy`, so adding a\nsecond secret inherits that fix rather than re-opening the race.\n\n\u2705 CI green \u2014 Lint \u00b7 Unit \u00b7 Build \u00b7 E2E, plus Infra Tests (77) and Scope Check\n\u2705 `agent: infra` label applied; every touched path (`infra/`, `docs/`) maps to that one owner\n\u2705 Both engines get the credentials, so the A/B comparison can't mistake a missing\n   secret on engine B for an engine difference\n\u2705 No credential literal in the synthesised template, asserted rather than assumed\n\nThe two subtle calls are the reason this is worth more than a three-line diff, and\nboth are pinned by tests so a later tidy-up can't undo them:\n\n- `SPOTIFY_REFRESH_TOKEN` is seeded **empty**, and the mandatory generated key is a\n  throwaway field nothing reads. Readiness is a presence check and `outcome()` in\n  `spotify/tools.ts` reads the same field, so a generated token would have the app\n  advertise a connected Spotify account and promise on the confirmation card that\n  confirming saves a playlist to it \u2014 then fail against the real API. Wrong in the\n  worst place: in front of the user, mid-demo.\n- Every key is present in the document even when empty, because ECS resolves each\n  by name and an omitted key kills the task at launch with\n  `ResourceInitializationError` \u2014 the same symptom as a missing IAM grant, which is\n  precisely the misdiagnosis that cost this stack a deploy already. The docs'\n  snippet used `if k in env` and would have shipped that trap; it now writes `\"\"`.\n\nOne thing I want on the record for whoever reads this next: the same\ngenerated-placeholder critique applies to `GOOGLE_REFRESH_TOKEN`, which *is* the\ngenerated key on the Google secret. It is deliberately **not** changed here.\nEditing `generateSecretString` on a live secret is not a no-op \u2014 CloudFormation\nregenerates the value \u2014 so that edit would clobber a populated credential. It\nbelongs in its own change, made while the secret is known-empty.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging.\n"
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 144,
+   "c": "2026-09-03T19:03:56Z",
+   "cf": 3,
+   "del": 22,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-09-03T19:08:12Z",
+   "n": 106,
+   "nc": 1,
+   "ref": "fix/infra-adopt-orphaned-secrets",
+   "st": "MERGED",
+   "t": "fix(infra): adopt the two secrets a rolled-back deploy left behind",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-03T19:07:56Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 Lint \u00b7 Unit \u00b7 Build \u00b7 E2E, plus Infra Tests (77) and Scope Check\n\u2705 `agent: infra` label applied\n\u2705 Conflict with #105 resolved additively; nothing dropped from either side\n\u2705 Mechanism already proven in dev \u2014 the live app runs `valentin-backend-dev:2914b63`\n\nMerging this on behalf of the demo-flow session, whose commit it is. The reason it\ncan't wait for them is that it blocks *every* backend deploy in the repo, not just\nGoogle's: the orphaned secret makes each update fail `AlreadyExists`, roll back, and\nre-orphan itself. One cherry-picked commit rather than their branch, so their 12\nin-flight commits stay out of the trunk.\n\nAdoption over deletion is the right call and worth restating: the alternative was\n`--force-delete-without-recovery`, and that secret holds a non-expiring refresh\ntoken granting send-mail-as and calendar-write on a real personal Google account.\nIt had already been repopulated by hand, so `.env` is not reliably the\nauthoritative copy \u2014 deleting could have destroyed a credential outright.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging.\n"
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 12722,
+   "c": "2026-09-03T20:36:28Z",
+   "cf": 111,
+   "del": 182,
+   "labels": [
+    "agent: architect",
+    "agent: frontend",
+    "agent: backend",
+    "agent: design",
+    "agent: infra"
+   ],
+   "m": "2026-09-03T20:44:28Z",
+   "n": 107,
+   "nc": 1,
+   "ref": "feat/demo-flow-gaps",
+   "st": "MERGED",
+   "t": "feat: close the demo-flow gaps, and let Valentin mail a link to this conversation",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-03T20:44:22Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all nine jobs on run [33803288852](https://github.com/coralst/valentin-romantic-agent/actions/runs/33803288852), including the four required contexts (Lint \u00b7 Unit \u00b7 Build \u00b7 E2E). The earlier failure on this PR was the first run's `Scope Check`, which ran before the five `agent:` labels were applied and cancelled its siblings; that run is superseded, and `mergeStateStatus` is `CLEAN`.\n\n\u2705 All \u274c blocking issues resolved \u2014 none were raised.\n\n\u2705 Verified locally before push, not just in CI: lint clean, 3116 unit tests, 80 infra tests, `vite build` clean. One `LiveArchitectureDrawer` test timed out at 5s in a full run that spent 959s in setup, and passes 69/69 in 8s in isolation \u2014 machine load, not the change.\n\n\u2705 Cross-lane sign-off on the merge resolutions. The Gmail/Calendar session independently verified that `sharedSecrets` carries all seven keys and that `git diff` shows zero Spotify lines against their callback \u2014 so their handler came through my rebuild byte-for-byte rather than being reconstructed from memory. They also strengthened the Amadeus argument: `propose_hotel_booking`'s own description states it does not book or pay and that Valentin never handles card details, so a $400 default put a spend slider in the consent sheet advertising an authority the tool explicitly disclaims. That is a consent-UI lie, not merely dead config, and the fix is to assert the slider's absence.\n\n\u26a0\ufe0f Carried forward, not fixed here: **`POLICY_REVISION` is pinned by no test.** A future guardrail edit that forgets to bump it changes DRAFT only while the running task keeps enforcing the old version \u2014 precisely the mechanism that made the EMAIL block look like a personality quirk instead of a policy one. Worth a regression assertion; out of scope for this PR.\n\nMerging, then deploying `--scope=all` from main \u2014 Safety must be walked for the guardrail bump to reach the task, and `--scope=backend` does not include it.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging.\n"
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 151,
+   "c": "2026-09-03T21:01:57Z",
+   "cf": 3,
+   "del": 45,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-09-03T21:10:35Z",
+   "n": 108,
+   "nc": 1,
+   "ref": "fix/infra-spotify-secret-adoption",
+   "st": "MERGED",
+   "t": "fix(infra): adopt the orphaned Spotify secret so Compute-dev can deploy again",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-03T21:10:29Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all nine jobs on run [33805721726](https://github.com/coralst/valentin-romantic-agent/actions/runs/33805721726), including the four required contexts. As on #107, the first run failed `Scope Check` before `agent: infra` was applied and cancelled its siblings; that run is superseded and `mergeStateStatus` is `CLEAN`.\n\n\u2705 All \u274c blocking issues resolved \u2014 none raised.\n\n\u2705 Verified locally: lint clean, 80/80 infra tests.\n\n\u2705 Non-destructive by construction. Nothing was deleted and no credential was read: the live document was inspected for key *names* and SET/EMPTY only. `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` are real values typed in by hand, which is precisely why adoption rather than delete-and-recreate is the only acceptable resolution \u2014 and why the standing warning about editing `generateSecretString` on a live secret is now moot rather than merely heeded, since adoption emits no resource and never re-runs it.\n\n\u26a0\ufe0f Honest weakening, documented rather than hidden: `does not seed SPOTIFY_REFRESH_TOKEN with a generated value` defends a *create-time* shape that, on dev, is already fixed in Secrets Manager where no template assertion can reach it. It now asserts adoption emits no resource, and still guards the real create path for staging and prod. I chose that over deleting the test, because the invariant it protects is still live for every environment that has not yet deployed.\n\n\u2705 Mechanism corrected before merge, and it changes the lesson. My first commit explained the orphaning as a rollback leaving the secret behind. That was wrong: the event history shows `CREATE_COMPLETE` at 19:13:21Z, `UPDATE_COMPLETE` at 19:16:31Z, and then `DELETE_SKIPPED` at 19:27:02Z during `UPDATE_COMPLETE_CLEANUP_IN_PROGRESS` of a **second, entirely successful** deploy \u2014 mine, from a branch that did not yet contain the commit adding the secret, so CloudFormation correctly moved to delete a resource absent from my template. I corroborated it without the event history (this IAM user cannot call `DescribeStackEvents`): `CreatedDate` 19:13:20Z matches to the second, and two versions with `LastChangedDate` 19:21:50Z mean real credentials were hand-populated \u2014 nobody populates a secret abandoned by a rollback. Credit to the Gmail/Calendar session for pulling the history instead of reasoning from the pattern. `08de693` fixes the comments in both files.\n\n\u26a0\ufe0f Worth noting for its own sake: this is the **third** occurrence, the second time it has blocked a deploy that had nothing to do with the secret named in the error \u2014 and on the corrected mechanism it is materially nastier than it looked. The orphaning deploy **passes**. Nothing fails, nothing logs an error, the app stays healthy, and the cost lands on whoever deploys next. So adoption cures each instance and prevents none: the only prevention is merging before deploying and deploying once from main. A synth-time assertion that every `RETAIN`'d secret is either adopted or provably absent from the account would catch the fourth \u2014 out of scope here, and of a kind with the `POLICY_REVISION` yellow item on #107 in that both are \"the deploy silently does not do what you think\".\n\nMerging. The deploy itself is blocked by this session's permission classifier, so it goes to Coral to run rather than being laundered through another session.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging.\n"
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 305,
+   "c": "2026-09-04T15:00:28Z",
+   "cf": 4,
+   "del": 3,
+   "labels": [
+    "agent: frontend",
+    "agent: infra"
+   ],
+   "m": "2026-09-04T15:12:13Z",
+   "n": 110,
+   "nc": 1,
+   "ref": "integration/cleanup-landing",
+   "st": "MERGED",
+   "t": "Branch cleanup: land the rail-exit fix, the crest, and the engine-A proposal",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-04T15:12:11Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all nine jobs, including the four required gates (Lint \u00b7 Unit \u00b7 Build \u00b7 E2E). Scope Check needed `agent: infra` rather than `architect`/`design`: `docs/**` and `public/**` both fall in the infra lane.\n\u2705 No \u274c blocking issues\n\u2705 User-facing change verified against the deployed app before it was picked \u2014 the rail trap reproduced at 1512\u00d7900, and `leaveIntegrations` is absent from main\n\nThe Amadeus removal was dropped rather than merged, and the reasoning is worth keeping: the deployed Travel consent sheet already carries two `read` scopes, \"No hold, no payment, no card details\", and its own sandbox disclosure. The commit was fixing a slider that no longer exists. Archived at tag `archive/amadeus-row-removal` in case the row ever does point at production Amadeus.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 103,
+   "c": "2026-09-04T16:40:18Z",
+   "cf": 4,
+   "del": 35,
+   "labels": [
+    "agent: backend",
+    "agent: infra"
+   ],
+   "m": "2026-09-04T16:45:41Z",
+   "n": 111,
+   "nc": 1,
+   "ref": "fix/backend-guardrail-offtopic",
+   "st": "MERGED",
+   "t": "fix(backend,infra): stop the off-topic topic refusing \"email me the link\"",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-04T16:45:38Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all nine jobs, including the four ruleset-required contexts (Lint \u00b7 Unit \u00b7 Build \u00b7 E2E). E2E ran for real (1m12s), not skipped.\n\u2705 No \u274c blocking issues raised\n\u2705 User-facing behaviour change, verified by test rather than by deploy: the tool-loop tagging regression is pinned in `bedrock-client.test.ts`, and `off-topic`'s absence is pinned in `regressions.test.ts` so it cannot come back by accident.\n\nOne thing deliberately left open, recorded here rather than fixed: the running task sets `BEDROCK_GUARDRAIL_VERSION=DRAFT`, so it enforces whatever the last stack edit put in DRAFT and ignores the published version. That defeats the `POLICY_REVISION` pinning `safety-stack.ts:206-216` exists to provide. It doesn't block this fix \u2014 it actually means the policy change lands as soon as the Safety stack deploys \u2014 but it should be a follow-up.\n\nMerging on your instruction. Note this needs `--scope=infra` **and** a backend deploy before the live app stops refusing \"email me the link\".\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 7431,
+   "c": "2026-09-04T17:00:03Z",
+   "cf": 50,
+   "del": 318,
+   "labels": [
+    "agent: architect",
+    "agent: frontend",
+    "agent: backend",
+    "agent: qa",
+    "agent: infra"
+   ],
+   "m": "2026-09-04T17:20:17Z",
+   "n": 112,
+   "nc": 1,
+   "ref": "feat/backend-agentcore-gateway-tools",
+   "st": "MERGED",
+   "t": "feat(backend,infra): put the AgentCore Gateway in engine B's real tool path",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-04T17:20:12Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all 11 jobs, including the four required contexts (Lint \u00b7 Unit \u00b7 Build \u00b7 E2E) on the branch **merged with main**, so this is not a stale-base pass.\n\n\u2705 Both red checks were real and are fixed rather than waived:\n\n- `Infra Tests` failed only in CI. My `NodejsFunction` is declared `projectRoot: '..'`, so CDK bundles with the **repo root** as cwd while that job installed only `infra/` \u2014 it fell back to `npx esbuild@<pinned>`, which a runner cannot approve, and reported all 118 assertions *skipped* while going red without running one. Fixed in `d4e769f` by adding the root `npm ci`, and proven rather than assumed: hiding `infra/node_modules/esbuild` still gives 118 passed via the root's esbuild on the same `npx --no-install` path. The 0.28.2 pin inside `infra/` is **not** what fixed it; it's kept only because it costs nothing.\n- `Scope Check` needed `agent: qa` for the `e2e/` paths. Added.\n\n\u2705 Verified against #111 rather than assumed compatible: `guardNewestUserTurn` lives entirely in `bedrock-client.ts`, which this branch never touches, and engine B's tool loop runs inside the AgentCore Runtime. `merge-tree` clean; the only shared file has disjoint hunks.\n\n\u2705 QA \u2014 30 E2E green in chromium, including the new `engine-toggle.spec.ts`. Two of its assertions were wrong on first run and are now written to what the app actually does: the diagram **mutes** out-of-engine nodes rather than removing them, and engine B's session id arrives inbound via `session_init`, not on the outbound auth frame.\n\n\u26a0\ufe0f One gap, stated in the description rather than hidden: a live engine-B propose \u2192 **Confirm** \u2192 `confirm_*` round trip was never driven end to end, because this IAM user lacks `bedrock:InvokeModel` and `lambda:InvokeFunction`. Everything below the model is covered by tests, and engine B is confirmed *served* not downgraded on dev. Not blocking the merge; it is a post-deploy browser check.\n\nNote for whoever deploys: `Valentin-AgentCore-dev` is currently `UPDATE_ROLLBACK_COMPLETE` \u2014 a `--scope=infra` run from main-without-this-branch tried to remove `ExportsOutputRefProxyGatewayClient\u2026` while `Valentin-Compute-dev` still imports it. Merging this is what resolves that, so the ordering is merge \u2192 deploy, and the deploy must reach `UPDATE_COMPLETE` rather than be assumed clean.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging.\n"
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 1287,
+   "c": "2026-09-04T17:28:13Z",
+   "cf": 25,
+   "del": 33,
+   "labels": [
+    "agent: architect",
+    "agent: backend",
+    "agent: infra"
+   ],
+   "m": "2026-09-04T17:33:13Z",
+   "n": 113,
+   "nc": 1,
+   "ref": "feat/backend-set-reminder",
+   "st": "MERGED",
+   "t": "feat(backend): let Valentin set a reminder when he is asked to",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-04T17:33:06Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all nine jobs, including the four required gates. `E2E Tests (playwright)` ran for real (1m19s), not the path-guarded no-op.\n\u2705 All \u274c blocking issues resolved \u2014 none were raised.\n\u2705 Not user-facing: no `src/client` changes, so no QA sign-off gate. The reviewable artefact is the captured mail in the description rather than a screenshot.\n\nRead the three silent defects in the description before the diff \u2014 `reapSuperseded` deleting every hand-set reminder is the one that would have been hardest to notice, since it logged nothing and only fired on an unrelated turn.\n\nTwo judgement calls I'm signing off on deliberately: `requiresConfirmation: false` (a reminder is his own note to himself, and a card for it is ceremony), and withholding `set_reminder` from the Gateway (engine B has no store in that Lambda, so declaring it would put a tool in the model's instruction set that fails every call).\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 2795,
+   "c": "2026-09-04T18:02:30Z",
+   "cf": 37,
+   "del": 136,
+   "labels": [
+    "agent: architect",
+    "agent: frontend",
+    "agent: backend"
+   ],
+   "m": "2026-09-05T14:14:32Z",
+   "n": 114,
+   "nc": 2,
+   "ref": "fix/backend-share-link-corruption",
+   "st": "MERGED",
+   "t": "fix: share links opened as \"This link has expired\" \u2014 and now open into the live app",
+   "thread": [
+    {
+     "by": "frontend",
+     "at": "2026-09-05T14:08:59Z",
+     "body": "**\u269b\ufe0f Frontend Dev** \u2014 the last reply re-typing itself on entry\n\nReported as \"it rewrites the last response when I first enter\", then narrowed by\nCoral to the thing that actually grated: *the gradual typing of the last message\nwhen you enter it* \u2014 the animation is wanted as a reaction to sending something,\nand only that.\n\nNothing was being rewritten. The text on entry was identical to the text that had\narrived, and the share link in it resolved 200 both times; what replayed was the\ntypewriter reveal.\n\n### Why\n\n`animate` was true for whichever agent message was last in the transcript. That is\nthe right question about a reply that just arrived and the wrong one about a reply\nbeing loaded, and a stored `ChatMessage` is byte-identical to a live one \u2014 so\n`MessageBubble` had nothing to go on and guessed from age: under a minute old\ncounted as live.\n\nThat guess is the \"sometimes it happens and sometimes not\". Enter within a minute\nof the last reply and it re-typed; come back an hour later and it did not. It\nlooks like a cache and it is not.\n\n### Fix\n\nThe distinction only exists at the moment of arrival, so it is recorded there.\n`ChatState.liveMessageIds` holds the ids delivered over the socket while this\ntranscript was on screen \u2014 `RECEIVE_MESSAGE` is the only such path \u2014 and\n`SWITCH_SESSION` empties it, because everything it hands over is being *loaded*,\nincluding whatever was live a moment ago in the conversation being left.\n`MessageHistory` animates the newest agent message only when its id is in that\nset. The timestamp heuristic is gone.\n\nA greeting the reducer actually appends still counts as live (new conversation, he\nis saying it now); a restored transcript keeps its stored greeting and marks\nnothing.\n\n### Verified in a browser, not reasoned about\n\nThree fresh contexts against the local app, sampling the presentational span:\n\n| Round | On arrival | On entry |\n|---|---|---|\n| 1 | 10 \u2192 144 chars, animating | 509 chars on first frame, never grew |\n| 2 | 6 \u2192 138 chars, animating | 330 chars on first frame, never grew |\n| 3 | 12 \u2192 144 chars, animating | 373 chars on first frame, never grew |\n\nBoth halves matter: the reveal still plays when you send something, and it never\nplays for a message you have merely opened.\n\nRegressions pinned at both levels \u2014 the reducer (received vs hydrated vs\nswitched, and the two greeting cases) and `MessageHistory` (loaded transcript does\nnot reveal, live one does, an older reply is untouched while a new one reveals).\n\n`npm run lint` clean \u00b7 `npm test` 177 files / 3357 tests \u00b7 `npm run build` green.\n"
+    },
+    {
+     "by": "master",
+     "at": "2026-09-05T14:14:27Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green on `9a07f9e` \u2014 Lint, Unit Tests (3357), Build, E2E all pass; Smoke, Scope Check and Workflow Regression green, Infra skipped (no CDK paths touched)\n\u2705 All \u274c blocking issues resolved\n\u2705 User-facing changes verified in a real browser rather than reasoned about: share link opens into the live app at the shared point, the reveal animates on arrival and never on entry, and a misconfigured Bedrock now announces itself at boot instead of apologising mid-demo\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "frontend": 1,
+    "master": 1
+   }
+  },
+  {
+   "add": 194,
+   "c": "2026-09-05T13:02:45Z",
+   "cf": 3,
+   "del": 5,
+   "labels": [],
+   "m": null,
+   "n": 115,
+   "nc": 0,
+   "ref": "feat/infra-custom-domain",
+   "st": "OPEN",
+   "t": "feat(infra): optional custom domain on the CloudFront distribution",
+   "thread": [],
+   "by": {}
+  },
+  {
+   "add": 3234,
+   "c": "2026-09-05T13:55:16Z",
+   "cf": 35,
+   "del": 109,
+   "labels": [
+    "agent: architect",
+    "agent: frontend",
+    "agent: backend",
+    "agent: infra"
+   ],
+   "m": "2026-09-05T16:17:28Z",
+   "n": 116,
+   "nc": 1,
+   "ref": "fix/backend-reminder-inside-lead-window",
+   "st": "MERGED",
+   "t": "feat(backend): make the reminder mail fire on time, say something real, and prove it arrived",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-05T15:56:52Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all four required checks (`Lint`, `Unit Tests`, `Build`, `E2E Tests`) plus `Scope Check`, `Smoke Test` and `Workflow Automation Regression`\n\u2705 `main` merged in at `1306243`. One conflict, in `src/server/integrations/spotify/client.ts`: main's per-id `GET /v1/tracks/{id}` is the real fix for the 403 the batch endpoint returns for this app, so it won over this branch's batch call. The search-result cache from `1adb4c0` now sits in front of it \u2014 ids a search already returned cost no request at all, and anything unseen still goes to the single-id endpoint, so an invented id is still told apart from an unreachable Spotify.\n\u2705 `agent: architect` added \u2014 the PR touches `src/shared/`, which the earlier label set did not claim.\n\u2705 Verified live, not just in CI: a full `demo:drive` run held all eleven turns through the real UI and the reminder was genuinely delivered by Gmail (`messageId 1a072343865ddb76`, subject \"Maya's anniversary is 5 days away \u2014 three ideas\").\n\nKnown non-blocking: `propose_playlist` can still come back `ok:false` when the model supplies track ids no search returned. That is now a 404-per-id (\"the model invented that id\"), not the old blanket 403, and it is being worked in another branch.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 89,
+   "c": "2026-09-05T14:51:40Z",
+   "cf": 2,
+   "del": 35,
+   "labels": [
+    "agent: backend"
+   ],
+   "m": "2026-09-05T14:57:08Z",
+   "n": 117,
+   "nc": 1,
+   "ref": "fix/backend-spotify-tracks-403",
+   "st": "MERGED",
+   "t": "fix(backend): resolve Spotify track ids singly \u2014 batch /v1/tracks is 403 for this app",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-05T14:57:05Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green (Lint \u00b7 Unit \u00b7 Build \u00b7 E2E, plus Smoke and Workflow Regression)\n\u2705 No \u274c blocking issues\n\u2705 Behavioral change verified live against the real Spotify API: 3 real ids + 1 invented id \u2192 3 tracks + one null entry, where before the batch call answered 403 and the whole flow failed\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 21,
+   "c": "2026-09-05T15:17:12Z",
+   "cf": 2,
+   "del": 2,
+   "labels": [
+    "agent: backend"
+   ],
+   "m": "2026-09-05T15:23:01Z",
+   "n": 118,
+   "nc": 1,
+   "ref": "fix/backend-find-music-ids-in-summary",
+   "st": "MERGED",
+   "t": "fix(backend): find_music must hand the model the track ids in its summary",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-05T15:22:58Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green\n\u2705 No \u274c blocking issues\n\u2705 Regression pinned by a test that asserts the ids appear in the summary the model reads\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 1034,
+   "c": "2026-09-05T15:33:54Z",
+   "cf": 15,
+   "del": 16,
+   "labels": [
+    "agent: architect",
+    "agent: frontend",
+    "agent: backend",
+    "agent: design",
+    "agent: infra"
+   ],
+   "m": "2026-09-05T16:12:22Z",
+   "n": 119,
+   "nc": 1,
+   "ref": "feat/backend-web-search",
+   "st": "MERGED",
+   "t": "feat(backend): let the model search the open web freely",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-05T15:50:59Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all four required checks plus the three informative jobs pass (3374 unit, 118 infra, E2E chromium)\n\u2705 No \u274c blocking issues\n\u2705 User-facing surface (panel row, brand mark) covered by the pinned catalogue and E2E suites; verified live end-to-end that keyless search returns real URLs and `read_webpage` returns page text\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 1664,
+   "c": "2026-09-05T15:39:36Z",
+   "cf": 11,
+   "del": 148,
+   "labels": [
+    "agent: frontend"
+   ],
+   "m": "2026-09-05T15:47:21Z",
+   "n": 120,
+   "nc": 1,
+   "ref": "feat/frontend-profile-panel-timeline",
+   "st": "MERGED",
+   "t": "feat(frontend): give her file a portrait paragraph and one event timeline",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-05T15:47:16Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all four required checks pass (Lint \u00b7 Unit \u00b7 Build \u00b7 E2E), plus Scope Check and the workflow regression tier\n\u2705 All \u274c blocking issues resolved \u2014 the two red checks on the first run were a cancelled superseded run (Build) and a stale two-dot base diff that counted #118's Spotify files against this PR (Scope Check); `update-branch` cleared both\n\u2705 User-facing change verified in a real browser against seeded data, not by deploying \u2014 that read is what caught the two copy bugs in `c66bc46`\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 2906,
+   "c": "2026-09-05T15:39:37Z",
+   "cf": 32,
+   "del": 83,
+   "labels": [
+    "agent: architect",
+    "agent: frontend",
+    "agent: backend",
+    "agent: infra"
+   ],
+   "m": "2026-09-05T16:05:54Z",
+   "n": 121,
+   "nc": 1,
+   "ref": "feat/frontend-agent-narration",
+   "st": "MERGED",
+   "t": "feat: narrate the turn, and make Noted permanent",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-05T15:58:32Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all four required checks pass on `a3e38a8` (Lint 19s \u00b7 Unit 1m29s \u00b7 Build 20s \u00b7 E2E 1m18s), plus Smoke, Scope Check and the workflow regression tier.\n\u2705 Merged `origin/main` in and resolved four conflicts **additively** \u2014 `liveMessageIds` and the share-link `mintLink` from the parallel lanes both survive alongside the narration work. `MessageHistory` keeps main's animate gate (`liveMessageIds?.has(msg.id)`) *and* the badge's not-the-tail rule; they are orthogonal.\n\u2705 No \u274c blocking issues outstanding.\n\nOne caveat stated plainly rather than papered over: **a live model turn with thinking on has not been exercised end-to-end.** `npm run verify:local` failed one rehearsal step (`preference learned in feed`) because the local IAM identity lacks `bedrock:InvokeModel` \u2014 the agent returned its error fallback, so extraction never ran and no `preference_update` could reach the feed. Every layer below the model is covered by the 3479 unit tests; the reasoning path itself needs the deployed app or the `dev-devops-agent` profile to confirm.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging.\n"
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 692,
+   "c": "2026-09-05T15:41:21Z",
+   "cf": 11,
+   "del": 21,
+   "labels": [
+    "agent: frontend",
+    "agent: design",
+    "agent: infra"
+   ],
+   "m": "2026-09-05T15:58:17Z",
+   "n": 122,
+   "nc": 1,
+   "ref": "feat/frontend-integration-status",
+   "st": "MERGED",
+   "t": "feat(frontend): show integration reach in the conversation header",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-05T15:48:23Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all four required checks pass (`Lint`, `Unit Tests`, `Build`, `E2E`), plus `Scope Check` and `Workflow Automation Regression`. `Infra Tests` and `Smoke Test` are path-skipped.\n\u2705 No \u274c blocking issues.\n\u2705 Verified in a real browser rather than by deploying: `scripts/prove-integration-status.mjs` compares the rendered DOM to what `GET /api/integrations` actually returns, service by service, and asserts the strip degrades to \"status unavailable\" when the endpoint is pulled. ALL PASS.\n\nThe honesty question the change was asked to answer is settled in the code, not just in the copy: the dot derives from `readiness.configured` alone. Client-side grants are excluded because the server gates tools on readiness alone, so a \"not allowed yet\" tile would be false; and no sentence claims *working*, because `configured` cannot prove reachability. The caveat is in the tooltip.\n\nThe one local E2E flake in `her-file.spec.ts` was confirmed pre-existing \u2014 the full suite fails the same way on unmodified `main` \u2014 and CI E2E is green here.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 347,
+   "c": "2026-09-05T15:58:49Z",
+   "cf": 3,
+   "del": 73,
+   "labels": [
+    "agent: backend"
+   ],
+   "m": "2026-09-05T16:57:13Z",
+   "n": 123,
+   "nc": 1,
+   "ref": "fix/backend-spotify-dev-mode-and-dupes",
+   "st": "MERGED",
+   "t": "fix(backend): tell the truth when Spotify refuses a connected account",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-05T16:57:06Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all four required checks pass (Lint \u00b7 Unit \u00b7 Build \u00b7 E2E), plus Smoke, Scope Check and Workflow Regression. Infra Tests correctly path-skipped; no `infra/**` in the diff.\n\u2705 Scope Check was failing for a tooling reason, not a real one: the job diffs against `pull_request.base.sha`, which is main\u2019s *current tip* rather than the merge-base, so main\u2019s 47 newer commits surfaced as this PR\u2019s frontend files. Updating the branch cleared it \u2014 the diff is the three `src/server/integrations/spotify/` files it always was, all `agent: backend`.\n\u2705 The endpoint fix in `4bbfc8c` is the substantive change: `POST /me/playlists` and `POST /playlists/{id}/items` replace the two forms that answer a bare 403 for a development-mode app. Verified live against a real account \u2014 a 6-track playlist created through this exact path.\n\u2705 The dedupe guard in `propose_playlist` is the user-visible win; a card really did offer the same song five times out of eight.\n\u2705 The error taxonomy now tells `no-grant`, `not-registered` and `refused` apart instead of returning a bare `null`. Worth noting for whoever reads this later: `SPOTIFY_REFRESH_TOKEN` is empty in the dev secret, so prod takes `no-grant` today and the other two branches stay dormant until an account is connected.\n\u2705 50/50 Spotify unit tests pass locally on the merge head.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 334,
+   "c": "2026-09-05T17:58:59Z",
+   "cf": 16,
+   "del": 1498,
+   "labels": [
+    "agent: frontend",
+    "agent: qa"
+   ],
+   "m": "2026-09-05T18:03:44Z",
+   "n": 124,
+   "nc": 1,
+   "ref": "fix/frontend-rail-and-connection-flash",
+   "st": "MERGED",
+   "t": "fix(frontend): five reported UI defects in the rail and the transcript",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-05T18:03:38Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all four required checks passed on run `33982623330`: `Lint (tsc --noEmit)` 27s, `Unit Tests (vitest)` 1m24s, `Build (vite)` 22s, `E2E Tests (playwright)` 1m9s. `Scope Check` and `Workflow Automation Regression` green too; `Infra Tests` and `Smoke Test` are path-skipped, correctly \u2014 this PR touches no CDK and no server code.\n\n\u26a0\ufe0f Note for anyone reading the checks list: an earlier run (`33982622311`) shows `Build` and others as failed. That run was **cancelled**, not broken \u2014 \"Canceling since a higher priority waiting request for ci-fix/frontend-rail-and-connection-flash exists\", because applying the two `agent: *` labels at PR creation fired a second `pull_request` event and the concurrency group superseded the first. The live run is the one above, and `mergeStateStatus` is `CLEAN`.\n\n\u2705 All \u274c blocking issues resolved \u2014 none were raised.\n\n\u2705 QA signed off. This is a user-facing change, so it was verified at the surface rather than only in jsdom: `verify:local` 23/23 including a real Bedrock turn, zero `connection-banner` appearances across cold start under an observer installed before first paint, zero console errors, and the trail measured 40px below the last bubble and 145px clear of the panel foot during a turn that really called `check_shabbat` and `find_restaurants`.\n\nOne thing worth flagging in the record, because it is the kind of defect that hides: fix (3) \u2014 removing ACT/TALK/\u25c6 \u2014 silently broke the architecture toggle. The band label had been holding the rail's layout open; without it every button went top-anchored, and the demo popover was bottom-aligned to the \u2699 and grew *upwards* on the explicit premise that the \u2699 sat at the rail's foot. That premise stopped being true in the same commit that removed the label, so 320px of menu started covering the conversation list's wordmark row. `verify:local` caught it as a 30s click timeout naming the popover as the intercepting element. Fixed here, with a unit test pinning the direction so the coupling cannot silently invert again.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging.\n"
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 87,
+   "c": "2026-09-05T18:50:32Z",
+   "cf": 3,
+   "del": 19,
+   "labels": [
+    "agent: backend"
+   ],
+   "m": "2026-09-05T19:00:09Z",
+   "n": 125,
+   "nc": 1,
+   "ref": "fix/backend-ontopo-prod-edge-block",
+   "st": "MERGED",
+   "t": "fix(backend): make Ontopo reachable from production",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-05T19:00:07Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 Lint \u00b7 Unit (3540) \u00b7 Build \u00b7 E2E all pass, plus Smoke, Workflow Regression and Scope Check\n\u2705 No \u274c blocking issues\n\u2705 Not a UI change \u2014 no QA sign-off gate\n\nThe diagnosis holds up on the evidence available: `check_availability` at 1\u201327 ms cannot be a round trip to Ontopo, `find_restaurants` (no network) never failed, and the same bytes return `200` from a residential Israeli address. The PR is honest that the refusal status was never captured from inside us-east-1 \u2014 and the logging it adds is what will settle that on the next attempt rather than leaving it as inference.\n\nWorth calling out the `post()` fix independently of the edge block: that docstring has promised to swallow transport faults for as long as it has existed, with no `try/catch` behind it. That was a latent crash on any Ontopo outage regardless of this bug.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 1412,
+   "c": "2026-09-05T19:13:55Z",
+   "cf": 22,
+   "del": 79,
+   "labels": [
+    "agent: backend",
+    "agent: infra"
+   ],
+   "m": "2026-09-05T19:18:59Z",
+   "n": 126,
+   "nc": 2,
+   "ref": "fix/frontend-rail-and-connection-flash",
+   "st": "MERGED",
+   "t": "fix(backend): guardrail refusal, tool markup in a bubble, default reminder recipient, and an Ontopo dead end",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-05T19:18:54Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all nine jobs, including the four required contexts (`Lint`, `Unit Tests`, `Build`, `E2E Tests`) and `Scope Check` against both `agent: backend` and `agent: infra`\n\u2705 All \u274c blocking issues resolved \u2014 the two live false positives in the Ontopo fallback (`ha.com`, `buckaroond.com`) were caught by probe before merge and fixed in `6032512`\n\u2705 No user-facing UI surface in this branch, so no QA screenshot gate \u2014 the verification that matters here is the live probe and the `200 \u2026 to: koralsteinberg@gmail.com` on the reminder path, both recorded in the description\n\nOne note for whoever reads this later, because the merge brought it into scope: `5488cf7`\n(\"make Ontopo reachable from production\") landed on `main` while this branch was open, and\nthe two changes are complementary rather than overlapping. That commit fixed the *transport*\n\u2014 a CloudFront edge rule was refusing every `check_availability` from us-east-1 in 1\u201327ms, so\nthe tool had never once succeeded in production. This branch fixes what happens when Ontopo\n*does* answer and has nothing, or genuinely times out. Before `5488cf7` the fallback here\nwould have fired on every single call; after it, it fires only on real dead ends, which is\nwhat it was written for. Different files (`client.ts`/`discovery.ts` vs `tools.ts`), clean\nmerge, and the full suite is green on the merged tree.\n\nDeploying in two scopes after this lands \u2014 `deploy:backend` for fixes 2\u20134, and\n`scripts/deploy.sh dev --scope=infra` for the guardrail revision in fix 1, which is the only\none that is not backend code.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging.\n"
+    },
+    {
+     "by": "master",
+     "at": "2026-09-05T19:51:39Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 correction to the PR body\n\nThe summary above says `PROMPT_ATTACK` input strength was set to **MEDIUM**. That is\nwrong \u2014 the merged code and the live guardrail both say **LOW**:\n\n```ts\n{ type: 'PROMPT_ATTACK', inputStrength: 'LOW', outputStrength: 'NONE' },\n```\n\nMEDIUM was tried and rejected. Filter strength here is a *confidence threshold*, not a\nseverity: HIGH blocks even a low-confidence detection, LOW blocks only high-confidence\nones. At MEDIUM the filter still refused **\"Ignore the restaurant idea, book the other\none instead\"** \u2014 a sentence a user would really type, and the same class of false\npositive as the one this PR was opened to fix. LOW accepts all seven product sentences\nin the probe set and blocks six of the seven attack strings.\n\nThe one attack LOW lets through the filter is still refused, by the model itself and by\nthe `system-prompt-extraction` DENY topic. Verified against the deployed guardrail:\n`apply-guardrail` on \"Yes, create the playlist and give me link here\" returns\n`{\"action\": \"NONE\"}`, and the jailbreak probe returns `GUARDRAIL_INTERVENED` with\ntopic `system-prompt-extraction` and `PROMPT_ATTACK` HIGH \u2192 BLOCKED.\n\n`infra/lib/safety-stack.ts` revision note line 13 records the real value. No code change\nneeded \u2014 the code was always LOW; only this PR's prose was wrong.\n"
+    }
+   ],
+   "by": {
+    "master": 2
+   }
+  },
+  {
+   "add": 8634,
+   "c": "2026-09-05T19:17:42Z",
+   "cf": 103,
+   "del": 45,
+   "labels": [
+    "agent: backend",
+    "agent: qa",
+    "agent: infra"
+   ],
+   "m": "2026-09-05T19:28:42Z",
+   "n": 127,
+   "nc": 1,
+   "ref": "fix/qa-agent-conversation-bug-hunt",
+   "st": "MERGED",
+   "t": "fix(backend): find and fix eleven conversation/tool-usage bugs, with the live suite that found them",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-05T19:28:37Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all four required checks (Lint, Unit 3604/3604, Build, E2E) plus Infra, Smoke, Scope Check and Workflow Regression\n\u2705 Eleven bugs fixed; each hermetic reproducer now asserts the fixed behaviour\n\u2705 Bug 3's fix verified end-to-end against live Spotify, not only in a stub\n\u2705 No write tool was ever confirmed during the hunt; the no-args logging contract is unchanged\n\u2705 QA signed off \u2014 `eval/` is qa-agent's own work and `docs/bug-hunt/BUGS.md` is its report\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 214,
+   "c": "2026-09-05T19:35:54Z",
+   "cf": 10,
+   "del": 7,
+   "labels": [
+    "agent: backend"
+   ],
+   "m": "2026-09-05T19:41:59Z",
+   "n": 128,
+   "nc": 1,
+   "ref": "fix/backend-confirm-reply-leak",
+   "st": "MERGED",
+   "t": "fix(backend): stop showing users the instructions written for the model",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-05T19:41:47Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 `Lint`, `Unit Tests` (3632), `Build`, `E2E` all pass; `Smoke Test` and `Workflow Automation Regression` green too. The `Build (vite)` failure on the first run was a concurrency cancellation (two runs fired 8s apart, push + PR open), not a defect \u2014 the re-run passes in 7s.\n\u2705 No \u274c blocking issues.\n\u2705 Not user-facing in the UI sense \u2014 no client code changes \u2014 so no QA sign-off gate. It *is* user-visible in what Valentin says, and that behaviour is pinned by the two new orchestrator tests.\n\nThe fix is at the right level. The bug was reported as \"Spotify says something strange\", and the tempting fix was to reword the Spotify string; instead this separates the two audiences at the contract \u2014 `summary` for the model, `reply` for the person \u2014 so the other six confirmable tools stop leaking as well. The fallback deliberately refuses to infer success from `ok`, which is correct: `propose_playlist` returns `ok: true` on a refusal.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging.\n"
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 47,
+   "c": "2026-09-05T19:45:09Z",
+   "cf": 2,
+   "del": 9,
+   "labels": [
+    "agent: backend"
+   ],
+   "m": "2026-09-05T19:55:39Z",
+   "n": 129,
+   "nc": 1,
+   "ref": "fix/backend-reminder-target-fallback",
+   "st": "MERGED",
+   "t": "fix(backend): resolve the reminder recipient at send time, not only at plan time",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-05T19:55:17Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all four required checks pass (`Lint`, `Unit Tests`, `Build`, `E2E Tests`),\nplus `Smoke Test`, `Workflow Automation Regression` and `Scope Check`.\n\u2705 No \u274c blocking issues.\n\u2705 Not user-facing UI \u2014 no QA sign-off gate; the behaviour is covered by two new\ndispatcher tests (mails the owner for a null-target row; still skips without claiming\nwhen the deployment names no owner).\n\nThe `Scope Check` failure on the first run was the branch being 13 commits behind main,\nnot a missing label: the path detector's two-way diff reported main's own newer files\n(`.gitignore`, `CONTRIBUTING.md`, `tsconfig.json`, `vite.config.ts`, \u2026) as changed here.\nUpdating the branch dropped it back to the two files this PR actually touches.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging.\n"
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 79,
+   "c": "2026-09-05T19:45:28Z",
+   "cf": 1,
+   "del": 0,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-09-05T19:49:40Z",
+   "n": 130,
+   "nc": 1,
+   "ref": "chore/infra-spotify-secret-reconcile",
+   "st": "MERGED",
+   "t": "chore(infra): script the Spotify secret reconciliation",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-05T19:49:04Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 `Lint`, `Unit Tests`, `Build`, `E2E` all pass. `Build`/`E2E` report via the no-op path since this touches no app code, and `Scope Check` is satisfied by `agent: infra`. The first-run `Build` failure was a concurrency cancellation, not a defect.\n\u2705 No \u274c blocking issues.\n\nAmending what the description says about merging. It claimed this should stay unmerged because it performs a secret write and an ECS restart \u2014 but the *script* does none of that until someone runs it. Merging an inert file and executing it are different acts, and only the second is a deploy. Keeping it on a branch would just mean checking that branch out before running it, for no safety gained.\n\nSo: merging the file, **not** running it. The Secrets Manager write and the service restart remain the repo owner's to trigger, via `bash scripts/fix-spotify-secret.sh` from `main`.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging.\n"
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 144,
+   "c": "2026-09-05T19:49:04Z",
+   "cf": 4,
+   "del": 4,
+   "labels": [
+    "agent: backend",
+    "agent: infra"
+   ],
+   "m": "2026-09-05T20:07:54Z",
+   "n": 131,
+   "nc": 1,
+   "ref": "fix/backend-shabbat-havdalah-weekday",
+   "st": "MERGED",
+   "t": "fix(backend): name the weekday in check_shabbat, and flag a deferred Havdalah",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-05T20:02:13Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 Lint, Unit (3633), Build, E2E, plus Smoke, Scope Check and Workflow Regression\n\u2705 No \u274c blocking issues\n\u2705 User-facing prose change, verified hermetically; prod re-check to follow the deploy\n\nThis is the follow-on to #127: the window arithmetic was right and the narration was not. Naming the weekday in the tool result is the right layer \u2014 the model cannot overrule it.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 8,
+   "c": "2026-09-06T09:56:17Z",
+   "cf": 3,
+   "del": 8,
+   "labels": [
+    "agent: frontend"
+   ],
+   "m": "2026-09-06T10:02:50Z",
+   "n": 132,
+   "nc": 1,
+   "ref": "feat/frontend-diy-engine-label",
+   "st": "MERGED",
+   "t": "feat(frontend): rename the engine A toggle label to DIY",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-06T10:02:48Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 Lint, Unit (3637), Build, E2E all pass on run 34026040827\n\u2705 Copy-only change routed through the single `ENGINE_COPY` source, so the rail and the scoreboard can't drift\n\u2705 No blocking issues\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 448,
+   "c": "2026-09-06T18:50:44Z",
+   "cf": 6,
+   "del": 39,
+   "labels": [
+    "agent: frontend"
+   ],
+   "m": "2026-09-06T19:07:14Z",
+   "n": 133,
+   "nc": 1,
+   "ref": "feat/frontend-inspector-timestamps-fold",
+   "st": "MERGED",
+   "t": "feat(frontend): timestamp and fold every action in the inspector feed",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-06T19:07:12Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green on the newest run (Lint \u00b7 Unit \u00b7 Build \u00b7 E2E \u00b7 Scope Check \u00b7 Workflow Regression; Infra/Smoke path-skipped)\n\u2705 No \u274c blocking issues\n\u2705 Verified locally against a real Bedrock turn \u2014 screenshots in `screenshots/verify/inspector-feed-*.png`\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 1539,
+   "c": "2026-09-06T20:07:29Z",
+   "cf": 17,
+   "del": 414,
+   "labels": [
+    "agent: frontend",
+    "agent: qa",
+    "agent: infra"
+   ],
+   "m": null,
+   "n": 134,
+   "nc": 0,
+   "ref": "fix/frontend-inspector-flow-sequencing",
+   "st": "OPEN",
+   "t": "fix(frontend): stop the inspector flow jumping, and share the two cross-engine cards",
+   "thread": [],
+   "by": {}
+  },
+  {
+   "add": 30,
+   "c": "2026-09-12T11:31:36Z",
+   "cf": 8,
+   "del": 1,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-09-12T11:49:12Z",
+   "n": 135,
+   "nc": 1,
+   "ref": "chore/pptx-decks",
+   "st": "MERGED",
+   "t": "docs(deck): collect v9-v12 and the assumptions slide under pptx/",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-12T11:49:09Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all four required checks pass\n\u2705 Ownership row added for `pptx/` in both the parser table and CONTRIBUTING.md, so the drift test stays honest\n\u2705 No user-facing change, so no QA sign-off needed\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 131,
+   "c": "2026-09-12T11:44:46Z",
+   "cf": 7,
+   "del": 142,
+   "labels": [
+    "agent: frontend",
+    "agent: qa"
+   ],
+   "m": "2026-09-12T11:59:09Z",
+   "n": 136,
+   "nc": 1,
+   "ref": "fix/frontend-remove-amadeus-whatsapp",
+   "st": "MERGED",
+   "t": "fix(frontend): drop the Amadeus and WhatsApp rows from the reach panel",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-12T11:55:02Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green (Lint \u00b7 Unit \u00b7 Build \u00b7 E2E, plus Scope Check and Workflow Automation)\n\u2705 No \u274c blocking issues \u2014 the two first-round failures were the change's own loose ends: the E2E spec still enumerated both withdrawn rows, and the scope check needed the real label names (`agent: frontend`, `agent: qa`), not the stray `agent: frontend-dev`\n\u2705 User-facing, and covered: the catalogue test pins both ids absent, the E2E spec asserts the nodes are gone, and the credential tests now drive Spotify's form instead\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging once the post-update run finishes. Not deployed, per the request."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 6,
+   "c": "2026-09-12T12:03:58Z",
+   "cf": 2,
+   "del": 3,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-09-12T12:10:54Z",
+   "n": 137,
+   "nc": 1,
+   "ref": "chore/pptx-v13",
+   "st": "MERGED",
+   "t": "docs(deck): add v13, the current hand-edited deck",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-12T12:10:48Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 Lint, Unit, Build, E2E, Scope Check all pass on `3bceb5e`\n\u2705 Scope Check satisfied: only `pptx/` changed, and `agent: infra` owns it\n\u2705 Docs-only change; no product code touched, so no QA sign-off needed\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging.\n"
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 33,
+   "c": "2026-09-12T13:03:55Z",
+   "cf": 2,
+   "del": 6,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-09-12T13:08:56Z",
+   "n": 138,
+   "nc": 1,
+   "ref": "fix/infra-guardrail-phone-output",
+   "st": "MERGED",
+   "t": "fix(infra): stop the PHONE guardrail entity blanking availability replies",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-12T13:08:53Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\nRoot cause was pinned from live logs, not guessed: session `37ce8e87` shows `bedrock.guardrail_intervened` / `pii:PHONE` with a zero-token converse immediately after every phone-bearing `check_availability` result, while the slot-bearing NOEMA/Yaffo answers went through untouched. The fix is the narrowest one that clears it \u2014 PHONE input stays BLOCK, output drops to NONE \u2014 and follows the same precedent `safety-stack.ts` already documents for EMAIL, ADDRESS and NAME. Regression test pins both directions so this can't silently regress.\n\n\u2705 CI green (Lint \u00b7 Unit 3647 \u00b7 Build \u00b7 E2E \u00b7 Infra 119 \u00b7 Scope Check)\n\u2705 No \u274c blocking issues\n\u2705 No UI change \u2014 guardrail config only, QA sign-off n/a\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 303,
+   "c": "2026-09-13T07:49:36Z",
+   "cf": 7,
+   "del": 58,
+   "labels": [
+    "agent: frontend",
+    "agent: design",
+    "agent: qa"
+   ],
+   "m": "2026-09-13T07:57:23Z",
+   "n": 139,
+   "nc": 2,
+   "ref": "feat/frontend-integration-health-dots",
+   "st": "MERGED",
+   "t": "feat(frontend): green/red health dot per reach-panel row, and delete the Amadeus/WhatsApp leftovers",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-13T07:50:02Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 local verification detail\n\n`screenshots/verify/` is gitignored, so here is what the screenshot shows, read off the\nDOM rather than described: every row's `data-health`, against the same local stack the\npanel screenshot came from (`localhost:5291`, backend on `3191`).\n\n| row | dot | caption |\n|---|---|---|\n| Ontopo | \ud83d\udfe2 live | live |\n| Google Places | \ud83d\udd34 problem | needs credentials |\n| Google Calendar | \ud83d\udd34 problem | needs credentials |\n| Wolt | \ud83d\udfe2 live | live |\n| Spotify | \ud83d\udd34 problem | needs credentials |\n| Gmail | \ud83d\udd34 problem | needs credentials |\n| Web search | \ud83d\udfe2 live | live |\n| Hebrew calendar | \ud83d\udfe2 live | live |\n\nEight rows, which is the catalogue \u2014 no Amadeus, no WhatsApp. Zero console errors. The\nred rows are red because *this machine* holds no Google or Spotify credentials, not\nbecause of anything in the catalogue: the deployed environment has Google and Spotify\nconfigured and will show those two green, which is exactly why the E2E asserts the dot\nagainst the caption rather than against a fixed colour per row."
+    },
+    {
+     "by": "master",
+     "at": "2026-09-13T07:57:18Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 Lint, Unit (3655), Build, E2E all pass; Scope Check accepts the three lane labels\n\u2705 No \u274c blocking issues\n\u2705 User-facing change verified in a real browser locally, per-row health readout above\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging, then deploying the frontend, which is what finally\ntakes Amadeus and WhatsApp out of the running app."
+    }
+   ],
+   "by": {
+    "master": 2
+   }
+  },
+  {
+   "add": 412,
+   "c": "2026-09-13T07:55:49Z",
+   "cf": 6,
+   "del": 5,
+   "labels": [
+    "agent: backend"
+   ],
+   "m": "2026-09-13T11:48:19Z",
+   "n": 140,
+   "nc": 1,
+   "ref": "fix/backend-capability-denial",
+   "st": "MERGED",
+   "t": "fix(backend): stop Valentin denying tools he has (the \"no link to this conversation\" refusal)",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-13T11:48:06Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green on the updated branch \u2014 all four required checks (`Lint`, `Unit Tests`, `Build`, `E2E Tests`) plus `Smoke Test`, `Workflow Automation Regression` and `Scope Check`\n\u2705 Branch brought up to date with main (37 commits) and re-verified locally: 3755 tests, 200 files, lint clean\n\u2705 No \u274c blocking issues\n\u2705 Not user-facing \u2014 no UI diff, so no QA sign-off gate. Verified instead against the live model with the prod guardrail attached: `create_conversation_link` \u2192 `propose_email`, real signed `?share=\u2026` URL in the mail body, no leftover placeholder\n\nOne thing worth noting after the update: `prompts.ts` gained a second honesty rule from #146 in the meantime (\"never state an hour you did not fetch\"). It merged cleanly and reads as a companion to this one \u2014 both forbid asserting something the tools never said, pointed in opposite directions.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 222,
+   "c": "2026-09-13T08:03:12Z",
+   "cf": 3,
+   "del": 4,
+   "labels": [
+    "agent: backend"
+   ],
+   "m": "2026-09-13T08:13:41Z",
+   "n": 141,
+   "nc": 1,
+   "ref": "fix/backend-spotify-playlist-link",
+   "st": "MERGED",
+   "t": "fix(backend): a confirmed playlist hands back its Spotify link",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-13T08:13:37Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all four required checks (Lint \u00b7 Unit \u00b7 Build \u00b7 E2E) plus Smoke, Workflow Regression and Scope Check\n\u2705 No \u274c blocking issues\n\u2705 User-facing behaviour verified against the deployed dev app, not just in tests: confirming a playlist returned `https://open.spotify.com/playlist/7ciZkPBZ3GLDII80gcf2k6` in chat unprompted, and the API reads that playlist back with all 5 tracks under owner `coralma`\n\nNote for the record: the Scope Check failed on the first two runs for a reason that is not this PR's fault. It diffs `pull_request.base.sha`..`head.sha` two-dot, and `base.sha` is the base branch *tip* rather than the merge-base \u2014 so once main advanced past the branch point, main's own commits (#139) were attributed to this PR and demanded `agent: frontend`/`qa`/`design` labels. Updating the branch made the two agree. Worth fixing in `ci.yml` separately (three-dot diff, or `git merge-base`), since every PR opened before an unrelated merge will hit it.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 286,
+   "c": "2026-09-13T08:04:58Z",
+   "cf": 4,
+   "del": 17,
+   "labels": [
+    "agent: frontend"
+   ],
+   "m": "2026-09-13T08:34:22Z",
+   "n": 142,
+   "nc": 1,
+   "ref": "fix/frontend-proposal-card-position",
+   "st": "MERGED",
+   "t": "fix(frontend): keep a confirmation card beside the turn that raised it",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-13T08:34:16Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all four required checks pass (`Lint (tsc --noEmit)`, `Unit Tests (vitest)`, `Build (vite)`, `E2E Tests (playwright)`), plus `Scope Check` and `Workflow Automation Regression`. `Infra Tests` and `Smoke Test` correctly path-skipped for a client-only change.\n\u2705 No \u274c blocking issues\n\u2705 User-facing, and verified in a real browser rather than by assertion alone: on `main` the card is the last thing in the transcript with 0 replies below it; on this branch it holds its place with 4 below it. Screenshots in `screenshots/verify/`.\n\nScope is tight \u2014 four files, all `frontend-dev`. `ActionProposalPayload` is untouched, so no server or shared-contract change rides along, and the card's *live* behaviour is deliberately preserved: still last while it awaits a yes.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging.\n"
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 1852,
+   "c": "2026-09-13T08:31:33Z",
+   "cf": 17,
+   "del": 76,
+   "labels": [
+    "agent: frontend",
+    "agent: design"
+   ],
+   "m": "2026-09-13T11:59:32Z",
+   "n": 143,
+   "nc": 2,
+   "ref": "feat/frontend-inspector-glow",
+   "st": "MERGED",
+   "t": "feat(frontend): point at a step in the architecture feed to light up what it produced",
+   "thread": [
+    {
+     "by": "frontend",
+     "at": "2026-09-13T08:59:22Z",
+     "body": "**\u269b\ufe0f Frontend Dev** \u2014 follow-up on the glow's motion\n\nOne refinement after driving it: the pinned pulse now runs three beats and holds, rather than pulsing for as long as the selection lasts (`129ec7d`). The pulse catches the eye; the ring holds the mark. Continued motion beside a transcript someone is reading has nothing left to say once you've looked, and it matches `LearnedStatus`, which announces itself and stops.\n\n`forwards` holds the last keyframe, so **the selection is unchanged** \u2014 the ring stays until the row is clicked again. Confirmed in the browser: mark and 2px ring still present six seconds after the click, pulse settled.\n\nTwo things I verified by test rather than on screen, for the record:\n- **the proposal-card glow** \u2014 no `propose_*` tool fired in my sessions, so `data-proposal-service` is covered by unit tests and the selector test, not by a screenshot. The integration-tile half of the same target *was* verified live against a real `check_shabbat` call.\n- **scroll-into-view for an off-screen target** \u2014 asserted numerically in jsdom (centring maths, and that an already-visible target is left alone), since every target happened to be on screen during the live runs.\n\nAll five checks green on `129ec7d`: Lint \u00b7 Unit (3717) \u00b7 Build \u00b7 E2E (30, chromium) \u00b7 Scope Check."
+    },
+    {
+     "by": "master",
+     "at": "2026-09-13T11:59:22Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 Lint \u00b7 Unit (3780) \u00b7 Build \u00b7 E2E (chromium) \u00b7 Scope Check, all passing on the up-to-date branch\n\u2705 No \u274c blocking issues\n\u2705 User-facing change verified in a real browser against live Bedrock traffic: the `Noted \u00b7 Chinese food` badge and its brief-rail chip both ring from one click on \"learns something new\", the reply rings from its own `agent_message` row, and a real `check_shabbat` call rings the hebcal tile\n\nThe merge from main caught one silent regression worth noting: main renamed engine B's nodes (`ac-integrations`/`ac-dynamodb` \u2192 `ac-lambda-profile`/`ac-lambda-tools`), and `INTEGRATION_RESOURCE_IDS` still keyed on the old names \u2014 so on AgentCore a tool row would have been captioned \"asks the outside world\" and glowed nothing. Fixed, tied by comment to `SPAN_ACTION` so the two cannot drift again, and covered by a test over both engine B hops.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "frontend": 1,
+    "master": 1
+   }
+  },
+  {
+   "add": 5034,
+   "c": "2026-09-13T09:10:03Z",
+   "cf": 38,
+   "del": 1166,
+   "labels": [
+    "agent: frontend",
+    "agent: backend",
+    "agent: qa",
+    "agent: infra"
+   ],
+   "m": "2026-09-13T09:32:17Z",
+   "n": 144,
+   "nc": 1,
+   "ref": "feat/frontend-shared-data-topology",
+   "st": "MERGED",
+   "t": "feat(frontend): one shared data layer, the Gateway's Lambdas and its registered tools",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-13T09:30:56Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 `Lint (tsc --noEmit)`, `Unit Tests (vitest)` 3728 passing, `Build (vite)`, `E2E Tests (playwright)`, plus Scope Check, Smoke and Workflow Regression. `Infra Tests` path-skipped (no `infra/**` change in the diff against current main).\n\nThe one red mark is `refresh`, which is not a required check: it regenerates a graph and pushes straight to `main`, and the ruleset rejects that push on every PR. Unrelated to this diff.\n\n\u2705 No \u274c blocking issues.\n\n\u2705 QA sign-off \u2014 verified locally rather than by deploy. `npm run verify:local` on dedicated ports; all fifteen topology and drawer assertions pass, with only the two recorded `bedrock:InvokeModel` denials for the local IAM user failing. Engine B checked in a real browser: registry panel active naming both Lambdas and their entry points, greyed with its reason on engine A, one DynamoDB card, one External APIs card, one strip of provider marks, and the walkthrough reachable after the socket has taken over.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 90,
+   "c": "2026-09-13T09:56:21Z",
+   "cf": 2,
+   "del": 12,
+   "labels": [
+    "agent: qa",
+    "agent: infra"
+   ],
+   "m": "2026-09-13T10:09:34Z",
+   "n": 145,
+   "nc": 1,
+   "ref": "fix/qa-rehearsal-login-gate",
+   "st": "MERGED",
+   "t": "fix(qa): let the rehearsal verify the deployed app, and fix four assertions that could not",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-13T10:09:28Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green on `d5f7d3b` \u2014 Lint \u00b7 Unit \u00b7 Build \u00b7 E2E, plus Scope Check with both `agent: qa` and `agent: infra`\n\u2705 No blocking issues\n\u2705 QA sign-off: this *is* the QA change, and it is verified where it matters \u2014 `ALL PASS (27/27)` against https://d26dwovftfq9oe.cloudfront.net, the first time this script has verified the deployed app at all\n\nThe four corrected assertions are the substance here. `followed real traffic into live mode` was the dangerous one: spelled in sentence case against an uppercase-rendered caption, it could not fail, and it was reporting PASS against a deployed drawer that was still sitting on the scripted walkthrough. The other three could only ever fail, and locally they failed for the unrelated `bedrock:InvokeModel` denial \u2014 which is exactly the noise that let a false pass sit unnoticed.\n\nNo deploy needed: this touches `rehearsal.mjs` and `docs/` only.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging.\n"
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 161,
+   "c": "2026-09-13T10:50:08Z",
+   "cf": 3,
+   "del": 3,
+   "labels": [
+    "agent: backend",
+    "agent: infra"
+   ],
+   "m": "2026-09-13T11:09:04Z",
+   "n": 146,
+   "nc": 1,
+   "ref": "fix/backend-availability-honesty",
+   "st": "MERGED",
+   "t": "fix: never claim an hour nobody fetched, and judge a weekday by its own date",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-13T11:08:58Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all four required checks (`Lint`, `Unit Tests`, `Build`, `E2E Tests`) pass on `e501b3d`, plus Scope Check, Smoke Test and Workflow Regression. Infra Tests path-skipped.\n\u2705 Scope Check satisfied for both lanes \u2014 `agent: backend` covers `src/server/agent/**`, `agent: infra` covers `scripts/**`.\n\u2705 All \u274c blocking issues resolved\n\u2705 QA signed off \u2014 the driver changes were proved against the two real replies that failed and against the recorded failure the guard exists for, which still fails (9/9)\n\nOne honest note for the record, since it changes how the prompt fix should be read: a later recording take cleared the `check_availability` assertion **against the currently deployed backend**, i.e. without this prompt change live. So take 1's abort was the model skipping the availability call on that sample, not a broken Ontopo path \u2014 CloudWatch already showed 9 successful `check_availability` calls. The `TOOL_GUIDANCE` rule is hardening against a recurrence of a failure mode that matters (he turns up to an hour nobody checked), not the fix that rescued the recording.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 96,
+   "c": "2026-09-13T11:48:15Z",
+   "cf": 1,
+   "del": 45,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-09-13T12:07:10Z",
+   "n": 147,
+   "nc": 1,
+   "ref": "fix/qa-assert-the-mail-send",
+   "st": "MERGED",
+   "t": "fix(qa): send the mail and check it, instead of waiting and claiming it",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-13T11:57:56Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all four required checks pass (`Lint`, `Unit Tests`, `Build`, `E2E Tests`), plus Scope Check with `agent: infra`. Infra Tests and Smoke Test path-skipped. `refresh` is red, as it is on every PR in this repo, and is not required.\n\u2705 The affordance being clicked is confirmed present in the *deployed* bundle, not just in source \u2014 `share-trigger`, `share-email`, `share-outcome`, `Email it to me` and `Sent. Check your inbox` all grep out of `/assets/index-BURDAwcX.js`.\n\u2705 Blocking issue resolved: no caption can now claim a mail exists unless the app said it sent.\n\n**One caveat, stated rather than glossed:** the new beat has not yet been executed end to end. The take recorded after this commit aborted *earlier*, at inspection moment 4 \u2014 the model named a table hour with zero `check_availability` spans behind it, which is the failure #146's prompt rule forbids and which is merged but **not yet deployed**. So the mail assertion is reviewed and green in CI, but no recording has reached it yet.\n\nMerging anyway, because the alternative is leaving `main` with a beat that captions \"Gone. Sent by code \u2014 it is in <address>\" on the strength of a timer having expired, when the logs for the take that did exactly that hold no `reminder.sent` at all. A beat that might abort is strictly better than a beat that lies.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 58,
+   "c": "2026-09-13T12:14:45Z",
+   "cf": 4,
+   "del": 3,
+   "labels": [
+    "agent: frontend"
+   ],
+   "m": "2026-09-13T12:29:33Z",
+   "n": 148,
+   "nc": 1,
+   "ref": "fix/frontend-tool-glow-overflow",
+   "st": "MERGED",
+   "t": "fix(frontend): glow the overflow chip for a tool the strip folded away",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-13T12:29:26Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 Lint \u00b7 Unit \u00b7 Build \u00b7 E2E \u00b7 Scope Check\n\u2705 No \u274c blocking issues\n\u2705 This is the fix for the one gap the dev deployment exposed that local runs could not: the strip folds services past `MAX_TILES`, so `check_shabbat`'s hebcal tile had no DOM node there and the glow silently did nothing.\n\nThe first CI run on this branch caught a second thing worth recording: the ownership test failed because a Playwright screenshot written to the worktree root had been swept into the commit. Removed in `f067fca` \u2014 verification screenshots belong in `screenshots/verify/`, which is ignored. The guard did its job.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging.\n"
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 406,
+   "c": "2026-09-13T12:30:23Z",
+   "cf": 4,
+   "del": 11,
+   "labels": [
+    "agent: backend",
+    "agent: infra"
+   ],
+   "m": "2026-09-13T12:41:09Z",
+   "n": 149,
+   "nc": 1,
+   "ref": "fix/backend-google-token-diagnosability",
+   "st": "MERGED",
+   "t": "fix(backend): say why Google refused, and make the dead token replaceable",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-13T12:41:03Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green on `ecf1363` \u2014 all four required checks (`Lint`, `Unit Tests`, `Build`, `E2E Tests`) pass, plus Scope Check, Smoke Test and Workflow Regression. Infra Tests path-skipped.\n\u2705 Scope Check satisfied for both lanes \u2014 `agent: backend` covers `src/server/integrations/google/**`, `agent: infra` covers `scripts/**` and `package.json`.\n\u2705 The diagnosis is proved, not inferred: the deployed refresh token answers `400 invalid_grant \u2014 Token has been expired or revoked`, and the set in `.env` answers `200` with all four scopes. Same client id, same client secret, different token \u2014 so this is expiry, not a client mismatch, and no OAuth re-consent is needed.\n\u2705 QA signed off \u2014 the new test asserts the `invalid_grant` slug *and* that the hint names the fix, so the failure mode this PR exists for cannot silently return.\n\n**Two things this deliberately does not do, stated so nobody reads more into the merge than is there:**\n\n1. **It does not end the outage.** `ecs.Secret.fromSecretsManager` injects the value at task start, so the running container keeps the dead token until it is replaced. Both remaining steps are closed to an agent session \u2014 the secret write is refused as `[Secret-Store Writes]`, and this IAM user has no `ecs:DescribeServices` let alone `UpdateService`. They are one human command each.\n\n2. **It does not fix the env-wins trap it uncovered.** `loadRemoteCredentials` fills only fields that are *unset*, and the task definition always sets `GOOGLE_REFRESH_TOKEN` from the secret \u2014 so a Google reconnect through the panel writes `valentin/dev/integrations/google` and is then overridden at every boot by the env var. That is the same shape as the already-known Spotify env-wins problem and deserves its own change rather than a drive-by fix here; `applyGoogleRefreshToken` mutating live config is why the panel appears to work in the session that ran it and not afterwards.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 76,
+   "c": "2026-09-13T12:55:56Z",
+   "cf": 1,
+   "del": 13,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-09-13T12:59:59Z",
+   "n": 150,
+   "nc": 1,
+   "ref": "fix/infra-google-secret-write",
+   "st": "MERGED",
+   "t": "fix(infra): write the Google secret from a file, and never echo the payload",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-13T12:59:52Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green on `cb933a2` \u2014 all four required checks pass (`Lint`, `Unit Tests`, `Build`, `E2E Tests`), plus Scope Check and Workflow Regression. Infra Tests and Smoke Test path-skipped, correctly: this touches `scripts/` only.\n\u2705 Scope Check satisfied \u2014 `agent: infra` covers `scripts/**`.\n\u2705 The mechanism is proved, not assumed. All three ways of passing the value were tried against `describe-secret` before the change: `file://<real path>` accepted, `file:///dev/stdin` rejected as `Invalid JSON received`, `fileb://` rejected as bytes. The probe also confirmed the `finally` removes the temp directory.\n\u2705 `tsc --strict` run on the file directly, because `scripts/` is outside `tsconfig.json`'s `include` \u2014 the repo lint does not cover this file, so a typo here would otherwise only surface at rotation time, which is precisely when nobody wants to debug it.\n\n**The leak is the part worth naming.** The original error was not just \"the write fails\" \u2014 the AWS CLI's parameter-validation message quotes the rejected value in full, so the one untested path in a script built around \"fingerprints, never values\" printed a live client secret and refresh token into a terminal. Fixing the byte/string confusion alone would have closed the observed failure and left the leak mechanism intact for the next unexercised path. Hence the `sensitive` set and scrubbing on every exit route, not just the one that fired.\n\n**Still not ended by this merge:** the outage. `ecs.Secret.fromSecretsManager` injects at task start, so the running container holds the dead token until it is replaced. Both halves remain human steps \u2014 the secret write is refused to an agent session as `[Secret-Store Writes]`, and this IAM user has no ECS permissions at all.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 356,
+   "c": "2026-09-13T14:05:39Z",
+   "cf": 6,
+   "del": 9,
+   "labels": [
+    "agent: frontend",
+    "agent: backend"
+   ],
+   "m": "2026-09-13T15:45:34Z",
+   "n": 151,
+   "nc": 2,
+   "ref": "fix/backend-gateway-span-invisible",
+   "st": "MERGED",
+   "t": "fix(backend): report the Gateway hop, so the Gateway card is not dark",
+   "thread": [
+    {
+     "by": null,
+     "at": "2026-09-13T15:45:28Z",
+     "body": "@/Users/coralst/.claude/jobs/aff0ff69/tmp/approve151.md"
+    },
+    {
+     "by": null,
+     "at": "2026-09-13T16:05:59Z",
+     "body": "@/Users/coralst/.claude/jobs/aff0ff69/tmp/verify151.md"
+    }
+   ],
+   "by": {}
+  },
+  {
+   "add": 7,
+   "c": "2026-09-13T16:05:28Z",
+   "cf": 1,
+   "del": 3,
+   "labels": [
+    "agent: backend"
+   ],
+   "m": "2026-09-13T16:10:29Z",
+   "n": 152,
+   "nc": 1,
+   "ref": "fix/backend-gateway-hop-comment",
+   "st": "MERGED",
+   "t": "docs(backend): correct the Gateway hop's emit-order rationale",
+   "thread": [
+    {
+     "by": null,
+     "at": "2026-09-13T16:10:27Z",
+     "body": "@/Users/coralst/.claude/jobs/aff0ff69/tmp/approve152.md"
+    }
+   ],
+   "by": {}
+  },
+  {
+   "add": 1628,
+   "c": "2026-09-13T16:17:55Z",
+   "cf": 15,
+   "del": 51,
+   "labels": [
+    "agent: frontend"
+   ],
+   "m": null,
+   "n": 153,
+   "nc": 0,
+   "ref": "feat/frontend-separate-zoom",
+   "st": "OPEN",
+   "t": "feat(frontend): zoom the shell and the architecture independently",
+   "thread": [],
+   "by": {}
+  },
+  {
+   "add": 903,
+   "c": "2026-09-13T16:20:00Z",
+   "cf": 10,
+   "del": 92,
+   "labels": [
+    "agent: architect",
+    "agent: frontend",
+    "agent: backend"
+   ],
+   "m": null,
+   "n": 154,
+   "nc": 0,
+   "ref": "fix/frontend-live-flow-captions",
+   "st": "OPEN",
+   "t": "fix(frontend): caption each flow beat with the call it actually was",
+   "thread": [],
+   "by": {}
+  },
+  {
+   "add": 104,
+   "c": "2026-09-13T16:26:46Z",
+   "cf": 28,
+   "del": 173,
+   "labels": [
+    "agent: architect",
+    "agent: frontend",
+    "agent: backend",
+    "agent: qa"
+   ],
+   "m": "2026-09-13T16:47:26Z",
+   "n": 155,
+   "nc": 1,
+   "ref": "fix/frontend-remove-bra-size",
+   "st": "MERGED",
+   "t": "fix(frontend): remove the bra size field from the profile",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-13T16:42:30Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\nRemoving the row turned out to mean removing the field. `profile-field-registry.test.ts` pins the client registry to `PROFILE_FIELD_IDS` id-for-id and in order, so there was no legal \"hide it in the UI only\" state \u2014 the deletion had to reach `src/shared/constants/profile-fields.ts`. That is the right call anyway: a field the panel cannot draw but the extractor still fills is a fact nobody can see or correct.\n\nTwo things worth recording:\n\n\u2705 The Hebrew/RTL handling came out with it. `hebrewLabelStyle` and the `dir=\"rtl\"` branch had exactly one caller; leaving them would have left styling for a row that cannot exist.\n\n\u26a0\ufe0f CI caught the one thing local greps could not. `e2e/tests/her-file.spec.ts` asserted the *seeded value* `34B` and a `[lang=\"he\"]` selector \u2014 neither string contains \"bra\" or the Hebrew label, so a grep for the field id and the label came back clean while the spec was still pinned to the removed row. Fixed in 5405121, re-verified on an isolated port pair.\n\nThe four test files that used `bra_size` as a throwaway field id moved to `clothing_size`. Worth being explicit that this is not incidental churn: `isProfileFieldId` now rejects `bra_size`, so the manual-value route would answer `400` and those tests would have failed for a reason that had nothing to do with what they test.\n\n\u2705 All nine checks green \u2014 Lint \u00b7 Unit (3817) \u00b7 Build \u00b7 E2E \u00b7 Scope Check (four lanes, all labelled) \u00b7 Smoke \u00b7 Workflow Regression. Infra skipped, no CDK in the diff.\n\u2705 Verified locally before CI, on ports 3021/5221 rather than the shared 5173 \u2014 a first rehearsal against 5173 was serving another session's bundle and its failures were meaningless. SIZES reads 4 of 4; the Hebrew label is asserted absent, not eyeballed.\n\u2705 No \u274c blocking issues.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 62,
+   "c": "2026-09-13T16:36:15Z",
+   "cf": 2,
+   "del": 21,
+   "labels": [
+    "agent: infra"
+   ],
+   "m": "2026-09-13T16:41:14Z",
+   "n": 156,
+   "nc": 1,
+   "ref": "fix/infra-guardrail-sexual-low",
+   "st": "MERGED",
+   "t": "fix(infra): screen the prompt for SEXUAL at LOW, not MEDIUM",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-13T16:41:08Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\nMeasured before changing anything, which is what makes this one easy to sign off:\nthe threshold move is justified by numbers in the PR body rather than by a hunch.\nMEDIUM was refusing `she loves massages and long baths` \u2014 that is the product's own\nsubject matter, and it was losing the preference extraction on the same turn.\n\n\u2705 CI green \u2014 all four required gates plus Infra Tests, Scope Check and Workflow\n   Regression. Smoke Test correctly skipped (no server code touched).\n\u2705 `POLICY_REVISION` bumped to 10 in the same commit as the policy edit, with the\n   changelog line, per this file's standing convention.\n\u2705 The regression test moved with the policy instead of being deleted, and carries\n   the measured counter-examples.\n\u2705 No \u274c blocking issues. Not user-facing UI, so no QA sign-off gate.\n\nTwo things I want on the record rather than buried:\n\nThe residual is stated honestly \u2014 `she likes surfing and nudging` scores HIGH and is\nstill refused. LOW narrows this class without closing it, and closing it would cost\nall six explicit blocks. That is the right trade, and the PR says so out loud\ninstead of claiming the problem is solved.\n\nThe `POLICY_REVISION` comment correction matters more than it looks. The old text\nsaid the bump is \"what makes an edit reach production\"; the task definition reads\n`DRAFT`, so edits land on the Safety deploy and the numbered version is only a\nsnapshot. Anyone trusting the old comment would sit waiting for an ECS rollout that\nwas never coming.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging.\n\nNot yet live: this needs `bash scripts/deploy.sh dev --scope=infra` from a local\nshell, since CDK deploys are blocked from background sessions.\n"
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 2417,
+   "c": "2026-09-13T17:51:13Z",
+   "cf": 34,
+   "del": 79,
+   "labels": [
+    "agent: architect",
+    "agent: frontend",
+    "agent: backend",
+    "agent: infra"
+   ],
+   "m": null,
+   "n": 157,
+   "nc": 0,
+   "ref": "feat/backend-reminder-awareness",
+   "st": "OPEN",
+   "t": "feat: full tool awareness on both engines, and reminders on Valentin's own calendar",
+   "thread": [],
+   "by": {}
+  },
+  {
+   "add": 191,
+   "c": "2026-09-13T18:05:59Z",
+   "cf": 4,
+   "del": 21,
+   "labels": [
+    "agent: backend",
+    "agent: infra"
+   ],
+   "m": "2026-09-13T18:40:02Z",
+   "n": 158,
+   "nc": 1,
+   "ref": "fix/backend-calendar-timezone",
+   "st": "MERGED",
+   "t": "fix(backend): tell the model the real hour of a calendar event",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-13T18:37:50Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\nMerged `main` in first, because #159 landed the same timezone diagnosis while this was in review and the two branches edited the same two files. That merge was the substantive part of this round, so it is worth recording what survived it:\n\n- Main's `describeSpan` replaces this branch's `describeEvent` fix outright. Same diagnosis, and it renders the end time too \u2014 which this branch could not, because `readEvent` did not parse Google's `end` until #159 added it. Kept main's.\n- Main's `mergeFairly` replaces this branch's `dedupe`. It deduplicates on `summary|start|end` *and* spends the row budget round-robin across calendars, so a quiet personal calendar is no longer crowded out by the holiday feed subscribed to twice. Strictly better than collapsing duplicates alone. Kept main's.\n- What main does not have, and what this PR is now for: there was no way to ask about a date at all. `on_date` (DST-exact \u2014 the exclusive end is the next *civil* date, not `start + 24h`), a date-shaped `query` read as a date instead of being handed to Google's free-text `q`, and an empty-search summary that can no longer be mistaken for \"that day is free\". Plus `on_date` on `SAFE_INPUT_KEYS` so the checked date shows in the activity trail.\n\nAlso removed a NUL byte this branch had introduced into `client.ts` \u2014 it made git and grep treat the file as binary, which is how it went unnoticed through the first green CI run.\n\n\u2705 CI green \u2014 Lint, Unit, Build, E2E, plus Scope Check, Infra, Smoke and Workflow Regression\n\u2705 Full suite re-run locally after the merge: 3734 passed, 0 failed\n\u2705 Re-verified against the live calendar under `TZ=UTC`: `on_date=2026-09-23` \u2192 `busy evening \u2014 Wed 23 Sept, 17:00\u201322:00`\n\u2705 No \u274c blocking issues\n\u2705 User-facing behaviour change verified against the real account rather than a fixture\n\nOne thing deliberately left out of scope, flagged so it is not rediscovered as a regression: the Gateway Lambda `valentin-integration-tools-dev` registers 13 tools and **no** `google-calendar`, so engine B cannot read the calendar by any path. That will present exactly like this bug to anyone testing through it.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging.\n"
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 725,
+   "c": "2026-09-13T18:16:12Z",
+   "cf": 5,
+   "del": 20,
+   "labels": [
+    "agent: backend",
+    "agent: infra"
+   ],
+   "m": "2026-09-13T18:29:43Z",
+   "n": 159,
+   "nc": 1,
+   "ref": "fix/backend-calendar-conflicts",
+   "st": "MERGED",
+   "t": "fix(backend): notice when a calendar slot is already taken",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-13T18:29:37Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all 9 jobs, including the four required contexts (`Lint (tsc --noEmit)`, `Unit Tests (vitest)`, `Build (vite)`, `E2E Tests (playwright)`)\n\u2705 All \u274c blocking issues resolved \u2014 none were raised\n\u2705 Verified against the live calendar with the process in **UTC**, which is what the container runs: a 13:00 dinner on Mon 14 Sep is refused with `\u05e1\u05d9\u05d1\u05d5\u05e1 \u2014 Mon 14 Sept, 08:00\u201316:00` and offers 16:00, 18:00 or 20:00; 19:00 is offered as a card\n\nNote for whoever picks up **#158**: it edits `google/tools.ts` and `google/client.ts` too and will need a rebase after this lands. The overlap is the `describeEvent` timezone fix and the duplicate-feed dedupe; `on_date` is unique to #158 and still worth having.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging.\n"
+    }
+   ],
+   "by": {
+    "master": 1
+   }
+  },
+  {
+   "add": 880,
+   "c": "2026-09-13T18:16:53Z",
+   "cf": 8,
+   "del": 52,
+   "labels": [
+    "agent: backend"
+   ],
+   "m": "2026-09-13T18:45:08Z",
+   "n": 160,
+   "nc": 1,
+   "ref": "feat/backend-ontopo-reservation-mail",
+   "st": "MERGED",
+   "t": "feat(backend): mail the reservation summary after every Ontopo confirm",
+   "thread": [
+    {
+     "by": "master",
+     "at": "2026-09-13T18:29:54Z",
+     "body": "**\ud83d\udc54 Master Agent** \u2014 Review Complete\n\n\u2705 CI green \u2014 all four required contexts pass (`Lint (tsc --noEmit)`, `Unit Tests (vitest)`, `Build (vite)`, `E2E Tests (playwright)`), plus Smoke Test, Workflow Automation Regression and Scope Check. `Infra Tests` path-skipped, correctly \u2014 this change touches no CDK.\n\u2705 All \u274c blocking issues resolved \u2014 none were raised.\n\u2705 QA sign-off \u2014 not required: no UI surface. The change adds one sentence to an existing tool reply and a new outbound mail body, and both are covered by unit tests rather than a browser flow.\n\nReviewed the substance, not just the checkmarks. Three things I specifically wanted to be true before merging, and are:\n\n- **The unbooked body cannot read as a booking.** `booked` traces to Ontopo's own confirmation text via `checkout-form.ts` and nothing weaker, the two bodies are separate documents rather than one with a hedge, and `reservation-email.test.ts` asserts the handoff body against the booked one \u2014 not merely against itself.\n- **A mail failure cannot cost a reservation.** `sendReservationSummary` never throws, `confirm` guards the call anyway so `observed` can't turn a mail bug into \"I could not complete that booking\" for a booking that completed, and there is a test that holds a confirmed booking through a throwing send.\n- **Cards already on screen survive.** The payload grew `place`/`city`/`occasion`, and a proposal minted before this deploys still mails with those lines omitted. Tested directly.\n\nAlso endorsing the split: commit 1 is a genuine pure refactor that removes two duplications this feature would have tripled, and the note about why `notifyAddressForTool` can't live in `notify-email.ts` (import cycle through `reminder-sync`) is the kind of reasoning worth having in the tree.\n\nAPPROVED-BY-MASTER-AGENT \ud83d\udfe2 \u2014 merging."
+    }
+   ],
+   "by": {
+    "master": 1
+   }
   }
  ]
 }

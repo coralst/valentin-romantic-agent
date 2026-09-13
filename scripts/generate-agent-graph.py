@@ -14,6 +14,11 @@ the work landed in bursts.
 Usage:
     python3 scripts/generate-agent-graph.py            # render from the snapshot
     python3 scripts/generate-agent-graph.py --refresh   # re-query GitHub first
+
+    --slot N  --node-scale F  --no-node-labels  --out NAME
+        Fit the same graph into a narrower box. Used by
+        scripts/build-pr-graph-slide.py, which computes the values it needs from
+        the slide's picture box; the defaults are the web render.
 """
 
 from __future__ import annotations
@@ -55,6 +60,13 @@ GOLD = "#A8762B"
 GUTTER, SLOT = 250, 41
 SPINE_Y, LANE_TOP, LANE_H = 150, 224, 70
 PAD_RIGHT = 40
+
+# Render knobs, for fitting the same graph into a fixed box. The defaults are
+# the web render; a deck slide has a hard width, so as the PR count grows the
+# slide render narrows SLOT and shrinks the nodes to match (see
+# scripts/build-pr-graph-slide.py). Data and design are untouched either way.
+NODE_SCALE = 1.0
+NODE_LABELS = True
 
 
 def agent_of(pr: dict) -> str:
@@ -386,7 +398,7 @@ def build(prs: list[dict], commits: int, merges: int) -> str:
         key = pr["agent"]
         colour = colour_of[key]
         x, y = x_of[pr["n"]], lane_y[key]
-        r = radius(pr["cf"])
+        r = round(radius(pr["cf"]) * NODE_SCALE, 2)
         merged_pr = pr["st"] == "MERGED"
         tip = (f'#{pr["n"]} {esc(pr["t"])} — {key}, {pr["cf"]} files, '
                f'+{pr["add"]}/-{pr["del"]}, {pr["nc"]} review comments'
@@ -412,17 +424,18 @@ def build(prs: list[dict], commits: int, merges: int) -> str:
         # Concentric rings mark a PR that drew a real back-and-forth review
         # conversation — the multi-agent dialogue, made visible.
         if pr["nc"] >= 3:
-            o.append(f'<circle cx="{x}" cy="{y}" r="{r + 4.5}" fill="none" '
+            o.append(f'<circle cx="{x}" cy="{y}" r="{r + 4.5 * NODE_SCALE}" fill="none" '
                      f'stroke="{colour}" stroke-width="1.5" opacity="0.85"/>')
-            o.append(f'<circle cx="{x}" cy="{y}" r="{r + 8}" fill="none" '
+            o.append(f'<circle cx="{x}" cy="{y}" r="{r + 8 * NODE_SCALE}" fill="none" '
                      f'stroke="{colour}" stroke-width="1" opacity="0.32"/>')
-        label_fill = "#2A2226" if merged_pr else colour
-        o.append(f'<text x="{x}" y="{y + 3.3}" fill="{label_fill}" font-size="8.6" '
-                 f'font-weight="700" text-anchor="middle" '
-                 f'font-family="ui-monospace,SFMono-Regular,Menlo,monospace">'
-                 f'{pr["n"]}</text>')
+        if NODE_LABELS:
+            label_fill = "#2A2226" if merged_pr else colour
+            o.append(f'<text x="{x}" y="{y + 3.3}" fill="{label_fill}" font-size="8.6" '
+                     f'font-weight="700" text-anchor="middle" '
+                     f'font-family="ui-monospace,SFMono-Regular,Menlo,monospace">'
+                     f'{pr["n"]}</text>')
         if pr.get("star"):
-            sy = y - r - (11 if pr["nc"] >= 3 else 7)
+            sy = y - r - (11 if pr["nc"] >= 3 else 7) * NODE_SCALE
             o.append(f'<path d="{star_path(x, sy)}" fill="{GOLD}" '
                      f'stroke="{BG}" stroke-width="0.8"/>')
         o.append('</g>')
@@ -475,15 +488,27 @@ def peak_concurrency(prs: list[dict]) -> int:
     return peak
 
 
+def option(flag: str, default: float) -> float:
+    """Read `--flag value` out of argv, so the deck render can resize the graph."""
+    if flag in sys.argv:
+        return float(sys.argv[sys.argv.index(flag) + 1])
+    return default
+
+
 def main() -> None:
+    global SLOT, NODE_SCALE, NODE_LABELS
     if "--refresh" in sys.argv or not SNAPSHOT.exists():
         print("querying GitHub…")
         fetch()
+    SLOT = option("--slot", SLOT)
+    NODE_SCALE = option("--node-scale", NODE_SCALE)
+    NODE_LABELS = "--no-node-labels" not in sys.argv
     snap = json.loads(SNAPSHOT.read_text())
     prs = sorted(snap["prs"], key=lambda p: p["n"])
     svg = build(prs, snap["commits"], snap["merges"])
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    target = OUT_DIR / "agent-contribution-graph.svg"
+    name = sys.argv[sys.argv.index("--out") + 1] if "--out" in sys.argv else None
+    target = OUT_DIR / (name or "agent-contribution-graph.svg")
     target.write_text(svg + "\n")
     starred = sum(1 for p in prs if p.get("star"))
     print(f"wrote {target.relative_to(ROOT)}  ({len(svg) // 1024} KB, "

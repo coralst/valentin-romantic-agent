@@ -19,6 +19,7 @@ import {
   type KnownFact,
 } from './prompts';
 import { readKnownFacts, readVisitedPlaces } from './partner-profile';
+import { recordSideWork } from '../telemetry/turn-metrics';
 import { recordOuting } from './outing-recorder';
 import { recordKeepsake } from './keepsake-recorder';
 import {
@@ -324,9 +325,17 @@ export class AgentOrchestrator implements AgentOrchestratorInterface {
     // Trigger async preference extraction — does not block response
     if (this.extractor) {
       const history = await this.memory.getHistory(sessionId);
-      this.extractor.extract(userMessage, history).catch(() => {
+      const extraction = this.extractor.extract(userMessage, history).catch(() => {
         // Extraction errors are logged inside the extractor; never propagate
       });
+      /*
+       * Still not awaited — the reply goes out first, which is the whole point of the
+       * line above. Registered so the turn's metrics wait for it: this call is a second
+       * forced-tool Converse, and the tally used to be published while it was in
+       * flight, so `modelCalls` read 1 on the engine whose defining cost is that it
+       * reads 2. See `recordSideWork`.
+       */
+      recordSideWork(extraction);
     }
 
     return agentMessage;

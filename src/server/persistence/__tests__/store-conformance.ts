@@ -800,7 +800,7 @@ export function describeStoreConformance(
       });
 
       it('does not count a reminder as a profile field', async () => {
-        // preferenceCount drives the board's "21 of 21" coverage reading, and a
+        // preferenceCount drives the board's "20 of 20" coverage reading, and a
         // date Valentin is going to mail about is not a field he has filled in.
         const sessionId = await store.createSession();
 
@@ -987,11 +987,11 @@ export function describeStoreConformance(
       it('stores hand-entered values under their field ids', async () => {
         const sessionId = await store.createSession();
 
-        await store.setManualValue(sessionId, 'bra_size', '34B');
+        await store.setManualValue(sessionId, 'clothing_size', 'UK 10');
         await store.setManualValue(sessionId, 'shoe_size', 'UK 6');
 
         expect(await store.getManualValues(sessionId)).toEqual({
-          bra_size: '34B',
+          clothing_size: 'UK 10',
           shoe_size: 'UK 6',
         });
       });
@@ -1000,27 +1000,27 @@ export function describeStoreConformance(
         // The point of MANUAL# existing beside PREF#: one row would make the
         // later writer win, so a re-extraction would overwrite the user's answer.
         const sessionId = await store.createSession();
-        await store.setManualValue(sessionId, 'bra_size', '34B');
+        await store.setManualValue(sessionId, 'clothing_size', 'UK 10');
 
         await store.savePreference({
           sessionId,
           category: 'gifts',
-          fieldId: 'bra_size',
-          key: 'bra size',
+          fieldId: 'clothing_size',
+          key: 'clothing size',
           value: '36C',
           confidence: 0.6,
           sourceMessageId: 'm1',
         });
 
-        expect((await store.getManualValues(sessionId)).bra_size).toBe('34B');
+        expect((await store.getManualValues(sessionId)).clothing_size).toBe('UK 10');
       });
 
       it('clears one value without touching the others', async () => {
         const sessionId = await store.createSession();
-        await store.setManualValue(sessionId, 'bra_size', '34B');
+        await store.setManualValue(sessionId, 'clothing_size', 'UK 10');
         await store.setManualValue(sessionId, 'shoe_size', 'UK 6');
 
-        await store.clearManualValue(sessionId, 'bra_size');
+        await store.clearManualValue(sessionId, 'clothing_size');
 
         expect(await store.getManualValues(sessionId)).toEqual({ shoe_size: 'UK 6' });
       });
@@ -1050,7 +1050,7 @@ export function describeStoreConformance(
         await store.savePerson(sessionId, person());
         await store.saveTask(sessionId, task());
         await store.saveOuting(sessionId, outing());
-        await store.setManualValue(sessionId, 'bra_size', '34B');
+        await store.setManualValue(sessionId, 'clothing_size', 'UK 10');
         await store.updateSessionMeta(sessionId, { partnerName: 'Maya' });
         return sessionId;
       }

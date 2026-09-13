@@ -378,7 +378,7 @@ export function useProfileStore(sessionId: string | null) {
   /**
    * Reduce now, write to the server after.
    *
-   * Optimistic for the same reason the people store is: typing her bra size and
+   * Optimistic for the same reason the people store is: typing her ring size and
    * waiting on a round trip before the field shows it reads as a dropped
    * keystroke.
    */

@@ -40,7 +40,6 @@ export const PROFILE_FIELD_IDS = [
   'color_palette',
   'fragrance_preference',
   // Sizes
-  'bra_size',
   'clothing_size',
   'shoe_size',
   'ring_size',
@@ -263,8 +262,6 @@ export const PROFILE_FIELD_GUIDANCE: Readonly<Record<ProfileFieldId, string>> = 
   fragrance_preference: 'A perfume or scent family she wears or likes.',
   // Sizes are recorded verbatim, in whatever scale the user says them in — a
   // model that "helpfully" converts UK 6 to EU 39 has invented a fact.
-  bra_size:
-    'Her bra size, exactly as stated, band and cup together — "34B", "75C". Use this only for a bra; a dress or top size is clothing_size.',
   clothing_size:
     'Her clothing, dress or trouser size, exactly as stated, including the scale (UK, EU, US, S/M/L).',
   shoe_size: 'Her shoe size, exactly as stated, including the scale (UK, EU, US).',

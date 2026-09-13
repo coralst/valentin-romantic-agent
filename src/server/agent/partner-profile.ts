@@ -26,7 +26,7 @@ const MAX_PROFILE_SESSIONS = 6;
  * conversation does not give someone a second partner. Reading only
  * `sessionId` meant a brand-new chat inside a fully-profiled account was
  * treated as a first meeting — the exact thing that made him ask a user who
- * had twenty-one known fields to tell him about his partner.
+ * had twenty known fields to tell him about his partner.
  *
  * The active session is merged last so it wins on conflicts: it holds the most
  * recent turn, and a fact just corrected there must not be overwritten by the

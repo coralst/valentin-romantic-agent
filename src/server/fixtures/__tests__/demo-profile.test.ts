@@ -9,7 +9,7 @@ import { PROFILE_FIELD_REGISTRY } from '../../../client/utils/profile-field-regi
  * `http-routes.test.ts` asserts the same contract through a seeded session,
  * which is the end-to-end version. This is the unit-level one, and it exists
  * because of the specific way the contract breaks: someone adds a field to the
- * registry, the rail's tally silently goes from "18 of 18" to "18 of 21", and
+ * registry, the rail's tally silently goes from "18 of 18" to "18 of 20", and
  * the login flow that was supposed to open on a complete profile now opens on an
  * incomplete one. Reading the fixture directly makes that failure point at the
  * fixture rather than at a route.
@@ -72,7 +72,7 @@ describe('DEMO_PROFILE_PREFERENCES', () => {
    * straight out of storage to build Valentin's system prompt, and `fieldId` is
    * the only field it can key on. With it absent, a fully-seeded Samantha looked
    * empty to him — `partnerNameFrom` found no name, so he greeted the visitor as
-   * a stranger, and every one of the twenty-one fields was reported to him as
+   * a stranger, and every one of the twenty fields was reported to him as
    * "still unknown".
    */
   it('stamps the canonical field id on every row, as extraction does', () => {

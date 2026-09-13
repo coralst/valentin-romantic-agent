@@ -110,7 +110,7 @@ interface IdentityHeaderExtraProps {
  * turns the gaps into a conversation.
  *
  * THERE IS NO PROGRESS METER HERE ANY MORE, and there should not be one again.
- * "21 of 21 known" was a score for the app rather than a fact about her, it was
+ * "20 of 20 known" was a score for the app rather than a fact about her, it was
  * charged twice — once in this header, once in the rail's tally — and neither copy
  * told anyone anything they could act on. Both are gone; what replaced them is the
  * button beside this text, which turns the same information into a question.

@@ -17,7 +17,7 @@
  * registry lives under `src/client/` and the server reads preferences straight
  * out of storage to build Valentin's system prompt. `fieldId` is the only handle
  * it has. Omitting it made a fully-seeded Samantha invisible to him — he greeted
- * her partner as a stranger and believed all twenty-one fields were still blank.
+ * her partner as a stranger and believed all twenty fields were still blank.
  *
  * The persona is fictional. No real person, and no identifying detail.
  */
@@ -187,9 +187,9 @@ export const DEMO_PROFILE_PREFERENCES: readonly ExtractedPreference[] = [
     category: 'gifts',
     key: 'clothing size',
     fieldId: 'clothing_size',
-    // Shortened when this became one of three numbers in a measurements row: the
+    // Shortened when this became one of the numbers in a measurements row: the
     // old "UK 10 / EU 38 — sizes up for knitwear" wrapped to two lines and threw
-    // the other two measurements out of alignment. The knitwear note belongs in
+    // the other measurements out of alignment. The knitwear note belongs in
     // her style notes, not in a size cell.
     value: 'UK 10',
     confidence: 0.9,
@@ -208,16 +208,9 @@ export const DEMO_PROFILE_PREFERENCES: readonly ExtractedPreference[] = [
     value: 'UK M (US 6)',
     confidence: 0.82,
   },
-  // The three the measurements card shows. Bare numbers, not sentences: they sit
+  // The ones the measurements card shows. Bare numbers, not sentences: they sit
   // in a row of their own on the card, where a clause like "sizes up for
   // knitwear" would wrap and break the alignment.
-  {
-    category: 'gifts',
-    key: 'bra size',
-    fieldId: 'bra_size',
-    value: '34B',
-    confidence: 0.9,
-  },
   {
     category: 'gifts',
     key: 'shoulder width',

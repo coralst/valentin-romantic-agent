@@ -2,7 +2,7 @@
  * Someone in her life: a name, how they are related to her, and — if you know it
  * — the date you are going to be glad you wrote down.
  *
- * The profile registry cannot hold these. It is a fixed list of twenty-one
+ * The profile registry cannot hold these. It is a fixed list of twenty
  * single-valued fields (`partner_name`, `birthday`, `ring_size`), and a family is
  * an unbounded set of *records* with their own fields. A `sister_name` field
  * would work until she has two sisters.

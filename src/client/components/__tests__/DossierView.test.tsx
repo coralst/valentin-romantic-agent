@@ -104,7 +104,7 @@ describe('DossierView — three bands', () => {
   });
 
   it('has no progress meter anywhere on the surface', () => {
-    // "21 of 21 known" was a score for the app rather than a fact about her, and it
+    // "20 of 20 known" was a score for the app rather than a fact about her, and it
     // was charged twice — once in this header, once in the rail's tally. Both gone.
     renderDossier([{ fieldId: 'partner_name', value: 'Samantha' }]);
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();

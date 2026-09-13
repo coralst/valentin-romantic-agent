@@ -567,7 +567,7 @@ export class DynamoDBStore implements StorageInterface {
       );
     }
 
-    // Touched, but not counted: `preferenceCount` drives "21 of 21" and a family
+    // Touched, but not counted: `preferenceCount` drives "20 of 20" and a family
     // is not a profile field. Incrementing it would inflate a number the board
     // reads as field coverage.
     await this.updateSessionIfExists(sessionId, 'SET lastActivity = :now', { ':now': now });

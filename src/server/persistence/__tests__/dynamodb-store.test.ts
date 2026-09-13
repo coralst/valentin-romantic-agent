@@ -666,27 +666,27 @@ describe.runIf(available)('DynamoDBStore (contract, DynamoDB Local)', () => {
       // The point of MANUAL# existing at all. One row would make the later writer
       // win, so a re-extraction would quietly overwrite the user's own answer.
       const sessionId = await alice.createSession();
-      await alice.setManualValue(sessionId, 'bra_size', '34B');
+      await alice.setManualValue(sessionId, 'clothing_size', 'UK 10');
       await alice.savePreference({
         sessionId,
         category: 'gifts',
-        fieldId: 'bra_size',
-        key: 'bra size',
+        fieldId: 'clothing_size',
+        key: 'clothing size',
         value: '36C',
         confidence: 0.6,
         sourceMessageId: 'm1',
       });
 
-      expect((await alice.getManualValues(sessionId)).bra_size).toBe('34B');
+      expect((await alice.getManualValues(sessionId)).clothing_size).toBe('UK 10');
       expect((await alice.getPreferencesBySession(sessionId))[0].value).toBe('36C');
     });
 
     it('clears one manual value without touching the others', async () => {
       const sessionId = await alice.createSession();
-      await alice.setManualValue(sessionId, 'bra_size', '34B');
+      await alice.setManualValue(sessionId, 'clothing_size', 'UK 10');
       await alice.setManualValue(sessionId, 'shoe_size', 'UK 6');
 
-      await alice.clearManualValue(sessionId, 'bra_size');
+      await alice.clearManualValue(sessionId, 'clothing_size');
 
       expect(await alice.getManualValues(sessionId)).toEqual({ shoe_size: 'UK 6' });
     });
@@ -695,7 +695,7 @@ describe.runIf(available)('DynamoDBStore (contract, DynamoDB Local)', () => {
       const sessionId = await alice.createSession();
       await alice.savePerson(sessionId, person());
       await alice.saveTask(sessionId, task());
-      await alice.setManualValue(sessionId, 'bra_size', '34B');
+      await alice.setManualValue(sessionId, 'clothing_size', 'UK 10');
 
       await alice.clearSession(sessionId);
 
@@ -726,7 +726,7 @@ describe.runIf(available)('DynamoDBStore (contract, DynamoDB Local)', () => {
       const sessionId = await alice.createSession();
       await alice.savePerson(sessionId, person());
       await alice.saveTask(sessionId, task());
-      await alice.setManualValue(sessionId, 'bra_size', '34B');
+      await alice.setManualValue(sessionId, 'clothing_size', 'UK 10');
 
       expect(await bob.getPeopleBySession(sessionId)).toEqual([]);
       expect(await bob.getTasksBySession(sessionId)).toEqual([]);
@@ -737,12 +737,12 @@ describe.runIf(available)('DynamoDBStore (contract, DynamoDB Local)', () => {
       const sessionId = await alice.createSession();
       await alice.savePerson(sessionId, person());
       await alice.saveTask(sessionId, task());
-      await alice.setManualValue(sessionId, 'bra_size', '34B');
+      await alice.setManualValue(sessionId, 'clothing_size', 'UK 10');
 
       for (const [sk, entityType] of [
         [personSk('p1'), 'Person'],
         [taskSk('t1'), 'Task'],
-        [manualSk('bra_size'), 'ManualValue'],
+        [manualSk('clothing_size'), 'ManualValue'],
       ] as const) {
         const result = await docClient.send(
           new GetCommand({

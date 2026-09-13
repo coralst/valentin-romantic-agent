@@ -272,7 +272,7 @@ export const PROFILE_FIELD_REGISTRY: readonly ProfileFieldDefinition[] = [
   /*
    * Sizes
    *
-   * All three are `text`, not `enum` or a number: sizing is regional and a
+   * All of them are `text`, not `enum` or a number: sizing is regional and a
    * person's real answer is "UK 6 / EU 39" or "a 10 in most things, an 8 in
    * Zara". An enum would force a made-up canonical scale and make the honest
    * answer unenterable, and a number would lose the letter sizes entirely.
@@ -282,21 +282,10 @@ export const PROFILE_FIELD_REGISTRY: readonly ProfileFieldDefinition[] = [
    * resolving it to a specific field would silently file the wrong fact.
    */
   {
-    id: 'bra_size',
-    label: 'מידת חזיה',
-    valueType: 'text',
-    section: 'sizes',
-    mappings: [
-      { category: 'gifts', key: 'bra size' },
-      { category: 'gifts', key: 'cup size' },
-      { category: 'gifts', key: 'lingerie size' },
-    ],
-  },
-  {
     /*
-     * Labelled "Trousers" rather than "Clothing Size" because the card now
-     * shows three measurements side by side, and next to a bra size and a
-     * shoulder width the generic word reads as though it covered them.
+     * Labelled "Trousers" rather than "Clothing Size" because the card shows
+     * several measurements side by side, and next to a shoe size and a shoulder
+     * width the generic word reads as though it covered them.
      */
     id: 'clothing_size',
     label: 'Trousers',

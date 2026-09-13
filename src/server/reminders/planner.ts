@@ -66,8 +66,8 @@ interface DateParts {
 /**
  * The first `YYYY-MM-DD` in a value, or nothing.
  *
- * Anchored to a four-digit year on purpose: "34B" and "1 week before" are also
- * digits, and a looser pattern would happily read a bra size as a date.
+ * Anchored to a four-digit year on purpose: "UK 6 / EU 39" and "1 week before"
+ * are also digits, and a looser pattern would happily read a shoe size as a date.
  */
 function findDate(value: string | null | undefined): DateParts | null {
   const match = /(\d{4})-(\d{2})-(\d{2})/.exec(value ?? '');

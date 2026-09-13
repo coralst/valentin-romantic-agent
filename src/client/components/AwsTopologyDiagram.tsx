@@ -522,7 +522,7 @@ function ToolEntryPanel({ engine }: { engine: ArchitectureEngine }) {
 }
 
 /** Copy for the tool panel, in one place so the two states read as one sentence. */
-const TOOL_PANEL_COPY = {
+export const TOOL_PANEL_COPY = {
   heading: 'Registered on the Gateway',
   headingIdle: 'No tool registry — schemas sent inline every turn',
 } as const;

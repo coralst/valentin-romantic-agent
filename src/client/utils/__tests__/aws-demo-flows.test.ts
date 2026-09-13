@@ -15,10 +15,37 @@ import {
   AWS_NODES,
   isNodeInEngine,
   routeBetween,
+  type ArchitectureEngine,
   type AwsNodeId,
 } from '../aws-architecture';
 
 const NODE_IDS = new Set<string>(AWS_NODES.map((node) => node.id));
+
+/**
+ * Which engine's half of the diagram a flow is animated on.
+ *
+ * Derived from the nodes the flow names rather than from its id, because the id is a
+ * label and the nodes are the claim. Routing matters now that the table and the
+ * provider APIs are single shared cards reached by a different path on each engine:
+ * ask for engine A's route to DynamoDB while playing engine B's script and the
+ * traffic walks through Fargate, a card that is shaded grey at the time.
+ *
+ * A flow of nothing but shared nodes (`page-load`) fits both engines. It resolves to
+ * engine A, which is the engine the drawer opens on, and is the tree those steps are
+ * therefore walked against.
+ */
+function engineOf(flow: {
+  id: string;
+  steps: readonly { from: AwsNodeId; to: AwsNodeId }[];
+}): ArchitectureEngine {
+  const nodes = flow.steps.flatMap((step) => [step.from, step.to]);
+  const fits = (engine: ArchitectureEngine) => nodes.every((node) => isNodeInEngine(node, engine));
+
+  // A flow fitting neither engine names nodes from both halves, which no single route
+  // can join — that is a broken script, not a routing question.
+  expect(fits('valentin') || fits('agentcore'), `${flow.id} spans both engines`).toBe(true);
+  return fits('valentin') ? 'valentin' : 'agentcore';
+}
 
 describe('DEMO_FLOWS', () => {
   it('ships the five flows the talk needs, including engine B', () => {
@@ -127,7 +154,7 @@ describe('DEMO_FLOWS', () => {
     for (const flow of DEMO_FLOWS) {
       for (const step of flow.steps) {
         if (step.from === step.to) continue;
-        const hops = routeBetween(step.from, step.to);
+        const hops = routeBetween(step.from, step.to, engineOf(flow));
         expect(hops.length, `${flow.id}: ${step.from}→${step.to}`).toBeGreaterThan(0);
         expect(hops[hops.length - 1].node, `${flow.id}: ${step.from}→${step.to}`).toBe(step.to);
       }
@@ -137,7 +164,7 @@ describe('DEMO_FLOWS', () => {
   it('never turns around mid-route — each hop continues from the last', () => {
     for (const flow of DEMO_FLOWS) {
       for (const step of flow.steps) {
-        const hops = routeBetween(step.from, step.to);
+        const hops = routeBetween(step.from, step.to, engineOf(flow));
         // A route climbs to the common ancestor then descends: once it turns
         // downstream it must never climb again.
         const directions = hops.map((hop) => hop.downstream);
@@ -215,9 +242,11 @@ describe('DEMO_FLOWS', () => {
 
 describe('frameForStep', () => {
   const steps = demoFlow('learns-something').steps;
+  // The headline flow is engine A's, so engine A's tree is the one to route it on.
+  const ENGINE = 'valentin';
 
   it('lights only the first node at step 0', () => {
-    const frame = frameForStep(steps, 0);
+    const frame = frameForStep(steps, 0, ENGINE);
 
     expect(frame.litNode).toBe('browser');
     expect(frame.doneNodes).toEqual([]);
@@ -225,7 +254,7 @@ describe('frameForStep', () => {
   });
 
   it('marks earlier nodes done and the current one lit', () => {
-    const frame = frameForStep(steps, 2);
+    const frame = frameForStep(steps, 2, ENGINE);
 
     expect(frame.litNode).toBe('alb');
     expect(frame.doneNodes).toContain('browser');
@@ -234,7 +263,7 @@ describe('frameForStep', () => {
   });
 
   it('reads a request as a request', () => {
-    const frame = frameForStep(steps, 4); // Fargate → Bedrock
+    const frame = frameForStep(steps, 4, ENGINE); // Fargate → Bedrock
 
     expect(frame.litNode).toBe('bedrock');
     expect(frame.litIsResponse).toBe(false);
@@ -242,17 +271,17 @@ describe('frameForStep', () => {
   });
 
   it('reads the return trip as a response', () => {
-    const frame = frameForStep(steps, 8); // DynamoDB → Browser
+    const frame = frameForStep(steps, 8, ENGINE); // DynamoDB → Browser
 
     expect(frame.litNode).toBe('browser');
     expect(frame.litIsResponse).toBe(true);
     // Mid-flight on the way home, the live hop climbs rather than descends.
-    expect(frameForStep(steps, 8, 1).activeHops[0].downstream).toBe(false);
+    expect(frameForStep(steps, 8, ENGINE, 1).activeHops[0].downstream).toBe(false);
   });
 
   it('never lists a node as both lit and done', () => {
     for (let i = 0; i < steps.length; i += 1) {
-      const frame = frameForStep(steps, i);
+      const frame = frameForStep(steps, i, ENGINE);
       if (!frame.litNode) continue;
       expect(frame.doneNodes, `step ${i}`).not.toContain(frame.litNode);
     }
@@ -271,11 +300,11 @@ describe('frameForStep', () => {
     const homeward = 8;
 
     it('alternates a node and a segment, and never both', () => {
-      const legs = stepLegCount(steps[homeward]);
+      const legs = stepLegCount(steps[homeward], ENGINE);
       expect(legs).toBeGreaterThan(2);
 
       for (let leg = 0; leg < legs; leg += 1) {
-        const frame = frameForStep(steps, homeward, leg);
+        const frame = frameForStep(steps, homeward, ENGINE, leg);
         const parked = frame.litNode !== undefined;
         expect(parked, `leg ${leg}`).toBe(leg % 2 === 0);
         expect(frame.activeHops.length, `leg ${leg}`).toBe(parked ? 0 : 1);
@@ -283,16 +312,16 @@ describe('frameForStep', () => {
     });
 
     it('starts where the traffic already is and ends where the step lands', () => {
-      expect(frameForStep(steps, homeward, 0).litNode).toBe('dynamodb');
-      expect(frameForStep(steps, homeward, 99).litNode).toBe('browser');
+      expect(frameForStep(steps, homeward, ENGINE, 0).litNode).toBe('dynamodb');
+      expect(frameForStep(steps, homeward, ENGINE, 99).litNode).toBe('browser');
     });
 
     it('fills the trail in behind the traffic rather than all at once', () => {
       // On the first step of the flow nothing has been visited yet, so the trail is
       // purely this step's own — which is what makes the growth observable.
       const outbound = 1; // Browser → CloudFront … the descent begins.
-      const first = frameForStep(steps, outbound, 0).doneNodes;
-      const later = frameForStep(steps, outbound, 2).doneNodes;
+      const first = frameForStep(steps, outbound, ENGINE, 0).doneNodes;
+      const later = frameForStep(steps, outbound, ENGINE, 2).doneNodes;
 
       expect(first).toEqual([]);
       expect(later).toContain('browser');
@@ -300,29 +329,29 @@ describe('frameForStep', () => {
     });
 
     it('leaves the node behind it in the trail once the traffic moves on', () => {
-      expect(frameForStep(steps, homeward, 0).doneNodes).not.toContain('dynamodb');
-      expect(frameForStep(steps, homeward, 2).doneNodes).toContain('dynamodb');
+      expect(frameForStep(steps, homeward, ENGINE, 0).doneNodes).not.toContain('dynamodb');
+      expect(frameForStep(steps, homeward, ENGINE, 2).doneNodes).toContain('dynamodb');
     });
 
     it('withholds the duration pill until the traffic has arrived', () => {
       // The number is what the work cost; announcing it over a box nothing has
       // reached yet would be a measurement of nothing.
       const bedrock = 4;
-      expect(frameForStep(steps, bedrock, 0).durations.bedrock).toBeUndefined();
-      expect(frameForStep(steps, bedrock).durations.bedrock?.current).toBe(true);
+      expect(frameForStep(steps, bedrock, ENGINE, 0).durations.bedrock).toBeUndefined();
+      expect(frameForStep(steps, bedrock, ENGINE).durations.bedrock?.current).toBe(true);
     });
 
     it('holds a step at least as long as its legs take to walk', () => {
       // Otherwise autoplay advances mid-traversal and the animation jumps instead
       // of arriving.
       for (const step of steps) {
-        expect(demoStepDwellMs(step)).toBeGreaterThanOrEqual(stepLegCount(step) * FLOW_LEG_MS);
+        expect(demoStepDwellMs(step, ENGINE)).toBeGreaterThanOrEqual(stepLegCount(step, ENGINE) * FLOW_LEG_MS);
       }
     });
   });
 
   it('accumulates duration pills and mutes the ones that are not current', () => {
-    const frame = frameForStep(steps, 7);
+    const frame = frameForStep(steps, 7, ENGINE);
 
     expect(frame.durations.dynamodb).toEqual({ label: '18 ms', ok: true, current: true });
     expect(frame.durations.bedrock?.current).toBe(false);
@@ -331,15 +360,15 @@ describe('frameForStep', () => {
 
   it('rebuilds identically when the same step is reached backwards', () => {
     // Cumulative rendering, not undo: this is what makes "wait, go back" exact.
-    const forward = frameForStep(steps, 5);
-    frameForStep(steps, 8);
-    const backward = frameForStep(steps, 5);
+    const forward = frameForStep(steps, 5, ENGINE);
+    frameForStep(steps, 8, ENGINE);
+    const backward = frameForStep(steps, 5, ENGINE);
 
     expect(backward).toEqual(forward);
   });
 
   it('returns an empty frame for an index before the start', () => {
-    const frame = frameForStep(steps, -1);
+    const frame = frameForStep(steps, -1, ENGINE);
 
     expect(frame.litNode).toBeUndefined();
     expect(frame.doneNodes).toEqual([]);
@@ -347,13 +376,13 @@ describe('frameForStep', () => {
   });
 
   it('clamps to the last step rather than throwing past the end', () => {
-    const frame = frameForStep(steps, 99);
+    const frame = frameForStep(steps, 99, ENGINE);
 
     expect(frame.litNode).toBe('browser');
   });
 
   it('handles an empty flow', () => {
-    expect(frameForStep([], 0).litNode).toBeUndefined();
+    expect(frameForStep([], 0, ENGINE).litNode).toBeUndefined();
   });
 });
 
@@ -363,10 +392,31 @@ describe('demoStepDwellMs', () => {
     const converse = steps[4];
     const albHop = steps[2];
 
-    expect(demoStepDwellMs(converse)).toBeGreaterThan(demoStepDwellMs(albHop));
+    expect(demoStepDwellMs(converse, 'valentin')).toBeGreaterThan(
+      demoStepDwellMs(albHop, 'valentin'),
+    );
   });
 
   it('falls back to a sensible dwell for a step with no duration', () => {
-    expect(demoStepDwellMs(undefined)).toBeGreaterThan(0);
+    expect(demoStepDwellMs(undefined, 'valentin')).toBeGreaterThan(0);
+  });
+
+  /*
+   * The same beat, held for different lengths of time on the two engines — the
+   * consequence of the table being one shared card, and the reason `engine` is a
+   * required argument rather than a defaulted one.
+   *
+   * Engine A's task reaches the table in one hop; engine B's browser reaches it through
+   * the proxy. A dwell computed against the wrong tree either advances autoplay
+   * mid-walk or leaves the diagram sitting still after the traffic has arrived.
+   */
+  it('times a beat that ends on a shared card against the engine being animated', () => {
+    const toTheTable = demoFlow('agentcore-learns-something').steps.find(
+      (step) => step.to === 'dynamodb',
+    )!;
+
+    expect(demoStepDwellMs(toTheTable, 'agentcore')).toBeGreaterThanOrEqual(
+      stepLegCount(toTheTable, 'agentcore') * FLOW_LEG_MS,
+    );
   });
 });

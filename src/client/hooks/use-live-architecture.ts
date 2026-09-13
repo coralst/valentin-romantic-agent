@@ -149,8 +149,11 @@ const SPAN_CATEGORY: Readonly<Record<string, AwsCategory>> = {
   'ac-runtime': 'ml',
   'ac-memory': 'ml',
   'ac-gateway': 'ml',
-  'ac-dynamodb': 'database',
-  'ac-integrations': 'external',
+  // The two Gateway targets are our own Lambdas, so they take the compute colour
+  // rather than the AgentCore group's — the table and the providers they reach are
+  // the shared nodes, and those keep their own.
+  'ac-lambda-profile': 'compute',
+  'ac-lambda-tools': 'compute',
 };
 
 /**
@@ -170,10 +173,10 @@ const SPAN_ACTION: Readonly<Record<string, string>> = {
   dynamodb: 'learns something new',
   integrations: 'asks the outside world',
   'ac-memory': 'learns something new',
-  'ac-dynamodb': 'learns something new',
+  'ac-lambda-profile': 'learns something new',
   // Same words as `integrations`, because it is the same beat: a call out, with
   // nothing booked yet. The route differs, the story does not.
-  'ac-integrations': 'asks the outside world',
+  'ac-lambda-tools': 'asks the outside world',
 };
 
 /** Short names for the feed. `Amazon DynamoDB` does not fit 70px. */
@@ -313,10 +316,10 @@ function nodeServiceName(id: AwsNodeId): string {
       return 'Memory';
     case 'ac-gateway':
       return 'Gateway';
-    case 'ac-dynamodb':
-      return 'DynamoDB';
-    case 'ac-integrations':
-      return 'External APIs';
+    case 'ac-lambda-profile':
+      return 'Profile tools';
+    case 'ac-lambda-tools':
+      return 'Integration tools';
   }
 }
 
@@ -429,7 +432,7 @@ export function useLiveArchitecture(
    * modes can be trusted to look the same, which is the promise this hook's output
    * shape exists to keep.
    */
-  const legs = currentBeat ? flowLegs(currentBeat.from, currentBeat.to) : [];
+  const legs = currentBeat ? flowLegs(currentBeat.from, currentBeat.to, engine) : [];
   const legIndex = useFlowTraversal({
     legCount: Math.max(1, legs.length),
     resetKey: currentKey ?? null,

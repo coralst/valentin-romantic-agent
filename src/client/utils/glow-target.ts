@@ -249,14 +249,21 @@ export function learnToolService(
 /**
  * Resource ids whose spans are an outbound integration call.
  *
- * Engine A routes them to `integrations`; engine B's Gateway reports the same
- * calls under its own two ids. All three are the same beat in the story — a call
- * out to somebody else's API — so all three resolve to a tool target.
+ * Engine A routes them to `integrations`; on engine B the same call arrives
+ * through the Gateway and is served by the tool Lambda. All three are the same
+ * beat in the story — a call out to somebody else's API — so all three resolve to
+ * a tool target.
+ *
+ * Keep this in step with the `'asks the outside world'` entries of `SPAN_ACTION`
+ * in `use-live-architecture.ts`: those decide which rows the feed captions as an
+ * outbound call, and this decides which of them can say who they called. A node
+ * renamed in one and not the other is a row that reads as a tool call and glows
+ * nothing — which is why `ac-integrations` is not here any more.
  */
 const INTEGRATION_RESOURCE_IDS: ReadonlySet<string> = new Set([
   'integrations',
-  'ac-integrations',
   'ac-gateway',
+  'ac-lambda-tools',
 ]);
 
 /**

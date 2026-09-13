@@ -60,18 +60,23 @@ describe('AWS_NODES', () => {
   });
 
   it('marks the three AgentCore primitives, and only those, as managed', () => {
-    // `ac-dynamodb` must stay out: the table is ours, reached through a Lambda we
-    // own, and drawing it inside the AgentCore boundary would credit the platform
-    // with the one piece of that path we wrote.
+    // The two Lambdas must stay out, and so must the table and the providers they
+    // reach: that code is ours, and drawing it inside the AgentCore boundary would
+    // credit the platform with the pieces of that path we wrote.
     const managed = AWS_NODES.filter((node) => node.inAgentCore).map((node) => node.id);
     expect(managed).toEqual(['ac-runtime', 'ac-memory', 'ac-gateway']);
   });
 
-  it('leaves everything up to the ALB shared, and tags everything past it', () => {
+  it('leaves the edge and the two data resources shared, and tags the rest', () => {
     // The shared spine is what makes the comparison fair: both engines really do
     // arrive through the same edge, so neither half may claim it.
+    //
+    // The table and the provider APIs join that list for a different reason. They are
+    // not on the way in — they are at the far end of both engines, and they are the
+    // *same* table and the *same* eight companies whichever engine answers. Claiming
+    // either for one engine is what forced the diagram to draw two of each.
     const shared = AWS_NODES.filter((node) => node.engine === undefined).map((node) => node.id);
-    expect(shared).toEqual(['browser', 'cloudfront', 's3', 'alb']);
+    expect(shared).toEqual(['browser', 'cloudfront', 's3', 'alb', 'dynamodb', 'integrations']);
   });
 
   it('resolves nodes by id and returns undefined for strangers', () => {
@@ -89,17 +94,77 @@ describe('AWS_SEGMENTS', () => {
     }
   });
 
-  it('forms a tree: every node but the browser has exactly one inbound segment', () => {
-    for (const node of AWS_NODES) {
-      const inbound = AWS_SEGMENTS.filter((segment) => segment.to === node.id);
-      expect(inbound.length, node.id).toBe(node.id === 'browser' ? 0 : 1);
+  /*
+   * The tree property, restated PER ENGINE and against routing rather than against the
+   * drawn segments — the change that let the table and the provider APIs be drawn once
+   * instead of twice.
+   *
+   * The segment list is deliberately no longer a tree. DynamoDB has three inbound links
+   * (engine A's task, engine B's proxy, and the profile Lambda) and the providers have
+   * two, because that is the deployment. Two of the table's three even belong to the
+   * same engine. So counting inbound segments no longer states the invariant; what
+   * matters is that each engine still routes to every node it uses along exactly one
+   * path, which is what makes `routeBetween` unique and computable — and what a
+   * single-parent model could only achieve by inventing a second database.
+   *
+   * Asserted through `routeBetween` on purpose: the parent map is private, and this is
+   * the behaviour that would actually break if it stopped being a tree.
+   */
+  it('routes to every node an engine uses along exactly one path from the browser', () => {
+    for (const engine of ARCHITECTURE_ENGINES) {
+      const used = AWS_NODES.filter((node) => isNodeInEngine(node.id, engine)).map(
+        (node) => node.id,
+      );
+      const treeEdges = new Set<string>();
+
+      for (const id of used) {
+        const hops = routeBetween('browser', id, engine);
+        if (id === 'browser') {
+          expect(hops, `browser on ${engine}`).toEqual([]);
+          continue;
+        }
+
+        expect(hops.length, `${id} on ${engine} is unreachable`).toBeGreaterThan(0);
+        expect(hops[hops.length - 1].node, `${id} on ${engine}`).toBe(id);
+        // One parent edge per node, and no node's parent edge reused as another's.
+        const parentEdge = hops[hops.length - 1].segment;
+        expect(treeEdges.has(parentEdge), `${parentEdge} claimed twice on ${engine}`).toBe(false);
+        treeEdges.add(parentEdge);
+      }
+
+      // n nodes, n-1 edges: the arithmetic that makes it a tree rather than a graph
+      // that happens to be connected.
+      expect(treeEdges.size, engine).toBe(used.length - 1);
     }
+  });
+
+  it('draws the shared table and the shared APIs exactly once each', () => {
+    // The defect this now guards against by name. Two DynamoDB cards said her file
+    // lived in two places, and two External APIs cards said the two engines
+    // integrate with different companies. Both were the drawing's fault, not the
+    // deployment's.
+    const tables = AWS_NODES.filter((node) => node.service === 'Amazon DynamoDB');
+    const providers = AWS_NODES.filter((node) => node.service === 'External APIs');
+
+    expect(tables.map((node) => node.id)).toEqual(['dynamodb']);
+    expect(providers.map((node) => node.id)).toEqual(['integrations']);
+    // Neither is claimed by an engine, which is what makes them shared.
+    expect(tables[0].engine).toBeUndefined();
+    expect(providers[0].engine).toBeUndefined();
+  });
+
+  it('reaches the one table from three real places, and the providers from two', () => {
+    const inboundTo = (id: AwsNodeId) =>
+      AWS_SEGMENTS.filter((segment) => segment.to === id).map((segment) => segment.from);
+
+    expect(inboundTo('dynamodb')).toEqual(['fargate', 'ac-proxy', 'ac-lambda-profile']);
+    expect(inboundTo('integrations')).toEqual(['fargate', 'ac-lambda-tools']);
   });
 });
 
 describe('routeBetween', () => {
   it('walks the request path down to Bedrock', () => {
-    expect(routeBetween('browser', 'bedrock')).toEqual([
+    expect(routeBetween('browser', 'bedrock', 'valentin')).toEqual([
       { segment: 'browser-cloudfront', node: 'cloudfront', downstream: true },
       { segment: 'cloudfront-alb', node: 'alb', downstream: true },
       { segment: 'alb-fargate', node: 'fargate', downstream: true },
@@ -108,7 +173,7 @@ describe('routeBetween', () => {
   });
 
   it('walks the response path back up from DynamoDB, never linking it to CloudFront', () => {
-    const hops = routeBetween('dynamodb', 'browser');
+    const hops = routeBetween('dynamodb', 'browser', 'valentin');
 
     expect(hops).toEqual([
       { segment: 'fargate-dynamodb', node: 'fargate', downstream: false },
@@ -121,33 +186,35 @@ describe('routeBetween', () => {
   });
 
   it('routes sibling to sibling through their common parent', () => {
-    expect(routeBetween('bedrock', 'dynamodb')).toEqual([
+    expect(routeBetween('bedrock', 'dynamodb', 'valentin')).toEqual([
       { segment: 'fargate-bedrock', node: 'fargate', downstream: false },
       { segment: 'fargate-dynamodb', node: 'dynamodb', downstream: true },
     ]);
   });
 
   it('returns no hops when work happens without a network call', () => {
-    expect(routeBetween('fargate', 'fargate')).toEqual([]);
+    expect(routeBetween('fargate', 'fargate', 'valentin')).toEqual([]);
   });
 
   it('is symmetric in length and reversed in direction', () => {
-    const down = routeBetween('browser', 'dynamodb');
-    const up = routeBetween('dynamodb', 'browser');
+    const down = routeBetween('browser', 'dynamodb', 'valentin');
+    const up = routeBetween('dynamodb', 'browser', 'valentin');
 
     expect(up.length).toBe(down.length);
     expect(down.every((hop) => hop.downstream)).toBe(true);
     expect(up.every((hop) => !hop.downstream)).toBe(true);
   });
 
-  it('only ever emits segments that exist in the topology', () => {
+  it('only ever emits segments that exist in the topology, on either engine', () => {
     const known = new Set(AWS_SEGMENTS.map((segment) => segment.id));
     const ids = AWS_NODES.map((node) => node.id);
 
-    for (const from of ids) {
-      for (const to of ids) {
-        for (const hop of routeBetween(from, to)) {
-          expect(known.has(hop.segment), `${from}→${to}`).toBe(true);
+    for (const engine of ARCHITECTURE_ENGINES) {
+      for (const from of ids) {
+        for (const to of ids) {
+          for (const hop of routeBetween(from, to, engine)) {
+            expect(known.has(hop.segment), `${from}→${to} on ${engine}`).toBe(true);
+          }
         }
       }
     }
@@ -157,16 +224,79 @@ describe('routeBetween', () => {
     const ids = AWS_NODES.map((node) => node.id);
     const endpoints = new Map(AWS_SEGMENTS.map((s) => [s.id, [s.from, s.to]] as const));
 
+    for (const engine of ARCHITECTURE_ENGINES) {
+      for (const from of ids) {
+        for (const to of ids) {
+          const hops = routeBetween(from, to, engine);
+          let position = from;
+          for (const hop of hops) {
+            const pair = endpoints.get(hop.segment)!;
+            expect(pair, `${from}→${to} via ${hop.segment} on ${engine}`).toContain(position);
+            position = hop.node;
+          }
+          if (hops.length > 0) expect(position, `${from}→${to} on ${engine}`).toBe(to);
+        }
+      }
+    }
+  });
+
+  /*
+   * The payoff of the per-engine parent map, asserted rather than described: one node,
+   * two genuinely different routes to it. This is the pair of sentences the diagram is
+   * for — "engine A's task talks to the table" and "engine B's proxy talks to the same
+   * table" — and before the parent map they could only be drawn as two tables.
+   */
+  it('reaches the one shared table by a different route on each engine', () => {
+    expect(nodesAlongRoute('browser', 'dynamodb', 'valentin')).toEqual([
+      'browser',
+      'cloudfront',
+      'alb',
+      'fargate',
+      'dynamodb',
+    ]);
+    expect(nodesAlongRoute('browser', 'dynamodb', 'agentcore')).toEqual([
+      'browser',
+      'cloudfront',
+      'alb',
+      'ac-proxy',
+      'dynamodb',
+    ]);
+  });
+
+  it('reaches the shared providers directly on A and through the Gateway on B', () => {
+    // What the right-hand side of the diagram exists to say: engine A's task calls
+    // Spotify itself, engine B cannot and goes Gateway → Lambda → Spotify.
+    expect(nodesAlongRoute('fargate', 'integrations', 'valentin')).toEqual([
+      'fargate',
+      'integrations',
+    ]);
+    expect(nodesAlongRoute('ac-runtime', 'integrations', 'agentcore')).toEqual([
+      'ac-runtime',
+      'ac-gateway',
+      'ac-lambda-tools',
+      'integrations',
+    ]);
+  });
+
+  /*
+   * Drawn, and deliberately never routed.
+   *
+   * `ac-lambda-profile → dynamodb` is how `save_preference` actually reaches the table,
+   * so omitting it would draw a Gateway target that reaches nothing. But nothing in the
+   * drawer can observe it — the Lambda reports to CloudWatch, not to this socket — so
+   * the table's engine-B parent is the proxy, whose mirrored write is the one we can
+   * time. Both halves are pinned here because either alone is a lie: without the
+   * segment the picture is incomplete, and without the routing ban a beat would animate
+   * a hop we never measured.
+   */
+  it('draws the profile Lambda’s write to the table without ever routing through it', () => {
+    expect(AWS_SEGMENTS.map((segment) => segment.id)).toContain('ac-lambda-profile-dynamodb');
+
+    const ids = AWS_NODES.map((node) => node.id);
     for (const from of ids) {
       for (const to of ids) {
-        const hops = routeBetween(from, to);
-        let position = from;
-        for (const hop of hops) {
-          const pair = endpoints.get(hop.segment)!;
-          expect(pair, `${from}→${to} via ${hop.segment}`).toContain(position);
-          position = hop.node;
-        }
-        if (hops.length > 0) expect(position, `${from}→${to}`).toBe(to);
+        const segments = routeBetween(from, to, 'agentcore').map((hop) => hop.segment);
+        expect(segments, `${from}→${to}`).not.toContain('ac-lambda-profile-dynamodb');
       }
     }
   });
@@ -174,7 +304,7 @@ describe('routeBetween', () => {
 
 describe('nodesAlongRoute', () => {
   it('includes both endpoints in travel order', () => {
-    expect(nodesAlongRoute('dynamodb', 'browser')).toEqual([
+    expect(nodesAlongRoute('dynamodb', 'browser', 'valentin')).toEqual([
       'dynamodb',
       'fargate',
       'alb',
@@ -184,7 +314,7 @@ describe('nodesAlongRoute', () => {
   });
 
   it('returns the single node when there is no hop', () => {
-    expect(nodesAlongRoute('bedrock', 'bedrock')).toEqual(['bedrock']);
+    expect(nodesAlongRoute('bedrock', 'bedrock', 'valentin')).toEqual(['bedrock']);
   });
 });
 
@@ -197,7 +327,7 @@ describe('nodesAlongRoute', () => {
  */
 describe('flowLegs', () => {
   it('interleaves the nodes between the hops, starting where the traffic is', () => {
-    expect(flowLegs('browser', 'alb')).toEqual([
+    expect(flowLegs('browser', 'alb', 'valentin')).toEqual([
       { kind: 'node', node: 'browser', downstream: true },
       {
         kind: 'hop',
@@ -215,7 +345,7 @@ describe('flowLegs', () => {
   });
 
   it('reads box, arrow, box — never two of a kind in a row', () => {
-    const legs = flowLegs('dynamodb', 'browser');
+    const legs = flowLegs('dynamodb', 'browser', 'valentin');
 
     expect(legs[0].kind).toBe('node');
     expect(legs[legs.length - 1].kind).toBe('node');
@@ -227,21 +357,21 @@ describe('flowLegs', () => {
   it('carries the travel direction on every leg, so the return trip reads as one', () => {
     // Colour is by direction, not by which node it is: the browser is claret on the
     // way out and teal on the way home.
-    expect(flowLegs('dynamodb', 'browser').every((leg) => !leg.downstream)).toBe(true);
-    expect(flowLegs('browser', 'dynamodb').every((leg) => leg.downstream)).toBe(true);
+    expect(flowLegs('dynamodb', 'browser', 'valentin').every((leg) => !leg.downstream)).toBe(true);
+    expect(flowLegs('browser', 'dynamodb', 'valentin').every((leg) => leg.downstream)).toBe(true);
   });
 
   it('visits every node on the route, so nothing is transited without a beat', () => {
-    const nodes = flowLegs('dynamodb', 'browser')
+    const nodes = flowLegs('dynamodb', 'browser', 'valentin')
       .filter((leg) => leg.kind === 'node')
       .map((leg) => (leg.kind === 'node' ? leg.node : null));
 
-    expect(nodes).toEqual([...nodesAlongRoute('dynamodb', 'browser')]);
+    expect(nodes).toEqual([...nodesAlongRoute('dynamodb', 'browser', 'valentin')]);
   });
 
   it('gives work with no network hop a single beat rather than none', () => {
     // Something did happen; it just happened in one place.
-    expect(flowLegs('bedrock', 'bedrock')).toEqual([
+    expect(flowLegs('bedrock', 'bedrock', 'valentin')).toEqual([
       { kind: 'node', node: 'bedrock', downstream: true },
     ]);
   });
@@ -376,7 +506,7 @@ describe('engine membership', () => {
     expect(isNodeInEngine('fargate', 'agentcore')).toBe(false);
     expect(isNodeInEngine('bedrock', 'agentcore')).toBe(false);
     expect(isNodeInEngine('ac-runtime', 'valentin')).toBe(false);
-    expect(isNodeInEngine('ac-dynamodb', 'valentin')).toBe(false);
+    expect(isNodeInEngine('ac-lambda-tools', 'valentin')).toBe(false);
   });
 
   it('excludes a connector as soon as either end is on the other engine', () => {
@@ -404,8 +534,12 @@ describe('engine membership', () => {
   it('maps a resource to its counterpart on the other engine', () => {
     expect(nodeForEngine('fargate', 'agentcore')).toBe('ac-proxy');
     expect(nodeForEngine('bedrock', 'agentcore')).toBe('ac-runtime');
-    expect(nodeForEngine('dynamodb', 'agentcore')).toBe('ac-dynamodb');
-    // Shared resources, and engine A itself, map to themselves.
+    // Shared resources, and engine A itself, map to themselves — and the table and
+    // the providers are now shared, which is the whole change. The table used to
+    // translate to an `ac-dynamodb` that existed only so a single-parent tree could
+    // have two parents.
+    expect(nodeForEngine('dynamodb', 'agentcore')).toBe('dynamodb');
+    expect(nodeForEngine('integrations', 'agentcore')).toBe('integrations');
     expect(nodeForEngine('alb', 'agentcore')).toBe('alb');
     expect(nodeForEngine('bedrock', 'valentin')).toBe('bedrock');
   });
@@ -413,10 +547,9 @@ describe('engine membership', () => {
   it('translates back the other way too, so a stale id from either side resolves', () => {
     expect(nodeForEngine('ac-proxy', 'valentin')).toBe('fargate');
     expect(nodeForEngine('ac-runtime', 'valentin')).toBe('bedrock');
-    expect(nodeForEngine('ac-dynamodb', 'valentin')).toBe('dynamodb');
   });
 
-  it('never maps a node onto one the target engine does not have, bar the two with no counterpart', () => {
+  it('never maps a node onto one the target engine does not have, bar those with no counterpart', () => {
     const stranded: string[] = [];
 
     for (const node of AWS_NODES) {
@@ -427,17 +560,24 @@ describe('engine membership', () => {
       }
     }
 
-    // Two nodes genuinely have nothing to translate to, in both directions: engine
-    // A does its own memory and calls its tools in-process, so Memory and the
-    // Gateway have no counterpart there. Both are returned unchanged and the view
-    // shades them, which is honest, rather than being mapped onto a resource the
-    // other engine does not have.
-    //
-    // The external APIs used to be a third. They no longer are: engine B reaches
-    // the same partners through the Gateway, so `integrations` has a real
-    // counterpart in `ac-integrations` and translates in both directions like
-    // Fargate and DynamoDB do.
-    expect(stranded).toEqual(['ac-memory/valentin', 'ac-gateway/valentin']);
+    /*
+     * Four nodes genuinely have nothing to translate to: engine A does its own
+     * memory, describes its tool schemas inline in every Converse request, and calls
+     * the providers from the task itself. So Memory, the Gateway and the Gateway's two
+     * Lambdas have no engine-A counterpart. All four are returned unchanged and the
+     * view shades them, which is honest, rather than being mapped onto a resource the
+     * other engine does not have.
+     *
+     * The table and the external APIs are absent from this list for the opposite
+     * reason: they are literally the same resources on both engines, so they translate
+     * to themselves and can never be stranded.
+     */
+    expect(stranded).toEqual([
+      'ac-memory/valentin',
+      'ac-gateway/valentin',
+      'ac-lambda-profile/valentin',
+      'ac-lambda-tools/valentin',
+    ]);
   });
 
   it('routes an engine-B event down engine B, without touching engine A', () => {
@@ -450,11 +590,13 @@ describe('engine membership', () => {
     expect(hops.map((hop) => hop.segment)).toContain('ac-proxy-ac-runtime');
   });
 
-  it('sends a shared resource id to the selected engine, not to engine A by default', () => {
-    // Why the engine argument exists at all: engine B mirrors preferences through
-    // the same store, so it emits `resourceId: 'dynamodb'` exactly as engine A does.
+  it('sends a span about the shared table to the one shared card, on either engine', () => {
+    // Engine B mirrors preferences through the same store, so it emits
+    // `resourceId: 'dynamodb'` exactly as engine A does — and now lands on the same
+    // card, which is what makes "her file survived the switch" something a room can
+    // watch rather than something the narrator claims.
     expect(awsNodeIdForResource('dynamodb')).toBe('dynamodb');
-    expect(awsNodeIdForResource('dynamodb', 'agentcore')).toBe('ac-dynamodb');
+    expect(awsNodeIdForResource('dynamodb', 'agentcore')).toBe('dynamodb');
   });
 
   it('resolves the AgentCore primitives, which own no matching node id', () => {
@@ -463,33 +605,74 @@ describe('engine membership', () => {
     expect(awsNodeIdForResource('agentcore-gateway', 'agentcore')).toBe('ac-gateway');
   });
 
-  it('sends a Gateway tool call to engine B’s own External APIs card', () => {
-    // Not `integrations`: that node is engine A's, and routing there would light the
-    // shaded half of the diagram while the toggle says AgentCore.
-    expect(awsNodeIdForResource('agentcore-integrations', 'agentcore')).toBe('ac-integrations');
+  it('sends a Gateway tool call to the tool Lambda, not to the provider card', () => {
+    // What the proxy timed is the Gateway round trip ending in our own function, so
+    // that is where the duration belongs. Landing it on the provider card instead
+    // would credit Ontopo with two AWS hops it had no part in.
+    expect(awsNodeIdForResource('agentcore-integrations', 'agentcore')).toBe('ac-lambda-tools');
   });
 });
 
 /*
- * The Gateway's caption is a claim about the stack, and the stack is generated.
+ * The registered tool entry points are a claim about the stack, and the stack is
+ * generated.
  *
- * `'MCP · 2 Lambda targets · 29 tools'` is the line a room reads as the Gateway's
- * benefit, so it is worth more than a comment: the number is recomputed here from
- * the same JSON `agentcore-stack.ts` spreads into `inlinePayload`, and a tool added
- * to the registry fails this test instead of quietly making the caption a lie.
+ * These names go on a projector as "this is what the Gateway advertises", which is
+ * worth more than a comment: they are recomputed here from the same JSON
+ * `agentcore-stack.ts` spreads into `inlinePayload`, so a tool added to the registry
+ * and not to the diagram fails this test instead of quietly making the panel a lie.
  */
-describe('the Gateway caption’s tool count', () => {
-  it('matches the schemas the stack actually declares', () => {
-    // Mirrors `agentcore-stack.ts`: one generated tool is withheld from engine B
-    // because its signing key does not reach the tool Lambda, and every gated tool
-    // gains a paired `confirm_*` the proxy calls.
-    const WITHHELD = new Set(['create_conversation_link']);
-    const PROFILE_TOOLS = 3;
+describe('the Gateway’s registered tool entry points', () => {
+  // Mirrors `agentcore-stack.ts`: one generated tool is withheld from engine B because
+  // its signing key does not reach the tool Lambda, and every gated tool gains a paired
+  // `confirm_*` the proxy calls once a human has pressed Confirm.
+  const WITHHELD = new Set(['create_conversation_link']);
+  const offered = integrationToolSchemas.filter((tool) => !WITHHELD.has(tool.name));
+  const confirms = offered
+    .filter((tool) => tool.requiresConfirmation)
+    .map((tool) => tool.name.replace(/^propose_/, 'confirm_'));
 
-    const offered = integrationToolSchemas.filter((tool) => !WITHHELD.has(tool.name));
-    const confirms = offered.filter((tool) => tool.requiresConfirmation).length;
-    const total = offered.length + confirms + PROFILE_TOOLS;
+  it('lists exactly the tools the integration Lambda is given, in schema order', () => {
+    expect(awsNode('ac-lambda-tools')?.toolEntryPoints).toEqual([
+      ...offered.map((tool) => tool.name),
+      ...confirms,
+    ]);
+  });
 
-    expect(awsNode('ac-gateway')?.caption).toBe(`MCP · 2 Lambda targets · ${total} tools`);
+  it('does not advertise the tool the stack withholds', () => {
+    for (const withheld of WITHHELD) {
+      expect(awsNode('ac-lambda-tools')?.toolEntryPoints).not.toContain(withheld);
+    }
+  });
+
+  it('says on each Lambda’s card how many entry points it holds', () => {
+    // The captions are the two numbers a room reads without expanding the panel, so
+    // they are checked against the lists rather than trusted beside them.
+    const profile = awsNode('ac-lambda-profile')!;
+    const tools = awsNode('ac-lambda-tools')!;
+
+    expect(profile.caption).toContain(`${profile.toolEntryPoints!.length} tools`);
+    expect(tools.caption).toContain(`${tools.toolEntryPoints!.length} tools`);
+  });
+
+  it('registers entry points on the two Lambdas and nowhere else', () => {
+    // Not on the Gateway node: the Gateway routes to targets, it does not hold code.
+    // Listing the tools on it is what made the earlier diagram unanswerable when
+    // someone asked which function actually runs `find_restaurants`.
+    const withTools = AWS_NODES.filter((node) => node.toolEntryPoints !== undefined);
+    expect(withTools.map((node) => node.id)).toEqual(['ac-lambda-profile', 'ac-lambda-tools']);
+  });
+
+  it('gives the shared provider card one mark per provider it stands for', () => {
+    // The strip of logos and the card's own count cannot be allowed to disagree on a
+    // projector, so one is derived from the other.
+    const providers = awsNode('integrations')!;
+    expect(providers.providers).toHaveLength(8);
+    expect(providers.resourceName).toBe(`${providers.providers!.length} providers`);
+  });
+
+  it('puts the provider marks on the shared card and nowhere else', () => {
+    const withMarks = AWS_NODES.filter((node) => node.providers !== undefined);
+    expect(withMarks.map((node) => node.id)).toEqual(['integrations']);
   });
 });

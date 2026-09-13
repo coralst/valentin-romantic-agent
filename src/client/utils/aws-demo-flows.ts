@@ -372,12 +372,15 @@ const AGENTCORE_LEARNS_SOMETHING: readonly DemoStep[] = [
     actor: 'Valentin',
     action: 'writes a reply',
   },
+  // The hop that is the whole point of engine B's right-hand side: the Gateway
+  // does not hold the tool, it *routes* to one of our two Lambdas. `get_partner_profile`
+  // above is the entry point registered at the Gateway; this is the function behind it.
   {
-    to: 'ac-dynamodb',
-    service: 'DynamoDB',
-    operation: 'Query',
-    detail: 'via valentin-profile-tools-dev',
-    category: 'database',
+    to: 'ac-lambda-profile',
+    service: 'Profile tools',
+    operation: 'Invoke',
+    detail: 'valentin-profile-tools-dev',
+    category: 'compute',
     durationMs: 21,
     ok: true,
     actor: 'Valentin',
@@ -407,10 +410,31 @@ const AGENTCORE_LEARNS_SOMETHING: readonly DemoStep[] = [
   },
   {
     from: 'ac-gateway',
-    to: 'ac-dynamodb',
+    to: 'ac-lambda-profile',
+    service: 'Profile tools',
+    operation: 'save_preference',
+    detail: 'PREF#music',
+    category: 'compute',
+    durationMs: 19,
+    ok: true,
+    actor: 'Valentin',
+    action: 'learns something new',
+  },
+  /*
+   * And the shared table, reached from the *proxy* — not from the Lambda above.
+   *
+   * Both are true and only one is observable here: the Lambda's write happens
+   * behind the Gateway and reports to CloudWatch, while the proxy mirrors the
+   * preference into the same `ValentinTable-dev` engine A writes, over the same
+   * VPC gateway endpoint. That mirror is why the profile survives an engine
+   * switch, and it is the beat that lights the one shared database.
+   */
+  {
+    from: 'ac-proxy',
+    to: 'dynamodb',
     service: 'DynamoDB',
     operation: 'PutItem',
-    detail: 'PREF#music',
+    detail: 'the table engine A writes',
     category: 'database',
     durationMs: 19,
     ok: true,
@@ -418,7 +442,7 @@ const AGENTCORE_LEARNS_SOMETHING: readonly DemoStep[] = [
     action: 'learns something new',
   },
   {
-    from: 'ac-dynamodb',
+    from: 'dynamodb',
     to: 'browser',
     service: 'Browser',
     operation: 'preference_update',
@@ -550,14 +574,23 @@ export interface FlowBeat {
   at?: number;
 }
 
-/** How many beats a step is animated over: box, arrow, box, arrow, box. */
-export function stepLegCount(beat: FlowBeat | undefined): number {
-  return beat ? flowLegs(beat.from, beat.to).length : 1;
+/**
+ * How many beats a step is animated over: box, arrow, box, arrow, box.
+ *
+ * `engine` is required rather than defaulted because the two engines route the
+ * *shared* nodes differently — a write to `dynamodb` is four hops from the browser
+ * on engine A and four different ones on engine B — so a default would silently
+ * animate the wrong path for whichever engine wasn't the default.
+ */
+export function stepLegCount(beat: FlowBeat | undefined, engine: ArchitectureEngine): number {
+  return beat ? flowLegs(beat.from, beat.to, engine).length : 1;
 }
 
 export function frameForStep(
   steps: readonly FlowBeat[],
   index: number,
+  /** Which engine's tree to route through. See {@link stepLegCount}. */
+  engine: ArchitectureEngine,
   /**
    * Which beat *within* the current step to render. Defaults to the last one —
    * the settled, arrived state — so a caller that only cares about "where did
@@ -584,7 +617,7 @@ export function frameForStep(
     const isCurrent = k === current;
 
     if (isCurrent) {
-      const legs = flowLegs(step.from, step.to);
+      const legs = flowLegs(step.from, step.to, engine);
       const at = Math.max(0, Math.min(legIndex ?? legs.length - 1, legs.length - 1));
       const leg = legs[at];
 
@@ -639,9 +672,9 @@ export function frameForStep(
  * mid-traversal on any step that crosses more than a couple of resources, and the
  * animation would visibly jump instead of arriving.
  */
-export function demoStepDwellMs(step: FlowBeat | undefined): number {
+export function demoStepDwellMs(step: FlowBeat | undefined, engine: ArchitectureEngine): number {
   const authored = step?.durationMs !== undefined && step.durationMs >= 100 ? 1900 : 1100;
-  return Math.max(authored, stepLegCount(step) * FLOW_LEG_MS + 500);
+  return Math.max(authored, stepLegCount(step, engine) * FLOW_LEG_MS + 500);
 }
 
 /**

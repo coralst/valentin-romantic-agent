@@ -264,7 +264,9 @@ describe('AgentOrchestrator', () => {
 
       const systemPrompt = vi.mocked(bedrock.generateResponse).mock.calls[0][1];
       expect(systemPrompt).toContain('Northern Italian');
-      expect(systemPrompt).toMatch(/GOAL 2 is live/);
+      // One stored fact reaches the prompt. Which goal that puts him in is
+      // prompts.test.ts's business — one fact deliberately no longer means GOAL 2.
+      expect(systemPrompt).toMatch(/WHAT YOU KNOW ABOUT/);
     });
 
     it('knows her in a brand-new conversation on the same account', async () => {
@@ -300,7 +302,9 @@ describe('AgentOrchestrator', () => {
 
       const systemPrompt = vi.mocked(bedrock.generateResponse).mock.calls[0][1];
       expect(systemPrompt).toContain('Samantha');
-      expect(systemPrompt).toMatch(/GOAL 2 is live/);
+      // Which goal is live is prompts.test.ts's business; what this test protects
+      // is that the account's profile crossed the session boundary at all.
+      expect(systemPrompt).toMatch(/WHAT YOU KNOW ABOUT SAMANTHA/);
     });
 
     it('lets the active conversation win when a fact was just corrected', async () => {

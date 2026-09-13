@@ -89,6 +89,12 @@ screenshots/final/
 # Ad-hoc bug-hunt captures. Evidence for one PR, not history worth carrying —
 # attach them to the PR instead of committing a few MB of PNGs per sweep.
 screenshots/bug-hunt-*/
+# Rehearsal takes of the demo drive, one numbered directory per run.
+screenshots/demo-rehearsal-*/
+
+# The Chrome profile `demo:drive` reuses so act 3 can open a signed-in Gmail. It
+# holds a live Google session — never commit it, and never share it.
+.demo-chrome-profile/
 
 # Throwaway session drivers. A parallel session spins up its own dev server on
 # its own port and its own ad-hoc Playwright driver; those are scratch, and

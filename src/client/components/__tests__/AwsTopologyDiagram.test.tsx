@@ -1,10 +1,11 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { AwsTopologyDiagram } from '../AwsTopologyDiagram';
+import { AwsTopologyDiagram, TOOL_PANEL_COPY } from '../AwsTopologyDiagram';
 import {
   ARCHITECTURE_ENGINES,
   AWS_NODES,
   AWS_SEGMENTS,
+  awsNode,
   isNodeInEngine,
   isSegmentInEngine,
   routeBetween,
@@ -53,9 +54,13 @@ describe('AwsTopologyDiagram', () => {
     it('names the real deployed resources, not service names alone', () => {
       render(<AwsTopologyDiagram />);
       // The whole argument for the AWS model over the old module model: a room of
-      // builders reads `ValentinTable-dev` instantly. It appears twice, once per
-      // engine, and that is the point — it is genuinely the same table on both.
-      expect(screen.getAllByText('ValentinTable-dev')).toHaveLength(2);
+      // builders reads `ValentinTable-dev` instantly.
+      //
+      // Once, not twice. It used to be drawn per engine, on the theory that showing it
+      // on both halves said "the same table on both" — but two cards bearing the same
+      // ARN say the opposite to anyone reading the picture rather than the caption, and
+      // the question it kept prompting was which of the two her preferences were in.
+      expect(screen.getAllByText('ValentinTable-dev')).toHaveLength(1);
       expect(screen.getByText('valentin-alb-dev')).toBeInTheDocument();
       expect(screen.getByText('valentin-ac-proxy-dev')).toBeInTheDocument();
       expect(screen.getByText('valentin_agent_dev')).toBeInTheDocument();
@@ -203,7 +208,7 @@ describe('AwsTopologyDiagram', () => {
 
   describe('flow direction', () => {
     it('marks an active segment with the direction traffic is travelling', () => {
-      const hops = routeBetween('browser', 'fargate');
+      const hops = routeBetween('browser', 'fargate', 'valentin');
       render(<AwsTopologyDiagram litNode="fargate" activeHops={hops} />);
 
       expect(screen.getByTestId('aws-segment-browser-cloudfront')).toHaveAttribute(
@@ -213,7 +218,7 @@ describe('AwsTopologyDiagram', () => {
     });
 
     it('marks a return leg upstream', () => {
-      const hops = routeBetween('dynamodb', 'browser');
+      const hops = routeBetween('dynamodb', 'browser', 'valentin');
       render(<AwsTopologyDiagram litNode="browser" litIsResponse activeHops={hops} />);
 
       expect(screen.getByTestId('aws-segment-fargate-dynamodb')).toHaveAttribute(
@@ -223,7 +228,7 @@ describe('AwsTopologyDiagram', () => {
     });
 
     it('leaves segments outside the route idle', () => {
-      const hops = routeBetween('browser', 'fargate');
+      const hops = routeBetween('browser', 'fargate', 'valentin');
       render(<AwsTopologyDiagram litNode="fargate" activeHops={hops} />);
 
       expect(screen.getByTestId('aws-segment-cloudfront-s3')).toHaveAttribute(
@@ -238,7 +243,7 @@ describe('AwsTopologyDiagram', () => {
      * still showed an outward arrow, so the eye read the traffic backwards.
      */
     it('shows only the downstream arrowhead on a request', () => {
-      const hops = routeBetween('browser', 'fargate');
+      const hops = routeBetween('browser', 'fargate', 'valentin');
       render(<AwsTopologyDiagram litNode="fargate" activeHops={hops} />);
 
       expect(screen.getByTestId('aws-head-browser-cloudfront-downstream')).toHaveAttribute(
@@ -252,7 +257,7 @@ describe('AwsTopologyDiagram', () => {
     });
 
     it('shows only the upstream arrowhead on a response', () => {
-      const hops = routeBetween('bedrock', 'browser');
+      const hops = routeBetween('bedrock', 'browser', 'valentin');
       render(<AwsTopologyDiagram litNode="browser" litIsResponse activeHops={hops} />);
 
       expect(screen.getByTestId('aws-head-fargate-bedrock-upstream')).toHaveAttribute(
@@ -274,7 +279,7 @@ describe('AwsTopologyDiagram', () => {
       // DynamoDB rather than the external APIs: the integrations card sits on the
       // spine in its own column now, so its link is straight and carries no
       // mid-leg chevron at all — which the next test asserts.
-      const hops = routeBetween('fargate', 'dynamodb');
+      const hops = routeBetween('fargate', 'dynamodb', 'valentin');
       render(<AwsTopologyDiagram litNode="dynamodb" activeHops={hops} />);
 
       expect(screen.getByTestId('aws-head-fargate-dynamodb-mid-downstream')).toHaveAttribute(
@@ -303,7 +308,7 @@ describe('AwsTopologyDiagram', () => {
   describe('motion', () => {
     it('animates the active segment', () => {
       stubReducedMotion(false);
-      const hops = routeBetween('browser', 'fargate');
+      const hops = routeBetween('browser', 'fargate', 'valentin');
       render(<AwsTopologyDiagram litNode="fargate" activeHops={hops} />);
 
       expect(screen.getByTestId('aws-segment-browser-cloudfront').style.animation).toContain(
@@ -313,7 +318,7 @@ describe('AwsTopologyDiagram', () => {
 
     it('drops the animation under reduced motion but keeps the direction', () => {
       stubReducedMotion(true);
-      const hops = routeBetween('browser', 'fargate');
+      const hops = routeBetween('browser', 'fargate', 'valentin');
       render(<AwsTopologyDiagram litNode="fargate" activeHops={hops} />);
 
       const segment = screen.getByTestId('aws-segment-browser-cloudfront');
@@ -388,7 +393,7 @@ describe('AwsTopologyDiagram', () => {
     });
 
     it('refuses to animate a connector on the shaded half', () => {
-      const hops = routeBetween('fargate', 'bedrock');
+      const hops = routeBetween('fargate', 'bedrock', 'valentin');
       render(<AwsTopologyDiagram engine="agentcore" activeHops={hops} />);
 
       expect(screen.getByTestId('aws-segment-fargate-bedrock')).toHaveAttribute(
@@ -407,7 +412,7 @@ describe('AwsTopologyDiagram', () => {
     });
 
     it('animates engine B’s own hops', () => {
-      const hops = routeBetween('ac-proxy', 'ac-memory');
+      const hops = routeBetween('ac-proxy', 'ac-memory', 'agentcore');
       render(<AwsTopologyDiagram engine="agentcore" litNode="ac-memory" activeHops={hops} />);
 
       expect(screen.getByTestId('aws-node-ac-memory')).toHaveAttribute('data-state', 'lit');
@@ -445,6 +450,112 @@ describe('AwsTopologyDiagram', () => {
         'agentcore',
       );
       expect(screen.getByRole('img').getAttribute('aria-label')).toContain('AgentCore');
+    });
+  });
+
+  /**
+   * The eight provider logos over the shared External APIs card.
+   *
+   * "Don't forget the small icons of Spotify, Gmail, etc." — and the point of putting
+   * them on the *shared* card is that they are the same eight services either way. So
+   * the assertion that matters is not that they render but that they render identically
+   * on both engines: the difference between the engines is the route drawn into the
+   * card, not the set of companies at the other end of it.
+   */
+  describe('the provider marks', () => {
+    it('gives the shared card one mark per provider it stands for', () => {
+      const providers = awsNode('integrations')?.providers;
+      expect(providers?.length).toBeGreaterThan(0);
+
+      render(<AwsTopologyDiagram />);
+      const strip = screen.getByTestId('aws-provider-strip');
+      expect(strip.children).toHaveLength(providers!.length);
+    });
+
+    it('draws the same marks whichever engine is selected, because they are shared', () => {
+      for (const engine of ARCHITECTURE_ENGINES) {
+        const { unmount } = render(<AwsTopologyDiagram engine={engine} />);
+        // One strip, not one per engine — a second would be the duplication this
+        // whole change removed, reappearing as decoration.
+        const strips = screen.getAllByTestId('aws-provider-strip');
+        expect(strips, engine).toHaveLength(1);
+        expect(strips[0].children.length, engine).toBe(awsNode('integrations')!.providers!.length);
+        unmount();
+      }
+    });
+  });
+
+  /**
+   * The registered tool entry points.
+   *
+   * This panel is the answer to "show the entry points that are registered as tools":
+   * the Gateway's value is not that it exists but that a fixed list of schemas lives on
+   * it, and engine A's contrasting value is that it has no such list at all. Both
+   * halves of that sentence are asserted, because the greyed empty state is doing as
+   * much work in the comparison as the populated one.
+   */
+  describe('the tool registry panel', () => {
+    /** Every entry point the model says is registered, across both Lambdas. */
+    const registered = AWS_NODES.flatMap((node) => node.toolEntryPoints ?? []);
+
+    it('lists every entry point the Gateway’s Lambdas hold', () => {
+      expect(registered.length).toBeGreaterThan(0);
+
+      render(<AwsTopologyDiagram engine="agentcore" />);
+      const chips = screen
+        .getByTestId('aws-tool-panel')
+        .querySelectorAll('[data-testid^="aws-tool-entry-"]');
+      expect(chips).toHaveLength(registered.length);
+
+      for (const tool of registered) {
+        expect(screen.getByTestId(`aws-tool-entry-${tool}`), tool).toBeInTheDocument();
+      }
+    });
+
+    it('names the Lambda each entry point is registered behind', () => {
+      // The room's next question after "what is registered" is "registered on what",
+      // and the honest answer is a Lambda function name it can go and look up.
+      render(<AwsTopologyDiagram engine="agentcore" />);
+      const panel = screen.getByTestId('aws-tool-panel');
+
+      for (const node of AWS_NODES.filter((candidate) => candidate.toolEntryPoints)) {
+        expect(panel.textContent, node.id).toContain(node.resourceName);
+        expect(panel.textContent, node.id).toContain(`${node.toolEntryPoints!.length} entry points`);
+      }
+    });
+
+    it('speaks up for the Gateway only while the Gateway is on screen', () => {
+      render(<AwsTopologyDiagram engine="agentcore" />);
+      const panel = screen.getByTestId('aws-tool-panel');
+
+      expect(panel).toHaveAttribute('data-state', 'active-engine');
+      expect(panel.textContent).toContain(TOOL_PANEL_COPY.heading);
+      expect(panel.style.opacity).toBe('1');
+    });
+
+    it('greys itself on engine A and says why it is empty rather than just going quiet', () => {
+      // Not hidden: a panel that vanished would let engine A look like it simply
+      // wasn't asked the question. Greyed with its own caption states the difference —
+      // engine A has no registry, it re-describes every schema inside each Converse
+      // request — which is the comparison the drawer exists to make.
+      render(<AwsTopologyDiagram engine="valentin" />);
+      const panel = screen.getByTestId('aws-tool-panel');
+
+      expect(panel).toHaveAttribute('data-state', 'muted');
+      expect(panel.textContent).toContain(TOOL_PANEL_COPY.headingIdle);
+      expect(panel.textContent).not.toContain(TOOL_PANEL_COPY.heading);
+      expect(Number(panel.style.opacity)).toBeLessThan(0.4);
+      expect(panel.style.filter).toBe('grayscale(1)');
+    });
+
+    it('registers entry points on the Gateway’s side of the diagram only', () => {
+      // A tool name on an engine A card would be a claim engine A cannot support:
+      // its schemas are built in-process and never registered anywhere.
+      const holders = AWS_NODES.filter((node) => node.toolEntryPoints).map((node) => node.id);
+      expect(holders).toEqual(['ac-lambda-profile', 'ac-lambda-tools']);
+      for (const id of holders) {
+        expect(isNodeInEngine(id, 'valentin'), id).toBe(false);
+      }
     });
   });
 });

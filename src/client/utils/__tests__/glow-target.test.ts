@@ -191,12 +191,25 @@ describe('learnToolService and glowTargetsForSpan', () => {
     expect(glowTargetsForSpan(span(), 'dynamodb', lookup)).toEqual([]);
   });
 
-  it("recognises engine B's Gateway as the same beat as engine A's integrations", () => {
+  it("recognises engine B's outbound hops as the same beat as engine A's integrations", () => {
     const lookup = new Map([['check_availability', 'ontopo']]);
 
-    expect(glowTargetsForSpan(span(), 'ac-gateway', lookup)).toEqual([
-      { kind: 'tool', service: 'ontopo' },
-    ]);
+    // Both of engine B's nodes on the way out — the Gateway and the tool Lambda
+    // that serves it. `SPAN_ACTION` captions both "asks the outside world", so a
+    // row from either has to be able to say who it called.
+    for (const node of ['ac-gateway', 'ac-lambda-tools']) {
+      expect(glowTargetsForSpan(span(), node, lookup)).toEqual([
+        { kind: 'tool', service: 'ontopo' },
+      ]);
+    }
+  });
+
+  it("does not treat engine B's profile Lambda as an outbound call", () => {
+    // It is captioned "learns something new" — a write to her record, not a call
+    // out to a partner, so there is no integration tile to glow.
+    const lookup = new Map([['check_availability', 'ontopo']]);
+
+    expect(glowTargetsForSpan(span(), 'ac-lambda-profile', lookup)).toEqual([]);
   });
 });
 

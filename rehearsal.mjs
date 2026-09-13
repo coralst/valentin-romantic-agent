@@ -68,6 +68,28 @@ const bodyMatches = re => waitFor(async () => re.test(await bodyText()), { label
 
 await p.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
+// The deployed app opens on a login gate; localhost does not. Without this the
+// script could only ever verify localhost — and the two things it most needs to
+// check are things ONLY the deployed app can show, because `resolveEngine` is
+// resolved per process rather than per request and it is the ALB that routes a
+// request to the second Fargate service.
+//
+// Raced rather than polled: an `isVisible()` straight after `domcontentloaded`
+// answers "no" on both surfaces, because React has rendered neither of them yet
+// — which is how a guarded login click can look like it ran and did nothing.
+// Waiting for whichever lands first costs the local run nothing and tells us
+// which surface we are standing on.
+const login = p.getByTestId('demo-login-button');
+const railGear = p.getByTestId('rail-demo-button');
+await Promise.race([
+  login.waitFor({ state: 'visible', timeout: 45000 }).catch(() => {}),
+  railGear.waitFor({ state: 'visible', timeout: 45000 }).catch(() => {}),
+]);
+if (await login.isVisible().catch(() => false)) {
+  await login.click();
+  await railGear.waitFor({ state: 'visible', timeout: 45000 });
+}
+
 // The demo controls live inside the rail's gear popover (IconRail.tsx), not on a
 // visible toolbar, so the popover has to be open before the seed and reset buttons
 // exist at all. The gear *toggles*, so this checks first — clicking it while the
@@ -103,6 +125,11 @@ const railIsPopulated = async () => !(await railIsEmpty());
 await openDemoMenu();
 ok('seed control present', await waitFor(() => seed.isVisible(), { label: 'seed button' }));
 await seed.click();
+// Polled from the moment of the click rather than read off a snapshot taken after
+// the rail fills, because the announcement is a toast that dismisses itself: by
+// the time the rail is populated it may already have gone, which reads as "never
+// announced" on a slower round trip.
+const announced = await bodyMatches(/demo profile loaded/i);
 // Was a flat 6s sleep; the rail filling up is the actual signal. The persona's
 // own details are asserted on the next line, which is what proves *which* profile
 // landed — this one only proves that one did.
@@ -110,7 +137,7 @@ ok('rail populated after seed', await waitFor(railIsPopulated, { label: 'rail po
 let body = await bodyText();
 ok('persona rendered (Samantha + Kyoto + sage)',
   body.includes('Samantha') && body.includes('Kyoto') && body.includes('sage'));
-ok('announced "Demo profile loaded"', /demo profile loaded/i.test(body));
+ok('announced "Demo profile loaded"', announced);
 await closeDemoMenu();
 
 // 2. architecture drawer + live message
@@ -126,30 +153,55 @@ body = await bodyText();
 if (CHECK_LIVE) {
   ok('real resource names drawn',
     body.includes('ValentinTable-dev') && body.includes('valentin-alb-dev'));
-  // A socket exists here, so `useArchitectureMode` should have flipped to Live on
-  // the first event rather than sitting on the scripted flow.
-  ok('followed real traffic into live mode', !/Scripted walkthrough/.test(body));
 } else {
   skip('real resource names drawn (--no-live-resources)');
-  skip('followed real traffic into live mode (--no-live-resources)');
 }
+// `followed real traffic into live mode` and `still says which engine is
+// answering` used to be asserted here, which is before this script has caused any
+// traffic — the drawer is correctly still on the script at this point, so the
+// first read either failed for the wrong reason or (spelled in sentence case
+// against uppercase-rendered text) could not fail at all. Both moved below the
+// chat turn, where there is real traffic to have followed.
 
-// The engine comparison sheet. Opened here, while the drawer is in live mode, and
-// checked for the property that matters most: it must not print a number nobody
-// measured. On a laptop no turn has completed yet, so every measured tile is an em
-// dash and the two counted tiles carry their real figures.
-const scoreboardToggle = p.getByTestId('scoreboard-toggle');
-ok('comparison sheet has a trigger in the drawer', await scoreboardToggle.isVisible());
-await scoreboardToggle.click();
-const scoreboard = p.getByTestId('engine-scoreboard');
-ok('comparison sheet opens', await waitFor(() => scoreboard.isVisible(), { label: 'scoreboard' }));
-const scoreboardText = await scoreboard.innerText();
-ok('unmeasured tiles show an em dash, not a zero', scoreboardText.includes('—'));
-ok('the sheet says where glue code wins', /Glue code wins at/.test(scoreboardText));
-ok('the sheet does not claim AgentCore removes Fargate',
-  /still answers behind a Fargate proxy/.test(scoreboardText));
-await p.screenshot({ path: `${SHOT_DIR}/rehearsal-${RUN}-scoreboard.png` });
-await scoreboardToggle.click();
+// The diagram itself now carries the comparison that a separate "Why AgentCore" sheet
+// used to make in prose, and the two controls in front of it are gone: the sheet was a
+// second surface arguing what the picture is for, and the Live/Demo pair only offered
+// a presenter the chance to be in the wrong mode mid-sentence. Both absences are
+// asserted, because a control that comes back in a later refactor comes back on a
+// projector.
+const drawerText = await drawer.innerText();
+ok('no scoreboard sheet competing with the diagram',
+  !(await p.getByTestId('engine-scoreboard').isVisible().catch(() => false))
+  && !(await p.getByTestId('scoreboard-toggle').isVisible().catch(() => false)));
+ok('no data-source switch to get stuck in the wrong half of',
+  !/\bLive\b\s*\/?\s*\bDemo\b/.test(drawerText) && !/Data source/i.test(drawerText));
+
+// One table and one set of provider APIs, drawn once and shared. This is the
+// duplication the room kept tripping over: two cards bearing `ValentinTable-dev` read
+// as two tables, and the question it prompted was which one her preferences were in.
+ok('one shared table, not one per engine',
+  await p.getByTestId('aws-node-dynamodb').count() === 1);
+ok('one shared provider card, with one strip of logos',
+  await p.getByTestId('aws-node-integrations').count() === 1
+  && await p.getByTestId('aws-provider-strip').count() === 1);
+
+// And the Gateway's registry, which is the thing an architecture diagram usually
+// cannot show: not that a Gateway exists but what is registered on it. Greyed on
+// engine A, where the same schemas are rebuilt in-process every turn — so the panel is
+// present and captioned rather than blank.
+const toolPanel = p.getByTestId('aws-tool-panel');
+ok('the Gateway’s registered entry points are on the diagram',
+  await waitFor(() => toolPanel.isVisible(), { label: 'tool panel' }));
+const toolPanelText = await toolPanel.innerText();
+ok('the registry names the Lambdas behind it',
+  toolPanelText.includes('valentin-profile-tools-dev')
+  && toolPanelText.includes('valentin-integration-tools-dev'));
+// Case-insensitive on purpose: the heading is `text-transform: uppercase`, and
+// `innerText` reports text as rendered rather than as written.
+ok('the registry is greyed while engine A is selected, and says why',
+  await toolPanel.getAttribute('data-state') === 'muted'
+  && /no tool registry/i.test(toolPanelText));
+await p.screenshot({ path: `${SHOT_DIR}/rehearsal-${RUN}-topology.png` });
 
 const composer = p.locator('textarea, input[type="text"]').first();
 ok('composer usable with drawer open', await composer.isVisible().catch(() => false));
@@ -165,15 +217,53 @@ await composer.fill('She loves late-night jazz and hiking at sunrise.');
 await p.keyboard.press('Enter');
 // One real Bedrock round trip. Was a flat 16s sleep; it typically lands in ~5s,
 // so poll with a ceiling well above the slow case.
-ok('reply travelled through the diagram', await bodyMatches(/agent_message/));
-ok('preference learned in feed', await bodyMatches(/preference_update/));
+//
+// Asserted on the beats the feed RENDERS, not on wire event names. These used to
+// look for `agent_message` and `preference_update`, which are websocket `type`
+// values that never reach the DOM — the feed groups spans into readable beats
+// ("writes a reply", "learns something new"). Both assertions were therefore
+// unfalsifiable-in-reverse: they could only ever fail, and locally they did, for
+// the unrelated reason that this IAM user cannot call Bedrock. That masked the
+// question they are here to answer.
+ok('reply travelled through the diagram', await bodyMatches(/writes a reply/i));
+ok('preference learned in feed', await bodyMatches(/learns something new/i));
+
+// Now that this script has caused traffic, the two things that could not be
+// asked before it did.
+ok('followed real traffic into live mode',
+  await waitFor(async () => !/scripted walkthrough/i.test(await drawer.innerText()),
+    { label: 'live mode' }));
+// The chip stayed, because unlike the deleted switch it reports something only the
+// running system knows: which engine actually answered, and whether it was
+// downgraded to get there.
+const servingChip = p.getByTestId('architecture-serving-chip');
+ok('still says which engine is answering',
+  await waitFor(() => servingChip.isVisible(), { label: 'serving chip' }));
+
+// The DIY engine calls Converse twice on every turn — once for the reply with
+// tools, once to extract preferences — and the count on the feed header is where
+// that stops being a claim and becomes a number a room can read. Polled rather
+// than read once: the extraction call is the second of the two, so the count is
+// legitimately 1 for a few seconds before it is 2.
+const countedBoth = await bodyMatches(/2 model calls/i);
+ok('the feed counts both of engine A’s model calls', countedBoth);
+if (!countedBoth) {
+  const summary = (await drawer.innerText()).match(/\d+ spans? · \d+ model calls?/i);
+  console.log(`  (feed header said: ${summary ? summary[0] : 'no span/model summary on screen'})`);
+}
 // Never a preference value on a projected screen — only its category and key.
 ok('no raw preference value in the feed', !/late-night jazz/i.test(
   await p.getByTestId('aws-flow-feed').innerText().catch(() => ''),
 ));
 
-// 2b. demo mode has to work as a standalone instrument
-await drawer.getByRole('button', { name: 'Demo' }).click();
+// 2b. the scripted walkthrough has to work as a standalone instrument
+//
+// Reached by a verb now, not by a data-source switch — and reachable at all is the
+// point of the test. The socket pings every thirty seconds, so by this line the drawer
+// has been in live mode for a while; without this door the walkthrough would be gone
+// for the rest of the session, which is the one thing the drawer is for when there is
+// no traffic to point at yet.
+await drawer.getByRole('button', { name: 'Walk the flow' }).click();
 const stepCount = p.getByTestId('architecture-step-count');
 ok('demo mode offers step controls',
   await waitFor(() => stepCount.isVisible(), { label: 'step count' }));
@@ -215,7 +305,7 @@ await p.screenshot({ path: `${SHOT_DIR}/rehearsal-${RUN}.png` });
 await b.close();
 
 const secs = ((Date.now() - started) / 1000).toFixed(1);
-console.log(`  screenshots: ${SHOT_DIR}/rehearsal-${RUN}.png, ${SHOT_DIR}/rehearsal-${RUN}-drawer.png, ${SHOT_DIR}/rehearsal-${RUN}-scoreboard.png`);
+console.log(`  screenshots: ${SHOT_DIR}/rehearsal-${RUN}.png, ${SHOT_DIR}/rehearsal-${RUN}-drawer.png, ${SHOT_DIR}/rehearsal-${RUN}-topology.png`);
 console.log(fail.length
   ? `RESULT ${RUN}: ${fail.length} FAILED in ${secs}s -> ${fail.join('; ')}`
   : `RESULT ${RUN}: ALL PASS in ${secs}s`);

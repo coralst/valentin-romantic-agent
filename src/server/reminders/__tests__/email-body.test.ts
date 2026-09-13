@@ -296,3 +296,85 @@ describe('buildReminderEmail — an evening in', () => {
     expect(subject).not.toContain('ideas');
   });
 });
+
+/*
+ * The two blocks that turn this mail from a prompt into a plan he has already made.
+ *
+ * The invariant in `email-body.ts`'s header is under most pressure here: a
+ * confirmation *sounds* like a claim that a table is held, and it must not be one —
+ * an outing row is written whether Ontopo completed the reservation or handed back a
+ * checkout link, so what we actually know is which venue he chose.
+ */
+describe('an evening he has already decided on', () => {
+  const CHOSEN = { venueName: 'Claro', city: 'Tel Aviv' };
+
+  it('names the venue he chose and drops the suggestion list entirely', () => {
+    const { body } = build({ reservation: CHOSEN });
+
+    expect(body).toContain('You chose Claro in Tel Aviv for that evening.');
+    // Three alternatives under a decision he already made is the mail arguing with him.
+    expect(body).not.toContain('Hotel Montefiore');
+    expect(body).not.toContain('Here is what');
+  });
+
+  it('still never claims a table is held', () => {
+    const { subject, body } = build({ reservation: CHOSEN });
+    const text = `${subject}\n${body}`;
+
+    expect(text).not.toContain('booked');
+    expect(text).not.toContain('reserved');
+    expect(subject).toContain('Claro is the place you chose');
+  });
+
+  it('omits the city rather than guessing when it is unknown', () => {
+    const { body } = build({ reservation: { venueName: 'Claro', city: null } });
+    expect(body).toContain('You chose Claro for that evening.');
+  });
+
+  it('carries the way back into the conversation, like every other shape', () => {
+    expect(build({ reservation: CHOSEN }).body).toContain(RESUME_PARAM);
+  });
+});
+
+describe('the surprise at the end', () => {
+  const PLAYLIST = {
+    title: 'For Maya — Nina Simone and the quiet hours',
+    url: 'https://open.spotify.com/playlist/abc123',
+  };
+
+  it('hands over the playlist, after the link and before the signature', () => {
+    const { body } = build({ surprise: PLAYLIST });
+
+    expect(body).toContain('One more thing — I have a surprise for you.');
+    expect(body).toContain(PLAYLIST.title);
+    expect(body).toContain(PLAYLIST.url);
+    // Last, so a reader who came for the date finds it on the way out.
+    expect(body.indexOf(PLAYLIST.url)).toBeGreaterThan(body.indexOf(RESUME_PARAM));
+    expect(body.indexOf(PLAYLIST.url)).toBeLessThan(body.indexOf('— Valentin'));
+  });
+
+  it('says nothing at all when no playlist was made', () => {
+    for (const surprise of [null, undefined]) {
+      expect(build({ surprise }).body).not.toContain('surprise');
+    }
+  });
+
+  /*
+   * The failure this guards is the one that would embarrass him in front of her: a mail
+   * promising a surprise with no link under it, or a link with no name.
+   */
+  it('never promises a surprise it cannot link to', () => {
+    expect(build({ surprise: { title: 'A playlist', url: '' } }).body).not.toContain('surprise');
+    expect(build({ surprise: { title: '  ', url: PLAYLIST.url } }).body).not.toContain('surprise');
+  });
+
+  it('rides along with a confirmed venue, which is the whole point of it', () => {
+    const { body } = build({
+      reservation: { venueName: 'Claro', city: 'Tel Aviv' },
+      surprise: PLAYLIST,
+    });
+
+    expect(body).toContain('You chose Claro');
+    expect(body).toContain(PLAYLIST.url);
+  });
+});

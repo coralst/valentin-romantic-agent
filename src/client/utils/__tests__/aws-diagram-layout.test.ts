@@ -98,11 +98,27 @@ describe('AWS_NODE_BOXES', () => {
     }
   });
 
-  it('branches S3 above the ALB and keeps Bedrock above DynamoDB', () => {
+  it('branches S3 above the ALB, in the ALB’s own column', () => {
     expect(AWS_NODE_BOXES.s3.top).toBeLessThan(AWS_NODE_BOXES.alb.top);
     expect(AWS_NODE_BOXES.s3.x).toBe(AWS_NODE_BOXES.alb.x);
-    expect(AWS_NODE_BOXES.bedrock.top).toBeLessThan(AWS_NODE_BOXES.dynamodb.top);
-    expect(AWS_NODE_BOXES.bedrock.x).toBe(AWS_NODE_BOXES.dynamodb.x);
+  });
+
+  it('stands the two shared resources together in the rightmost column', () => {
+    /*
+     * The table used to sit under Bedrock, in engine A's own column, because it was
+     * drawn as engine A's table — and engine B was given a second card for the very
+     * same DynamoDB table one band lower.
+     *
+     * It is now one card, and so are the provider APIs, and they share the far-right
+     * column because that is the only place both engines can reach without either
+     * one's arrow crossing the other's band. The pair being column-aligned is what
+     * lets a room read "everything to the right of here is shared".
+     */
+    expect(AWS_NODE_BOXES.dynamodb.x).toBe(AWS_NODE_BOXES.integrations.x);
+    expect(AWS_NODE_BOXES.integrations.top).toBeLessThan(AWS_NODE_BOXES.dynamodb.top);
+
+    const rightmost = Math.max(...AWS_NODES.map((node) => AWS_NODE_BOXES[node.id].x));
+    expect(AWS_NODE_BOXES.dynamodb.x).toBe(rightmost);
   });
 
   it('carries no per-node size, so every card is the same box', () => {
@@ -156,7 +172,7 @@ describe('AWS_NODE_BOXES', () => {
 
   it('starts every tier label at the x of the column it heads', () => {
     const columnXs = new Set(AWS_NODES.map((node) => AWS_NODE_BOXES[node.id].x));
-    expect(AWS_TIER_LABELS).toHaveLength(8);
+    expect(AWS_TIER_LABELS).toHaveLength(9);
     for (const label of AWS_TIER_LABELS) {
       expect(columnXs.has(label.x), label.label).toBe(true);
     }
@@ -209,7 +225,9 @@ describe('AWS_NODE_BOXES', () => {
   it('lays engine B out along its own spine, left to right', () => {
     // Same property the engine-A spine has, and for the same reason: the drawer is
     // read at a glance from a distance, and a row that zig-zags stops reading.
-    const spine: AwsNodeId[] = ['ac-proxy', 'ac-runtime', 'ac-gateway', 'ac-dynamodb'];
+    // Ends at the integration Lambda rather than at a second DynamoDB card: the
+    // table it writes to is the shared one, a column further right and off this band.
+    const spine: AwsNodeId[] = ['ac-proxy', 'ac-runtime', 'ac-gateway', 'ac-lambda-tools'];
 
     for (const id of spine) {
       expect(AWS_NODE_BOXES[id].top, id).toBe(AGENTCORE_SPINE_Y - AWS_NODE_CARD.height / 2);
@@ -349,16 +367,24 @@ describe('the external APIs column', () => {
 describe('mid-leg chevrons', () => {
   it('marks exactly the links that bend', () => {
     expect([...ELBOWED_SEGMENTS].sort()).toEqual([
-      // Engine B needs three: the drop from the ALB into its own band, and both
-      // Memory and the integration tools branching up off its spine.
-      'ac-gateway-ac-integrations',
+      // Engine B's own band bends twice off its spine: up to Memory, and up to the
+      // profile Lambda.
+      'ac-gateway-ac-lambda-profile',
+      /*
+       * The three reaches into the shared column — two from engine B's band, one from
+       * engine A's. All of them bend, and that is the column earning its keep: the
+       * shared cards sit at their own heights precisely because neither engine owns
+       * them, so no engine's spine can run straight through.
+       */
+      'ac-lambda-tools-integrations',
+      'ac-proxy-dynamodb',
       'ac-runtime-ac-memory',
+      // The drop from the shared ALB down into engine B's band.
       'alb-ac-proxy',
       'cloudfront-s3',
       'fargate-bedrock',
-      // The below-spine elbow — and the chevron pair that is easy to get
-      // backwards — is DynamoDB's again: the integrations card moved onto the
-      // spine in its own column, so its link runs flat.
+      // Engine A's reach down to the shared table, and the chevron pair that is easy
+      // to get backwards: this leg is below the spine while Bedrock's is above it.
       'fargate-dynamodb',
     ]);
   });

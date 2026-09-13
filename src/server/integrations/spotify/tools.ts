@@ -610,6 +610,18 @@ export const proposePlaylistTool: AgentTool = {
         trackCount: created.trackCount,
         tracks: titles,
       },
+      /*
+       * Only here. This is the single branch on which a playlist exists, has songs
+       * in it and has a URL that opens — the empty-playlist branch above returns
+       * before this, and the fixture branch deliberately has no link at all. A
+       * reminder that promised a surprise and linked to one of those would be worse
+       * than one that promised nothing.
+       *
+       * `created.url` is optional on the client's return type, so it is checked
+       * rather than asserted: a save that somehow came back without a link still
+       * gets its reply, and just leaves no keepsake behind.
+       */
+      ...(created.url ? { keepsake: { kind: 'playlist' as const, title: name, url: created.url } } : {}),
     };
   },
 };

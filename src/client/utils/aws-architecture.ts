@@ -1,5 +1,6 @@
 import type { EngineId } from '../../shared/interfaces/engine';
 import type { ServerEvent } from '../../shared/interfaces/ws-events';
+import type { BrandMarkId } from '../design-system/brand-marks';
 
 /**
  * The real AWS topology behind Valentin, as a model the view can render and
@@ -30,6 +31,14 @@ import type { ServerEvent } from '../../shared/interfaces/ws-events';
  *   engine B  valentin-ac-proxy-dev  Bedrock AgentCore Runtime · Memory · Gateway
  * Browser, CloudFront, S3 and the ALB carry no engine: they are genuinely shared,
  * and greying them out when you switch would claim a difference that isn't there.
+ *
+ * So are the table and the providers, and that is the comparison's whole premise:
+ * `ValentinTable-dev` and the eight real APIs are *one* set of resources reached
+ * two different ways — engine A calls them from the task, engine B goes through
+ * the Gateway's two Lambda targets. An earlier version drew them twice, once per
+ * engine, which reads as two databases and undercuts the point. See
+ * {@link PARENT_BY_ENGINE} for how one node is reached by two paths without
+ * giving the tree two parents.
  */
 
 /** Stable identifier for an AWS resource in the diagram. */
@@ -46,8 +55,8 @@ export type AwsNodeId =
   | 'ac-runtime'
   | 'ac-memory'
   | 'ac-gateway'
-  | 'ac-dynamodb'
-  | 'ac-integrations';
+  | 'ac-lambda-profile'
+  | 'ac-lambda-tools';
 
 /**
  * Which engine a resource belongs to.
@@ -95,6 +104,22 @@ export interface AwsNode {
   engine?: ArchitectureEngine;
   /** Inside the Bedrock AgentCore boundary — drawn inside its own dashed box. */
   inAgentCore?: boolean;
+  /**
+   * Third-party providers this node stands for, drawn as a row of logos beneath it.
+   *
+   * Only `integrations` has them. The ids are `BrandMarkId`s so the diagram reuses
+   * the marks the integrations panel already draws rather than authoring a second
+   * set that could drift from it.
+   */
+  providers?: readonly BrandMarkId[];
+  /**
+   * The tool names registered on the Gateway for this target, in schema order.
+   *
+   * Facts about the deployment, not decoration: these are the entry points in
+   * `infra/lib/agentcore-stack.ts`'s `toolSchema`, and they are what the Gateway
+   * actually advertises to the agent. The layout decides how many fit.
+   */
+  toolEntryPoints?: readonly string[];
 }
 
 export const AWS_NODES: readonly AwsNode[] = [
@@ -144,13 +169,20 @@ export const AWS_NODES: readonly AwsNode[] = [
     tier: 'data',
     engine: 'valentin',
   },
+  /*
+   * One table, and no `engine` field — the single most load-bearing omission in
+   * this file. Engine A's task writes it through a VPC gateway endpoint; engine B's
+   * proxy writes it the same way, and the agent *also* reads and writes it through
+   * the Gateway's profile Lambda. Three arrows, one row of data. Both engines' UIs
+   * read the profile from here, which is why switching engines mid-conversation
+   * keeps her file intact.
+   */
   {
     id: 'dynamodb',
     service: 'Amazon DynamoDB',
     resourceName: 'ValentinTable-dev',
-    caption: 'pk/sk · GSI1 · on-demand',
+    caption: 'pk/sk · GSI1 · both engines',
     tier: 'data',
-    engine: 'valentin',
   },
 
   // --- Engine B. Same image as `fargate`, same task size, same table. ---
@@ -192,63 +224,114 @@ export const AWS_NODES: readonly AwsNode[] = [
     id: 'ac-gateway',
     service: 'AgentCore Gateway',
     resourceName: 'valentin-gateway-dev',
-    // Two targets now, and the count is what the Gateway's benefit looks like
-    // from the outside: 29 tool schemas declared once, in the stack, reached over
-    // one MCP endpoint with the JWT handled for the agent. Engine A describes the
-    // same jobs to Bedrock itself, in its own loop, on every turn.
-    caption: 'MCP · 2 Lambda targets · 29 tools',
+    // What the Gateway is, in the fewest words that stay true: one MCP endpoint
+    // and the JWT handled for the agent. The two targets behind it used to be
+    // summarised here as a tool count; they are drawn as their own Lambdas now,
+    // because "which code runs my tool" is the question this diagram is for.
+    caption: 'one MCP endpoint · JWT auth',
     tier: 'data',
     engine: 'agentcore',
     inAgentCore: true,
   },
+  /*
+   * The two Lambda targets — the reason engine B needs no credentials in the task.
+   *
+   * Deliberately drawn *outside* the AgentCore box (see `AGENTCORE_BOX`): these are
+   * our functions, in our account, and the Gateway invokes them. Naming them is what
+   * makes the comparison legible — engine A's task calls Ontopo itself with keys it
+   * holds, engine B's task cannot and does not.
+   */
   {
-    id: 'ac-dynamodb',
-    service: 'Amazon DynamoDB',
-    resourceName: 'ValentinTable-dev',
-    // Drawn twice, and it is the same table both times. Duplicating the node is
-    // how a tree says "same resource, different path": engine A writes it from
-    // the task, engine B reaches it through the Gateway's Lambda target. The
-    // Lambda's name is on the connector rather than in here, which is where it
-    // belongs anyway — it is the hop, not the table.
-    caption: 'same table · via the Gateway',
+    id: 'ac-lambda-profile',
+    service: 'AWS Lambda',
+    resourceName: 'valentin-profile-tools-dev',
+    caption: 'valentin-profile · 3 tools',
     tier: 'data',
     engine: 'agentcore',
+    toolEntryPoints: ['get_partner_profile', 'save_preference', 'list_preferences'],
   },
   {
-    id: 'ac-integrations',
-    service: 'External APIs',
-    // The Lambda behind the second target, named here rather than on the
-    // connector because on this path it is the thing holding the credentials:
-    // engine A's task calls Ontopo itself, engine B's does not and cannot.
+    id: 'ac-lambda-tools',
+    service: 'AWS Lambda',
     resourceName: 'valentin-integration-tools-dev',
-    caption: 'same tools · via the Gateway',
+    // The architectural fact, not the count: the provider secrets are read here,
+    // from `INTEGRATION_SECRETS_PREFIX`, by a function the agent can only reach
+    // through the Gateway.
+    caption: 'holds the keys · 26 tools',
     tier: 'data',
-    // Engine B's copy of `integrations`, the same duplication as `ac-dynamodb`
-    // and for the same reason: one real set of providers, two routes to it. This
-    // is the node that makes the Gateway branch visible, and it is visible only
-    // with the toggle on because of this one field.
     engine: 'agentcore',
+    /*
+     * Every entry point `valentin-integrations` advertises, in schema order: the 19
+     * offered tools, then the 7 `confirm_*` halves the stack derives from the gated
+     * ones. `create_conversation_link` is absent because the stack withholds it.
+     *
+     * The confirms are in the list and that is the point of listing them at all —
+     * `agent.py` filters them out of what it shows the model, so they exist for the
+     * application to call after a human clicks Confirm. Propose and confirm are two
+     * authorities, and here they are two tools.
+     */
+    toolEntryPoints: [
+      'check_availability',
+      'check_shabbat',
+      'find_gift_delivery',
+      'find_music',
+      'find_occasions',
+      'find_places_nearby',
+      'find_restaurants',
+      'get_hebrew_occasions',
+      'propose_calendar_event',
+      'propose_email',
+      'propose_gift',
+      'propose_hotel_booking',
+      'propose_playlist',
+      'propose_reservation',
+      'propose_whatsapp_nudge',
+      'read_webpage',
+      'search_activities',
+      'search_hotels',
+      'search_web',
+      'confirm_calendar_event',
+      'confirm_email',
+      'confirm_gift',
+      'confirm_hotel_booking',
+      'confirm_playlist',
+      'confirm_reservation',
+      'confirm_whatsapp_nudge',
+    ],
   },
   /*
    * The one node here that is not AWS, and the only honest way to draw the tool
-   * loop: outbound HTTPS from the task to Ontopo, Hebcal, Amadeus, Google and
-   * Meta. Omitting it would draw a diagram in which Valentin books a restaurant
-   * with no restaurant in the picture.
+   * loop: the real Ontopo, Google, Spotify, Gmail, Wolt and Hebcal endpoints.
+   * Omitting it would draw a diagram in which Valentin books a restaurant with no
+   * restaurant in the picture.
    *
-   * One grouped node rather than six. Six cards do not read on a projector, and
+   * One grouped node rather than eight. Eight cards do not read on a projector, and
    * which service fired is swapped into `resourceName` live from the span — see
    * `INTEGRATION_LABELS` in the span bridge — so the room still sees "Ontopo" and
-   * its real duration on a single node.
+   * its real duration on a single node. The logos beneath it are how the room knows
+   * which eight without reading a list.
+   *
+   * Shared, like `dynamodb`: the same providers, called from the task on engine A
+   * and from the Gateway's Lambda on engine B. Scoping it to engine A — which an
+   * earlier version did, with a second copy for engine B — claimed the two engines
+   * integrate with different companies.
    */
   {
     id: 'integrations',
     service: 'External APIs',
-    resourceName: '6 integrations',
-    caption: 'outbound HTTPS · NAT gateway',
+    resourceName: '8 providers',
+    caption: 'direct on A · Gateway on B',
     tier: 'data',
-    // Engine A's, not shared: engine B reaches the same jobs through the Gateway,
-    // so leaving this unscoped would light it on a band that never calls it.
-    engine: 'valentin',
+    providers: [
+      'ontopo',
+      'google-places',
+      'google-calendar',
+      'wolt',
+      'spotify',
+      'gmail',
+      'web-search',
+      'hebcal',
+    ],
   },
 ] as const;
 
@@ -284,12 +367,16 @@ export function isSegmentInEngine(segment: AwsSegment, engine: ArchitectureEngin
  * Bedrock span from engine B does not exist and inventing a node for it would be
  * drawing a call we cannot measure. It maps to the Runtime instead, which is
  * where that latency is actually observable from the proxy.
+ *
+ * `dynamodb` and `integrations` have no entry either, and for the opposite reason:
+ * they need no translation because there is nothing to translate to. A
+ * `preference.saved` span from engine B names the same table engine A's does, and
+ * that is the truth — what differs is the *route*, which {@link PARENT_BY_ENGINE}
+ * owns.
  */
 const AGENTCORE_COUNTERPART: Readonly<Partial<Record<AwsNodeId, AwsNodeId>>> = {
   fargate: 'ac-proxy',
   bedrock: 'ac-runtime',
-  dynamodb: 'ac-dynamodb',
-  integrations: 'ac-integrations',
 };
 
 /**
@@ -322,34 +409,68 @@ export function nodeForEngine(id: AwsNodeId, engine: ArchitectureEngine): AwsNod
 }
 
 /**
- * The parent of each node — the resource one hop closer to the browser.
+ * The parent of each node — the resource one hop closer to the browser — **per
+ * engine**.
  *
- * This is the load-bearing fact of the whole diagram: the distribution is a
- * **tree** rooted at the browser, so the path between any two resources is
- * unique and can be *computed* rather than authored. That is what makes an
- * impossible link — DynamoDB talking straight to CloudFront, say — not merely
- * unlikely but unrepresentable. An earlier hand-labelled version of this
+ * This is the load-bearing fact of the whole diagram: on either engine the
+ * distribution is a **tree** rooted at the browser, so the path between any two
+ * resources is unique and can be *computed* rather than authored. That is what
+ * makes an impossible link — DynamoDB talking straight to CloudFront, say — not
+ * merely unlikely but unrepresentable. An earlier hand-labelled version of this
  * diagram drew exactly that, which is why the model is derived now.
+ *
+ * WHY IT IS KEYED BY ENGINE
+ *
+ * One map cannot express a shared resource. `ValentinTable-dev` is reached from
+ * the ECS task on engine A and from the proxy on engine B, which is two parents
+ * for one node — so the earlier model duplicated the table into an `ac-dynamodb`
+ * and drew two databases where the deployment has one. Splitting the map by engine
+ * keeps each side a strict tree (routes stay unique and computable) while the node
+ * itself stays single. That is the whole trick, and it is why `dynamodb` and
+ * `integrations` appear in both maps with different parents.
  *
  * The browser is the root and has no parent.
  */
-const PARENT: Readonly<Partial<Record<AwsNodeId, AwsNodeId>>> = {
-  cloudfront: 'browser',
-  s3: 'cloudfront',
-  alb: 'cloudfront',
-  fargate: 'alb',
-  bedrock: 'fargate',
-  dynamodb: 'fargate',
-  integrations: 'fargate',
-  // The tree forks at the ALB, which is exactly where the deployed system forks:
-  // one listener, two target groups, routed by path and by the
-  // `X-Valentin-Engine` header.
-  'ac-proxy': 'alb',
-  'ac-runtime': 'ac-proxy',
-  'ac-memory': 'ac-runtime',
-  'ac-gateway': 'ac-runtime',
-  'ac-dynamodb': 'ac-gateway',
-  'ac-integrations': 'ac-gateway',
+const PARENT_BY_ENGINE: Readonly<
+  Record<ArchitectureEngine, Readonly<Partial<Record<AwsNodeId, AwsNodeId>>>>
+> = {
+  valentin: {
+    cloudfront: 'browser',
+    s3: 'cloudfront',
+    alb: 'cloudfront',
+    fargate: 'alb',
+    bedrock: 'fargate',
+    dynamodb: 'fargate',
+    integrations: 'fargate',
+  },
+  agentcore: {
+    cloudfront: 'browser',
+    s3: 'cloudfront',
+    alb: 'cloudfront',
+    // The tree forks at the ALB, which is exactly where the deployed system forks:
+    // one listener, two target groups, routed by path and by the
+    // `X-Valentin-Engine` header.
+    'ac-proxy': 'alb',
+    'ac-runtime': 'ac-proxy',
+    'ac-memory': 'ac-runtime',
+    'ac-gateway': 'ac-runtime',
+    'ac-lambda-profile': 'ac-gateway',
+    'ac-lambda-tools': 'ac-gateway',
+    /*
+     * The table's parent on engine B is the *proxy*, not the profile Lambda, and the
+     * distinction is the difference between a diagram and a claim. Every DynamoDB
+     * span this drawer ever receives from engine B comes from the proxy's own store
+     * calls — `createSession`, `findPreference`, the Memory mirror — because the
+     * Lambda runs in AWS and reports to CloudWatch, not to this socket. Routing
+     * engine B's table spans through the Gateway would animate three hops that did
+     * not happen. The Lambda's access to the table is real and is drawn (see
+     * `ac-lambda-profile-dynamodb`); it is simply never a *route*.
+     */
+    dynamodb: 'ac-proxy',
+    // The providers, though, genuinely are only reachable through the Gateway on
+    // this engine: the proxy's task role holds no provider secrets.
+    integrations: 'ac-lambda-tools',
+  },
 };
 
 /**
@@ -366,10 +487,13 @@ export type AwsSegmentId =
   | 'fargate-integrations'
   | 'alb-ac-proxy'
   | 'ac-proxy-ac-runtime'
+  | 'ac-proxy-dynamodb'
   | 'ac-runtime-ac-memory'
   | 'ac-runtime-ac-gateway'
-  | 'ac-gateway-ac-dynamodb'
-  | 'ac-gateway-ac-integrations';
+  | 'ac-gateway-ac-lambda-profile'
+  | 'ac-gateway-ac-lambda-tools'
+  | 'ac-lambda-profile-dynamodb'
+  | 'ac-lambda-tools-integrations';
 
 /** A connector in the diagram, always oriented parent → child. */
 export interface AwsSegment {
@@ -416,26 +540,70 @@ export const AWS_SEGMENTS: readonly AwsSegment[] = [
     label: 'MCP tool call',
   },
   {
-    id: 'ac-gateway-ac-dynamodb',
+    id: 'ac-gateway-ac-lambda-profile',
     from: 'ac-gateway',
-    to: 'ac-dynamodb',
-    label: 'Lambda target',
+    to: 'ac-lambda-profile',
+    label: 'valentin-profile target',
   },
   {
-    id: 'ac-gateway-ac-integrations',
+    id: 'ac-gateway-ac-lambda-tools',
     from: 'ac-gateway',
-    to: 'ac-integrations',
+    to: 'ac-lambda-tools',
     // Named for the target rather than the transport, which is the difference
     // this connector exists to show: engine A's equivalent hop is labelled
     // 'NAT · public internet' from the task, because on that path the task itself
     // holds the credentials and makes the call.
     label: 'valentin-integrations target',
   },
+  {
+    id: 'ac-lambda-tools-integrations',
+    from: 'ac-lambda-tools',
+    to: 'integrations',
+    // Same public internet as engine A's, from a Lambda instead of a task — which
+    // is why the label names the credentials rather than the network: that is what
+    // actually differs about this hop.
+    label: 'provider keys · Secrets Manager',
+  },
+  {
+    id: 'ac-proxy-dynamodb',
+    from: 'ac-proxy',
+    to: 'dynamodb',
+    // The same VPC gateway endpoint engine A uses, from the other task. Engine B's
+    // proxy owns sessions, the transcript and the preference mirror, so this is the
+    // connector every DynamoDB span on this engine actually travels.
+    label: 'VPC gateway endpoint',
+  },
+  {
+    id: 'ac-lambda-profile-dynamodb',
+    from: 'ac-lambda-profile',
+    to: 'dynamodb',
+    /*
+     * Drawn, and never routed. `PARENT_BY_ENGINE.agentcore` gives the table the
+     * *proxy* as its parent, so `routeBetween` never selects this segment — which is
+     * correct, because nothing in this drawer can observe it: the Lambda's writes
+     * happen behind the Gateway and land in CloudWatch, not on this socket. It is
+     * here because it is how the agent's `save_preference` actually reaches the
+     * table, and a Gateway target with no target would be the more misleading
+     * omission. `aws-architecture.test.ts` pins both halves of that.
+     */
+    label: 'the agent’s own writes',
+  },
 ] as const;
 
-/** Segment joining a node to its parent. Undefined for the root. */
-function segmentToParent(id: AwsNodeId): AwsSegment | undefined {
-  const parent = PARENT[id];
+/**
+ * The resource one hop closer to the browser, on the given engine.
+ *
+ * Undefined for the root, and undefined for a node the engine does not use —
+ * `ac-gateway` on engine A has no parent because engine A has no Gateway, and a
+ * route asking for one gets an empty path rather than a guess.
+ */
+function parentOf(id: AwsNodeId, engine: ArchitectureEngine): AwsNodeId | undefined {
+  return PARENT_BY_ENGINE[engine][id];
+}
+
+/** Segment joining a node to its parent on this engine. Undefined for the root. */
+function segmentToParent(id: AwsNodeId, engine: ArchitectureEngine): AwsSegment | undefined {
+  const parent = parentOf(id, engine);
   if (!parent) return undefined;
   return AWS_SEGMENTS.find((segment) => segment.from === parent && segment.to === id);
 }
@@ -453,48 +621,62 @@ export interface AwsHop {
   downstream: boolean;
 }
 
-/** The chain of nodes from `id` up to the root, inclusive of both. */
-function chainToRoot(id: AwsNodeId): AwsNodeId[] {
+/** The chain of nodes from `id` up to the root on this engine, inclusive of both. */
+function chainToRoot(id: AwsNodeId, engine: ArchitectureEngine): AwsNodeId[] {
   const chain: AwsNodeId[] = [id];
-  let current = PARENT[id];
+  let current = parentOf(id, engine);
   while (current) {
     chain.push(current);
-    current = PARENT[current];
+    current = parentOf(current, engine);
   }
   return chain;
 }
 
 /**
- * The hops traffic takes to get from `from` to `to`, in travel order.
+ * The hops traffic takes to get from `from` to `to` on `engine`, in travel order.
  *
- * Because the topology is a tree, this is the unique path: climb from `from` to
- * the lowest common ancestor, then descend to `to`. Same node in and out gives
- * an empty route — work that happened without a network hop.
+ * Because each engine's topology is a tree, this is the unique path: climb from
+ * `from` to the lowest common ancestor, then descend to `to`. Same node in and out
+ * gives an empty route — work that happened without a network hop.
+ *
+ * `engine` is required rather than defaulted, and that is deliberate: since the
+ * table and the providers are shared, the *same* pair of endpoints has two
+ * different correct answers, and a call site that forgets to say which engine it is
+ * drawing would silently get engine A's. Every caller has the engine to hand.
  */
-export function routeBetween(from: AwsNodeId, to: AwsNodeId): readonly AwsHop[] {
+export function routeBetween(
+  from: AwsNodeId,
+  to: AwsNodeId,
+  engine: ArchitectureEngine,
+): readonly AwsHop[] {
   if (from === to) return [];
 
-  const fromChain = chainToRoot(from);
-  const toChain = chainToRoot(to);
+  const fromChain = chainToRoot(from, engine);
+  const toChain = chainToRoot(to, engine);
   const meetingPoint = fromChain.find((id) => toChain.includes(id));
-  // Unreachable while every node chains to `browser`, but a future node added
-  // without a parent entry would otherwise route into nonsense silently.
+  // Reachable now, not merely defensive: ask for a route to `ac-gateway` on engine
+  // A and the two chains never meet, because engine A's map has no Gateway. An
+  // empty route is the honest answer — that path does not exist on that engine.
   if (!meetingPoint) return [];
 
   const hops: AwsHop[] = [];
 
-  for (let id: AwsNodeId | undefined = from; id && id !== meetingPoint; id = PARENT[id]) {
-    const segment = segmentToParent(id);
-    const parent = PARENT[id];
+  for (
+    let id: AwsNodeId | undefined = from;
+    id && id !== meetingPoint;
+    id = parentOf(id, engine)
+  ) {
+    const segment = segmentToParent(id, engine);
+    const parent = parentOf(id, engine);
     if (segment && parent) hops.push({ segment: segment.id, node: parent, downstream: false });
   }
 
   const descent: AwsNodeId[] = [];
-  for (let id: AwsNodeId | undefined = to; id && id !== meetingPoint; id = PARENT[id]) {
+  for (let id: AwsNodeId | undefined = to; id && id !== meetingPoint; id = parentOf(id, engine)) {
     descent.push(id);
   }
   for (const id of descent.reverse()) {
-    const segment = segmentToParent(id);
+    const segment = segmentToParent(id, engine);
     if (segment) hops.push({ segment: segment.id, node: id, downstream: true });
   }
 
@@ -502,8 +684,12 @@ export function routeBetween(from: AwsNodeId, to: AwsNodeId): readonly AwsHop[] 
 }
 
 /** The nodes a route touches, including both endpoints, in travel order. */
-export function nodesAlongRoute(from: AwsNodeId, to: AwsNodeId): readonly AwsNodeId[] {
-  const hops = routeBetween(from, to);
+export function nodesAlongRoute(
+  from: AwsNodeId,
+  to: AwsNodeId,
+  engine: ArchitectureEngine,
+): readonly AwsNodeId[] {
+  const hops = routeBetween(from, to, engine);
   if (hops.length === 0) return [from];
   return [from, ...hops.map((hop) => hop.node)];
 }
@@ -533,8 +719,12 @@ export type FlowLeg =
  * with no network hop (`from === to`) is a single node leg rather than nothing:
  * something did happen, it just happened in one place.
  */
-export function flowLegs(from: AwsNodeId, to: AwsNodeId): readonly FlowLeg[] {
-  const hops = routeBetween(from, to);
+export function flowLegs(
+  from: AwsNodeId,
+  to: AwsNodeId,
+  engine: ArchitectureEngine,
+): readonly FlowLeg[] {
+  const hops = routeBetween(from, to, engine);
   if (hops.length === 0) return [{ kind: 'node', node: to, downstream: true }];
 
   const legs: FlowLeg[] = [{ kind: 'node', node: from, downstream: hops[0].downstream }];
@@ -589,7 +779,11 @@ export function awsNodesForEventType(
 ): readonly AwsNodeId[] {
   const route = EVENT_ROUTES[eventType];
   if (!route) return [];
-  return nodesAlongRoute(nodeForEngine(route.from, engine), nodeForEngine(route.to, engine));
+  return nodesAlongRoute(
+    nodeForEngine(route.from, engine),
+    nodeForEngine(route.to, engine),
+    engine,
+  );
 }
 
 /** The connectors that light up for an event type, with their directions. */
@@ -599,7 +793,7 @@ export function awsHopsForEventType(
 ): readonly AwsHop[] {
   const route = EVENT_ROUTES[eventType];
   if (!route) return [];
-  return routeBetween(nodeForEngine(route.from, engine), nodeForEngine(route.to, engine));
+  return routeBetween(nodeForEngine(route.from, engine), nodeForEngine(route.to, engine), engine);
 }
 
 /**
@@ -634,10 +828,11 @@ const AGENTCORE_RESOURCE_IDS: Readonly<Record<string, AwsNodeId>> = {
   'agentcore-runtime': 'ac-runtime',
   'agentcore-memory': 'ac-memory',
   'agentcore-gateway': 'ac-gateway',
-  // A tool call the Gateway routed to the integration Lambda. Its own id rather
-  // than `integrations`, because that one is engine A's node and `nodeForEngine`
-  // would translate it back the wrong way on a mislabelled view.
-  'agentcore-integrations': 'ac-integrations',
+  // A tool call the Gateway routed to the integration Lambda. Resolves to the
+  // *Lambda*, not to `integrations`: what the proxy timed is the Gateway round trip
+  // ending in that function, and lighting the provider card instead would credit
+  // Ontopo with a duration that includes two AWS hops it had no part in.
+  'agentcore-integrations': 'ac-lambda-tools',
 };
 
 /**

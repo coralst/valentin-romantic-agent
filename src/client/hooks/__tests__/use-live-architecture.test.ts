@@ -3,7 +3,7 @@ import { act, renderHook } from '@testing-library/react';
 import { useLiveArchitecture, LIVE_BEAT_LIMIT, LIVE_HIGHLIGHT_MS } from '../use-live-architecture';
 import { publishInboundWsEvent, resetWsObservers } from '../../utils/ws-event-observer';
 import { routeBetween } from '../../utils/aws-architecture';
-import { FLOW_LEG_MS } from '../../utils/aws-demo-flows';
+import { FLOW_ACTION, FLOW_LEG_MS } from '../../utils/aws-demo-flows';
 import type { AwsSpan, ServerEvent } from '../../../shared/interfaces/ws-events';
 import type { PreferenceWithHistory } from '../../../shared/interfaces/preference';
 
@@ -167,11 +167,106 @@ describe('useLiveArchitecture', () => {
       expect(result.current.activeHops).toEqual([route[0]]);
     });
 
+    /*
+     * The captions the drawer's whole claim to be a log rests on.
+     *
+     * Every one of these rows is a `PutItem` or a `Converse` on the same resource
+     * with a near-identical duration, and the feed used to caption each pair
+     * identically — both model calls as "thinks", both table writes as "learns
+     * something new". `operation` and `detail` are the only fields that separate
+     * them, so these are the assertions that keep a row from claiming to be a call
+     * it was not.
+     */
+    describe('captions', () => {
+      function actionFor(overrides: Partial<AwsSpan>): string | undefined {
+        const { result } = renderHook(() => useLiveArchitecture());
+        act(() => {
+          publishInboundWsEvent(makeSpan(overrides));
+        });
+        return result.current.currentBeat?.action;
+      }
+
+      it('tells the reply call from the extraction pass', () => {
+        const bedrock = { resourceId: 'bedrock', service: 'Amazon Bedrock', operation: 'Converse' };
+
+        expect(actionFor({ ...bedrock, detail: 'chat-reply' })).toBe(FLOW_ACTION.writesTheReply);
+        expect(actionFor({ ...bedrock, detail: 'extract-preferences' })).toBe(
+          FLOW_ACTION.extractsAPreference,
+        );
+      });
+
+      /**
+       * The one that was wrong on every single turn.
+       *
+       * Tools are on, so the call that composes almost every reply is `chat-tools` —
+       * and captioning that "picks a tool" told a room a tool had been chosen on
+       * turns that used none. Only the stop reason separates the two, so only the
+       * suffix may caption it.
+       */
+      it('tells a tool-loop call that replied from one that asked for a tool', () => {
+        const bedrock = { resourceId: 'bedrock', service: 'Amazon Bedrock', operation: 'Converse' };
+
+        expect(actionFor({ ...bedrock, detail: 'chat-tools' })).toBe(FLOW_ACTION.writesTheReply);
+        expect(actionFor({ ...bedrock, detail: 'chat-tools · tool_use' })).toBe(
+          FLOW_ACTION.picksATool,
+        );
+        // The scripted flows spell it on `chat-reply`, so that has to read the same.
+        expect(actionFor({ ...bedrock, detail: 'chat-reply · tool_use' })).toBe(
+          FLOW_ACTION.picksATool,
+        );
+      });
+
+      /**
+       * The trap in the fix above.
+       *
+       * Extraction is a forced tool call, so it reports `tool_use` on every
+       * successful pass. Reading the outcome ahead of the purpose captioned it "picks
+       * a tool" — the bridge does not mark it, and this asserts the client would
+       * still be right if it did.
+       */
+      it('does not read a forced tool call as the model choosing a tool', () => {
+        const bedrock = { resourceId: 'bedrock', service: 'Amazon Bedrock', operation: 'Converse' };
+
+        expect(actionFor({ ...bedrock, detail: 'extract-preferences · tool_use' })).toBe(
+          FLOW_ACTION.extractsAPreference,
+        );
+      });
+
+      it('says a model call happened without naming which, when the detail is unknown', () => {
+        expect(
+          actionFor({ resourceId: 'bedrock', service: 'Amazon Bedrock', operation: 'Converse', detail: 'something-new' }),
+        ).toBe(FLOW_ACTION.callsTheModel);
+      });
+
+      it('tells a preference write from a transcript write', () => {
+        expect(actionFor({ detail: 'PREF#music' })).toBe(FLOW_ACTION.savesAPreference);
+        expect(actionFor({ detail: 'MSG#user' })).toBe(FLOW_ACTION.savesTheConversation);
+        expect(actionFor({ detail: 'MSG#agent' })).toBe(FLOW_ACTION.savesTheConversation);
+      });
+
+      it('tells a read of the table from a write to it', () => {
+        expect(actionFor({ operation: 'Query', detail: '' })).toBe(FLOW_ACTION.readsWhatItKnows);
+      });
+
+      it('does not guess at a preference for a write it cannot place', () => {
+        expect(actionFor({ detail: 'SOMETHING#else' })).toBe(FLOW_ACTION.isWorking);
+      });
+
+      it('separates AgentCore Memory storing from recalling', () => {
+        const memory = { resourceId: 'agentcore-memory', service: 'AgentCore Memory' };
+
+        expect(actionFor({ ...memory, operation: 'CreateEvent' })).toBe(FLOW_ACTION.storesAMemory);
+        expect(actionFor({ ...memory, operation: 'ListMemoryRecords' })).toBe(
+          FLOW_ACTION.recallsWhatItKnows,
+        );
+      });
+    });
+
     /**
      * The Gateway's beat is the *route*, and it needs its own words.
      *
-     * Left unmapped in `SPAN_ACTION` it read "thinks" — which is what Bedrock does,
-     * and precisely the wrong claim for the one row that exists to show a managed
+     * It read "thinks" before it was mapped — which is what Bedrock does, and
+     * precisely the wrong claim for the one row that exists to show a managed
      * primitive doing the tool dispatch the DIY engine hand-writes. Asserted because
      * this is the row the whole engine comparison is pointed at.
      */
@@ -191,7 +286,7 @@ describe('useLiveArchitecture', () => {
         );
       });
 
-      expect(result.current.currentBeat?.action).toBe('routes the tool call');
+      expect(result.current.currentBeat?.action).toBe(FLOW_ACTION.routesTheToolCall);
       expect(result.current.currentBeat?.service).toBe('AgentCore Gateway');
       // Nothing timed this hop, and a `0` would read as a free call.
       expect(result.current.currentBeat?.durationMs).toBeUndefined();
@@ -240,7 +335,65 @@ describe('useLiveArchitecture', () => {
       });
 
       expect(result.current.currentBeat?.actor).toBe('Valentin');
-      expect(result.current.currentBeat?.action).toBe('learns something new');
+      // The frame that moves the profile panel, captioned as that and not as the
+      // learning itself — the learning was the Converse call and the write, both
+      // of which arrive as their own spans with their own captions.
+      expect(result.current.currentBeat?.action).toBe(FLOW_ACTION.showsTheNewPreference);
+    });
+
+    /**
+     * The typing indicator is not the reply.
+     *
+     * `typing_start` is a frame that switches on three animated dots, sent before
+     * the server calls Bedrock at all. It used to caption as "writes a reply",
+     * which put a group on the feed claiming the reply was being composed while no
+     * model call had yet been made — and made it read as a duplicate of the group
+     * the real Converse span produces a moment later.
+     */
+    it('captions the typing indicator as the dots, not as the reply', () => {
+      const { result } = renderHook(() => useLiveArchitecture());
+
+      act(() => {
+        publishInboundWsEvent({
+          type: 'typing_start',
+          payload: { sessionId: 'sess-1' },
+          timestamp: TIMESTAMP,
+        });
+      });
+
+      expect(result.current.currentBeat?.action).toBe(FLOW_ACTION.startsTypingDots);
+
+      act(() => {
+        publishInboundWsEvent({
+          type: 'typing_stop',
+          payload: { sessionId: 'sess-1' },
+          timestamp: TIMESTAMP,
+        });
+      });
+
+      expect(result.current.currentBeat?.action).toBe(FLOW_ACTION.stopsTypingDots);
+    });
+
+    it('captions the reply frame as a delivery, since composing it was the model call', () => {
+      const { result } = renderHook(() => useLiveArchitecture());
+
+      act(() => {
+        publishInboundWsEvent({
+          type: 'agent_message',
+          payload: {
+            message: {
+              id: 'msg-2',
+              sessionId: 'sess-1',
+              sender: 'agent',
+              content: 'Late-night jazz it is.',
+              timestamp: TIMESTAMP,
+            },
+          },
+          timestamp: TIMESTAMP,
+        });
+      });
+
+      expect(result.current.currentBeat?.action).toBe(FLOW_ACTION.deliversTheReply);
     });
 
     /** This is projected, and the values are a real person's. */
@@ -267,6 +420,95 @@ describe('useLiveArchitecture', () => {
       });
 
       expect(result.current.beats).toEqual([]);
+    });
+  });
+
+  /**
+   * One real turn, read top to bottom, as the feed shows it.
+   *
+   * This is the case the per-caption tests above cannot cover: the defect was never a
+   * single wrong word, it was that a turn produced *repeats* — two groups reading
+   * "writes a reply" of which the first was the typing indicator, then two reading
+   * "thinks" for two different model calls, then one "learns something new" covering
+   * both the write and the frame that displayed it. A presenter pointing at the feed
+   * could not say which row was which, and this is the assertion that says they can.
+   *
+   * The sequence is the real one: the server sends the typing frame *before* it calls
+   * Bedrock, saves both sides of the transcript, and runs extraction as a second
+   * Converse call after the reply is already on screen.
+   */
+  describe('a whole turn', () => {
+    it('captions every beat distinctly, in the order they happen', () => {
+      const { result } = renderHook(() => useLiveArchitecture());
+
+      act(() => {
+        publishInboundWsEvent({
+          type: 'send_message',
+          payload: { sessionId: 'sess-1', content: 'She loves late-night jazz' },
+          timestamp: TIMESTAMP,
+        } as unknown as ServerEvent);
+        publishInboundWsEvent({
+          type: 'typing_start',
+          payload: { sessionId: 'sess-1' },
+          timestamp: TIMESTAMP,
+        });
+        publishInboundWsEvent(makeSpan({ detail: 'MSG#user', durationMs: 7 }));
+        // `chat-tools`, not `chat-reply`: tools are on, so this is the call the real
+        // build makes to compose an answer — and it is the one that used to caption
+        // as "picks a tool".
+        publishInboundWsEvent(
+          makeSpan({
+            resourceId: 'bedrock',
+            service: 'Amazon Bedrock',
+            operation: 'Converse',
+            detail: 'chat-tools',
+            durationMs: 412,
+          }),
+        );
+        publishInboundWsEvent(makeSpan({ detail: 'MSG#agent', durationMs: 9 }));
+        publishInboundWsEvent({
+          type: 'agent_message',
+          payload: {
+            message: {
+              id: 'msg-2',
+              sessionId: 'sess-1',
+              sender: 'agent',
+              content: 'Noted.',
+              timestamp: TIMESTAMP,
+            },
+          },
+          timestamp: TIMESTAMP,
+        });
+        publishInboundWsEvent({
+          type: 'typing_stop',
+          payload: { sessionId: 'sess-1' },
+          timestamp: TIMESTAMP,
+        });
+        publishInboundWsEvent(
+          makeSpan({
+            resourceId: 'bedrock',
+            service: 'Amazon Bedrock',
+            operation: 'Converse',
+            detail: 'extract-preferences',
+            durationMs: 380,
+          }),
+        );
+        publishInboundWsEvent(makeSpan({ detail: 'PREF#music' }));
+        publishInboundWsEvent(PREFERENCE_UPDATE);
+      });
+
+      expect(result.current.beats.map((beat) => beat.action)).toEqual([
+        FLOW_ACTION.sendsAMessage,
+        FLOW_ACTION.startsTypingDots,
+        FLOW_ACTION.savesTheConversation,
+        FLOW_ACTION.writesTheReply,
+        FLOW_ACTION.savesTheConversation,
+        FLOW_ACTION.deliversTheReply,
+        FLOW_ACTION.stopsTypingDots,
+        FLOW_ACTION.extractsAPreference,
+        FLOW_ACTION.savesAPreference,
+        FLOW_ACTION.showsTheNewPreference,
+      ]);
     });
   });
 

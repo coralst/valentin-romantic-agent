@@ -24,6 +24,87 @@ function record(
 }
 
 describe('logRecordToSpan', () => {
+  /**
+   * The transcript write, which used to be invisible.
+   *
+   * Two of these happen per turn — the user's message and the reply — before any
+   * preference is extracted, and neither reached the drawer, so every `PutItem` in
+   * the feed looked like a preference. That is what made a caption on the DynamoDB
+   * row unfalsifiable, and it is why this span exists.
+   */
+  describe('message.saved → DynamoDB', () => {
+    const saved = record('message.saved', {
+      sessionId: 's-1',
+      userId: 'u-1',
+      sender: 'user',
+      durationMs: 7,
+    });
+
+    it('maps to the dynamodb node with the real table name', () => {
+      expect(logRecordToSpan(saved)).toMatchObject({
+        sessionId: 's-1',
+        resourceId: 'dynamodb',
+        service: 'Amazon DynamoDB',
+        resourceName: 'ValentinTable-dev',
+        operation: 'PutItem',
+        durationMs: 7,
+        ok: true,
+      });
+    });
+
+    /** The prefix is what the drawer reads to tell this from a `PREF#` write. */
+    it('carries the sort-key prefix and the sender, and nothing else', () => {
+      expect(logRecordToSpan(saved)?.detail).toBe('MSG#user');
+      expect(
+        logRecordToSpan(record('message.saved', { sessionId: 's-1', sender: 'agent', durationMs: 9 }))
+          ?.detail,
+      ).toBe('MSG#agent');
+    });
+
+    /**
+     * The same rule as `preference.saved`, and here the stakes are higher: the store
+     * has the message text in hand at the call site, so this is the one span where a
+     * careless field would project the conversation itself.
+     */
+    it('never carries the message content', () => {
+      const span = logRecordToSpan(
+        record('message.saved', {
+          sessionId: 's-1',
+          sender: 'user',
+          durationMs: 7,
+          content: 'She loves late-night jazz',
+        }),
+      );
+      expect(JSON.stringify(span)).not.toContain('jazz');
+    });
+
+    it('keeps the prefix when the sender was not logged', () => {
+      const span = logRecordToSpan(record('message.saved', { sessionId: 's-1', durationMs: 7 }));
+      expect(span?.detail).toBe('MSG#message');
+    });
+
+    /**
+     * Dropped rather than reported as `0`. An unmeasured write and a free one are
+     * different claims — the rule `AwsSpan.durationMs` sets — and unlike
+     * `preference.saved`, which predates that rule and defaults to `0`, there is no
+     * path that logs this line without a duration.
+     */
+    it('is dropped when no duration was logged', () => {
+      expect(logRecordToSpan(record('message.saved', { sessionId: 's-1' }))).toBeUndefined();
+    });
+
+    it('is dropped without a session, which is the only thing that can route it', () => {
+      expect(logRecordToSpan(record('message.saved', { durationMs: 7 }))).toBeUndefined();
+    });
+
+    it('reports not-ok when the write was logged as an error', () => {
+      const span = logRecordToSpan(
+        record('message.saved', { sessionId: 's-1', durationMs: 7 }, 'error'),
+      );
+      expect(span?.ok).toBe(false);
+    });
+  });
+
   describe('preference.saved → DynamoDB', () => {
     const saved = record('preference.saved', {
       sessionId: 's-1',
@@ -72,9 +153,19 @@ describe('logRecordToSpan', () => {
       expect(span?.durationMs).toBe(0);
     });
 
-    it('omits the detail when no category was logged', () => {
+    /**
+     * Keeps the bare prefix when no category was logged — it used to drop the detail
+     * entirely.
+     *
+     * The prefix stopped being decoration when the drawer started reading it: it is
+     * what distinguishes this `PutItem` from the transcript write on the same table
+     * with the same duration, so an empty detail would caption a preference write as
+     * an unplaceable one. The prefix alone is still true; the category is what is
+     * missing, and it is what is left out.
+     */
+    it('keeps the sort-key prefix when no category was logged', () => {
       const span = logRecordToSpan(record('preference.saved', { sessionId: 's-1' }));
-      expect(span?.detail).toBeUndefined();
+      expect(span?.detail).toBe('PREF#');
     });
 
     it('reports not-ok when the save was logged as an error', () => {
@@ -122,6 +213,62 @@ describe('logRecordToSpan', () => {
       );
       expect(span?.detail).toBe('extract-preferences');
       expect(span?.operation).toBe('Converse');
+    });
+
+    /**
+     * The outcome, appended only when the model asked for a tool.
+     *
+     * Needed because tools are on for nearly every turn, so the call that writes the
+     * answer is a `chat-tools` call — the same operation, with the same duration, as
+     * one that stops to call Ontopo. Without the stop reason the drawer captioned
+     * every reply "picks a tool".
+     */
+    it('marks a call that stopped to ask for a tool', () => {
+      const toolTurn = logRecordToSpan(
+        record('bedrock.converse', {
+          sessionId: 's-2',
+          operation: 'chat-tools',
+          durationMs: 486,
+          stopReason: 'tool_use',
+        }),
+      );
+      expect(toolTurn?.detail).toBe('chat-tools · tool_use');
+    });
+
+    /**
+     * The extraction call is never marked, however it stopped.
+     *
+     * It is handed one tool and required to use it, so it reports `tool_use` on every
+     * successful call — a real log line from a real turn reads
+     * `operation: extract-preferences, stopReason: tool_use`. Marking that would
+     * caption the extraction pass "picks a tool", which is the same defect on the
+     * other call.
+     */
+    it('never marks the forced-tool extraction call, whose stop reason says nothing', () => {
+      const span = logRecordToSpan(
+        record('bedrock.converse', {
+          sessionId: 's-2',
+          operation: 'extract-preferences',
+          durationMs: 3868,
+          stopReason: 'tool_use',
+        }),
+      );
+      expect(span?.detail).toBe('extract-preferences');
+    });
+
+    /** Every other stop reason means the same thing here: no tool was asked for. */
+    it('leaves the detail alone for a call that finished the turn', () => {
+      for (const stopReason of ['end_turn', 'max_tokens', 'stop_sequence', undefined]) {
+        const span = logRecordToSpan(
+          record('bedrock.converse', {
+            sessionId: 's-2',
+            operation: 'chat-tools',
+            durationMs: 412,
+            stopReason,
+          }),
+        );
+        expect(span?.detail, String(stopReason)).toBe('chat-tools');
+      }
     });
 
     /**

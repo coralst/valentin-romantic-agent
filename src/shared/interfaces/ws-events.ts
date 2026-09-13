@@ -182,6 +182,71 @@ export interface AwsSpan {
   traceId?: string;
 }
 
+/**
+ * The tokens a span's `detail` is allowed to start with, and what each one means.
+ *
+ * A contract rather than two hardcoded string literals on either side of the wire.
+ * `detail` is prose the feed truncates, but it is also the *only* field that says
+ * which of DynamoDB's writes a `PutItem` was — the table, the operation and the
+ * duration are identical for a preference and for a line of the transcript. The
+ * drawer captions the two differently, so the prefix it reads has to be the prefix
+ * the bridge writes, checked by the compiler instead of by a demo.
+ *
+ * These are the real DynamoDB sort-key prefixes (`server/persistence/keys.ts`), not
+ * display strings invented for the feed: what the drawer shows is what a builder
+ * would find in the table.
+ */
+export const SPAN_DETAIL_PREFIX = {
+  /** A preference row — `PREF#music`. */
+  preference: 'PREF#',
+  /** A line of the transcript — `MSG#user`, `MSG#agent`. */
+  message: 'MSG#',
+} as const;
+
+/**
+ * The values `bedrock.converse` puts in a span's `detail` — which model call it was.
+ *
+ * Every Converse call reports `operation: 'Converse'`, because that is the API name
+ * and the client counts model calls by it. Which call it *was* — the reply, the tool
+ * turn, or the extraction pass that runs after the reply is already on screen — lives
+ * here, and it is the difference between a feed that says "thinks" twice and one that
+ * says what the two model calls were for.
+ */
+export const CONVERSE_DETAIL = {
+  /** The plain reply call, made when the turn has no tools available. */
+  reply: 'chat-reply',
+  /**
+   * A call inside the tool loop — which is *most* replies, since tools are on.
+   *
+   * On its own this says only "a turn of the tool loop". Whether that turn wrote the
+   * answer or asked for a tool is the model's `stopReason`, which is why
+   * {@link CONVERSE_TOOL_USE_SUFFIX} exists: the two outcomes are the same call with
+   * the same duration, and captioning both "picks a tool" claimed a tool was chosen
+   * on every turn that used none.
+   */
+  tools: 'chat-tools',
+  extractPreferences: 'extract-preferences',
+} as const;
+
+/**
+ * Appended to a Converse span's detail when the model asked for a tool.
+ *
+ * A suffix rather than a fourth `CONVERSE_DETAIL` value, because it is orthogonal to
+ * which call was made: the *same* `chat-tools` call either ends the turn or asks for a
+ * tool, and the purpose and the outcome are two facts. It is also the spelling the
+ * scripted flows already used (`chat-reply · tool_use`), so demo and live read alike.
+ */
+export const CONVERSE_TOOL_USE_SUFFIX = ' · tool_use';
+
+/**
+ * Which model call a Converse span was.
+ *
+ * Exported as a type as well as a value so `sendTimed` can *take* it: typing the
+ * parameter is what makes a mistyped `'chat-replies'` a compile error at the call
+ * site rather than a row in the feed captioned "calls the model".
+ */
+export type ConverseDetail = (typeof CONVERSE_DETAIL)[keyof typeof CONVERSE_DETAIL];
+
 /** What one model call cost, as the provider reported it. */
 export interface SpanTokenUsage {
   inputTokens?: number;

@@ -313,6 +313,8 @@ export class DynamoDBStore implements StorageInterface {
   // --- Messages ---
 
   async saveMessage(msg: ChatMessage): Promise<void> {
+    const startedAt = Date.now();
+
     await this.docClient.send(
       new PutCommand({
         TableName: this.tableName,
@@ -328,6 +330,32 @@ export class DynamoDBStore implements StorageInterface {
         }),
       }),
     );
+
+    /*
+     * The transcript write, on the record.
+     *
+     * Logged for the same reason `preference.saved` is — the span bridge turns it
+     * into a feed row — and it closes a gap the drawer had: two DynamoDB writes
+     * happen per turn before any preference is extracted, and neither appeared, so
+     * every `PutItem` in the feed looked like a preference. That is the ambiguity
+     * this line removes, not extra detail for its own sake.
+     *
+     * `sender`, never `content`. The row is projected on a stage and the content is
+     * a real conversation; the sender is the one field that says which write this was
+     * without saying anything about what was said.
+     *
+     * Timed around the Put alone, not the counter update that follows: the number is
+     * a claim about one call, and folding a second call into it would report a
+     * duration no single operation had.
+     */
+    logger.info('message.saved', {
+      sessionId: msg.sessionId,
+      // Same role as on `preference.saved`: the bridge is process-wide, and without
+      // it the span has no user to be routed to and is dropped.
+      userId: this.userId,
+      sender: msg.sender,
+      durationMs: Date.now() - startedAt,
+    });
 
     // ADD, not `SET messageCount = messageCount + :inc`. The latter throws
     // ValidationException whenever the attribute is absent, which is every

@@ -10,8 +10,13 @@ import {
   type AwsNodeId,
 } from '../utils/aws-architecture';
 import { useFlowTraversal } from './use-flow-traversal';
-import type { FlowBeat } from '../utils/aws-demo-flows';
+import { FLOW_ACTION, type FlowBeat } from '../utils/aws-demo-flows';
 import type { AwsCategory } from '../utils/aws-diagram-layout';
+import {
+  CONVERSE_DETAIL,
+  CONVERSE_TOOL_USE_SUFFIX,
+  SPAN_DETAIL_PREFIX,
+} from '../../shared/interfaces/ws-events';
 import type { AgentActivityPayload, AwsSpan } from '../../shared/interfaces/ws-events';
 import {
   glowTargetsForEvent,
@@ -103,30 +108,37 @@ export interface UseLiveArchitectureResult {
 /**
  * Who is acting, per event type.
  *
- * Groups the feed into beats a room can follow — "Valentin learns something new"
- * rather than eight rows of event names. Unknown types fall through to a generic
- * group instead of being dropped: a renamed server event should degrade to a
- * plain row, not vanish.
+ * A WebSocket event is a *frame*, and these captions say so. `typing_start` used to
+ * caption as "writes a reply", which put a group on the feed, above the Bedrock call,
+ * claiming a reply was being composed when all that had happened was three animated
+ * dots switching on — the server sends that frame before it calls the model at all.
+ * The Bedrock call that really does write the reply is a span, and gets its caption
+ * from {@link spanAction}.
+ *
+ * Unknown types fall through to a generic group instead of being dropped: a renamed
+ * server event should degrade to a plain row, not vanish.
  */
 const EVENT_STORY: Readonly<Record<string, { actor: string; action: string }>> = {
-  session_init: { actor: 'User', action: 'opens the app' },
-  connection_status: { actor: 'User', action: 'opens the app' },
-  send_message: { actor: 'User', action: 'sends a message in chat' },
-  typing_start: { actor: 'Valentin', action: 'writes a reply' },
-  typing_stop: { actor: 'Valentin', action: 'writes a reply' },
-  agent_message: { actor: 'Valentin', action: 'writes a reply' },
-  // Folded into the reply beat on purpose. Several arrive per turn — reasoning
-  // plus two frames per tool call — and each is part of composing the one answer,
-  // so a beat of their own would push every other row off the feed.
-  agent_activity: { actor: 'Valentin', action: 'writes a reply' },
-  preference_update: { actor: 'Valentin', action: 'learns something new' },
+  session_init: { actor: 'User', action: FLOW_ACTION.opensTheApp },
+  connection_status: { actor: 'User', action: FLOW_ACTION.opensTheApp },
+  send_message: { actor: 'User', action: FLOW_ACTION.sendsAMessage },
+  // The typing indicator, both halves. Separate captions rather than one shared
+  // between them: they arrive at opposite ends of the turn, so a shared caption
+  // would put two identical-looking groups on the feed with the whole reply in
+  // between and nothing to say which was which.
+  typing_start: { actor: 'Valentin', action: FLOW_ACTION.startsTypingDots },
+  typing_stop: { actor: 'Valentin', action: FLOW_ACTION.stopsTypingDots },
+  agent_message: { actor: 'Valentin', action: FLOW_ACTION.deliversTheReply },
+  // `agent_activity` is absent, and dropped before a story is looked up — see the
+  // note in `record`. It is not in `EVENT_ENDPOINTS` either, so it has no row.
+  preference_update: { actor: 'Valentin', action: FLOW_ACTION.showsTheNewPreference },
   // No `ping`/`pong`: they are dropped before a story is looked up. See the note in
   // `EVENT_ENDPOINTS`.
-  error: { actor: 'System', action: 'reports a problem' },
+  error: { actor: 'System', action: FLOW_ACTION.reportsAProblem },
   // Two halves of one beat, and the actor changes hands between them — which is
   // the sentence the drawer exists to show a room. Valentin only ever offers.
-  action_proposal: { actor: 'Valentin', action: 'offers something to confirm' },
-  confirm_action: { actor: 'User', action: 'confirms it' },
+  action_proposal: { actor: 'Valentin', action: FLOW_ACTION.offersSomethingToConfirm },
+  confirm_action: { actor: 'User', action: FLOW_ACTION.confirmsIt },
 };
 
 const EVENT_CATEGORY: Readonly<Record<string, AwsCategory>> = {
@@ -156,37 +168,119 @@ const SPAN_CATEGORY: Readonly<Record<string, AwsCategory>> = {
   'ac-lambda-tools': 'compute',
 };
 
+/** DynamoDB operations that only read. Everything else on the table writes. */
+const READ_OPERATIONS: readonly string[] = ['Query', 'GetItem', 'BatchGetItem', 'Scan'];
+
 /**
- * What Valentin was doing, per span target. Anything unmapped reads as "thinks",
- * which is true of Bedrock and harmless for the rest.
+ * Which model call a Converse span was, and what the model did with it.
+ *
+ * Read off `detail`, because `operation` is `Converse` for every one of them — the
+ * client counts model calls by that name, so the bridge deliberately puts the API
+ * name there and the purpose in `detail`. Without this the feed captioned both of a
+ * turn's Converse calls "thinks", so the two rows a presenter most needs to tell
+ * apart — the reply, and the separate extraction pass that runs after it — were the
+ * two rows that looked identical.
+ *
+ * The stop reason is read *within* a purpose, never instead of one, and both halves
+ * of that matter:
+ *
+ *  - Tools are on for nearly every turn, so almost every reply is composed by a
+ *    `chat-tools` call. Captioning by purpose alone said "picks a tool" on every
+ *    turn, including the ones that called no tool.
+ *  - Extraction is a *forced* tool call, so it stops on `tool_use` every single
+ *    time, by construction. Captioning by stop reason alone said "picks a tool" for
+ *    the extraction pass too — which is how the first attempt at this traded one
+ *    wrong caption for another.
+ */
+function converseAction(detail: string): string {
+  const askedForATool = detail.endsWith(CONVERSE_TOOL_USE_SUFFIX);
+  const purpose = askedForATool ? detail.slice(0, -CONVERSE_TOOL_USE_SUFFIX.length) : detail;
+
+  switch (purpose) {
+    // Both compose the answer, and differ only in whether tools were on the table —
+    // a fact about the request, not about what the model did with it. What separates
+    // them here is the outcome.
+    case CONVERSE_DETAIL.reply:
+    case CONVERSE_DETAIL.tools:
+      return askedForATool ? FLOW_ACTION.picksATool : FLOW_ACTION.writesTheReply;
+    // The stop reason is deliberately ignored: this call is handed one tool and told
+    // it must use it, so `tool_use` here is the schema working, not a decision.
+    case CONVERSE_DETAIL.extractPreferences:
+      return FLOW_ACTION.extractsAPreference;
+    default:
+      // An unrecognised purpose is still a model call, and says only that. See the
+      // note on `FLOW_ACTION.callsTheModel`.
+      return FLOW_ACTION.callsTheModel;
+  }
+}
+
+/**
+ * Which of the table's writes this was — the profile, or the transcript.
+ *
+ * The two are indistinguishable by operation, service, table and duration: both are
+ * a `PutItem` on `ValentinTable-dev` taking about twenty milliseconds. The sort-key
+ * prefix in `detail` is the only thing that separates them, which is why
+ * {@link SPAN_DETAIL_PREFIX} is a shared constant and not a literal on each side.
+ */
+function tableAction(operation: string, detail: string): string {
+  if (READ_OPERATIONS.includes(operation)) return FLOW_ACTION.readsWhatItKnows;
+  if (detail.startsWith(SPAN_DETAIL_PREFIX.preference)) return FLOW_ACTION.savesAPreference;
+  if (detail.startsWith(SPAN_DETAIL_PREFIX.message)) return FLOW_ACTION.savesTheConversation;
+  // A write this build does not recognise. `isWorking` rather than guessing at a
+  // preference: the profile panel is what a room watches during this beat, and
+  // captioning a transcript write as a preference would explain the wrong thing.
+  return FLOW_ACTION.isWorking;
+}
+
+/**
+ * What Valentin was doing, for one span.
+ *
+ * A function rather than the `node → caption` table this replaces, because the node
+ * is not enough to name the beat: `dynamodb` was captioned "learns something new"
+ * whichever of its writes had happened, and `bedrock` fell through to "thinks" for
+ * both of a turn's model calls. The operation and the detail are what say which call
+ * it was, so they are what this reads.
  *
  * "asks the outside world" rather than "books a table": a span is a call, and at
- * this point in the flow nothing has been booked — the Confirm press is a
- * separate beat. Naming it otherwise on a projector would claim an authority the
- * agent does not have.
- *
- * The two engine B entries are here rather than in a second list because they are
- * the same beat in the story: on engine B the preference is extracted inside the
- * Runtime and lands in Memory, so a Memory span *is* Valentin learning something.
+ * this point in the flow nothing has been booked — the Confirm press is a separate
+ * beat. Naming it otherwise on a projector would claim an authority the agent does
+ * not have.
  */
-const SPAN_ACTION: Readonly<Record<string, string>> = {
-  dynamodb: 'learns something new',
-  integrations: 'asks the outside world',
-  'ac-memory': 'learns something new',
-  'ac-lambda-profile': 'learns something new',
-  // Same words as `integrations`, because it is the same beat: a call out, with
-  // nothing booked yet. The route differs, the story does not.
-  'ac-lambda-tools': 'asks the outside world',
-  /*
-   * Different words from the two rows either side of it, because the Gateway's beat
-   * is the *route*, and the route is the entire point of engine B. It did not ask
-   * anybody anything and it learned nothing; it looked up a registered tool and
-   * handed the call to a Lambda. Left unmapped it read "thinks", which is what
-   * Bedrock does and is precisely the wrong claim for the one row that exists to
-   * show a managed primitive doing dispatch the DIY engine hand-writes.
-   */
-  'ac-gateway': 'routes the tool call',
-};
+function spanAction(node: AwsNodeId, span: AwsSpan): string {
+  const detail = span.detail ?? '';
+
+  switch (node) {
+    case 'bedrock':
+      return converseAction(detail);
+    case 'dynamodb':
+      return tableAction(span.operation, detail);
+    // Engine B's profile tools are a Lambda in front of the same table, so its
+    // calls read as the same beats — a `save_preference` there and a `PutItem` here
+    // are one story told through two routes.
+    case 'ac-lambda-profile':
+      return tableAction(span.operation, detail);
+    // The model call, one hop further out: the Runtime is where engine B's model
+    // runs, so this is the beat engine A spends on Converse.
+    case 'ac-runtime':
+      return FLOW_ACTION.writesTheReply;
+    // AgentCore Memory does its own extraction, so a `CreateEvent` is the beat
+    // engine A spends on `extract-preferences` *plus* the write. The adapter reports
+    // which call it was and the two are different beats, so neither is flattened.
+    case 'ac-memory':
+      return span.operation === 'ListMemoryRecords'
+        ? FLOW_ACTION.recallsWhatItKnows
+        : FLOW_ACTION.storesAMemory;
+    case 'ac-gateway':
+      return FLOW_ACTION.routesTheToolCall;
+    // Same words for both, because it is the same beat: a call out, with nothing
+    // booked yet. The route differs, the story does not.
+    case 'integrations':
+    case 'ac-lambda-tools':
+      return FLOW_ACTION.asksTheOutsideWorld;
+    default:
+      return FLOW_ACTION.isWorking;
+  }
+}
 
 /** Short names for the feed. `Amazon DynamoDB` does not fit 70px. */
 function shortService(service: string): string {
@@ -286,7 +380,7 @@ function beatFromSpan(
     durationMs: span.durationMs,
     ok: span.ok,
     actor: 'Valentin',
-    action: SPAN_ACTION[node] ?? 'thinks',
+    action: spanAction(node, span),
     traceId: span.traceId,
     targets: glowTargetsForSpan(span, node, toolServices),
   };

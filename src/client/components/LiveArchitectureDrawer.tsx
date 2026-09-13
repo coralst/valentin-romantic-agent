@@ -2,19 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AwsTopologyDiagram, type NodeDuration } from './AwsTopologyDiagram';
 import { AwsFlowFeed, REPLAY_COPY, type FeedGroup, type FeedRow } from './AwsFlowFeed';
 import { useArchitectureDrawer } from '../context/architecture-drawer-context';
-import { useArchitectureMode, type ArchitectureMode } from '../hooks/use-architecture-mode';
+import { useArchitectureMode } from '../hooks/use-architecture-mode';
 import { useLiveArchitecture } from '../hooks/use-live-architecture';
 import { ENGINE_COPY, useArchitectureEngineContext } from '../context/architecture-engine-context';
 import { useFlowPlayback } from '../hooks/use-flow-playback';
 import { useFlowTraversal } from '../hooks/use-flow-traversal';
-import { PANEL_SLIDE_MS, useSlidePanel } from '../hooks/use-inspector-focus';
-import { useEngineMetrics } from '../hooks/use-engine-metrics';
-import { prefersReducedMotion } from '../utils/motion-preference';
-import {
-  EngineScoreboard,
-  SCOREBOARD_COPY,
-  SCOREBOARD_HEIGHT,
-} from './EngineScoreboard';
+import { PANEL_SLIDE_MS } from '../hooks/use-inspector-focus';
 import {
   defaultDemoFlowIdFor,
   demoFlow,
@@ -158,8 +151,6 @@ export const DRAWER_COPY = {
    * user and for `getByRole` alike.
    */
   collapse: 'Collapse the architecture drawer',
-  liveMode: 'Live',
-  demoMode: 'Demo',
   next: 'Next step',
   previous: 'Previous step',
   restart: 'Restart flow',
@@ -172,6 +163,19 @@ export const DRAWER_COPY = {
   liveEmpty: 'Waiting for traffic. Send a message and it will appear here.',
   /** Says out loud that demo durations are authored, so nobody reads them as measured. */
   demoNote: 'Scripted walkthrough · representative durations',
+  /**
+   * Starts the scripted walkthrough from live mode, and leaves it again.
+   *
+   * One verb apiece rather than a Live/Demo pair. The distinction is not cosmetic:
+   * a mode pair asks a presenter to pick a data source before the drawer will show
+   * them anything, and both buttons stay lit and clickable at all times, which is
+   * how the drawer used to end up on a script while real traffic scrolled past. A
+   * verb only appears when there is something to do — walking the flow is offered
+   * only while live is what you would otherwise be looking at, and the way back
+   * only exists once there is live traffic to go back to.
+   */
+  walkFlow: 'Walk the flow',
+  backToLive: 'Back to live traffic',
   /** Prefix for the chip naming the engine that actually answered. */
   serving: 'Serving',
   /** Shown while `/api/config` on the selected route has not answered yet. */
@@ -546,68 +550,6 @@ function ZoomIcon({ sign }: { sign: 'plus' | 'minus' }) {
   );
 }
 
-/**
- * A two-option segmented control.
- *
- * Generic over the value because the header now carries two of them — the data
- * source and the engine — and two hand-rolled copies would drift apart on the
- * first styling change, which on a projector is immediately visible.
- */
-function SegmentedSwitch<T extends string>({
-  value,
-  options,
-  onChange,
-  label,
-  testId,
-}: {
-  value: T;
-  options: readonly { value: T; label: string }[];
-  onChange: (value: T) => void;
-  label: string;
-  testId?: string;
-}) {
-  return (
-    <div
-      style={{ display: 'flex', gap: 4, marginLeft: 14 }}
-      role="group"
-      aria-label={label}
-      data-testid={testId}
-    >
-      {options.map((option) => {
-        const on = value === option.value;
-        return (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => onChange(option.value)}
-            aria-pressed={on}
-            style={{
-              fontSize: 10,
-              fontWeight: 700,
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-              padding: '5px 11px',
-              borderRadius: 7,
-              border: `1px solid ${on ? '#E5D9D2' : 'transparent'}`,
-              background: on ? colors.surface : 'none',
-              color: on ? '#8C2F45' : '#A3959C',
-              cursor: 'pointer',
-              fontFamily: typography.bodyFontFamily,
-            }}
-          >
-            {option.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-const MODE_OPTIONS: readonly { value: ArchitectureMode; label: string }[] = [
-  { value: 'live', label: DRAWER_COPY.liveMode },
-  { value: 'demo', label: DRAWER_COPY.demoMode },
-];
-
 export function LiveArchitectureDrawer() {
   const { isOpen, isMounted, toggle, close } = useArchitectureDrawer();
   /*
@@ -621,27 +563,39 @@ export function LiveArchitectureDrawer() {
   // Read once per mount: the candidate is chosen from the URL, and re-reading it
   // mid-session would repaint the bar under whoever is presenting.
   const theme = useMemo(() => resolveBarTheme(), []);
-  const { mode, setMode } = useArchitectureMode();
-  // The switch itself lives in the icon rail, next to the other things a presenter
+  /*
+   * No Live/Demo pair any more — the drawer picks for itself and offers a verb.
+   *
+   * The hook already does the only thing the switch was ever used for. It opens on
+   * the script — a blank diagram in front of a room is the worst available failure,
+   * and at open time we cannot know whether a socket exists — and flips to live
+   * traffic the instant any WebSocket event arrives. Two buttons that a presenter
+   * had to remember to press to get the behaviour they were already going to get
+   * were two buttons of stage risk, so the automatic path is the default path.
+   *
+   * `setMode` survives for one case the automatic path cannot cover. Because
+   * `use-websocket.ts` pings every thirty seconds, *every* session is in live mode
+   * within half a minute of opening, permanently — so the scripted walkthrough, which
+   * is how the architecture gets explained when there is nothing to point at yet,
+   * would be unreachable for the rest of the session. `Walk the flow` is that door,
+   * and `clearOverride` is the way back out to whatever the traffic is doing now.
+   */
+  const { mode, hasLiveTraffic, isUserChosen, setMode, clearOverride } = useArchitectureMode();
+  // The engine switch lives in the icon rail, next to the other things a presenter
   // reaches for mid-sentence; the drawer only reads the choice.
   const { engine, servingEngine, isDowngraded } = useArchitectureEngineContext();
   const live = useLiveArchitecture(true, engine);
 
-  /*
-   * The comparison sheet, and the tally behind it.
-   *
-   * Both live here rather than inside `EngineScoreboard` on purpose. The tally must
-   * keep accumulating while the sheet is closed — a presenter sends the messages
-   * first and opens the panel afterwards — and it must survive an engine switch,
-   * unlike `live`, whose beats are deliberately cleared so one engine's traffic never
-   * appears on the other's diagram. Measuring engine B *requires* switching to it, so
-   * a tally that reset on switch could never hold both engines at once.
-   */
-  const scoreboard = useSlidePanel(false);
-  const metrics = useEngineMetrics(servingEngine);
-
   const flow = demoFlow(defaultDemoFlowIdFor(engine));
   const isDemo = mode === 'demo';
+  /**
+   * Whether the script is on screen *because someone asked for it*.
+   *
+   * The difference decides whether a way back is offered at all: before any traffic
+   * has arrived the script is simply the only thing there is to show, and a `Back to
+   * live traffic` button then leads to the blank panel this drawer exists to avoid.
+   */
+  const isWalkthrough = isDemo && isUserChosen && hasLiveTraffic;
 
   /**
    * The user action being replayed, if any.
@@ -682,8 +636,8 @@ export function LiveArchitectureDrawer() {
   );
 
   const dwellMsForStep = useCallback(
-    (index: number) => demoStepDwellMs(playbackSteps[index]),
-    [playbackSteps],
+    (index: number) => demoStepDwellMs(playbackSteps[index], engine),
+    [playbackSteps, engine],
   );
   const playback = useFlowPlayback({
     stepCount: playbackSteps.length,
@@ -698,7 +652,7 @@ export function LiveArchitectureDrawer() {
    * route arriving at once.
    */
   const legIndex = useFlowTraversal({
-    legCount: stepLegCount(playbackSteps[playback.index]),
+    legCount: stepLegCount(playbackSteps[playback.index], engine),
     resetKey: `${replay?.id ?? flow.id}-${playback.index}`,
   });
 
@@ -748,8 +702,8 @@ export function LiveArchitectureDrawer() {
 
   /** The scripted/replayed frame: cumulative to the step, sequential within it. */
   const stepFrame = useMemo(
-    () => frameForStep(playbackSteps, playback.index, legIndex),
-    [playbackSteps, playback.index, legIndex],
+    () => frameForStep(playbackSteps, playback.index, engine, legIndex),
+    [playbackSteps, playback.index, engine, legIndex],
   );
 
   /**
@@ -902,34 +856,11 @@ export function LiveArchitectureDrawer() {
               </div>
             </div>
 
-            <SegmentedSwitch
-              value={mode}
-              options={MODE_OPTIONS}
-              onChange={setMode}
-              label="Data source"
-            />
-
             {/* Only in live mode: a scripted walkthrough is not being answered by
                 any engine, so naming one there would be a claim about nothing. */}
             {!isDemo && !isReplaying && (
               <ServingChip serving={servingEngine} isDowngraded={isDowngraded} />
             )}
-
-            {/* Present in demo mode too, where it opens onto a refusal rather than
-                onto numbers. Hiding it there would leave a presenter wondering
-                whether the comparison exists; showing it says why it is empty. */}
-            <button
-              type="button"
-              style={ghostButtonStyle}
-              onClick={scoreboard.toggle}
-              aria-expanded={scoreboard.isOpen}
-              data-testid="scoreboard-toggle"
-              aria-label={
-                scoreboard.isOpen ? SCOREBOARD_COPY.toggleClose : SCOREBOARD_COPY.toggleOpen
-              }
-            >
-              {SCOREBOARD_COPY.toggleOpen} {scoreboard.isOpen ? '▴' : '▾'}
-            </button>
 
             {/* What is on screen, when it is neither the live feed nor the script.
                 Without it a replayed conversation in live mode is indistinguishable
@@ -949,6 +880,31 @@ export function LiveArchitectureDrawer() {
                   disabled ◀ beside real events invites the question of why it does
                   nothing — which is exactly why replaying an action gets them
                   back even though the mode switch still says Live. */}
+              {/* The one door into the script, and the one door out. Each appears only
+                  when it leads somewhere: `Walk the flow` while live traffic is what
+                  you would otherwise be watching, and `Back to live traffic` only once
+                  there is traffic to return to. A replay has its own chip to exit by,
+                  so neither is offered over the top of one. */}
+              {!isDemo && !isReplaying && (
+                <button
+                  type="button"
+                  style={buttonStyle}
+                  onClick={() => setMode('demo')}
+                  aria-label={DRAWER_COPY.walkFlow}
+                >
+                  {DRAWER_COPY.walkFlow}
+                </button>
+              )}
+              {isWalkthrough && !isReplaying && (
+                <button
+                  type="button"
+                  style={buttonStyle}
+                  onClick={clearOverride}
+                  aria-label={DRAWER_COPY.backToLive}
+                >
+                  ↩ Live
+                </button>
+              )}
               {(isDemo || isReplaying) && (
                 <>
                   <button
@@ -1001,27 +957,6 @@ export function LiveArchitectureDrawer() {
               </button>
             </div>
           </div>
-
-          {/* Overlays the diagram rather than resizing the drawer: `DRAWER_HEIGHT`,
-              `reservedDrawerSpace()` and the resize handle all assume a fixed panel
-              height, and making the sheet push them around would move the chat
-              underneath every time a presenter opened it. */}
-          {scoreboard.isMounted && (
-            <div
-              style={{
-                overflow: 'hidden',
-                flexShrink: 0,
-                transition: prefersReducedMotion() ? 'none' : `max-height ${PANEL_SLIDE_MS}ms ease`,
-                maxHeight: scoreboard.isOpen ? SCOREBOARD_HEIGHT : 0,
-              }}
-            >
-              <EngineScoreboard
-                metrics={metrics}
-                isLive={!isDemo && !isReplaying}
-                serving={servingEngine}
-              />
-            </div>
-          )}
 
           <div
             style={{

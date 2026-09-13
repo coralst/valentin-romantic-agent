@@ -146,6 +146,10 @@ function bodyFor(reminder: Reminder, now: Date, origin: string, context: Reminde
     suggestions: context.suggestions,
     ideas: context.ideas,
     timingNote: context.timingNote,
+    // Both composed before the claim, like everything else here: the reservation is read
+    // off his confirmed outings and the surprise off his profile, neither by this file.
+    reservation: context.reservation,
+    surprise: context.surprise,
     origin,
     sessionId: reminder.sessionId,
   });

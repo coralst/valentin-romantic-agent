@@ -11,6 +11,7 @@ import { ExtractionError } from '../../shared/errors/extraction-error';
 import { mapCategory } from './category-mapper';
 import { isPartnerNamePreference } from './partner-name';
 import { isProfileFieldId } from '../../shared/constants/profile-fields';
+import { REMINDER_ZONE } from '../../shared/interfaces/reminder';
 import { syncReminders, touchesReminders } from '../reminders/reminder-sync';
 
 /** Callback invoked when a preference is persisted */
@@ -147,6 +148,96 @@ function cleanDate(value: unknown): string | null {
 /** Case- and space-insensitive, for matching a restated fact to a stored one. */
 function normalise(value: string | null): string {
   return (value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * Canonicalise a date-bearing profile value to carry one `YYYY-MM-DD`.
+ *
+ * The reminder planner (`reminders/planner.ts`) reads dates out of these values
+ * with a regex anchored to a four-digit year, and nothing else. The model does
+ * not know that: a real run stored the same birthday three ways across three
+ * turns — "2 March", then "03-02", then "2026-03-02" — and the first two were
+ * *invisible to the planner*, so the reminder they should have armed simply
+ * never existed. Value churn also re-stamped the row's provenance each turn
+ * (see the unchanged-value skip in `processPreference`).
+ *
+ * Three rules, in order of caution:
+ * - A value already carrying `YYYY-MM-DD` is kept verbatim, original year and
+ *   all — the planner rolls recurring dates forward itself, and "2023-09-10"
+ *   on an anniversary is the year they met, which is information.
+ * - `MM-DD` and prose like "2 March" / "March 2" are resolved to the **next**
+ *   occurrence of that month/day, never the current year blindly: a birthday
+ *   normalised to a date six months past is exactly the bug this fixes.
+ * - Anything else is left alone. The field guidance explicitly permits values
+ *   like "March, she's turning 30", and a bad parse is worse than no parse.
+ */
+const MONTHS: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+  jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+};
+
+const DATE_FIELD_IDS = new Set(['birthday', 'anniversary', 'next_occasion']);
+
+function monthDayFrom(value: string): { month: number; day: number } | null {
+  // "03-02", "3-2" — read as MM-DD. The model emits this shape when it has
+  // dropped the year, and it writes month-first.
+  const numeric = /^\s*(\d{1,2})-(\d{1,2})\s*$/.exec(value);
+  if (numeric) {
+    const month = Number(numeric[1]);
+    const day = Number(numeric[2]);
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) return { month, day };
+    return null;
+  }
+  // "2 March", "March 2", "2nd of March", "March 2nd"
+  const named =
+    /^\s*(?:(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?([A-Za-z]+)|([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?)\s*$/.exec(
+      value,
+    );
+  if (!named) return null;
+  const monthName = (named[2] ?? named[3] ?? '').slice(0, 3).toLowerCase();
+  const day = Number(named[1] ?? named[4]);
+  const month = MONTHS[monthName];
+  if (!month || day < 1 || day > 31) return null;
+  return { month, day };
+}
+
+/**
+ * `{month, day}` → the next `YYYY-MM-DD` it falls on, today included.
+ *
+ * "Today" is Israel's calendar day, not the container's UTC one — the same
+ * boundary the reminder planner and `nowBlock` use, and for the same reason:
+ * between midnight and 03:00 in Israel, UTC is still yesterday.
+ */
+function nextIsoOccurrence(month: number, day: number, now: Date): string {
+  const todayIso = new Intl.DateTimeFormat('en-CA', {
+    timeZone: REMINDER_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+  const startYear = Number(todayIso.slice(0, 4));
+  const pad = (n: number) => String(n).padStart(2, '0');
+  for (let year = startYear; ; year += 1) {
+    const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+    const clamped = month === 2 && day === 29 && !leap ? 28 : day;
+    const candidate = `${year}-${pad(month)}-${pad(clamped)}`;
+    if (candidate >= todayIso) return candidate;
+  }
+}
+
+function canonicalDateValue(fieldId: string | null, value: string, now: Date): string {
+  if (!fieldId || !DATE_FIELD_IDS.has(fieldId)) return value;
+  if (/\d{4}-\d{2}-\d{2}/.test(value)) return value;
+
+  // next_occasion is stored as "YYYY-MM-DD@what it is" — canonicalise the date
+  // half and keep the label exactly as written.
+  const at = fieldId === 'next_occasion' ? value.indexOf('@') : -1;
+  const datePart = at >= 0 ? value.slice(0, at) : value;
+  const suffix = at >= 0 ? value.slice(at) : '';
+
+  const parsed = monthDayFrom(datePart);
+  if (!parsed) return value;
+  return `${nextIsoOccurrence(parsed.month, parsed.day, now)}${suffix}`;
 }
 
 /**
@@ -387,7 +478,10 @@ export class PreferenceExtractor implements PreferenceExtractorInterface {
       // under `birthday_month`, `age_turning`, `birthday`, ...
       key: fieldId ?? raw.key.trim(),
       fieldId,
-      value: raw.value.trim(),
+      // Date fields are canonicalised before storage, so "2 March" and "03-02"
+      // become one planner-readable value instead of three formats of the same
+      // birthday churning the row turn after turn.
+      value: canonicalDateValue(fieldId, raw.value.trim(), new Date()),
       confidence,
     };
 
@@ -423,6 +517,18 @@ export class PreferenceExtractor implements PreferenceExtractorInterface {
     if (!existing && validated.fieldId) {
       const all = await this.storage.getPreferencesBySession(message.sessionId);
       existing = all.find((row) => row.fieldId === validated.fieldId) ?? null;
+    }
+
+    /*
+     * A restatement is not news. Every turn re-extracts facts the model can see
+     * in the history, and writing the same value again did two bad things: it
+     * appended a no-op history entry, and it moved `sourceMessageId` onto the
+     * *current* message — so the permanent "Noted" badge under a sentence about
+     * food ended up claiming her name and both dates. Provenance must stay with
+     * the message that actually taught us the fact.
+     */
+    if (existing && normalise(existing.value) === normalise(validated.value)) {
+      return null;
     }
 
     let result: PreferenceWithHistory;

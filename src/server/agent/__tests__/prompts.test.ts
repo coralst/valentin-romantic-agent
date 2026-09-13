@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { PROFILE_FIELD_IDS } from '../../../shared/constants/profile-fields';
 import {
   buildSystemPrompt,
+  computedDatesBlock,
+  datesInText,
   nowBlock,
   partnerNameFrom,
   EXTRACT_PREFERENCES_TOOL,
@@ -118,10 +120,39 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toMatch(/Ask once/);
   });
 
-  it('puts goal 2 live once there is a profile', () => {
+  it('keeps goal 1 live while the profile is thin — a name and two facts is not knowing her', () => {
     const prompt = buildSystemPrompt(samantha);
+    expect(prompt).toMatch(/GOAL 1 is live/);
+    expect(prompt).not.toMatch(/GOAL 2 is live/);
+    // The facts he does have are still in front of him.
+    expect(prompt).toContain('Samantha');
+  });
+
+  it('puts goal 2 live once the profile has real coverage', () => {
+    const covered: KnownFact[] = [
+      { key: 'partner_name', fieldId: 'partner_name', value: 'Samantha' },
+      { key: 'birthday', fieldId: 'birthday', value: '1994-03-02' },
+      { key: 'anniversary', fieldId: 'anniversary', value: '2023-09-10' },
+      { key: 'favorite_cuisine', fieldId: 'favorite_cuisine', value: 'Northern Italian' },
+      { key: 'music_genre', fieldId: 'music_genre', value: 'jazz' },
+      { key: 'weekly_rhythm', fieldId: 'weekly_rhythm', value: 'pottery on Tuesdays' },
+    ];
+    const prompt = buildSystemPrompt(covered);
     expect(prompt).toMatch(/GOAL 2 is live/);
     expect(prompt).toMatch(/do not ask him to tell you about his partner/);
+    // GOAL 2 drops the field-by-field enumeration — "stop collecting" next to a
+    // shopping list of gaps pulled him straight back into interrogation.
+    expect(prompt).not.toMatch(/Still unknown:/);
+  });
+
+  it('tells him in every ongoing state that a stated fact is not a brief to act on', () => {
+    expect(buildSystemPrompt(samantha)).toMatch(/not a brief to act on/);
+    const covered: KnownFact[] = PROFILE_FIELD_IDS.map((id) => ({
+      key: id,
+      fieldId: id,
+      value: id === 'partner_name' ? 'Samantha' : 'something',
+    }));
+    expect(buildSystemPrompt(covered)).toMatch(/not a brief to act on/);
   });
 
   it('carries every known fact into the prompt', () => {
@@ -161,9 +192,127 @@ describe('buildSystemPrompt', () => {
     );
   });
 
+  describe('the fortnight lookup line', () => {
+    it('spells out the next two weeks so a first-mention weekday is a read, not a derivation', () => {
+      // Saturday 5 September 2026 in Israel. The 10th is a Thursday — the exact
+      // weekday the recorded model got wrong before this line existed.
+      const block = nowBlock(new Date('2026-09-05T12:00:00Z'));
+      expect(block).toContain('10 September = Thursday');
+      expect(block).toContain('6 September = Sunday');
+      expect(block).toMatch(/never work a weekday out yourself/);
+    });
+  });
+
+  describe('the computed-dates block', () => {
+    // Saturday 5 September 2026, noon UTC — the exact conditions of the recorded
+    // run where the model called Thursday the 10th "this coming Wednesday" and
+    // counted five days as four.
+    const theRecordedSaturday = new Date('2026-09-05T12:00:00Z');
+
+    it('states the weekday and day count so the model never derives them', () => {
+      const block = computedDatesBlock(
+        [{ key: 'anniversary', fieldId: 'anniversary', value: '2026-09-10' }],
+        theRecordedSaturday,
+      );
+      expect(block).toContain('Thursday 2026-09-10');
+      expect(block).toContain('in 5 days');
+      expect(block).toMatch(/trust these over your own arithmetic/);
+    });
+
+    it('rolls a recurring date to its next occurrence, never showing it as past', () => {
+      // Stored with the year she was born — the planner's own worst case.
+      const block = computedDatesBlock(
+        [{ key: 'birthday', fieldId: 'birthday', value: '1994-03-02' }],
+        theRecordedSaturday,
+      );
+      expect(block).toContain('2027-03-02');
+      expect(block).not.toContain('1994');
+      expect(block).not.toMatch(/already passed/);
+    });
+
+    it('says plainly when a one-off occasion has passed, instead of rolling it', () => {
+      const block = computedDatesBlock(
+        [{ key: 'next_occasion', fieldId: 'next_occasion', value: '2026-09-01@the gallery opening' }],
+        theRecordedSaturday,
+      );
+      expect(block).toMatch(/already passed/);
+    });
+
+    it('is empty when no fact carries a parseable date — no block, no preamble', () => {
+      expect(computedDatesBlock(samantha, theRecordedSaturday)).toBe('');
+    });
+
+    it('is folded into the system prompt whenever a date is known', () => {
+      const prompt = buildSystemPrompt(
+        [
+          { key: 'partner_name', fieldId: 'partner_name', value: 'Maya' },
+          { key: 'anniversary', fieldId: 'anniversary', value: '2026-09-10' },
+        ],
+        false,
+        [],
+        theRecordedSaturday,
+      );
+      expect(prompt).toContain('Thursday 2026-09-10');
+    });
+  });
+
+  /*
+   * The defect this closes: the turn that *teaches* a date is answered before
+   * extraction has stored it, so the profile-driven block above had nothing to
+   * say about the one date that mattered, and the model derived its weekday
+   * itself — calling Wednesday 16 September "Tuesday the 16th" three runs
+   * running, even with a correct fortnight table in front of it.
+   */
+  describe('dates named in the incoming message', () => {
+    // Saturday 12 September 2026 in Israel — the day of the failing rehearsal.
+    const theFailingSaturday = new Date('2026-09-12T09:00:00Z');
+
+    it('resolves a year-less prose date to its next occurrence', () => {
+      expect(datesInText('our third anniversary is on 16 September', theFailingSaturday)).toEqual([
+        { year: 2026, month: 9, day: 16 },
+      ]);
+    });
+
+    it('reads the month-first and ordinal forms too', () => {
+      expect(datesInText('September 16th', theFailingSaturday)).toEqual([
+        { year: 2026, month: 9, day: 16 },
+      ]);
+      expect(datesInText('the 2nd of March', theFailingSaturday)).toEqual([
+        { year: 2027, month: 3, day: 2 },
+      ]);
+    });
+
+    it('honours an explicit year rather than rolling it forward', () => {
+      expect(datesInText('she was born 2 March 1994', theFailingSaturday)).toEqual([
+        { year: 1994, month: 3, day: 2 },
+      ]);
+      expect(datesInText('book 2026-09-16 please', theFailingSaturday)).toEqual([
+        { year: 2026, month: 9, day: 16 },
+      ]);
+    });
+
+    it('finds nothing in a message that names no date', () => {
+      expect(datesInText('she loves Nina Simone', theFailingSaturday)).toEqual([]);
+    });
+
+    it('states the weekday of the just-typed date, on a turn with no profile at all', () => {
+      const prompt = buildSystemPrompt(
+        [],
+        false,
+        [],
+        theFailingSaturday,
+        'Her name is Maya, and our third anniversary is on 16 September.',
+      );
+      expect(prompt).toContain('Wednesday 2026-09-16');
+      expect(prompt).toContain('in 4 days');
+      expect(prompt).toMatch(/trust these over your own arithmetic/);
+    });
+  });
+
   it('addresses her generically when the profile has facts but no name', () => {
     const prompt = buildSystemPrompt([{ key: 'hobbies', fieldId: 'hobbies', value: 'pottery' }]);
-    expect(prompt).toMatch(/GOAL 2 is live/);
+    // One nameless fact is nowhere near knowing her — GOAL 1 stays live.
+    expect(prompt).toMatch(/GOAL 1 is live/);
     expect(prompt).toContain('his partner');
   });
 

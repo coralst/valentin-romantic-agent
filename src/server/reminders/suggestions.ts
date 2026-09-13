@@ -6,8 +6,18 @@ import { isRestaurantStyle, findVenues } from '../integrations/ontopo/venues';
 import type { CuratedVenue } from '../integrations/ontopo/venues';
 import type { StorageInterface } from '../persistence/storage-interface';
 import { logger } from '../logging';
-import type { ReminderActivity, ReminderSuggestion } from './email-body';
+import type {
+  ReminderActivity,
+  ReminderReservation,
+  ReminderSuggestion,
+  ReminderSurprise,
+} from './email-body';
 import { profileFieldValue } from './reminder-sync';
+import {
+  decodeKeepsake,
+  KEEPSAKE_CATEGORY,
+  PLAYLIST_KEY,
+} from '../agent/keepsake-recorder';
 
 /**
  * What a reminder should be *about*, composed from the profile before it is sent.
@@ -74,6 +84,13 @@ export interface ReminderContext {
    * the boundary `DispatchOptions.context` exists to avoid.
    */
   partnerName?: string | null;
+  /**
+   * The venue he already settled on for this evening, which turns the mail from a
+   * prompt into a confirmation. Null unless a confirmed outing matches the date.
+   */
+  reservation?: ReminderReservation | null;
+  /** A playlist made for her, to hand over at the end of the mail. */
+  surprise?: ReminderSurprise | null;
 }
 
 /** Nothing to add: the mail still sends, and still says the date. */
@@ -83,6 +100,8 @@ export const EMPTY_CONTEXT: ReminderContext = {
   suggestions: [],
   ideas: [],
   timingNote: null,
+  reservation: null,
+  surprise: null,
 };
 
 /**
@@ -225,6 +244,35 @@ export interface ComposeInput {
   musicGenre: string | null;
   weeklyRhythm: string | null;
   outings: readonly Outing[];
+  /**
+   * A playlist made for her, decoded from her profile. Absent on every caller that
+   * predates it, which gets the mail exactly as it was.
+   */
+  surprise?: ReminderSurprise | null;
+}
+
+/**
+ * The venue he already chose for this evening, from his own confirmed outings.
+ *
+ * Matched on the date and nothing else, which is what makes it trustworthy: an outing
+ * row exists only because somebody clicked Confirm on a card naming a real venue, and
+ * the date on it came from the same card. There is no scoring and no nearest-match — a
+ * reservation for a different evening is not this evening's reservation.
+ *
+ * The most recently confirmed wins when there are several, because changing your mind
+ * about where to take her is normal and the last decision is the live one.
+ */
+function reservationFor(
+  occursOn: string,
+  outings: readonly Outing[],
+): ReminderReservation | null {
+  const sameEvening = outings
+    .filter((outing) => outing.occursOn === occursOn && Boolean(outing.confirmedAt))
+    .sort((a, b) => (a.confirmedAt < b.confirmedAt ? 1 : -1));
+
+  const chosen = sameEvening[0];
+  if (!chosen?.venueName) return null;
+  return { venueName: chosen.venueName, city: chosen.city };
 }
 
 /**
@@ -239,8 +287,12 @@ export function composeReminderContext(input: ComposeInput): ReminderContext {
   const timingNote = timingNoteFor(input.reminder.occursOn, input.weeklyRhythm);
 
   const partnerName = input.partnerName;
+  const surprise = input.surprise ?? null;
 
   if (activity === 'errand') {
+    // No surprise and no reservation on an errand. He asked to be reminded to call the
+    // florist; a playlist at the bottom of that is a non-sequitur, and any table he has
+    // booked belongs to whatever occasion he booked it for, not to this.
     return { ...EMPTY_CONTEXT, activity, timingNote, partnerName };
   }
 
@@ -257,7 +309,38 @@ export function composeReminderContext(input: ComposeInput): ReminderContext {
     if (input.musicGenre) {
       ideas.push(`Put ${input.musicGenre} on. I can build the playlist if Spotify is connected.`);
     }
-    return { activity, criteria: [], suggestions: [], ideas, timingNote, partnerName };
+    return {
+      activity,
+      criteria: [],
+      suggestions: [],
+      ideas,
+      timingNote,
+      partnerName,
+      reservation: null,
+      surprise,
+    };
+  }
+
+  /*
+   * A decision already made short-circuits the search.
+   *
+   * Not merely an optimisation — running `findVenues` anyway and then discarding it
+   * would leave the criteria line ("here is what fits what you have told me") computed
+   * for a list nobody sees, which is how a later edit accidentally prints suggestions
+   * under a confirmation.
+   */
+  const reservation = reservationFor(input.reminder.occursOn, input.outings);
+  if (reservation) {
+    return {
+      activity,
+      criteria: [],
+      suggestions: [],
+      ideas: [],
+      timingNote,
+      partnerName,
+      reservation,
+      surprise,
+    };
   }
 
   const named = input.restaurantStyle?.trim();
@@ -302,7 +385,16 @@ export function composeReminderContext(input: ComposeInput): ReminderContext {
       ].filter(Boolean)
     : [];
 
-  return { activity, criteria, suggestions, ideas: [], timingNote, partnerName };
+  return {
+    activity,
+    criteria,
+    suggestions,
+    ideas: [],
+    timingNote,
+    partnerName,
+    reservation: null,
+    surprise,
+  };
 }
 
 /**
@@ -335,6 +427,17 @@ export async function reminderContextFor(
       musicGenre: value('music_genre'),
       weeklyRhythm: value('weekly_rhythm'),
       outings,
+      /*
+       * Read off the row `recordKeepsake` wrote, not through `profileFieldValue` — this
+       * is not a profile *field*, it has no id in `PROFILE_FIELD_IDS` and no place in
+       * the field grid. `decodeKeepsake` returns null for anything that is not a title
+       * and an http(s) link, so a malformed row costs the surprise and nothing else.
+       */
+      surprise: decodeKeepsake(
+        preferences.find(
+          (pref) => pref.category === KEEPSAKE_CATEGORY && pref.key === PLAYLIST_KEY,
+        )?.value,
+      ),
     });
   } catch (cause) {
     logger.warn('reminder.context_failed', {

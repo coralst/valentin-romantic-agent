@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { AWS_CATEGORY_COLORS, type AwsCategory } from '../utils/aws-diagram-layout';
 import { colors, typography } from '../design-system/tokens';
+import type { GlowTarget } from '../utils/glow-target';
 
 /**
  * The running list beside the diagram: what happened, where, and how long it took.
@@ -42,6 +43,14 @@ export interface FeedRow {
    * still reserved so the rows of a mixed list stay in one set of columns.
    */
   timeLabel?: string;
+  /**
+   * What this row put on screen, so pointing at it can glow the thing itself.
+   *
+   * Absent on rows that produced no element — a scripted demo step, a Bedrock
+   * span — and those rows stay inert rather than becoming controls that do
+   * nothing when pressed.
+   */
+  targets?: readonly GlowTarget[];
 }
 
 export interface AwsFlowFeedProps {
@@ -70,6 +79,31 @@ export interface AwsFlowFeedProps {
    * log (and the tests that assert over rows) opt back in.
    */
   startExpanded?: boolean;
+  /**
+   * Glow what this group produced, for as long as the pointer or focus is on it.
+   *
+   * Called with `null` on the way out. Separate from `onSelectGroup` because a
+   * hover is a question and a click is an answer: sweeping the list to find the
+   * turn you mean must not start a replay or move the transcript.
+   */
+  onHoverGroup?: (group: FeedGroup | null) => void;
+  /**
+   * Glow one step's own output, rather than everything its group produced.
+   *
+   * A group is a run of consecutive beats, so "learns something new · 6" holds six
+   * different facts. Pointing at the group glows all six; pointing at a step
+   * glows the one. Supplying this is what turns the steps into controls.
+   */
+  onSelectRow?: (row: FeedRow) => void;
+  /** Hover half of `onSelectRow`. Called with `null` on the way out. */
+  onHoverRow?: (row: FeedRow | null) => void;
+  /**
+   * The group id or row key whose glow is currently held on.
+   *
+   * One value for both, because only one thing can be pinned at a time and two
+   * pieces of state could disagree about which.
+   */
+  glowingKey?: string | null;
 }
 
 export interface FeedGroup {
@@ -121,6 +155,17 @@ export const REPLAY_COPY = {
   replaying: 'Replaying',
   /** Bare glyph on the unselected groups: forty of them, so it has to be quiet. */
   glyph: '↻',
+} as const;
+
+/**
+ * The words for pointing at a step and lighting up what it produced.
+ *
+ * "Show" rather than "Highlight" or "Glow": the accessible name has to say what
+ * pressing it does for someone who cannot see the result, and what it does is
+ * show you where that step landed in the app.
+ */
+export const GLOW_COPY = {
+  action: 'Show what this produced',
 } as const;
 
 /**
@@ -194,6 +239,10 @@ export function AwsFlowFeed({
   onSelectGroup,
   selectedGroupId = null,
   startExpanded = false,
+  onHoverGroup,
+  onSelectRow,
+  onHoverRow,
+  glowingKey = null,
 }: AwsFlowFeedProps) {
   // Newest first: reversed here rather than at the call site so the caller can
   // keep its rows in the order the traffic actually happened.
@@ -313,6 +362,21 @@ export function AwsFlowFeed({
           // When the group is folded this is the only time it shows, so it is the
           // group's newest beat — the one the presenter just talked about.
           const groupTimeLabel = group.rows[group.rows.length - 1]?.timeLabel;
+          const isGlowing = glowingKey !== null && glowingKey === group.id;
+
+          /*
+           * Focus mirrors hover, so the preview is reachable from the keyboard.
+           * The header is already a button for the replay, and a presenter tabbing
+           * down the list should see the same thing a pointer shows them.
+           */
+          const hoverHandlers = onHoverGroup
+            ? {
+                onMouseEnter: () => onHoverGroup(group),
+                onMouseLeave: () => onHoverGroup(null),
+                onFocus: () => onHoverGroup(group),
+                onBlur: () => onHoverGroup(null),
+              }
+            : {};
 
           const headerStyle: React.CSSProperties = {
             // In the drawer the feed is only ~460px wide, so the action becomes a
@@ -328,8 +392,8 @@ export function AwsFlowFeed({
             flex: 1,
             minWidth: 0,
             padding: '5px 0 4px 8px',
-            borderLeft: `2px solid ${isSelected || isCurrent ? '#8C2F45' : '#E5D9D2'}`,
-            background: isSelected ? 'rgba(242,212,216,0.35)' : 'transparent',
+            borderLeft: `2px solid ${isSelected || isCurrent || isGlowing ? '#8C2F45' : '#E5D9D2'}`,
+            background: isSelected || isGlowing ? 'rgba(242,212,216,0.35)' : 'transparent',
             borderRadius: isSelected ? 3 : undefined,
             opacity: isCollapsed ? 0.55 : 1,
           };
@@ -415,6 +479,7 @@ export function AwsFlowFeed({
               data-group-id={group.id}
               data-selected={isSelected ? 'true' : 'false'}
               data-expanded={isExpanded ? 'true' : 'false'}
+              data-glowing={isGlowing ? 'true' : 'false'}
             >
               {/*
                 Fold and replay are two controls, side by side rather than nested:
@@ -444,6 +509,7 @@ export function AwsFlowFeed({
                   <button
                     type="button"
                     onClick={() => onSelectGroup(group)}
+                    {...hoverHandlers}
                     aria-pressed={isSelected}
                     aria-label={`${REPLAY_COPY.action}: ${group.actor} ${group.action}`}
                     data-testid="aws-feed-group-header"
@@ -462,7 +528,7 @@ export function AwsFlowFeed({
                     {headerContent}
                   </button>
                 ) : (
-                  <div data-testid="aws-feed-group-header" style={headerStyle}>
+                  <div data-testid="aws-feed-group-header" style={headerStyle} {...hoverHandlers}>
                     {headerContent}
                   </div>
                 )}
@@ -473,61 +539,137 @@ export function AwsFlowFeed({
                   // Wrapped so the trace id can sit under the row without becoming a
                   // fifth grid column — at 48px it would have squeezed the duration.
                   <div key={row.key}>
-                    <div
-                      data-testid="aws-feed-row"
-                      data-current={row.isCurrent ? 'true' : 'false'}
-                      style={{
+                    {(() => {
+                      const isRowGlowing = glowingKey !== null && glowingKey === row.key;
+                      /*
+                       * A step is only a control when it actually produced something.
+                       * `typing_stop` and a Bedrock span have nothing to glow, and a
+                       * button that visibly does nothing when pressed is worse than a
+                       * caption — it invites the presenter to press it again on stage.
+                       */
+                      const isInteractive =
+                        onSelectRow !== undefined && (row.targets?.length ?? 0) > 0;
+
+                      const rowHoverHandlers =
+                        onHoverRow && isInteractive
+                          ? {
+                              onMouseEnter: () => onHoverRow(row),
+                              onMouseLeave: () => onHoverRow(null),
+                              onFocus: () => onHoverRow(row),
+                              onBlur: () => onHoverRow(null),
+                            }
+                          : {};
+
+                      const cellStyle: React.CSSProperties = {
                         ...rowStyle,
                         background: row.isCurrent
                           ? 'linear-gradient(90deg, rgba(242,212,216,0.5), transparent)'
-                          : undefined,
-                        borderRadius: row.isCurrent ? 4 : undefined,
-                      }}
-                    >
-                      <span
-                        aria-hidden="true"
-                        style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: 2,
-                          justifySelf: 'center',
-                          background: AWS_CATEGORY_COLORS[row.category],
-                        }}
-                      />
-                      <span style={{ fontWeight: 700, color: '#2A2226', fontSize: 10 }}>
-                        {row.service}
-                      </span>
-                      <span
-                        style={{
-                          color: '#756A70',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          // A grid item's automatic minimum is its content, so `1fr`
-                          // could not actually shrink: the row stayed as wide as the
-                          // longest detail string and the clock column hung off the
-                          // panel's right edge. This is what makes the ellipsis work.
-                          minWidth: 0,
-                        }}
-                      >
-                        <b style={{ color: '#2A2226', fontWeight: 600 }}>{row.operation}</b>{' '}
-                        {row.detail}
-                      </span>
-                      <span
-                        style={{
-                          textAlign: 'right',
-                          fontWeight: 700,
-                          fontSize: 10,
-                          color: '#2A2226',
-                          fontVariantNumeric: 'tabular-nums',
-                        }}
-                      >
-                        {row.durationLabel}
-                      </span>
-                      <span data-testid="aws-feed-row-time" style={timeStyle}>
-                        {row.timeLabel ?? ''}
-                      </span>
-                    </div>
+                          : isRowGlowing
+                            ? 'rgba(242,212,216,0.35)'
+                            : // Spelled out rather than left `undefined`: the row is a
+                              // `<button>` when it is interactive, and an unset
+                              // background there means the platform's own grey pill.
+                              'transparent',
+                        borderRadius: row.isCurrent || isRowGlowing ? 4 : undefined,
+                      };
+
+                      const cells = (
+                        <>
+                          <span
+                            aria-hidden="true"
+                            style={{
+                              width: 8,
+                              height: 8,
+                              borderRadius: 2,
+                              justifySelf: 'center',
+                              background: AWS_CATEGORY_COLORS[row.category],
+                            }}
+                          />
+                          <span style={{ fontWeight: 700, color: '#2A2226', fontSize: 10 }}>
+                            {row.service}
+                          </span>
+                          <span
+                            style={{
+                              color: '#756A70',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              // A grid item's automatic minimum is its content, so `1fr`
+                              // could not actually shrink: the row stayed as wide as the
+                              // longest detail string and the clock column hung off the
+                              // panel's right edge. This is what makes the ellipsis work.
+                              minWidth: 0,
+                            }}
+                          >
+                            <b style={{ color: '#2A2226', fontWeight: 600 }}>{row.operation}</b>{' '}
+                            {row.detail}
+                          </span>
+                          <span
+                            style={{
+                              textAlign: 'right',
+                              fontWeight: 700,
+                              fontSize: 10,
+                              color: '#2A2226',
+                              fontVariantNumeric: 'tabular-nums',
+                            }}
+                          >
+                            {row.durationLabel}
+                          </span>
+                          <span data-testid="aws-feed-row-time" style={timeStyle}>
+                            {row.timeLabel ?? ''}
+                          </span>
+                        </>
+                      );
+
+                      /*
+                       * A real button where there is something to show, a plain row
+                       * where there is not — the same choice the group header makes,
+                       * and for the same two reasons: an unconditional button puts a
+                       * dead affordance on screen, and a clickable `div` puts a live
+                       * one outside the keyboard's reach.
+                       */
+                      if (!isInteractive) {
+                        return (
+                          <div
+                            data-testid="aws-feed-row"
+                            data-current={row.isCurrent ? 'true' : 'false'}
+                            data-glowing="false"
+                            style={cellStyle}
+                          >
+                            {cells}
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => onSelectRow(row)}
+                          {...rowHoverHandlers}
+                          aria-pressed={isRowGlowing}
+                          aria-label={`${GLOW_COPY.action}: ${row.service} ${row.operation}`}
+                          data-testid="aws-feed-row"
+                          data-current={row.isCurrent ? 'true' : 'false'}
+                          data-glowing={isRowGlowing ? 'true' : 'false'}
+                          style={{
+                            ...cellStyle,
+                            // Stripped back to the row it replaces. `borderBottom`
+                            // survives because it is the list's own rule between
+                            // steps, not button chrome.
+                            borderTop: 'none',
+                            borderLeft: 'none',
+                            borderRight: 'none',
+                            width: '100%',
+                            font: 'inherit',
+                            fontSize: 10.5,
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {cells}
+                        </button>
+                      );
+                    })()}
                     {row.traceId && (
                       <div
                         data-testid="aws-feed-trace-id"

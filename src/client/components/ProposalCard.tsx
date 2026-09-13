@@ -179,7 +179,16 @@ export function ProposalCard({
   };
 
   return (
-    <div style={cardStyle} data-testid={`proposal-${proposal.proposalId}`}>
+    <div
+      style={cardStyle}
+      data-testid={`proposal-${proposal.proposalId}`}
+      /*
+       * Lets a tool call in the architecture feed find the card it produced. The
+       * feed row knows which integration ran — `ontopo` — but not which proposal
+       * came back from it, and this is the only place the two meet.
+       */
+      data-proposal-service={proposal.service}
+    >
       <div style={eyebrowRowStyle}>
         <span style={eyebrowStyle}>Valentin suggests · {proposal.service}</span>
         {isOpen && (

@@ -12,7 +12,14 @@ import {
 import { useFlowTraversal } from './use-flow-traversal';
 import type { FlowBeat } from '../utils/aws-demo-flows';
 import type { AwsCategory } from '../utils/aws-diagram-layout';
-import type { AwsSpan } from '../../shared/interfaces/ws-events';
+import type { AgentActivityPayload, AwsSpan } from '../../shared/interfaces/ws-events';
+import {
+  glowTargetsForEvent,
+  glowTargetsForSpan,
+  learnToolService,
+  type GlowTarget,
+  type ToolServiceLookup,
+} from '../utils/glow-target';
 
 /**
  * Real traffic, shaped exactly like a demo step.
@@ -54,6 +61,15 @@ export interface LiveBeat extends FlowBeat {
    * two hops the proxy cannot see inside.
    */
   traceId?: string;
+  /**
+   * What this beat put on screen, so pointing at it can glow the thing itself.
+   *
+   * Ids, never values — see `glow-target.ts` for why that keeps the projector
+   * rule intact. Absent on the beats that produced no element of their own
+   * (`typing_stop`, a Bedrock span), which is why it is optional rather than an
+   * empty array everywhere.
+   */
+  targets?: readonly GlowTarget[];
 }
 
 export const LIVE_BEAT_LIMIT = 60;
@@ -234,6 +250,7 @@ function beatFromEvent(
     category: EVENT_CATEGORY[event.type] ?? 'network',
     actor: story.actor,
     action: story.action,
+    targets: glowTargetsForEvent(observed),
   };
 }
 
@@ -241,6 +258,7 @@ function beatFromSpan(
   span: AwsSpan,
   key: string,
   engine: ArchitectureEngine,
+  toolServices: ToolServiceLookup,
 ): LiveBeat | undefined {
   const node = awsNodeIdForResource(span.resourceId, engine);
   if (!node) return undefined;
@@ -261,6 +279,7 @@ function beatFromSpan(
     actor: 'Valentin',
     action: SPAN_ACTION[node] ?? 'thinks',
     traceId: span.traceId,
+    targets: glowTargetsForSpan(span, node, toolServices),
   };
 }
 
@@ -315,9 +334,31 @@ export function useLiveArchitecture(
 
   const nextKeyRef = useRef(0);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /**
+   * Tool name → the integration it belongs to, accumulated over the session.
+   *
+   * A ref rather than state: nothing renders from it, and re-rendering the drawer
+   * on every tool frame would be forty renders a turn for a lookup table.
+   */
+  const toolServicesRef = useRef(new Map<string, string>());
 
   const record = useCallback(
     (observed: ObservedWsEvent) => {
+      /*
+       * Read for its service name on the way past, then left to fall through and
+       * be dropped as it always has been.
+       *
+       * `agent_activity` is absent from `EVENT_ENDPOINTS`, so it has never
+       * produced a beat and deliberately still does not — several arrive per turn
+       * and giving them rows would push every other action off the feed. But it
+       * is the only frame that says which integration a tool belongs to, and the
+       * span that *does* become a row has that flattened away. See
+       * `learnToolService`.
+       */
+      if (observed.event.type === 'agent_activity') {
+        learnToolService(toolServicesRef.current, observed.event.payload);
+      }
+
       const key = `live-${nextKeyRef.current}`;
       nextKeyRef.current += 1;
 
@@ -332,7 +373,7 @@ export function useLiveArchitecture(
           if (isModelCall(span.operation)) {
             setModelCallCount((count) => count + 1);
           }
-          beat = beatFromSpan(span, key, engine);
+          beat = beatFromSpan(span, key, engine, toolServicesRef.current);
         }
       } else {
         beat = beatFromEvent(observed, key, engine);

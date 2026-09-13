@@ -115,6 +115,26 @@ export function knownCities(): string[] {
 }
 
 /**
+ * The venue's own public page on Ontopo, when its city is one Ontopo has a page for.
+ *
+ * A pure lookup over `CITY_SLUGS` and the slug the venue already carries — no
+ * request — and the same slug `availability_search` books against. Omitted rather
+ * than guessed when the city is unknown or absent: a 404 in someone's inbox is
+ * worse than a name they can search themselves.
+ *
+ * Lives here, next to `CITY_SLUGS`, because it is that table's URL grammar and it
+ * now has two readers — the reminder mail and the reservation confirmation. The two
+ * had begun to keep their own copies, which is how one of them would have been left
+ * behind the day Ontopo changes the shape of a venue URL.
+ */
+export function venuePageUrl(venue: { slug: string; city?: string | null }): string | null {
+  const city = venue.city?.trim();
+  if (!city) return null;
+  const citySlug = citySlugFor(city);
+  return citySlug ? `https://ontopo.com/en/il/${citySlug}/page/${venue.slug}` : null;
+}
+
+/**
  * Pull the venue slugs out of a rendered city page.
  *
  * **Only the slugs.** The first version of this also tried to lift the venue's name

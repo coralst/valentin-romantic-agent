@@ -23,6 +23,7 @@ import {
   expandConversationLinks,
 } from '../sharing/link-placeholder';
 import { stripToolMarkup } from './strip-tool-markup';
+import { capabilityReminder, deniesCapability } from './capability-denial';
 
 /**
  * How many model round trips one user turn may take.
@@ -145,6 +146,17 @@ export async function runToolLoop({
   const transcript = [...messages];
   const proposals: ActionProposal[] = [];
   let lastText = '';
+  /**
+   * Tool calls made anywhere in this turn, and whether the capability nudge has
+   * been spent.
+   *
+   * Both gate {@link deniesCapability} — see the exit below. `toolsRun` because a
+   * turn that *did* call a tool and then said something could not be done is
+   * almost always reporting a real failure the tool told it about, and pushing
+   * back on that would talk the model out of an accurate answer.
+   */
+  let toolsRun = 0;
+  let nudged = false;
 
   /**
    * Mint a real share URL for this turn's conversation.
@@ -213,14 +225,42 @@ export async function runToolLoop({
     if (turn.text) lastText = turn.text;
 
     if (turn.toolUses.length === 0) {
+      const prose = turn.text || lastText;
+
+      /*
+       * One more chance, when the model has just told the user that something it
+       * can do is impossible — see `capability-denial.ts` for the live report.
+       *
+       * Guarded four ways so this cannot become a general "try harder" loop: the
+       * model called no tool at all this turn, there are tools to call, the prose
+       * denies a capability rather than declining a topic, and it has not been
+       * nudged already. `continue` rather than a nested call so the retry shares
+       * the iteration budget and every existing exit still applies to it.
+       */
+      if (!nudged && toolsRun === 0 && registry.size > 0 && deniesCapability(prose)) {
+        nudged = true;
+        logger.warn('agent.capability_denial_retried', {
+          sessionId,
+          iteration,
+          // The reply itself is not logged: it is Valentin's prose about someone's
+          // partner. Its length is enough to tell a one-line brush-off from a
+          // considered answer when reading this back in CloudWatch.
+          replyChars: prose.length,
+        });
+        transcript.push(turn.message);
+        transcript.push({ role: 'user', content: [{ text: capabilityReminder(registry) }] });
+        continue;
+      }
+
       return {
-        text: withLinks(turn.text || lastText),
+        text: withLinks(prose),
         proposals,
         iterations: iteration,
         truncated: false,
       };
     }
 
+    toolsRun += turn.toolUses.length;
     transcript.push(turn.message);
     transcript.push({
       role: 'user',

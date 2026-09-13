@@ -1,4 +1,5 @@
 import { config } from '../../config';
+import { logger } from '../../logging';
 
 /**
  * Transport for the one Google account this build acts as.
@@ -19,11 +20,24 @@ import { config } from '../../config';
  *
  * `POST https://oauth2.googleapis.com/token` with `grant_type=refresh_token`
  * returns a bearer token good for an hour. Cached in this module and refreshed
- * early by {@link TOKEN_SKEW_MS}. Refresh tokens do not expire on their own but
- * they *are* revoked — by a password change, by six months of disuse, by the user
- * clicking Remove Access. When that happens the token call returns
- * `400 invalid_grant`, which surfaces here as `null` and reaches the user as
- * "I can't get to your calendar", not a stack trace.
+ * early by {@link TOKEN_SKEW_MS}. When the refresh token is dead the token call
+ * returns `400 invalid_grant`, which surfaces here as `null` and reaches the user
+ * as "I can't get to your calendar", not a stack trace.
+ *
+ * **The refresh token here does expire, and quickly.** A long-lived one is what a
+ * *published* OAuth client gets; while the client's consent screen is still in
+ * Google's `Testing` publishing status, every refresh token it mints dies after
+ * seven days. That is not a hypothetical: the token deployed on 2026-09-03 answered
+ * `invalid_grant — Token has been expired or revoked` on 2026-09-13, which took
+ * Gmail and Calendar down together, and the visible symptom was a demo captioning a
+ * mail that had never been sent. Revocation still applies too — a password change,
+ * six months of disuse, Remove Access.
+ *
+ * So this credential is *operationally perishable*, and there is a script for
+ * exactly that: `npm run sync:google-secret` copies a live token from `.env` into
+ * Secrets Manager, refusing to write one Google has already rejected. The ECS task
+ * reads the secret at task start, so a backend deploy (or any task restart) has to
+ * follow, or the running container keeps the dead value it booted with.
  *
  * ## Scopes
  *
@@ -135,7 +149,14 @@ export function resetGoogleTokenCache(): void {
  */
 export async function googleAccessToken(): Promise<string | null> {
   const { googleClientId, googleClientSecret, googleRefreshToken } = config.integrations;
-  if (!googleClientId || !googleClientSecret || !googleRefreshToken) return null;
+  if (!googleClientId || !googleClientSecret || !googleRefreshToken) {
+    logger.warn('google.auth_unconfigured', {
+      clientId: Boolean(googleClientId),
+      clientSecret: Boolean(googleClientSecret),
+      refreshToken: Boolean(googleRefreshToken),
+    });
+    return null;
+  }
 
   if (tokenCache && tokenCache.expiresAt > Date.now()) return tokenCache.token;
 
@@ -152,10 +173,42 @@ export async function googleAccessToken(): Promise<string | null> {
   });
   // `400 invalid_grant` lands here. It means the refresh token was revoked and no
   // amount of retrying will help — a human has to mint a new one.
-  if (!response.ok) return null;
+  //
+  // Google's own `error` slug is logged because it is the whole diagnosis and it is
+  // not otherwise recoverable: `invalid_grant` is a dead token and needs a person,
+  // `invalid_client` is a client id paired with the wrong secret and needs a
+  // corrected secret, and every caller above renders both as the same sentence to
+  // the user. An `invalid_grant` went unnoticed here for days precisely because
+  // this branch returned in silence.
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    let slug: string | undefined;
+    let description: string | undefined;
+    try {
+      const parsedError = JSON.parse(detail) as { error?: unknown; error_description?: unknown };
+      slug = typeof parsedError.error === 'string' ? parsedError.error : undefined;
+      description =
+        typeof parsedError.error_description === 'string' ? parsedError.error_description : undefined;
+    } catch {
+      // Not JSON. The status alone is still worth having.
+    }
+    logger.error('google.auth_refused', {
+      status: response.status,
+      error: slug,
+      description,
+      hint:
+        slug === 'invalid_grant'
+          ? 'the refresh token is dead — run `npm run sync:google-secret` with a live one in .env, then redeploy the backend so the task picks it up'
+          : undefined,
+    });
+    return null;
+  }
 
   const body = (await response.json()) as { access_token?: unknown; expires_in?: unknown };
-  if (typeof body.access_token !== 'string') return null;
+  if (typeof body.access_token !== 'string') {
+    logger.error('google.auth_malformed', { keys: Object.keys(body) });
+    return null;
+  }
 
   const ttlSeconds = typeof body.expires_in === 'number' ? body.expires_in : 3599;
   tokenCache = {
@@ -183,7 +236,17 @@ async function call(
     body: init?.body === undefined ? undefined : JSON.stringify(init.body),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
-  if (!response.ok) return null;
+  // The path, not the full url: a Gmail send carries no query string but a calendar
+  // read carries `timeMin`/`q`, and those are the user's own words.
+  if (!response.ok) {
+    logger.error('google.call_failed', {
+      status: response.status,
+      path: new URL(url).pathname,
+      method: init?.method ?? 'GET',
+      detail: (await response.text().catch(() => '')).slice(0, 300),
+    });
+    return null;
+  }
 
   const parsed: unknown = await response.json();
   return typeof parsed === 'object' && parsed !== null

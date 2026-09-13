@@ -90,6 +90,101 @@ const FIELDS: Record<ConnectableId, Readonly<Record<string, CredentialField>>> =
 const SERVICES = Object.keys(FIELDS) as ConnectableId[];
 
 /**
+ * The JSON key naming the OAuth client a credential set belongs to.
+ *
+ * Present for Google and Spotify because their three fields are only valid
+ * *together*: a refresh token is minted by one specific client id and is
+ * meaningless paired with another. Amadeus and WhatsApp have no such coupling —
+ * both their fields are long-lived and independently valid — so they are absent
+ * and keep the plain field-by-field merge.
+ */
+const CLIENT_KEY = 'clientId';
+
+function coupledSet(id: ConnectableId): boolean {
+  return id === 'google' || id === 'spotify';
+}
+
+function textValue(body: Record<string, unknown>, key: string): string | null {
+  const value = body[key];
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
+ * Fill a coupled service's fields all-or-nothing, when the secret describes a
+ * *different* OAuth client than the environment does.
+ *
+ * ## The bug this exists for
+ *
+ * Field-by-field env-wins is correct for independent values and actively harmful
+ * for a coupled set. On 2026-09-05 the deployed task held one Spotify app's
+ * client id and secret from `valentin/dev/spotify-oauth` with an empty refresh
+ * token, while `valentin/dev/integrations/spotify` held a *different* app's
+ * complete triple. Env-wins filled the one empty field, producing the old app's
+ * id paired with the new app's refresh token — a combination Spotify answers with
+ * `400 invalid_client`. Every playlist save then failed, and the user was told
+ * "Spotify didn't save it" with no way to tell why. The two credential sources
+ * were each individually fine; only the merge was wrong.
+ *
+ * ## The rule
+ *
+ * A mismatched client id means one of the two sets must win whole. The secret
+ * wins only when it is complete *and* the environment's set is not, because that
+ * is the only case where env-wins would have produced a mixture rather than a
+ * working set — a fully-populated environment is still authoritative and is left
+ * exactly as it is. Either way the disagreement is logged, since silence is what
+ * made this cost a day.
+ *
+ * Returns the number of fields written, or null when the caller should fall
+ * through to the ordinary merge.
+ */
+function adoptCoupledSet(id: ConnectableId, body: Record<string, unknown>): number | null {
+  if (!coupledSet(id)) return null;
+
+  const fields = FIELDS[id];
+  const clientField = fields[CLIENT_KEY];
+  if (!clientField) return null;
+
+  const current = config.integrations[clientField]?.trim();
+  const incoming = textValue(body, CLIENT_KEY);
+  // No client id on one side or the other, or they agree: nothing is coupled
+  // across two apps, so the ordinary merge is right.
+  if (!current || !incoming || current === incoming) return null;
+
+  const secretComplete = Object.keys(fields).every((key) => textValue(body, key) !== null);
+  const envComplete = Object.values(fields).every((field) => Boolean(config.integrations[field]));
+
+  if (!secretComplete || envComplete) {
+    logger.warn('integration.secret-client-mismatch', {
+      integration: id,
+      // Which side is usable, never which credential — a count and two booleans
+      // are enough to tell these three states apart in a log.
+      secretComplete,
+      envComplete,
+      adopted: false,
+    });
+    return 0;
+  }
+
+  let written = 0;
+  for (const [jsonKey, field] of Object.entries(fields)) {
+    const value = textValue(body, jsonKey);
+    if (!value) continue;
+    config.integrations[field] = value;
+    written += 1;
+  }
+  logger.warn('integration.secret-client-mismatch', {
+    integration: id,
+    secretComplete,
+    envComplete,
+    adopted: true,
+    fields: written,
+  });
+  return written;
+}
+
+/**
  * Long enough that a cold Lambda is not a Secrets Manager call per invocation,
  * short enough that a reconnect in the panel reaches the tool host without a
  * redeploy. `invalidateRemoteCredentials` is the fast path for the process that
@@ -157,6 +252,12 @@ function parseSecret(raw: unknown): Record<string, unknown> | null {
  * carries no value.
  */
 function mergeSecret(id: ConnectableId, body: Record<string, unknown>): number {
+  // Checked first: for a coupled set that disagrees with the environment about
+  // which OAuth client it belongs to, filling the empty fields is the bug rather
+  // than the fix. See {@link adoptCoupledSet}.
+  const adopted = adoptCoupledSet(id, body);
+  if (adopted !== null) return adopted;
+
   let filled = 0;
   for (const [jsonKey, field] of Object.entries(FIELDS[id])) {
     // The env-wins rule, in one line. Deliberately a presence check on the

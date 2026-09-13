@@ -177,6 +177,15 @@ const SPAN_ACTION: Readonly<Record<string, string>> = {
   // Same words as `integrations`, because it is the same beat: a call out, with
   // nothing booked yet. The route differs, the story does not.
   'ac-lambda-tools': 'asks the outside world',
+  /*
+   * Different words from the two rows either side of it, because the Gateway's beat
+   * is the *route*, and the route is the entire point of engine B. It did not ask
+   * anybody anything and it learned nothing; it looked up a registered tool and
+   * handed the call to a Lambda. Left unmapped it read "thinks", which is what
+   * Bedrock does and is precisely the wrong claim for the one row that exists to
+   * show a managed primitive doing dispatch the DIY engine hand-writes.
+   */
+  'ac-gateway': 'routes the tool call',
 };
 
 /** Short names for the feed. `Amazon DynamoDB` does not fit 70px. */

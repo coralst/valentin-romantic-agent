@@ -626,11 +626,24 @@ describe('LiveArchitectureDrawer', () => {
       await openDrawer(user);
 
       const drawer = screen.getByTestId('architecture-drawer');
+      /*
+       * Bounded by the drawer's own tab stops rather than by a hardcoded number.
+       *
+       * The property under test is that focus *can* leave, and the number of tabs that
+       * takes is however many controls the drawer happens to have. This used to be a
+       * literal 12, which passed with exactly zero margin — so the next control added
+       * to the drawer failed this test, and the failure said "focus is trapped" about a
+       * drawer that traps nothing. A trap still fails it: a real trap cycles back to
+       * the first stop, so walking one full lap plus two never escapes.
+       */
+      const stops = drawer.querySelectorAll(
+        'a[href],button,input,select,textarea,[tabindex]:not([tabindex="-1"])',
+      ).length;
       let escaped = false;
-      // Generous bound: the feed now carries a fold control per action plus an
-      // expand-all, so the number of stops between the drawer's first control and its
-      // last grows with the flow. The claim under test is that there IS a way out.
-      for (let i = 0; i < 40 && !escaped; i += 1) {
+      // The feed now carries a fold control per action plus an expand-all, so the
+      // number of stops grows with the flow — which is exactly why the bound is
+      // measured off the DOM rather than written down.
+      for (let i = 0; i < stops + 2 && !escaped; i += 1) {
         await user.tab();
         const active = document.activeElement;
         if (active && !drawer.contains(active) && active !== document.body) escaped = true;

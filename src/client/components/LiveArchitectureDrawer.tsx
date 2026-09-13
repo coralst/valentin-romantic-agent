@@ -682,8 +682,8 @@ export function LiveArchitectureDrawer() {
   );
 
   const dwellMsForStep = useCallback(
-    (index: number) => demoStepDwellMs(playbackSteps[index]),
-    [playbackSteps],
+    (index: number) => demoStepDwellMs(playbackSteps[index], engine),
+    [playbackSteps, engine],
   );
   const playback = useFlowPlayback({
     stepCount: playbackSteps.length,
@@ -698,7 +698,7 @@ export function LiveArchitectureDrawer() {
    * route arriving at once.
    */
   const legIndex = useFlowTraversal({
-    legCount: stepLegCount(playbackSteps[playback.index]),
+    legCount: stepLegCount(playbackSteps[playback.index], engine),
     resetKey: `${replay?.id ?? flow.id}-${playback.index}`,
   });
 
@@ -748,8 +748,8 @@ export function LiveArchitectureDrawer() {
 
   /** The scripted/replayed frame: cumulative to the step, sequential within it. */
   const stepFrame = useMemo(
-    () => frameForStep(playbackSteps, playback.index, legIndex),
-    [playbackSteps, playback.index, legIndex],
+    () => frameForStep(playbackSteps, playback.index, legIndex, engine),
+    [playbackSteps, playback.index, legIndex, engine],
   );
 
   /**

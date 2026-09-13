@@ -53,9 +53,11 @@ describe('AwsTopologyDiagram', () => {
     it('names the real deployed resources, not service names alone', () => {
       render(<AwsTopologyDiagram />);
       // The whole argument for the AWS model over the old module model: a room of
-      // builders reads `ValentinTable-dev` instantly. It appears twice, once per
-      // engine, and that is the point — it is genuinely the same table on both.
-      expect(screen.getAllByText('ValentinTable-dev')).toHaveLength(2);
+      // builders reads `ValentinTable-dev` instantly. Exactly once, because there is
+      // exactly one table: it used to be drawn per engine, which put the same
+      // resource name on the screen twice and invited the room to read one account
+      // as two systems. It is now a single card both bands connect to.
+      expect(screen.getAllByText('ValentinTable-dev')).toHaveLength(1);
       expect(screen.getByText('valentin-alb-dev')).toBeInTheDocument();
       expect(screen.getByText('valentin-ac-proxy-dev')).toBeInTheDocument();
       expect(screen.getByText('valentin_agent_dev')).toBeInTheDocument();

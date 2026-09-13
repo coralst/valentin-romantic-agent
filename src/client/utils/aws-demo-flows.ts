@@ -45,6 +45,8 @@ export interface DemoStep {
   actor: string;
   /** What they are doing, e.g. `learns something new`. Captions the group. */
   action: string;
+  /** See {@link FlowBeat.returns}. */
+  returns?: boolean;
 }
 
 /** A step with `from` filled in, which is what the view actually consumes. */
@@ -70,15 +72,26 @@ export type DemoFlowId =
 
 /**
  * Fill in each step's origin: a flow is a continuous journey, so a step starts
- * where the last one ended unless it says otherwise. Authoring `from` on every
- * step invited exactly one kind of typo — a step whose origin didn't match the
- * previous step's destination, drawing a jump-cut.
+ * where the traffic is currently resting.
+ *
+ * "Where it is resting" is not the same as the previous step's `to`, which is what
+ * this used to use and why the scripts were full of explicit `from` overrides. A
+ * returning step — a call — brings the traffic back to its origin, so three sibling
+ * calls out of the same task now chain naturally instead of each needing
+ * `from: 'fargate'` written on it. Every one of those overrides was a jump-cut on the
+ * diagram, and one of them is the "why doesn't it start from the browser?" the
+ * inspector was reported for.
+ *
+ * No flow authors `from` at all any more, and the test suite pins that: an override
+ * would be a claim that the traffic teleported.
  */
 function resolve(steps: readonly DemoStep[]): readonly ResolvedDemoStep[] {
-  return steps.map((step, index) => ({
-    ...step,
-    from: step.from ?? (index > 0 ? steps[index - 1].to : step.to),
-  }));
+  let resting: AwsNodeId | undefined;
+  return steps.map((step) => {
+    const resolved: ResolvedDemoStep = { ...step, from: step.from ?? resting ?? step.to };
+    resting = restingNode(resolved);
+    return resolved;
+  });
 }
 
 const PAGE_LOAD: readonly DemoStep[] = [
@@ -113,7 +126,6 @@ const PAGE_LOAD: readonly DemoStep[] = [
     action: 'opens the app',
   },
   {
-    from: 's3',
     to: 'browser',
     service: 'Browser',
     operation: 'index.html',
@@ -171,11 +183,16 @@ const CHAT_REPLY: readonly DemoStep[] = [
     detail: 'chat-reply',
     category: 'ml',
     durationMs: 412,
+    // A call, so it is drawn out and back. The 412 ms is time Fargate spent waiting
+    // for an answer that then arrived — drawing it one-way said the request left and
+    // stayed there, and left the traffic parked in Bedrock with nowhere honest to go.
+    returns: true,
     actor: 'Valentin',
     action: 'writes a reply',
   },
   {
-    from: 'bedrock',
+    // No `from`. The Converse call came home, so the reply leaves from Fargate, which
+    // is where the traffic is already resting.
     to: 'browser',
     service: 'Browser',
     operation: 'agent_message',
@@ -186,22 +203,34 @@ const CHAT_REPLY: readonly DemoStep[] = [
   },
 ];
 
-/** The 9-step flow from the approved mockup — the one the talk is built around. */
+/**
+ * The flow the talk is built around: a reply, and the preference the reply taught us.
+ *
+ * It shares the first five steps with `CHAT_REPLY` — everything up to and including
+ * the reply's Converse call — and then adds the three the extractor is responsible
+ * for. All three are sibling calls made by the same task, and all three return, so
+ * each one starts where the last one finished without a single authored `from`.
+ *
+ * The last two beats are both at the browser: the reply travels home, and the
+ * preference lands there too. The server pushes `preference_update` and
+ * `agent_message` on the same socket a moment apart, so the flow draws the journey
+ * once and then lands the preference where it is rendered — which is also the note
+ * the flow should end on, since the preference is the whole point of it.
+ */
 const LEARNS_SOMETHING: readonly DemoStep[] = [
-  ...CHAT_REPLY,
+  ...CHAT_REPLY.slice(0, 5),
   {
-    from: 'fargate',
     to: 'bedrock',
     service: 'Bedrock',
     operation: 'Converse',
     detail: 'extract-preferences · forced tool use',
     category: 'ml',
     durationMs: 380,
+    returns: true,
     actor: 'Valentin',
     action: 'learns something new',
   },
   {
-    from: 'fargate',
     to: 'dynamodb',
     service: 'DynamoDB',
     operation: 'PutItem',
@@ -209,11 +238,23 @@ const LEARNS_SOMETHING: readonly DemoStep[] = [
     category: 'database',
     durationMs: 18,
     ok: true,
+    returns: true,
     actor: 'Valentin',
     action: 'learns something new',
   },
   {
-    from: 'dynamodb',
+    to: 'browser',
+    service: 'Browser',
+    operation: 'agent_message',
+    detail: 'reply streamed',
+    category: 'network',
+    actor: 'Valentin',
+    action: 'writes a reply',
+  },
+  {
+    // Already home: this is the toast being rendered, not a second journey down the
+    // same wire. `routeBetween` reports browser → browser as no hop at all, so it
+    // lights the one box and moves nothing — which is exactly what happens.
     to: 'browser',
     service: 'Browser',
     operation: 'preference_update',
@@ -235,10 +276,11 @@ const LEARNS_SOMETHING: readonly DemoStep[] = [
  * moment anything is booked. A flow that stopped at the proposal would let a room
  * assume the agent booked it.
  *
- * Every `from` here is `fargate` rather than the previous step's `to`, because
- * these are sibling calls made by the same task, not a chain. Defaulting would
- * route Ontopo → Ontopo, which `routeBetween` correctly reports as no hop at all
- * — a beat that lights nothing.
+ * The three middle steps are sibling calls made by the same task, not a chain, and
+ * every one of them returns. That is what makes the chain work without an authored
+ * `from`: Hebcal answers and the traffic is back in Fargate, so Ontopo's call starts
+ * from Fargate too. The previous version wrote `from: 'fargate'` on each of them,
+ * which drew the traffic jumping back from Ontopo to Fargate with nothing in between.
  */
 const PROPOSES_A_TABLE: readonly DemoStep[] = [
   ...CHAT_REPLY.slice(0, 4),
@@ -249,11 +291,11 @@ const PROPOSES_A_TABLE: readonly DemoStep[] = [
     detail: 'chat-reply · tool_use',
     category: 'ml',
     durationMs: 486,
+    returns: true,
     actor: 'Valentin',
     action: 'picks a tool',
   },
   {
-    from: 'fargate',
     to: 'integrations',
     service: 'External APIs',
     operation: 'check_shabbat',
@@ -261,11 +303,11 @@ const PROPOSES_A_TABLE: readonly DemoStep[] = [
     category: 'external',
     durationMs: 4,
     ok: true,
+    returns: true,
     actor: 'Valentin',
     action: 'asks the outside world',
   },
   {
-    from: 'fargate',
     to: 'integrations',
     service: 'External APIs',
     operation: 'search_restaurants',
@@ -273,11 +315,11 @@ const PROPOSES_A_TABLE: readonly DemoStep[] = [
     category: 'external',
     durationMs: 612,
     ok: true,
+    returns: true,
     actor: 'Valentin',
     action: 'asks the outside world',
   },
   {
-    from: 'integrations',
     to: 'browser',
     service: 'Browser',
     operation: 'action_proposal',
@@ -287,7 +329,10 @@ const PROPOSES_A_TABLE: readonly DemoStep[] = [
     action: 'offers something to confirm',
   },
   {
-    from: 'browser',
+    // The longest journey in any flow, and deliberately: the Confirm press crosses the
+    // edge, the load balancer and the task before it reaches Ontopo, and then the
+    // checkout link comes all the way back. This is the only moment anything is
+    // booked, so it is the one beat worth watching travel the whole way.
     to: 'integrations',
     service: 'External APIs',
     operation: 'confirm_action',
@@ -295,6 +340,7 @@ const PROPOSES_A_TABLE: readonly DemoStep[] = [
     category: 'external',
     durationMs: 388,
     ok: true,
+    returns: true,
     actor: 'User',
     action: 'confirms it',
   },
@@ -353,6 +399,15 @@ const AGENTCORE_LEARNS_SOMETHING: readonly DemoStep[] = [
     action: 'writes a reply',
   },
   {
+    /*
+     * The one call in either flow drawn *one way*, and it is not an oversight.
+     *
+     * `InvokeAgentRuntime` wraps everything below it: the Gateway tool call, both
+     * table hits and the Memory write all happen inside this call, while the proxy is
+     * still waiting. So the traffic arrives in the Runtime and stays there, which is
+     * what lets the next four steps start from the Runtime. Its 486 ms is the wrapper,
+     * not a fifth sibling. The return is step 10, the journey home.
+     */
     to: 'ac-runtime',
     service: 'Runtime',
     operation: 'InvokeAgentRuntime',
@@ -369,22 +424,53 @@ const AGENTCORE_LEARNS_SOMETHING: readonly DemoStep[] = [
     detail: 'MCP tool call',
     category: 'ml',
     durationMs: 94,
+    returns: true,
     actor: 'Valentin',
     action: 'writes a reply',
   },
   {
-    to: 'ac-dynamodb',
+    // The same `dynamodb` card engine A writes, reached the other way: on this engine
+    // its parent is the Gateway, so the route computes Runtime → Gateway → table
+    // without the flow having to say so.
+    to: 'dynamodb',
     service: 'DynamoDB',
     operation: 'Query',
     detail: 'via valentin-profile-tools-dev',
     category: 'database',
     durationMs: 21,
     ok: true,
+    returns: true,
     actor: 'Valentin',
     action: 'writes a reply',
   },
   {
-    from: 'ac-runtime',
+    to: 'ac-memory',
+    service: 'Memory',
+    operation: 'CreateEvent',
+    detail: 'managed preference extraction',
+    category: 'ml',
+    durationMs: 37,
+    ok: true,
+    returns: true,
+    actor: 'Valentin',
+    action: 'learns something new',
+  },
+  {
+    to: 'dynamodb',
+    service: 'DynamoDB',
+    operation: 'PutItem',
+    detail: 'PREF#music',
+    category: 'database',
+    durationMs: 19,
+    ok: true,
+    returns: true,
+    actor: 'Valentin',
+    action: 'learns something new',
+  },
+  {
+    // The Runtime's answer, all the way home: Runtime → Proxy → ALB → CloudFront →
+    // browser. This leg is `InvokeAgentRuntime` returning as much as it is the WS
+    // frame, which is why the wrapper above is drawn one way.
     to: 'browser',
     service: 'Browser',
     operation: 'agent_message',
@@ -394,31 +480,6 @@ const AGENTCORE_LEARNS_SOMETHING: readonly DemoStep[] = [
     action: 'writes a reply',
   },
   {
-    from: 'ac-runtime',
-    to: 'ac-memory',
-    service: 'Memory',
-    operation: 'CreateEvent',
-    detail: 'managed preference extraction',
-    category: 'ml',
-    durationMs: 37,
-    ok: true,
-    actor: 'Valentin',
-    action: 'learns something new',
-  },
-  {
-    from: 'ac-gateway',
-    to: 'ac-dynamodb',
-    service: 'DynamoDB',
-    operation: 'PutItem',
-    detail: 'PREF#music',
-    category: 'database',
-    durationMs: 19,
-    ok: true,
-    actor: 'Valentin',
-    action: 'learns something new',
-  },
-  {
-    from: 'ac-dynamodb',
     to: 'browser',
     service: 'Browser',
     operation: 'preference_update',
@@ -541,6 +602,23 @@ export interface FlowBeat {
    */
   traceId?: string;
   /**
+   * True when this beat is a *call* — it goes out and the answer comes back — so the
+   * animation should be drawn out and back.
+   *
+   * This is the difference between a request and a delivery, and the diagram used to
+   * draw both the same way: one-way. That made a measured 412 ms Converse look like
+   * traffic that left Fargate and stayed in Bedrock, and it forced the flow scripts
+   * into jump-cuts, because the next call from the same task had to start at Fargate
+   * while the traffic was parked in Bedrock. Marking the call as returning is what
+   * lets the traffic come home, so the next sibling call begins where the last one
+   * ended and no step has to teleport.
+   *
+   * Left false for a delivery — a WS frame pushed to the browser is genuinely one
+   * way, and drawing a return leg on it would invent a request the browser never
+   * made.
+   */
+  returns?: boolean;
+  /**
    * Wall-clock time the beat was observed, epoch ms.
    *
    * Absent on a scripted step, for the same reason `traceId` is: the demo flow is
@@ -550,9 +628,23 @@ export interface FlowBeat {
   at?: number;
 }
 
+/**
+ * Where the traffic is resting once a beat has finished playing.
+ *
+ * A one-way beat leaves it at the destination. A returning beat brings it home, so
+ * it rests where it *started* — which is the whole reason `returns` exists, and the
+ * reason the flow scripts no longer need a single explicit `from`.
+ */
+export function restingNode(beat: FlowBeat): AwsNodeId {
+  return beat.returns ? beat.from : beat.to;
+}
+
 /** How many beats a step is animated over: box, arrow, box, arrow, box. */
-export function stepLegCount(beat: FlowBeat | undefined): number {
-  return beat ? flowLegs(beat.from, beat.to).length : 1;
+export function stepLegCount(
+  beat: FlowBeat | undefined,
+  engine: ArchitectureEngine = 'valentin',
+): number {
+  return beat ? flowLegs(beat.from, beat.to, engine, beat.returns).length : 1;
 }
 
 export function frameForStep(
@@ -564,6 +656,15 @@ export function frameForStep(
    * this step end up" needn't know legs exist.
    */
   legIndex?: number,
+  /**
+   * Which engine's topology to route against.
+   *
+   * Required rather than inferred because `dynamodb` and `integrations` are one node
+   * each, shared by both engines, and the route in differs: engine A drops onto the
+   * table off Fargate, engine B reaches it through the Gateway. Routing an engine B
+   * step against engine A's tree would draw the AgentCore Runtime talking to Fargate.
+   */
+  engine: ArchitectureEngine = 'valentin',
 ): FlowFrame {
   // Clamp rather than trust the caller. An index past the end would make
   // `isCurrent` false for every step, so nothing would light and the whole flow
@@ -578,13 +679,34 @@ export function frameForStep(
   let litNode: AwsNodeId | undefined;
   let litIsResponse = false;
   let activeHops: ReturnType<typeof routeBetween> = [];
+  // Whether the current step's traffic has reached the resource it was calling.
+  // Tracked as a leg index rather than by comparing `litNode` to `step.to`, because a
+  // returning step keeps walking *past* its destination on the way home — a
+  // `litNode === step.to` test would show the duration pill for one beat and then take
+  // it away again, which reads as a flicker rather than as a measurement.
+  let reachedTarget = true;
+  /*
+   * Which way the traffic is currently travelling, carried across steps.
+   *
+   * Needed only for a self-beat, whose direction genuinely cannot be read off a
+   * route: it has no hop, so there is no `downstream` flag to colour it by. And the
+   * node alone does not settle it either — `browser → browser` is the user's own
+   * send in two flows and the preference toast in a third. So a self-beat continues
+   * whichever way the traffic was already going, which is both correct in every
+   * case and the only reading that does not flip the browser card back to
+   * request-claret one beat after the reply landed on it in teal.
+   *
+   * A flow opens with a request, hence `false`.
+   */
+  let travellingHome = false;
 
   for (let k = 0; k <= current; k += 1) {
     const step = steps[k];
     const isCurrent = k === current;
+    const legs = flowLegs(step.from, step.to, engine, step.returns);
+    const isSelfBeat = step.from === step.to;
 
     if (isCurrent) {
-      const legs = flowLegs(step.from, step.to);
       const at = Math.max(0, Math.min(legIndex ?? legs.length - 1, legs.length - 1));
       const leg = legs[at];
 
@@ -598,13 +720,17 @@ export function frameForStep(
       }
       // Colour by travel direction, not by which node it is: the same node is
       // claret on the way out and teal on the way home.
-      litIsResponse = !leg.downstream;
+      litIsResponse = isSelfBeat ? travellingHome : !leg.downstream;
 
       // The trail behind the traffic, within this step as well as before it — so
       // the path fills in as it is walked instead of appearing all at once.
       for (const earlier of legs.slice(0, at)) {
         if (earlier.kind === 'node' && !done.includes(earlier.node)) done.push(earlier.node);
       }
+
+      // The outbound half's last leg is the traffic sitting in the callee. On a one-way
+      // step that is also the step's last leg, so this is just "have we arrived".
+      reachedTarget = at >= flowLegs(step.from, step.to, engine).length - 1;
     } else if (!done.includes(step.to)) {
       done.push(step.to);
     }
@@ -612,7 +738,7 @@ export function frameForStep(
     // The current step's pill waits until the traffic has actually arrived: the
     // number is what the work cost, and announcing it before the box lights would
     // put a measurement on a node nothing has reached yet.
-    const arrived = !isCurrent || litNode === step.to;
+    const arrived = !isCurrent || reachedTarget;
     if (step.durationMs !== undefined && arrived) {
       durations[step.to] = {
         label: `${step.durationMs} ms`,
@@ -620,6 +746,11 @@ export function frameForStep(
         current: isCurrent,
       };
     }
+
+    // Hand the direction on. A step's parting direction is that of its last leg —
+    // for a returning call, the climb home rather than the descent out. A self-beat
+    // moves nothing, so it passes on what it was given.
+    if (!isSelfBeat) travellingHome = !legs[legs.length - 1].downstream;
   }
 
   return {
@@ -639,9 +770,12 @@ export function frameForStep(
  * mid-traversal on any step that crosses more than a couple of resources, and the
  * animation would visibly jump instead of arriving.
  */
-export function demoStepDwellMs(step: FlowBeat | undefined): number {
+export function demoStepDwellMs(
+  step: FlowBeat | undefined,
+  engine: ArchitectureEngine = 'valentin',
+): number {
   const authored = step?.durationMs !== undefined && step.durationMs >= 100 ? 1900 : 1100;
-  return Math.max(authored, stepLegCount(step) * FLOW_LEG_MS + 500);
+  return Math.max(authored, stepLegCount(step, engine) * FLOW_LEG_MS + 500);
 }
 
 /**

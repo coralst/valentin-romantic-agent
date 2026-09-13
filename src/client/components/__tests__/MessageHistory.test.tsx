@@ -5,6 +5,7 @@ import { LEARNED_STATUS_DWELL_MS } from '../LearnedStatus';
 import { PreferencesProvider, usePreferencesContext } from '../../context/preferences-context';
 import type { ChatMessage } from '../../../shared/interfaces/message';
 import type { PreferenceWithHistory } from '../../../shared/interfaces/preference';
+import type { ProposalEntry } from '../../hooks/use-chat-state';
 
 function message(id: string, sender: 'agent' | 'user', content: string): ChatMessage {
   return { id, sessionId: 's1', sender, content, timestamp: new Date().toISOString() };
@@ -418,5 +419,100 @@ describe('MessageHistory', () => {
       const first = screen.getAllByTestId('message-bubble')[0];
       expect(first.querySelector('[aria-hidden="true"]')?.textContent).toBe('Said earlier.');
     });
+  });
+});
+
+/**
+ * Where a confirmation card sits once the conversation has moved on.
+ *
+ * Reported as "the mail confirmation box lasts as the last message and doesn't
+ * stay in its place in the conversation" — and seen on every service, because the
+ * card is shared. `proposals` was rendered at the tail unconditionally, so a card
+ * confirmed ten turns ago was still the last thing above the composer, stacked
+ * with every other card ever raised and detached from the exchange that produced
+ * it.
+ *
+ * Asserted by document order, not geometry: jsdom does no layout, and order is the
+ * property that actually broke. The same idiom as the tail-slot test above.
+ */
+describe('MessageHistory — where a proposal card sits', () => {
+  function proposalEntry(
+    proposalId: string,
+    anchorMessageId: string | null,
+    status: ProposalEntry['status'] = 'confirmed',
+  ): ProposalEntry {
+    return {
+      proposal: {
+        sessionId: 's1',
+        proposalId,
+        service: 'gmail',
+        title: 'Email to her — a few things about her',
+        summary: 'This is exactly what will be sent.',
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+      status,
+      anchorMessageId,
+    };
+  }
+
+  const transcript = [
+    message('m1', 'user', 'Send her the questions.'),
+    message('m2', 'agent', 'Here they are.'),
+    message('m3', 'user', 'Thanks.'),
+    message('m4', 'agent', 'Any time.'),
+  ];
+
+  function renderWithProposals(proposals: ProposalEntry[]) {
+    return render(
+      <PreferencesProvider>
+        <MessageHistory messages={transcript} proposals={proposals} />
+      </PreferencesProvider>,
+    );
+  }
+
+  it('keeps an anchored card beside its own turn, not at the foot', () => {
+    renderWithProposals([proposalEntry('p1', 'm2')]);
+
+    const card = screen.getByTestId('proposal-p1');
+    const bubbles = screen.getAllByTestId('message-bubble');
+
+    // After its own reply…
+    expect(bubbles[1].compareDocumentPosition(card)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    // …and before the two turns that came after it. This is the assertion that
+    // fails on the old tail-only rendering.
+    expect(bubbles[2].compareDocumentPosition(card)).toBe(Node.DOCUMENT_POSITION_PRECEDING);
+    expect(bubbles[3].compareDocumentPosition(card)).toBe(Node.DOCUMENT_POSITION_PRECEDING);
+  });
+
+  it('holds a card still awaiting its reply at the foot', () => {
+    // Born mid-turn, so there is nothing to anchor it to yet: it belongs last,
+    // where a Confirm button cannot be pushed below the fold.
+    renderWithProposals([proposalEntry('p1', null, 'open')]);
+
+    const card = screen.getByTestId('proposal-p1');
+    const bubbles = screen.getAllByTestId('message-bubble');
+
+    expect(bubbles[bubbles.length - 1].compareDocumentPosition(card)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it('falls back to the foot for an anchor this transcript does not hold', () => {
+    // A card nobody can see is worse than a card in the wrong place.
+    renderWithProposals([proposalEntry('p1', 'a-message-from-another-session')]);
+
+    expect(screen.getByTestId('proposal-p1')).toBeInTheDocument();
+  });
+
+  it('puts two cards from different turns each under their own', () => {
+    renderWithProposals([proposalEntry('p1', 'm2'), proposalEntry('p2', 'm4')]);
+
+    const first = screen.getByTestId('proposal-p1');
+    const second = screen.getByTestId('proposal-p2');
+    const bubbles = screen.getAllByTestId('message-bubble');
+
+    // The user's screenshot showed both stacked together at the bottom.
+    expect(bubbles[2].compareDocumentPosition(first)).toBe(Node.DOCUMENT_POSITION_PRECEDING);
+    expect(first.compareDocumentPosition(second)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 });

@@ -254,7 +254,7 @@ const MONTHS = [
  * `September 24`, `the 24th`, `24/9`. A bare ordinal counts — a reply that says
  * "the 24th" is talking about the same evening as one that spells the month.
  */
-function datesMentioned(reply: string): { index: number; isOccasion: boolean }[] {
+function datesMentioned(reply: string): { index: number; end: number; isOccasion: boolean }[] {
   const occasionDay = Number(OCCASION.iso.slice(8, 10));
   const occasionMonth = Number(OCCASION.iso.slice(5, 7));
   const months = MONTHS.join('|');
@@ -266,7 +266,7 @@ function datesMentioned(reply: string): { index: number; isOccasion: boolean }[]
     'gi',
   );
 
-  const found: { index: number; isOccasion: boolean }[] = [];
+  const found: { index: number; end: number; isOccasion: boolean }[] = [];
   for (const m of reply.matchAll(pattern)) {
     const [, dayThenMonth, monthName1, monthName2, monthThenDay, ordinalOnly, numericDay, numericMonth] = m;
     let day: number | null = null;
@@ -288,6 +288,7 @@ function datesMentioned(reply: string): { index: number; isOccasion: boolean }[]
     // date in play at this point in the script.
     found.push({
       index: m.index ?? 0,
+      end: (m.index ?? 0) + m[0].length,
       isOccasion: day === occasionDay && (month === null || month === occasionMonth),
     });
   }
@@ -304,29 +305,42 @@ function datesMentioned(reply: string): { index: number; isOccasion: boolean }[]
  * assertion is about one date, so the check has to be too, or it fails takes for
  * being correct about a second one — which is how a guard stops being trusted.
  *
- * Attribution is by nearest preceding date: a weekday belongs to the last date
- * named before it. When a reply names no date at all, every weekday in it is
- * about the occasion, because the occasion is the only date the turn put in play
- * — and that is exactly the recorded failure this guard was written for ("this
- * coming Wednesday", no date restated), so it keeps the original strict rule.
+ * Attribution follows the two word orders English actually uses:
+ *
+ * - `Sunday the 20th`, `Thursday, September 24th` — the date runs straight on from
+ *   the weekday, so that date owns it. Only an adjacent date counts, or a comma
+ *   and two clauses later would capture it.
+ * - `20 September … which falls on a Sunday` — nothing follows the weekday, so it
+ *   belongs to the last date named before it.
+ *
+ * A weekday with no date on either side is about the occasion, because the
+ * occasion is the only date the turn put in play — which is exactly the recorded
+ * failure this guard was written for ("that's this coming Wednesday", no date
+ * restated, when the date was a Thursday).
  */
 function misattributedWeekday(reply: string, expected: string): string | null {
   const named = WEEKDAYS.flatMap((day) =>
     [...reply.matchAll(new RegExp(String.raw`\b${day}\b`, 'gi'))].map((m) => ({
       day,
       index: m.index ?? 0,
+      end: (m.index ?? 0) + day.length,
     })),
   ).sort((a, b) => a.index - b.index);
   if (named.length === 0) return null;
 
   const dates = datesMentioned(reply);
-  if (dates.length === 0) {
-    return named.some((n) => n.day.toLowerCase() === expected.toLowerCase()) ? null : named[0].day;
-  }
 
-  for (const { day, index } of named) {
+  for (const { day, index, end } of named) {
     if (day.toLowerCase() === expected.toLowerCase()) continue;
-    const owner = dates.filter((d) => d.index < index).pop();
+
+    // `Sunday the 20th` — nothing but a comma, a space or "the" between them.
+    const following = dates.find((d) => d.index >= end);
+    const adjacent =
+      following !== undefined && /^[\s,]*(the\s+)?$/i.test(reply.slice(end, following.index))
+        ? following
+        : undefined;
+    const owner = adjacent ?? dates.filter((d) => d.end <= index).pop();
+
     if (!owner || owner.isOccasion) return day;
   }
   return null;

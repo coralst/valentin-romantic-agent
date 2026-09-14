@@ -319,21 +319,18 @@ CARD_GAP = 0.27
 s = prs.slides.add_slide(blank)
 title_block(s, 1, "Tools in Valentin — ", "one codebase, two ways to reach it")
 
-CARD_H = 1.22
+CARD_H = 1.30
 
 stat_card(s, 0.5, 1.12, CARD_W, CARD_H,
           eyebrow="The tool code",
           value="One folder",
-          caption=[("src/server/integrations/", 11, False, CODEBLUE, MONO),
-                   (" — assembled by ", 11.5, False, BODY),
-                   ("buildToolRegistry()", 11, False, CODEBLUE, MONO)])
+          caption=[("src/server/integrations/", 11, False, CODEBLUE, MONO)])
 
 stat_card(s, 0.5 + CARD_W + CARD_GAP, 1.12, CARD_W, CARD_H,
           eyebrow="Integration schemas",
           value=str(INTEGRATION_SCHEMAS),
           caption=[(f"{READONLY_TOOLS} read-only  ·  {PROPOSE_TOOLS} ", 11.5, False, BODY),
-                   ("propose_*", 11, False, CODEBLUE, MONO),
-                   (" that cannot act without a human", 11.5, False, BODY)])
+                   ("propose_*", 11, False, CODEBLUE, MONO)])
 
 stat_card(s, 0.5 + 2 * (CARD_W + CARD_GAP), 1.12, CARD_W, CARD_H,
           eyebrow="Indexed in the Gateway",
@@ -342,7 +339,7 @@ stat_card(s, 0.5 + 2 * (CARD_W + CARD_GAP), 1.12, CARD_W, CARD_H,
                     11.5, False, BODY),
                    ("confirm_*", 11, False, CODEBLUE, MONO)])
 
-tf = full_band(s, 0.5, 2.44, W, 0.84, fill=BAND,
+tf = full_band(s, 0.5, 2.52, W, 0.84, fill=BAND,
                eyebrow="The whole comparison, in one line", eyebrow_color=NAVY)
 write(tf, [("The tools are identical on both engines. Only two things differ — how the agent ",
             15, False, NAVY),
@@ -351,7 +348,7 @@ write(tf, [("The tools are identical on both engines. Only two things differ —
            ("travels", 15, True, NAVY),
            (".", 15, False, NAVY)], first=True, align=PP_ALIGN.CENTER)
 
-PANEL_Y, PANEL_H = 3.42, 2.10
+PANEL_Y, PANEL_H = 3.48, 2.10
 
 tf = panel(s, 0.5, PANEL_Y, CW, PANEL_H, accent=GREEN,
            eyebrow=eyebrow_runs("How they are discovered", "does the agent know the tool exists?",
@@ -389,7 +386,7 @@ bullet(tf, [("Names return prefixed", 12, True, BODY),
             ("valentin-integrations___propose_reservation", 10.5, False, CODEBLUE, MONO),
             (". Rename the target without the constant and every confirm 404s", 12, False, BODY)])
 
-tf = full_band(s, 0.5, 5.66, W, 1.16, fill=NAVY,
+tf = full_band(s, 0.5, 5.70, W, 1.22, fill=NAVY,
                eyebrow="Additional considerations", eyebrow_color=ORANGE, center=False)
 write(tf, [("Identity — ", 12, True, ORANGE),
            ("the JWT is a machine’s, so ", 12, False, WHITE),
@@ -450,7 +447,7 @@ notes(s, [
 # Slide 2 — what the Gateway costs
 # ============================================================================
 s = prs.slides.add_slide(blank)
-title_block(s, 2, "What the AgentCore Gateway costs — ", "two meters on unrelated clocks")
+title_block(s, 2, "What AgentCore Gateway costs — ", "two meters, not one price")
 
 hdr = lambda t: ([(t, False, GREY)], PP_ALIGN.CENTER)
 L, C = PP_ALIGN.LEFT, PP_ALIGN.CENTER

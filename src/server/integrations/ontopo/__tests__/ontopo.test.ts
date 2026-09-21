@@ -237,13 +237,19 @@ describe('the curated venue list', () => {
   });
 
   it('drops venues outside the radius', () => {
-    // Ra'anana is ~20 km from Tel Aviv, so 5 km reaches nothing and 30 km reaches
-    // the list. This is the assertion that makes "within 10 km of me" meaningful.
+    // Ra'anana is ~20 km from Tel Aviv and ~4 km from Kfar Saba, so 5 km reaches
+    // only the Kfar Saba entries and 30 km reaches the whole list. Jerusalem is
+    // ~55 km from either, so 5 km from there reaches nothing at all. This is the
+    // assertion that makes "within 10 km of me" meaningful.
     const raanana = { lat: 32.1848, lon: 34.8713 };
-    expect(findVenues(undefined, 20, { origin: raanana, radiusMetres: 5_000 })).toEqual([]);
+    const jerusalem = { lat: 31.7683, lon: 35.2137 };
+    const nearRaanana = findVenues(undefined, 20, { origin: raanana, radiusMetres: 5_000 });
+    expect(nearRaanana.length).toBeGreaterThan(0);
+    expect(nearRaanana.every((venue) => venue.city === 'Kfar Saba')).toBe(true);
+    expect(findVenues(undefined, 20, { origin: jerusalem, radiusMetres: 5_000 })).toEqual([]);
     expect(
       findVenues(undefined, 20, { origin: raanana, radiusMetres: 30_000 }).length,
-    ).toBeGreaterThan(0);
+    ).toBeGreaterThan(nearRaanana.length);
   });
 
   it('ignores a radius with nowhere to measure from', () => {

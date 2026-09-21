@@ -10,14 +10,18 @@ import {
   CHECKOUT_TTL_MS,
   createCheckout,
   fetchAvailability,
+  fetchCheckoutTerms,
   formatSlotTime,
   toOntopoDate,
   toOntopoTime,
   type Availability,
   type BookableVenue,
+  type CheckoutTerms,
   type OntopoSlot,
 } from './client';
 import {
+  curatedCities,
+  curatedCityMatches,
   findVenues,
   isRestaurantStyle,
   resolveVenueName,
@@ -200,6 +204,91 @@ function describeSlots(slots: readonly OntopoSlot[]): string {
 }
 
 /**
+ * Whether this venue will ask for a credit card, learned from a real checkout.
+ *
+ * Ontopo's availability response says nothing about payment; only the checkout
+ * page does. So this mints a checkout for the first bookable slot — which reserves
+ * nothing, see `createCheckout` — and reads the terms off it. One extra POST and
+ * one GET per venue, in exchange for being able to answer "somewhere I don't have
+ * to give a card", which a user asked for live and was told could not be done.
+ *
+ * Per venue, not per check: a card policy is the restaurant's, not the slot's, so
+ * the answer is remembered by slug for {@link CARD_TERMS_TTL_MS}. That is what lets
+ * `propose_reservation` state the policy on its card **without minting anything**
+ * — the rule that no checkout exists while the user is still deciding is one this
+ * file has kept since the tool was written, and it is kept here too.
+ *
+ * `null` means unknown: Ontopo would not mint, or the page could not be read. The
+ * callers say nothing about cards in that case rather than guessing either way.
+ * Unknowns are not cached, so the next check asks again.
+ */
+async function probeCardTerms(
+  venue: BookableVenue,
+  availability: Availability,
+  query: { date: string; size: number },
+): Promise<CheckoutTerms | null> {
+  const known = knownCardTerms(venue.slug);
+  if (known) return known;
+
+  if (!availability.availabilityId) return null;
+  const slot = availability.slots.find((candidate) => candidate.bookable);
+  if (!slot) return null;
+
+  const checkout = await createCheckout(venue.slug, {
+    date: query.date,
+    time: slot.time,
+    size: query.size,
+    area: slot.area,
+    availabilityId: availability.availabilityId,
+  });
+  if (!checkout) return null;
+
+  const terms = await fetchCheckoutTerms(checkout.checkoutId);
+  if (terms) cardTermsBySlug.set(venue.slug, { terms, learnedAt: Date.now() });
+  return terms;
+}
+
+/** A restaurant's card policy changes rarely; a day is a safe memory. */
+const CARD_TERMS_TTL_MS = 24 * 60 * 60_000;
+
+const cardTermsBySlug = new Map<string, { terms: CheckoutTerms; learnedAt: number }>();
+
+/** What an earlier availability check learned about this venue's card policy. */
+function knownCardTerms(slug: string): CheckoutTerms | null {
+  const hit = cardTermsBySlug.get(slug);
+  if (!hit) return null;
+  if (Date.now() - hit.learnedAt > CARD_TERMS_TTL_MS) {
+    cardTermsBySlug.delete(slug);
+    return null;
+  }
+  return hit.terms;
+}
+
+/** Drop remembered card policies, so one test's venue does not inform another's. */
+export function resetCardTermsForTests(): void {
+  cardTermsBySlug.clear();
+}
+
+/** The card requirement as one sentence for the model, or nothing when unknown. */
+function describeCardTerms(terms: CheckoutTerms | null): string {
+  if (!terms) return '';
+  if (!terms.cardRequired) {
+    return ' No credit card is needed to hold this table.';
+  }
+  // Ontopo's own copy calls `sum` a deposit ("fill in credit card details for
+  // deposit"); its separate no-show fee is prose we do not parse, so that is not
+  // quoted here.
+  const deposit =
+    terms.depositAmount !== undefined
+      ? ` (${terms.depositAmount} ${terms.currency ?? 'NIS'} deposit)`
+      : '';
+  return (
+    ` Ontopo will ask for a credit card to hold this table${deposit} — say so, and if ` +
+    `they would rather not give one, check a different restaurant instead.`
+  );
+}
+
+/**
  * Resolve where "near me" is, without making the radius depend on a Maps key.
  *
  * Explicit coordinates win. Otherwise the city goes through `geocode`, which is
@@ -241,17 +330,28 @@ function readRadiusMetres(input: Record<string, unknown>): number | undefined {
  * the two answers the user is most likely to want — "the kind of room I said I
  * liked", "close enough to actually go" — would be facts sitting in the dossier that
  * no search could use.
+ *
+ * `city` exists because of a live failure. Asked to "search in Kfar Saba", this
+ * tool answered from a list that was all Tel Aviv, and its own description told the
+ * model the list covered "Tel Aviv and Jaffa only" — so Valentin explained, with
+ * total confidence, that Kfar Saba was outside the booking platform's coverage.
+ * Ontopo lists seven venues there. The description now names whatever cities the
+ * list actually holds, the empty-result text does the same, and a city the list
+ * does *not* hold falls through to live discovery where a browser exists.
  */
 export const findRestaurantsTool: AgentTool = {
   name: 'find_restaurants',
   description:
-    'Search the restaurants Valentin can book in Tel Aviv and Jaffa, by mood, ' +
-    'cuisine or neighbourhood — "quiet and romantic", "wine bar", "Jaffa", ' +
-    '"Italian". Pass style and radius_km when the profile records them, so the ' +
-    'shortlist matches what they already told you. Returns names with a short note ' +
-    'on each. Use this first when the user has not named a specific place, then ' +
-    'check_availability on the one they like. Only these venues are bookable; do ' +
-    'not offer a restaurant that is not in the result.',
+    `Search the restaurants Valentin can book, by mood, cuisine, neighbourhood or ` +
+    `city — "quiet and romantic", "wine bar", "Jaffa", "Italian". Curated coverage: ` +
+    `${curatedCities().join(', ')}; pass city for anywhere else and Valentin will look ` +
+    `it up live where it can. Pass style and radius_km when the profile records them, ` +
+    `so the shortlist matches what they already told you. Returns names with a short ` +
+    `note on each. Use this first when the user has not named a specific place, then ` +
+    `check_availability on the one they like — that call also reports whether the ` +
+    `venue asks for a credit card to hold the table, which matters when the user ` +
+    `would rather not give one. Only these venues are bookable; do not offer a ` +
+    `restaurant that is not in the result.`,
   input_schema: {
     type: 'object',
     properties: {
@@ -260,6 +360,12 @@ export const findRestaurantsTool: AgentTool = {
         description:
           'What they are after: a mood, a cuisine, a neighbourhood, or a name. ' +
           'Omit to see the default shortlist.',
+      },
+      city: {
+        type: 'string',
+        description:
+          'Which city to search in, e.g. "Kfar Saba" or "Tel Aviv". Pass it whenever ' +
+          'the user names one; the default shortlist is Tel Aviv.',
       },
       style: {
         type: 'string',
@@ -293,6 +399,7 @@ export const findRestaurantsTool: AgentTool = {
         ? Math.min(Math.round(input.limit), 10)
         : 5;
     const query = typeof input.query === 'string' ? input.query : undefined;
+    const city = typeof input.city === 'string' ? input.city.trim() : '';
 
     const rawStyle = typeof input.style === 'string' ? input.style.trim() : '';
     const style = isRestaurantStyle(rawStyle) ? rawStyle : undefined;
@@ -303,9 +410,10 @@ export const findRestaurantsTool: AgentTool = {
     // and saying so beats both silently ignoring it and returning nothing.
     const radiusUnresolved = radiusMetres !== undefined && origin === undefined;
 
-    const matches = findVenues(query, limit, { style, origin, radiusMetres });
+    const matches = findVenues(query, limit, { style, origin, radiusMetres, city });
     const criteria = [
       query ? `"${query}"` : '',
+      city ? `in ${city}` : '',
       style ? `style ${style}` : '',
       origin && radiusMetres ? `within ${Math.round(radiusMetres / 1000)} km` : '',
     ]
@@ -313,21 +421,50 @@ export const findRestaurantsTool: AgentTool = {
       .join(', ');
 
     if (matches.length === 0) {
+      // A city the curated list does not know is the one case worth a live look: the
+      // list is a shortlist, not Ontopo's catalogue. `venuesInCity` needs a browser
+      // and returns null without one, so this is a real answer locally and an honest
+      // "not in my list" in a deployment that has no Chromium — never a crash.
+      if (city && !curatedCityMatches(city)) {
+        const discovered = await venuesInCity(city);
+        if (discovered && discovered.length > 0) {
+          const shown = discovered.slice(0, limit);
+          return {
+            ok: true,
+            summary:
+              `${shown.length} venue(s) Ontopo books in ${city}: ` +
+              `${shown.map((venue) => venue.name).join(' | ')}. These are live from ` +
+              `Ontopo's city page, so there is no concierge note — describe them by name ` +
+              `only, and pass city="${city}" to check_availability.`,
+            data: {
+              venues: shown.map((venue) => ({
+                slug: venue.slug,
+                name: venue.name,
+                city: venue.city,
+              })),
+              radiusApplied: false,
+            },
+          };
+        }
+      }
       return {
         ok: true,
         summary:
           `Nothing in the bookable list matches ${criteria || 'that'}. Say so rather ` +
           `than inventing a restaurant, and offer to relax whichever part is the ` +
-          `constraint — the list covers Tel Aviv and Jaffa only, so a radius that ` +
-          `excludes both excludes everything.`,
+          `constraint — the list covers ${curatedCities().join(', ')}` +
+          (city && !curatedCityMatches(city)
+            ? `, and ${city} is not somewhere Valentin can book right now`
+            : '') +
+          `.`,
         data: { venues: [] },
       };
     }
 
     const caveat = radiusUnresolved
       ? ' Could not work out where to measure from, so the distance limit was not ' +
-        'applied — tell them the list is Tel Aviv and Jaffa rather than implying it ' +
-        'was filtered.'
+        `applied — tell them the list covers ${curatedCities().join(', ')} rather ` +
+        'than implying it was filtered.'
       : '';
 
     return {
@@ -363,7 +500,8 @@ export const checkAvailabilityTool: AgentTool = {
   description:
     'Ask Ontopo which tables are actually free at one restaurant on a given ' +
     'date, for a given party size. Returns real bookable times grouped by seating ' +
-    'area, including times either side of the one asked for. Always check this ' +
+    'area, including times either side of the one asked for, and whether the ' +
+    'restaurant asks for a credit card to hold the table. Always check this ' +
     'before proposing a reservation, and check Shabbat first for a Friday or ' +
     'Saturday — most of these kitchens are closed then. When Ontopo has nothing ' +
     'or does not answer, this also returns the restaurant\'s own site and phone ' +
@@ -374,6 +512,13 @@ export const checkAvailabilityTool: AgentTool = {
       restaurant: {
         type: 'string',
         description: 'Name of the restaurant, from find_restaurants.',
+      },
+      city: {
+        type: 'string',
+        description:
+          'The restaurant\'s city, e.g. "Kfar Saba". Pass it when the user named one ' +
+          'or find_restaurants returned it — it is how a venue outside the default ' +
+          'shortlist is found.',
       },
       date: { type: 'string', description: 'The date as YYYY-MM-DD, e.g. "2026-09-05".' },
       time: {
@@ -448,10 +593,15 @@ export const checkAvailabilityTool: AgentTool = {
       };
     }
 
+    // Ask the checkout page what it will demand, so "somewhere without a card" is a
+    // question this tool can answer. Unknown is reported as silence, never as "no".
+    const cardTerms = await probeCardTerms(venue, availability, { date: date.ontopo, size });
+
     return {
       ok: true,
       summary:
-        `${venue.name} on ${date.readable} for ${size} — ${describeSlots(availability.slots)}. ` +
+        `${venue.name} on ${date.readable} for ${size} — ${describeSlots(availability.slots)}.` +
+        `${describeCardTerms(cardTerms)} ` +
         `Offer the user a specific time from this list, then use propose_reservation.`,
       data: {
         venue: venue.name,
@@ -462,6 +612,15 @@ export const checkAvailabilityTool: AgentTool = {
           time: formatSlotTime(slot.time),
           area: slot.areaLabel || slot.area,
         })),
+        // Absent when unknown, so a reader cannot mistake "could not tell" for "no".
+        ...(cardTerms
+          ? {
+              cardRequired: cardTerms.cardRequired,
+              ...(cardTerms.depositAmount !== undefined
+                ? { depositAmount: cardTerms.depositAmount, currency: cardTerms.currency }
+                : {}),
+            }
+          : {}),
       },
     };
   },
@@ -527,6 +686,10 @@ export const proposeReservationTool: AgentTool = {
     type: 'object',
     properties: {
       restaurant: { type: 'string', description: 'Name of the restaurant.' },
+      city: {
+        type: 'string',
+        description: 'The restaurant\'s city, as passed to check_availability.',
+      },
       date: { type: 'string', description: 'The date as YYYY-MM-DD, e.g. "2026-09-05".' },
       time: {
         type: 'string',
@@ -610,6 +773,20 @@ export const proposeReservationTool: AgentTool = {
         ? ` for ${input.occasion.trim()}`
         : '';
 
+    // The card is what the user reads before pressing Confirm, so if Ontopo's form
+    // is about to ask for a credit card, this is where they must learn it — not on
+    // the booking page after they have already said yes. Read from what
+    // check_availability learned, never probed here: this tool mints nothing.
+    const cardTerms = knownCardTerms(venue.slug);
+    const cardLine = cardTerms?.cardRequired
+      ? ` Ontopo asks for a credit card to hold this table` +
+        (cardTerms.depositAmount !== undefined
+          ? ` (${cardTerms.depositAmount} ${cardTerms.currency ?? 'NIS'} deposit).`
+          : '.')
+      : cardTerms
+        ? ' No credit card is needed.'
+        : '';
+
     const proposal: ActionProposal = {
       id: randomUUID(),
       sessionId: ctx.sessionId,
@@ -619,7 +796,7 @@ export const proposeReservationTool: AgentTool = {
         `Table for ${size}${occasion} — ${areaLabel} at ${venue.name}` +
         // A neighbourhood only exists on the curated entries; a discovered venue
         // has its city and nothing finer, and "in Ra'anana" still orients someone.
-        `${placeOf(venue) ? ` in ${placeOf(venue)}` : ''}. ` +
+        `${placeOf(venue) ? ` in ${placeOf(venue)}` : ''}.${cardLine} ` +
         // The card has to promise what confirming will actually do, and that
         // differs by deployment. Saying "nothing is held" where confirming books
         // outright would be the worst possible wording to get wrong.
@@ -660,14 +837,15 @@ export const proposeReservationTool: AgentTool = {
       ok: true,
       summary:
         `I've put a card in front of them for ${venue.name}, ${date.readable} at ` +
-        `${formatSlotTime(slot.time)}, ${areaLabel}, for ${size}. Tell them what you found ` +
-        `and that it needs their confirmation. Do not say it is booked.`,
+        `${formatSlotTime(slot.time)}, ${areaLabel}, for ${size}.${cardLine} Tell them what ` +
+        `you found and that it needs their confirmation. Do not say it is booked.`,
       proposal,
       data: {
         venue: venue.name,
         time: formatSlotTime(slot.time),
         area: areaLabel,
         partySize: size,
+        ...(cardTerms ? { cardRequired: cardTerms.cardRequired } : {}),
       },
     };
   },

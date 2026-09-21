@@ -433,21 +433,140 @@ export function resetSeenTracks(): void {
 }
 
 /**
+ * Options that change *how* a search is asked, not what for.
+ */
+export interface SearchOptions {
+  /**
+   * A genre to filter by, using Spotify's `genre:` field filter.
+   *
+   * This exists because of a live failure. Free text goes to Spotify as a match on
+   * *titles*: `q=heavy metal` returns Lady Gaga's "Heavy Metal Lover" and Wilco's
+   * "Heavy Metal Drummer". The model saw pop, reworded, and burned every iteration
+   * of the tool loop on `find_music` without ever reaching `propose_playlist` — the
+   * user asked for a playlist and got a dangling sentence. `q=genre:metal` returns
+   * Metallica.
+   */
+  genre?: string;
+}
+
+/**
+ * Spotify's `genre:` filter is a strict tag match, and only some tags are worth it.
+ *
+ * Observed 2026-09-21, `market=IL`, three results each: `genre:metal` → Metallica,
+ * Linkin Park; `genre:rock` → R.E.M., Dire Straits; `genre:jazz` → Nat King Cole,
+ * Norah Jones. But `genre:"heavy metal"` → six Russian bands, `genre:rap` and
+ * `genre:hip-hop` → nobody anyone has heard of, `genre:classical` → The Stranglers,
+ * `genre:k-pop` → Croatian schlager, `genre:drum-and-bass` → nothing at all. The
+ * popular tracks carry a few broad parent tags; the narrow tags sit on a long tail.
+ *
+ * So this is an **allowlist**: the words a person uses for a genre, mapped to the
+ * one tag that was checked and returns what they meant. A genre not in it is sent
+ * as free text exactly as before, and the tool says so, rather than being sent
+ * through a filter that would answer with obscurities and send the model back
+ * round the loop.
+ */
+const GENRE_TAGS: Readonly<Record<string, string>> = {
+  metal: 'metal',
+  'heavy metal': 'metal',
+  'death metal': 'metal',
+  'black metal': 'metal',
+  'thrash metal': 'metal',
+  'power metal': 'metal',
+  'nu metal': 'metal',
+  metalcore: 'metal',
+  rock: 'rock',
+  'hard rock': 'rock',
+  'classic rock': 'rock',
+  'rock and roll': 'rock',
+  "rock n' roll": 'rock',
+  'rock n roll': 'rock',
+  indie: 'indie',
+  'indie rock': 'indie',
+  'indie pop': 'indie',
+  jazz: 'jazz',
+  'smooth jazz': 'jazz',
+  electronic: 'electronic',
+  electronica: 'electronic',
+  edm: 'electronic',
+  dance: 'electronic',
+  folk: 'folk',
+  country: 'country',
+  reggae: 'reggae',
+  punk: 'punk',
+  'punk rock': 'punk',
+  'pop punk': 'punk',
+  latin: 'latin',
+  pop: 'pop',
+  soul: 'soul',
+  funk: 'funk',
+  israeli: 'israeli',
+  'israeli music': 'israeli',
+  hebrew: 'israeli',
+};
+
+/** How a search was actually phrased to Spotify, and whether a genre filter applied. */
+export interface BuiltQuery {
+  q: string;
+  /** True when {@link GENRE_TAGS} knew the genre and a `genre:` filter was used. */
+  filtered: boolean;
+}
+
+/**
+ * Whether these words name a genre this code knows how to filter on.
+ *
+ * For the tool layer: when the *query itself* is a bare genre — the model wrote
+ * `query: "heavy metal"` because the profile said so — it can be promoted to a
+ * filter rather than sent as a title search.
+ */
+export function knownGenre(words: string): boolean {
+  return Object.prototype.hasOwnProperty.call(GENRE_TAGS, words.trim().toLowerCase());
+}
+
+/**
+ * The `q` string for a search, folding a genre into Spotify's filter grammar.
+ *
+ * Exported for the tests: the string is the whole fix, so it is what to assert on.
+ * The genre goes first and unquoted — quoting is what turns it into the strict
+ * long-tail match described on {@link GENRE_TAGS}. Free text after it still
+ * narrows the result (`genre:metal ballad` → "Nothing Else Matters", "18 and
+ * Life"), which is how "romantic heavy metal" becomes a real query.
+ *
+ * An unknown genre is folded into the free text instead of becoming a filter, so
+ * "search for reggaeton" still searches for reggaeton.
+ */
+export function buildSearchQuery(query: string, options: SearchOptions = {}): BuiltQuery {
+  const genre = options.genre?.trim().toLowerCase() ?? '';
+  const text = query.trim();
+  if (!genre) return { q: text, filtered: false };
+
+  const tag = GENRE_TAGS[genre];
+  if (!tag) {
+    return { q: text.includes(genre) ? text : [genre, text].filter(Boolean).join(' '), filtered: false };
+  }
+  return { q: text ? `genre:${tag} ${text}` : `genre:${tag}`, filtered: true };
+}
+
+/**
  * Search the catalogue.
  *
  * `market=IL` is not cosmetic: without a market Spotify happily returns tracks
  * that are unplayable where this couple actually lives, and a playlist of grey
  * rows is worse than a shorter playlist.
  */
-export async function searchTracks(query: string, limit = 10): Promise<SpotifyTrack[] | null> {
+export async function searchTracks(
+  query: string,
+  limit = 10,
+  options: SearchOptions = {},
+): Promise<SpotifyTrack[] | null> {
   const wanted = Math.max(1, Math.min(Math.round(limit), SEARCH_LIMIT_CEILING));
-  if (spotifyFixtureMode()) return fixtureSearch(query, wanted);
+  const { q } = buildSearchQuery(query, options);
+  if (spotifyFixtureMode()) return fixtureSearch(options.genre ?? query, wanted);
 
   const token = await appAccessToken();
   if (!token) return null;
 
   const params = new URLSearchParams({
-    q: query,
+    q,
     type: 'track',
     limit: String(wanted),
     market: 'IL',

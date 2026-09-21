@@ -2,10 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { config } from '../../config';
 import type { ActionProposal, AgentTool, ToolResult } from '../tool-registry';
 import {
+  buildSearchQuery,
   createPlaylist,
   describeTrack,
   FIXTURE_NOTICE,
   getTracks,
+  knownGenre,
   searchTracks,
   spotifyFixtureMode,
   SPOTIFY_PROPOSAL_TTL_MS,
@@ -156,15 +158,27 @@ export const findMusicTool: AgentTool = {
     'Search Spotify for real tracks matching a mood, artist, genre or occasion — ' +
     "e.g. \"warm Hebrew folk for a drive\" or \"Shlomo Artzi\". Use it to check " +
     'something exists before you name it, and to gather tracks for a playlist. ' +
-    'It only looks; use propose_playlist once you have chosen.',
+    'It only looks; use propose_playlist once you have chosen. When what she likes ' +
+    'is a GENRE — metal, jazz, indie, rock — pass it as genre, not in query: the ' +
+    'free-text search matches song titles, so query "heavy metal" returns pop songs ' +
+    'called "Heavy Metal", whereas genre "heavy metal" returns Metallica. Search ' +
+    'once or twice, then build the playlist from what came back.',
   input_schema: {
     type: 'object',
     properties: {
       query: {
         type: 'string',
         description:
-          'What to look for: an artist, a song, a genre, or a mood in plain words. ' +
-          'Draw it from what the profile says she actually likes rather than guessing.',
+          'What to look for: an artist, a song, or a mood in plain words. ' +
+          'Draw it from what the profile says she actually likes rather than guessing. ' +
+          'With genre set, this narrows within the genre ("ballad", "for a drive").',
+      },
+      genre: {
+        type: 'string',
+        description:
+          'The genre she likes, in plain words — "heavy metal", "jazz", "indie rock". ' +
+          'Applied as a real genre filter so results are the genre, not songs named ' +
+          'after it. Either query or genre is required.',
       },
       limit: {
         type: 'number',
@@ -174,13 +188,29 @@ export const findMusicTool: AgentTool = {
           `Ask twice with different wording rather than once for more.`,
       },
     },
-    required: ['query'],
+    required: [],
   },
   service: 'spotify',
   requiresConfirmation: false,
   async execute(input, ctx) {
-    const query = readText(input.query);
-    if (!query) {
+    const rawQuery = readText(input.query) ?? '';
+    const rawGenre = readText(input.genre);
+
+    /*
+     * Promote a bare genre in `query` to a filter.
+     *
+     * This is the live case: the profile said "heavy metal", the model wrote
+     * `query: "heavy metal"`, and Spotify matched titles. The new `genre` field
+     * fixes it when used; this fixes it when the model does what it did before.
+     * Only a query that *is* a known genre and nothing else — "heavy metal ballads
+     * for a drive" is a real free-text search with a genre in it, and rewriting
+     * that would answer a different question.
+     */
+    const promoted = !rawGenre && knownGenre(rawQuery);
+    const genre = rawGenre ?? (promoted ? rawQuery : null);
+    const query = promoted ? '' : rawQuery;
+
+    if (!query && !genre) {
       return {
         ok: false,
         summary: 'Searching needs something to search for — ask what sort of music she likes.',
@@ -188,24 +218,32 @@ export const findMusicTool: AgentTool = {
     }
 
     const limit = readLimit(input.limit, DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT);
-    const first = await searchTracks(query, limit);
-    if (!first) return unavailable(`music for "${query}"`);
+    const options = genre ? { genre } : {};
+    const built = buildSearchQuery(query, options);
+    const first = await searchTracks(query, limit, options);
+    if (!first) return unavailable(`music for "${built.q}"`);
 
-    // One retry, narrower, before giving up — see `narrowerQuery`.
+    // One retry, narrower, before giving up — see `narrowerQuery`. A genre filter
+    // stays on for the retry: it is the part of the question that was certain.
     const fallback = narrowerQuery(query);
-    const retry = first.length === 0 && fallback ? await searchTracks(fallback, limit) : null;
+    const retry =
+      first.length === 0 && fallback ? await searchTracks(fallback, limit, options) : null;
     const used = retry && retry.length > 0 ? fallback : query;
     const tracks = withoutRepeatedSongs(retry && retry.length > 0 ? retry : first);
+
+    const asked = [genre ? `${genre} (genre)` : '', used ? `"${used}"` : '']
+      .filter(Boolean)
+      .join(' + ');
 
     if (tracks.length === 0) {
       return {
         ok: true,
         summary: stamp(
-          `Spotify has nothing for "${query}"${fallback ? ` or for the shorter "${fallback}"` : ''}. ` +
+          `Spotify has nothing for ${asked}${fallback ? ` or for the shorter "${fallback}"` : ''}. ` +
             `Say so and offer a different artist or mood — ` +
             `do not substitute songs you were not shown.`,
         ),
-        data: { query, tracks: [] },
+        data: { query, genre, tracks: [] },
       };
     }
 
@@ -214,24 +252,43 @@ export const findMusicTool: AgentTool = {
       tracks.map((track) => track.id),
     );
 
+    /*
+     * What to say about *how* these were found, so the model does not go round
+     * again. A genre-filtered result is the genre; telling the model so is what
+     * stops it re-searching because a title did not contain the word "metal". A
+     * genre that was asked for but is not one Spotify filters on well is said to
+     * have been searched as text, so the model knows the results are best-effort
+     * and still builds from them rather than trying five more spellings.
+     */
+    const how = genre
+      ? built.filtered
+        ? `These are real ${genre} tracks — Spotify's genre filter, not a title match — so ` +
+          `build the playlist from them now with propose_playlist rather than searching again. `
+        : `"${genre}" is not a genre Spotify filters on cleanly, so this was a text search; ` +
+          `treat the results as best-effort and build from them rather than retrying spellings. `
+      : '';
+
     return {
       ok: true,
       summary: stamp(
-        (used !== query
+        (used !== query && used
           ? `Nothing matched "${query}" as a whole — Spotify matches all the words at once — ` +
             `so this is "${used}". Search the other names separately if you need them. `
           : '') +
+        how +
         // The id rides in the text the model reads, not only in `data`: the tool
         // loop hands the model `summary` alone, and a model told to "use the track
         // ids exactly as given" without ever being given one can only fail — which
         // is exactly what happened once the 403 stopped masking it.
-        `${tracks.length} track(s) for "${used}": ` +
+        `${tracks.length} track(s) for ${asked}: ` +
           `${tracks.map((track) => `${describeTrack(track)} [id: ${track.id}]`).join(' | ')}. ` +
           `Pick from these by name when you build a playlist — use propose_playlist with the ` +
           `bracketed track ids exactly as given.`,
       ),
       data: {
         query,
+        genre,
+        genreFiltered: built.filtered,
         tracks: tracks.map((track) => ({
           id: track.id,
           name: track.name,

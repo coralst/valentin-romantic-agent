@@ -132,7 +132,7 @@
   },
   {
     "name": "find_music",
-    "description": "Search Spotify for real tracks matching a mood, artist, genre or occasion — e.g. \"warm Hebrew folk for a drive\" or \"Shlomo Artzi\". Use it to check something exists before you name it, and to gather tracks for a playlist. It only looks; use propose_playlist once you have chosen.",
+    "description": "Search Spotify for real tracks matching a mood, artist, genre or occasion — e.g. \"warm Hebrew folk for a drive\" or \"Shlomo Artzi\". Use it to check something exists before you name it, and to gather tracks for a playlist. It only looks; use propose_playlist once you have chosen. When what she likes is a GENRE — metal, jazz, indie, rock — pass it as genre, not in query: the free-text search matches song titles, so query \"heavy metal\" returns pop songs called \"Heavy Metal\", whereas genre \"heavy metal\" returns Metallica. Search once or twice, then build the playlist from what came back.",
     "requiresConfirmation": false,
     "inputSchema": {
       "type": "object",
@@ -147,7 +147,11 @@
         },
         "query": {
           "type": "string",
-          "description": "What to look for: an artist, a song, a genre, or a mood in plain words. Draw it from what the profile says she actually likes rather than guessing."
+          "description": "What to look for: an artist, a song, or a mood in plain words. Draw it from what the profile says she actually likes rather than guessing. With genre set, this narrows within the genre (\"ballad\", \"for a drive\")."
+        },
+        "genre": {
+          "type": "string",
+          "description": "The genre she likes, in plain words — \"heavy metal\", \"jazz\", \"indie rock\". Applied as a real genre filter so results are the genre, not songs named after it. Either query or genre is required."
         },
         "limit": {
           "type": "number",
@@ -156,8 +160,7 @@
       },
       "required": [
         "user_id",
-        "session_id",
-        "query"
+        "session_id"
       ]
     }
   },

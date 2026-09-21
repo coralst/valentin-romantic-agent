@@ -1,7 +1,7 @@
 import { logger } from '../../logging';
 import { fetchRendered } from '../browser/session';
 import { USER_AGENT } from './client';
-import { CURATED_VENUES, type CuratedVenue } from './venues';
+import { CURATED_VENUES, sameVenueName, squashVenueName, type CuratedVenue } from './venues';
 
 /**
  * Finding venues Ontopo can book, anywhere in Israel.
@@ -279,12 +279,13 @@ export async function resolveAnyVenue(
   name: string,
   city?: string,
 ): Promise<DiscoveredVenue | CuratedVenue | null> {
-  const wanted = name.trim().toLowerCase();
+  const wanted = squashVenueName(name);
   if (!wanted) return null;
 
-  const curated = CURATED_VENUES.find(
-    (v) => v.name.toLowerCase() === wanted || v.name.toLowerCase().includes(wanted),
-  );
+  const curated = CURATED_VENUES.find((v) => {
+    const own = squashVenueName(v.name);
+    return sameVenueName(own, wanted) || own.includes(wanted);
+  });
   if (curated) return curated;
 
   // Without a city there is no page to read: Ontopo has no all-Israel listing.
@@ -292,14 +293,17 @@ export async function resolveAnyVenue(
   const venues = await venuesInCity(city);
   if (!venues) return null;
 
+  // Same normalisation as the curated path, so "Homies" reaches "Home'is Kefar
+  // Sava" whether the venue was checked in or read off the city page an hour ago.
+  const squashed = venues.map((v) => ({ v, own: squashVenueName(v.name) }));
   return (
-    venues.find((v) => v.name.toLowerCase() === wanted) ??
-    venues.find((v) => v.name.toLowerCase().includes(wanted)) ??
+    squashed.find(({ own }) => sameVenueName(own, wanted))?.v ??
+    squashed.find(({ own }) => own.includes(wanted))?.v ??
     // Loosest match last: a venue whose name is contained in what was asked for,
     // so "the Buckaroo place" still lands. Guarded on length so a two-letter
     // fragment cannot match half a city.
     (wanted.length >= 4
-      ? venues.find((v) => v.name.length >= 4 && wanted.includes(v.name.toLowerCase()))
+      ? squashed.find(({ own }) => own.length >= 4 && wanted.includes(own))?.v
       : undefined) ??
     null
   );

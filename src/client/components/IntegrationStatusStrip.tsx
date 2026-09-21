@@ -1,10 +1,18 @@
-import { INTEGRATION_CATALOGUE, type IntegrationService } from '../utils/integration-catalogue';
-import { BrandMark } from '../design-system/brand-marks';
+import {
+  INTEGRATION_CATALOGUE,
+  type IntegrationService,
+} from "../utils/integration-catalogue";
+import { BrandMark } from "../design-system/brand-marks";
 import {
   capabilityReadiness,
   type IntegrationReadiness,
-} from '../hooks/use-integration-readiness';
-import { colors, radii, typography } from '../design-system/tokens';
+} from "../hooks/use-integration-readiness";
+import { colors, radii, typography } from "../design-system/tokens";
+import {
+  IntegrationHealthDot,
+  integrationHealth,
+  type IntegrationHealth,
+} from "./IntegrationHealthDot";
 
 /**
  * Which services Valentin can reach, in the conversation header.
@@ -44,13 +52,13 @@ import { colors, radii, typography } from '../design-system/tokens';
 /** What one service's tile is saying. Each case is provable from the response. */
 export type IntegrationStatusKind =
   /** The server holds credentials and the tool is registered. */
-  | 'configured'
+  | "configured"
   /** It does not. The resting state of a fresh deployment. */
-  | 'unconfigured'
+  | "unconfigured"
   /** No backing service exists yet — nothing to configure. */
-  | 'unbuilt'
+  | "unbuilt"
   /** Readiness has not arrived. Never rendered as either good or bad news. */
-  | 'unknown';
+  | "unknown";
 
 export interface IntegrationTileStatus {
   service: IntegrationService;
@@ -65,7 +73,7 @@ export interface IntegrationTileStatus {
  * booking fails. Cheaper here than in a failed turn.
  */
 export const CAVEAT =
-  'A filled dot means this deployment holds credentials. A call can still fail if they have been revoked.';
+  "A filled dot means this deployment holds credentials. A call can still fail if they have been revoked.";
 
 /**
  * Fold one service's backing into a tile state.
@@ -78,18 +86,18 @@ export function integrationStatus(
   readiness: IntegrationReadiness,
 ): IntegrationStatusKind {
   switch (capabilityReadiness(service.backing, readiness)) {
-    case 'aspirational':
-      return 'unbuilt';
-    case 'unknown':
-      return 'unknown';
+    case "aspirational":
+      return "unbuilt";
+    case "unknown":
+      return "unknown";
     // `partial` counts as configured: every current row has one backing service,
     // and where a row ever spans two, the half that has credentials still has
     // them. The panel names which one; a dot cannot.
-    case 'ready':
-    case 'partial':
-      return 'configured';
-    case 'unconfigured':
-      return 'unconfigured';
+    case "ready":
+    case "partial":
+      return "configured";
+    case "unconfigured":
+      return "unconfigured";
   }
 }
 
@@ -111,27 +119,30 @@ const ORDER: Record<IntegrationStatusKind, number> = {
 export const MAX_TILES = 6;
 
 /** What each state is willing to say out loud, on hover and to a screen reader. */
-export function statusSentence(name: string, kind: IntegrationStatusKind): string {
+export function statusSentence(
+  name: string,
+  kind: IntegrationStatusKind,
+): string {
   switch (kind) {
-    case 'configured':
+    case "configured":
       return `${name} — credentials in place`;
-    case 'unconfigured':
+    case "unconfigured":
       return `${name} — needs credentials`;
-    case 'unbuilt':
+    case "unbuilt":
       return `${name} — not built yet`;
-    case 'unknown':
+    case "unknown":
       return `${name} — can't tell from here`;
   }
 }
 
 const stripStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
+  display: "flex",
+  alignItems: "center",
   gap: 7,
   padding: 0,
-  border: 'none',
-  background: 'none',
-  cursor: 'pointer',
+  border: "none",
+  background: "none",
+  cursor: "pointer",
   flexShrink: 0,
 };
 
@@ -141,43 +152,51 @@ const stripStyle: React.CSSProperties = {
  * brand colour and a tinted tile behind Gmail's white envelope muddies both.
  */
 function tileStyle(kind: IntegrationStatusKind): React.CSSProperties {
-  const isConfigured = kind === 'configured';
+  const isConfigured = kind === "configured";
   return {
-    position: 'relative',
+    position: "relative",
     width: 26,
     height: 26,
     flexShrink: 0,
     borderRadius: radii.kv,
-    display: 'grid',
-    placeItems: 'center',
+    display: "grid",
+    placeItems: "center",
     backgroundColor: colors.porcelain,
     border: `1px solid ${isConfigured ? colors.claretLight : colors.linenShade}`,
     // Greyed rather than dropped: which services exist is stable information, and
     // a strip whose membership moved with every deploy would be unreadable.
     opacity: isConfigured ? 1 : 0.45,
-    filter: isConfigured ? 'none' : 'grayscale(0.6)',
+    filter: isConfigured ? "none" : "grayscale(0.6)",
   };
 }
 
 /**
- * The corner dot: olive when configured, hollow when unknown, absent otherwise.
+ * The corner dot is {@link IntegrationHealthDot}, shared with the reach panel.
  *
- * `unknown` gets a hollow dot rather than none, because "no dot" is already how
- * this strip says *not configured* — an absent dot on an unknown service would
- * read as a confident negative.
+ * It used to be drawn here, in `colors.olive`. The panel drew the same fact in
+ * `colors.success`, and a visitor comparing the two surfaces saw Spotify grey in
+ * the header and green on the panel with nothing having changed in between. Olive
+ * at eight pixels reads as grey; that is not a nuance a dot can carry. One
+ * component, one fold ({@link integrationHealth}), one green — so the two cannot
+ * drift apart again.
+ *
+ * `unconfigured` and `unbuilt` still carry no dot at all on this surface: the tile
+ * is already greyed for them, and a red dot on a greyed tile in the header is one
+ * more red thing beside the message box than the conversation needs.
  */
-function dotStyle(hollow: boolean): React.CSSProperties {
-  return {
-    position: 'absolute',
-    right: -3,
-    bottom: -3,
-    width: 8,
-    height: 8,
-    borderRadius: radii.pill,
-    backgroundColor: hollow ? colors.porcelain : colors.olive,
-    border: `${hollow ? 1.5 : 2}px solid ${hollow ? colors.inkFaint : colors.porcelain}`,
-    boxSizing: 'border-box',
-  };
+function tileHealth(
+  kind: IntegrationStatusKind,
+  readiness: IntegrationReadiness,
+): IntegrationHealth | null {
+  switch (kind) {
+    case "configured":
+      return integrationHealth("ready", readiness.state);
+    case "unknown":
+      return integrationHealth("unknown", readiness.state);
+    case "unconfigured":
+    case "unbuilt":
+      return null;
+  }
 }
 
 const overflowStyle: React.CSSProperties = {
@@ -187,7 +206,7 @@ const overflowStyle: React.CSSProperties = {
   backgroundColor: colors.sand,
   border: `1px solid ${colors.linenShade}`,
   borderRadius: radii.chip,
-  padding: '3px 7px',
+  padding: "3px 7px",
   flexShrink: 0,
 };
 
@@ -197,15 +216,22 @@ interface IntegrationStatusStripProps {
   onOpen?: () => void;
 }
 
-export function IntegrationStatusStrip({ readiness, onOpen }: IntegrationStatusStripProps) {
-  const statuses: IntegrationTileStatus[] = INTEGRATION_CATALOGUE.map((service) => ({
-    service,
-    kind: integrationStatus(service, readiness),
-  })).sort((a, b) => ORDER[a.kind] - ORDER[b.kind]);
+export function IntegrationStatusStrip({
+  readiness,
+  onOpen,
+}: IntegrationStatusStripProps) {
+  const statuses: IntegrationTileStatus[] = INTEGRATION_CATALOGUE.map(
+    (service) => ({
+      service,
+      kind: integrationStatus(service, readiness),
+    }),
+  ).sort((a, b) => ORDER[a.kind] - ORDER[b.kind]);
 
   const shown = statuses.slice(0, MAX_TILES);
   const hidden = statuses.slice(MAX_TILES);
-  const configuredCount = statuses.filter((s) => s.kind === 'configured').length;
+  const configuredCount = statuses.filter(
+    (s) => s.kind === "configured",
+  ).length;
 
   /*
    * The label states only the count the strip can justify, and says something
@@ -213,9 +239,9 @@ export function IntegrationStatusStrip({ readiness, onOpen }: IntegrationStatusS
    * fact the client does not have.
    */
   const summary =
-    readiness.state === 'loaded'
+    readiness.state === "loaded"
       ? `${configuredCount} of ${statuses.length} have credentials`
-      : 'status unavailable';
+      : "status unavailable";
 
   return (
     <button
@@ -225,22 +251,30 @@ export function IntegrationStatusStrip({ readiness, onOpen }: IntegrationStatusS
       aria-label={`What Valentin can reach: ${summary}. Open the integrations panel.`}
       title={`${statuses
         .map(({ service, kind }) => statusSentence(service.name, kind))
-        .join('\n')}\n\n${CAVEAT}`}
+        .join("\n")}\n\n${CAVEAT}`}
       data-testid="integration-status-strip"
       data-configured-count={configuredCount}
     >
-      {shown.map(({ service, kind }) => (
-        <span
-          key={service.id}
-          style={tileStyle(kind)}
-          data-testid={`integration-status-${service.id}`}
-          data-status={kind}
-        >
-          <BrandMark id={service.mark} size={17} />
-          {kind === 'configured' ? <span style={dotStyle(false)} aria-hidden="true" /> : null}
-          {kind === 'unknown' ? <span style={dotStyle(true)} aria-hidden="true" /> : null}
-        </span>
-      ))}
+      {shown.map(({ service, kind }) => {
+        const health = tileHealth(kind, readiness);
+        return (
+          <span
+            key={service.id}
+            style={tileStyle(kind)}
+            data-testid={`integration-status-${service.id}`}
+            data-status={kind}
+          >
+            <BrandMark id={service.mark} size={17} />
+            {health ? (
+              <IntegrationHealthDot
+                health={health}
+                name={service.name}
+                testId={`integration-status-dot-${service.id}`}
+              />
+            ) : null}
+          </span>
+        );
+      })}
       {hidden.length > 0 ? (
         <span
           style={overflowStyle}
@@ -258,7 +292,9 @@ export function IntegrationStatusStrip({ readiness, onOpen }: IntegrationStatusS
            *
            * Space-separated so a selector can match one with `~=`.
            */
-          data-overflow-services={hidden.map(({ service }) => service.id).join(' ')}
+          data-overflow-services={hidden
+            .map(({ service }) => service.id)
+            .join(" ")}
         >
           +{hidden.length}
         </span>

@@ -8,6 +8,7 @@ import {
   statusSentence,
 } from '../IntegrationStatusStrip';
 import { INTEGRATION_CATALOGUE } from '../../utils/integration-catalogue';
+import { colors } from '../../design-system/tokens';
 import type { IntegrationReadiness } from '../../hooks/use-integration-readiness';
 import type { IntegrationId } from '../../../shared/interfaces/integrations';
 
@@ -77,6 +78,32 @@ describe('statusSentence', () => {
 });
 
 describe('IntegrationStatusStrip', () => {
+  /*
+   * The header and the reach panel are two views of one fact, and for a while they
+   * disagreed about its colour: the panel's dot was `colors.success`, the header
+   * drew its own in `colors.olive`, and olive at eight pixels is grey. A visitor
+   * saw Spotify grey beside the message box and green on the panel with nothing
+   * having changed. Both now render `IntegrationHealthDot`, and this pins it.
+   */
+  it('draws the configured dot in the same green as the reach panel', () => {
+    render(<IntegrationStatusStrip readiness={loaded({ gmail: true, spotify: false })} />);
+
+    const dot = screen.getByTestId(`integration-status-dot-${gmail.id}`);
+    expect(dot).toHaveAttribute('data-health', 'live');
+    expect(dot).toHaveStyle({ backgroundColor: colors.success });
+    expect(dot).not.toHaveStyle({ backgroundColor: colors.olive });
+    // No dot at all on an unconfigured tile: the greyed tile already says it.
+    expect(screen.queryByTestId(`integration-status-dot-${spotify.id}`)).toBeNull();
+  });
+
+  it('draws a hollow dot, not a coloured one, while readiness is unknown', () => {
+    render(<IntegrationStatusStrip readiness={{ state: 'loading', configured: {} }} />);
+
+    const dot = screen.getByTestId(`integration-status-dot-${gmail.id}`);
+    expect(dot).toHaveAttribute('data-health', 'unknown');
+    expect(dot).toHaveStyle({ backgroundColor: colors.porcelain });
+  });
+
   it('marks the configured service and only the configured service', () => {
     render(<IntegrationStatusStrip readiness={loaded({ gmail: true, spotify: false })} />);
 

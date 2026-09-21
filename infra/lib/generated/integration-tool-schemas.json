@@ -1,7 +1,7 @@
 [
   {
     "name": "check_availability",
-    "description": "Ask Ontopo which tables are actually free at one restaurant on a given date, for a given party size. Returns real bookable times grouped by seating area, including times either side of the one asked for. Always check this before proposing a reservation, and check Shabbat first for a Friday or Saturday — most of these kitchens are closed then. When Ontopo has nothing or does not answer, this also returns the restaurant's own site and phone number where it can find them — pass those on rather than ending on a no.",
+    "description": "Ask Ontopo which tables are actually free at one restaurant on a given date, for a given party size. Returns real bookable times grouped by seating area, including times either side of the one asked for, and whether the restaurant asks for a credit card to hold the table. Always check this before proposing a reservation, and check Shabbat first for a Friday or Saturday — most of these kitchens are closed then. When Ontopo has nothing or does not answer, this also returns the restaurant's own site and phone number where it can find them — pass those on rather than ending on a no.",
     "requiresConfirmation": false,
     "inputSchema": {
       "type": "object",
@@ -17,6 +17,10 @@
         "restaurant": {
           "type": "string",
           "description": "Name of the restaurant, from find_restaurants."
+        },
+        "city": {
+          "type": "string",
+          "description": "The restaurant's city, e.g. \"Kfar Saba\". Pass it when the user named one or find_restaurants returned it — it is how a venue outside the default shortlist is found."
         },
         "date": {
           "type": "string",
@@ -243,7 +247,7 @@
   },
   {
     "name": "find_restaurants",
-    "description": "Search the restaurants Valentin can book in Tel Aviv and Jaffa, by mood, cuisine or neighbourhood — \"quiet and romantic\", \"wine bar\", \"Jaffa\", \"Italian\". Pass style and radius_km when the profile records them, so the shortlist matches what they already told you. Returns names with a short note on each. Use this first when the user has not named a specific place, then check_availability on the one they like. Only these venues are bookable; do not offer a restaurant that is not in the result.",
+    "description": "Search the restaurants Valentin can book, by mood, cuisine, neighbourhood or city — \"quiet and romantic\", \"wine bar\", \"Jaffa\", \"Italian\". Curated coverage: Tel Aviv, Kfar Saba; pass city for anywhere else and Valentin will look it up live where it can. Pass style and radius_km when the profile records them, so the shortlist matches what they already told you. Returns names with a short note on each. Use this first when the user has not named a specific place, then check_availability on the one they like — that call also reports whether the venue asks for a credit card to hold the table, which matters when the user would rather not give one. Only these venues are bookable; do not offer a restaurant that is not in the result.",
     "requiresConfirmation": false,
     "inputSchema": {
       "type": "object",
@@ -259,6 +263,10 @@
         "query": {
           "type": "string",
           "description": "What they are after: a mood, a cuisine, a neighbourhood, or a name. Omit to see the default shortlist."
+        },
+        "city": {
+          "type": "string",
+          "description": "Which city to search in, e.g. \"Kfar Saba\" or \"Tel Aviv\". Pass it whenever the user names one; the default shortlist is Tel Aviv."
         },
         "style": {
           "type": "string",
@@ -561,6 +569,10 @@
         "restaurant": {
           "type": "string",
           "description": "Name of the restaurant."
+        },
+        "city": {
+          "type": "string",
+          "description": "The restaurant's city, as passed to check_availability."
         },
         "date": {
           "type": "string",

@@ -336,3 +336,93 @@ export async function createCheckout(
 
   return { checkoutId, url: checkoutUrl(checkoutId, locale) };
 }
+
+/**
+ * What a venue will ask of the guest on its booking form.
+ *
+ * `cardRequired` is the fact a user asking "somewhere I don't need to give a card"
+ * needs answered. `depositAmount`/`currency` are what that card will be charged on
+ * a no-show, when Ontopo says.
+ */
+export interface CheckoutTerms {
+  cardRequired: boolean;
+  depositAmount?: number;
+  currency?: string;
+}
+
+/**
+ * The host that serves a checkout page *with its configuration inlined*.
+ *
+ * `ontopo.com/en/checkout/<id>` returns a client-rendered shell and would need a
+ * browser to read. `s1.ontopo.com` — which is where the site itself redirects a
+ * visitor — serves the same page server-rendered, with the checkout's form
+ * definition embedded as JSON. That is the difference between a `fetch` and a
+ * Chromium launch, and the production image has no Chromium.
+ */
+const CHECKOUT_TERMS_HOST = 'https://s1.ontopo.com';
+
+/**
+ * Read a checkout's terms — chiefly whether it will demand a credit card.
+ *
+ * Observed on live checkouts, 2026-09-21: a venue that requires a card carries a
+ * `"creditcard":{…,"sum":30,"currency":"NIS",…,"showPayment":true}` block in the
+ * embedded config, plus a `"paymentTerms"` section; a venue that does not has
+ * neither. The user asked Valentin for "one without a need of credit card" and
+ * Valentin had nothing to answer with, because nothing here ever read this.
+ *
+ * Minting a checkout to read this is safe: a checkout id **reserves nothing** (see
+ * {@link createCheckout}), and `confirm` mints its own fresh one anyway. Read with
+ * regexes rather than by parsing the whole page — the config is one JSON object
+ * inside a script tag whose exact framing is Ontopo's business, and the two fields
+ * we need have distinctive names.
+ *
+ * Returns `null` when the page could not be read, which the caller must treat as
+ * "unknown" and never as "no card needed".
+ */
+export async function fetchCheckoutTerms(
+  checkoutId: string,
+  locale = 'en',
+): Promise<CheckoutTerms | null> {
+  let html: string;
+  try {
+    const response = await fetch(`${CHECKOUT_TERMS_HOST}/${locale}/checkout/${checkoutId}`, {
+      headers: { 'user-agent': USER_AGENT, accept: 'text/html' },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      logger.warn('ontopo.checkout_terms_refused', { status: response.status });
+      return null;
+    }
+    html = await response.text();
+  } catch (err) {
+    logger.warn('ontopo.checkout_terms_unreachable', {
+      cause: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+  return parseCheckoutTerms(html);
+}
+
+/**
+ * Pull the card requirement out of a checkout page's embedded config.
+ *
+ * Exported for the tests, which feed it a trimmed copy of a real page. The
+ * `creditcard` block alone is not enough: Ontopo's config may carry the block
+ * with `showPayment: false` for a venue that has a card form but does not use
+ * it, so the flag is what decides.
+ */
+export function parseCheckoutTerms(html: string): CheckoutTerms {
+  const block = /"creditcard"\s*:\s*\{(.*?)"showPayment"\s*:\s*(true|false)/s.exec(html);
+  if (!block) return { cardRequired: false };
+
+  const cardRequired = block[2] === 'true';
+  if (!cardRequired) return { cardRequired: false };
+
+  const sum = /"sum"\s*:\s*(\d+(?:\.\d+)?)/.exec(block[1])?.[1];
+  const currency = /"currency"\s*:\s*"([^"]+)"/.exec(block[1])?.[1];
+  return {
+    cardRequired: true,
+    ...(sum !== undefined ? { depositAmount: Number(sum) } : {}),
+    ...(currency ? { currency } : {}),
+  };
+}

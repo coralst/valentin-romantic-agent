@@ -59,6 +59,14 @@ export interface CuratedVenue {
   slug: string;
   /** Display name, city suffix stripped. */
   name: string;
+  /**
+   * Other spellings people use for the same place, for {@link resolveVenueName}.
+   *
+   * Editorial, like `note`. Exists for venues whose Ontopo name is a pun or a
+   * transliteration that nobody types the way it is written: "Home'is" is said
+   * "Homies", and a regular who has eaten there three times writes it that way.
+   */
+  aliases?: string[];
   city: string;
   /** Neighbourhood, where it is the reason to go. */
   neighbourhood?: string;
@@ -240,6 +248,68 @@ export const CURATED_VENUES: readonly CuratedVenue[] = [
     vibes: ['italian', 'kosher', 'romantic'],
     note: 'The kosher option that is genuinely a nice dinner rather than a compromise.',
   },
+
+  /*
+   * Kfar Saba.
+   *
+   * Every venue Ontopo lists for the city as of 2026-09-21, read off
+   * `ontopo.com/en/il/kfar_saba` and each venue's own page, and confirmed against
+   * `availability_search`. Curated rather than left to live discovery because the
+   * production image (`node:22-alpine`) has no Chromium, so `venuesInCity` cannot
+   * run there — and a user asking for Kfar Saba was told the city did not exist.
+   *
+   * Ontopo's names carry a "Kefar Sava" suffix; it is stripped here as the header
+   * says, and `resolveVenueName` strips it from whatever the user typed too.
+   */
+  {
+    slug: '36893103',
+    name: 'Ruben',
+    city: 'Kfar Saba',
+    cuisine: ['American', 'Meat', 'Smoked'],
+    vibes: ['lively'],
+    note: 'Smokehouse and American plates. Relaxed and generous; books without a card.',
+  },
+  {
+    slug: '54066096',
+    name: "L'maya",
+    city: 'Kfar Saba',
+    cuisine: ['Latin Grill Bar'],
+    vibes: ['lively', 'cocktails'],
+    note: 'Latin grill with a bar. The livelier choice for a birthday that wants some noise.',
+  },
+  {
+    slug: '79447384',
+    name: 'Dr. Gonzo',
+    city: 'Kfar Saba',
+    cuisine: ['Bar', 'Cocktails'],
+    vibes: ['cocktails', 'lively'],
+    note: 'Cocktail bar first. Right for drinks after dinner, or a late start.',
+  },
+  {
+    slug: '40612028',
+    name: 'Fresh the market',
+    city: 'Kfar Saba',
+    cuisine: ['Breakfast', 'Italian', 'Kosher'],
+    vibes: ['italian', 'kosher'],
+    note: 'Kosher Italian, daytime-friendly. The easy answer for a weekday lunch.',
+  },
+  {
+    slug: '86749104',
+    name: "Home'is",
+    aliases: ['Homies', 'Homeis'],
+    city: 'Kfar Saba',
+    cuisine: ['Café', 'Wine Bar', 'Wine Store'],
+    vibes: ['wine', 'intimate'],
+    note: 'Wine bar and shop in one — small, quiet, and good for a bottle and a long talk.',
+  },
+  {
+    slug: '87862186',
+    name: 'Beer Garden',
+    city: 'Kfar Saba',
+    cuisine: ['Bar', 'Beer'],
+    vibes: ['lively'],
+    note: 'Beer garden. Casual and outdoors; asks for a card to hold the table.',
+  },
 ] as const;
 
 /** Look a venue up by slug. */
@@ -296,7 +366,20 @@ const AREA_COORDS: Readonly<Record<string, GeoPoint>> = {
   jaffa: { lat: 32.0533, lon: 34.7509 },
   'jaffa port': { lat: 32.0503, lon: 34.7511 },
   montefiore: { lat: 32.0641, lon: 34.7745 },
+  'kfar saba': { lat: 32.175, lon: 34.9069 },
 };
+
+/**
+ * The cities the curated list covers, in list order, each once.
+ *
+ * For tool descriptions and "nothing matched" messages. Both used to hard-code
+ * "Tel Aviv and Jaffa", and the model repeated that to a user asking about a city
+ * the list had since gained — a description that names the data is one that
+ * cannot drift from it.
+ */
+export function curatedCities(): string[] {
+  return [...new Set(CURATED_VENUES.map((venue) => venue.city))];
+}
 
 /**
  * The coordinate to measure a venue from, or nothing when the area is unmapped.
@@ -380,10 +463,12 @@ export function findVenues(
   const styleVibes = filters.style ? STYLE_TO_VIBES[filters.style] : undefined;
 
   // The radius is a *filter*, applied before scoring, because a venue outside it is
-  // not a worse answer — it is not an answer. Style is a *bonus*, because a room
-  // tagged `chef` and `intimate` is a reasonable reply to "romantic and quiet" even
-  // though it is not tagged `romantic`.
-  const candidates = CURATED_VENUES.filter((venue) => withinRadius(venue, filters));
+  // not a worse answer — it is not an answer. So is the city, for the same reason.
+  // Style is a *bonus*, because a room tagged `chef` and `intimate` is a reasonable
+  // reply to "romantic and quiet" even though it is not tagged `romantic`.
+  const candidates = CURATED_VENUES.filter(
+    (venue) => inCity(venue, filters.city) && withinRadius(venue, filters),
+  );
 
   if (terms.length === 0 && !styleVibes) return candidates.slice(0, limit);
 
@@ -410,6 +495,50 @@ export interface VenueFilters {
   origin?: GeoPoint;
   /** How far they are willing to go. Ignored unless `origin` is set too. */
   radiusMetres?: number;
+  /** Only venues in this city (or whose neighbourhood is this). See {@link cityKey}. */
+  city?: string;
+}
+
+/**
+ * A city name reduced to something two spellings of it agree on.
+ *
+ * Squashed to letters, then aliased: Jaffa is a neighbourhood of Tel Aviv on
+ * Ontopo's own pages, and Kfar Saba has four Latin spellings in daily use plus the
+ * Hebrew. An unknown city keys to its own squashed form, so it still compares
+ * equal to itself and unequal to everything curated.
+ */
+export function cityKey(city: string): string {
+  const squashed = city.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  if (CITY_ALIASES.has(squashed)) return CITY_ALIASES.get(squashed) as string;
+  return squashed;
+}
+
+const CITY_ALIASES = new Map<string, string>([
+  ['jaffa', 'telaviv'],
+  ['yafo', 'telaviv'],
+  ['telavivyafo', 'telaviv'],
+  ['tlv', 'telaviv'],
+  ['תלאביב', 'telaviv'],
+  ['kefarsava', 'kfarsaba'],
+  ['kfarsava', 'kfarsaba'],
+  ['kefarsaba', 'kfarsaba'],
+  ['כפרסבא', 'kfarsaba'],
+]);
+
+/** Whether a venue is in the city asked for, by city or by neighbourhood. */
+function inCity(venue: CuratedVenue, city: string | undefined): boolean {
+  if (!city) return true;
+  const wanted = cityKey(city);
+  if (!wanted) return true;
+  return (
+    cityKey(venue.city) === wanted ||
+    (venue.neighbourhood !== undefined && cityKey(venue.neighbourhood) === wanted)
+  );
+}
+
+/** Whether the curated list holds anything in this city at all. */
+export function curatedCityMatches(city: string): boolean {
+  return CURATED_VENUES.some((venue) => inCity(venue, city));
 }
 
 /**
@@ -446,6 +575,64 @@ function withinRadius(venue: CuratedVenue, filters: VenueFilters): boolean {
 }
 
 /**
+ * A venue name reduced to what two people typing it would agree on.
+ *
+ * Ontopo spells one Kfar Saba wine bar `Home'is Kefar Sava`; the person who has
+ * eaten there types `Homies`. Exact and substring matching both fail across that
+ * apostrophe, and the failure reads as "not one of the restaurants Valentin can
+ * book" — a confident wrong answer about a place that was booked through this very
+ * integration a fortnight earlier. So: lower-case, drop everything that is not a
+ * letter or digit, and strip the city Ontopo appends to its own titles.
+ *
+ * Exported because `discovery.ts` matches live-discovered names the same way, and
+ * two spellings of "the same" would drift.
+ */
+export function squashVenueName(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(CITY_SUFFIX, '')
+    .replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+/**
+ * How Ontopo suffixes a venue title with its city, in the spellings seen so far.
+ *
+ * Applied *before* punctuation is stripped, so "kefar sava" is still two words
+ * here. Anchored to the end because a city name in the middle of a venue's actual
+ * name ("Yaffo Tel Aviv") is part of the name.
+ */
+const CITY_SUFFIX =
+  /\s+(kefar\s+sava|kfar\s+saba|kefar\s+saba|kfar\s+sava|tel\s+aviv|jaffa|yafo|ra'?anana|herzliya|herzeliya)\s*$/i;
+
+/**
+ * Whether two squashed names are the same place, allowing for one slip.
+ *
+ * Equality, or — for names long enough that it cannot be a coincidence — a single
+ * adjacent transposition: `homies` against `homeis`. That is the one edit a person
+ * makes when they know how a name is *said* but not how it is written, and it is
+ * exactly the gap between Ontopo's "Home'is" and its regulars' "Homies". Anything
+ * looser (a substitution, a missing letter) starts matching different restaurants,
+ * so this stops at swaps.
+ */
+export function sameVenueName(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length || a.length < 6) return false;
+  let i = 0;
+  while (i < a.length && a[i] === b[i]) i += 1;
+  if (i >= a.length - 1) return false;
+  return (
+    a[i] === b[i + 1] &&
+    a[i + 1] === b[i] &&
+    a.slice(i + 2) === b.slice(i + 2)
+  );
+}
+
+/** Every squashed spelling a curated venue answers to: its name and its aliases. */
+function squashedNamesOf(venue: CuratedVenue): string[] {
+  return [venue.name, ...(venue.aliases ?? [])].map(squashVenueName);
+}
+
+/**
  * Resolve something the model called a restaurant to a venue, or to nothing.
  *
  * Stricter than {@link findVenues} on purpose. This is the function that decides
@@ -453,26 +640,49 @@ function withinRadius(venue: CuratedVenue, filters: VenueFilters): boolean {
  * loose match here becomes a confident answer about the wrong place. It will
  * accept a slug, a full name, or a name the query clearly contains ("Montefiore"
  * for "Hotel Montefiore") — and nothing else. A cuisine or a vibe is not a name.
+ *
+ * Comparison goes through {@link squashVenueName} on both sides and consults a
+ * venue's `aliases`, so punctuation, Ontopo's city suffix, and a name that is said
+ * differently from how it is spelled cannot be the reason a real venue fails to
+ * resolve.
  */
 export function resolveVenueName(text: string): CuratedVenue | undefined {
-  const lowered = text.trim().toLowerCase();
-  if (lowered === '') return undefined;
+  const wanted = squashVenueName(text);
+  if (wanted === '') return undefined;
 
   const bySlug = venueBySlug(text.trim());
   if (bySlug) return bySlug;
 
-  const exact = CURATED_VENUES.find((venue) => venue.name.toLowerCase() === lowered);
+  const exact = CURATED_VENUES.find((venue) =>
+    squashedNamesOf(venue).some((own) => sameVenueName(own, wanted)),
+  );
   if (exact) return exact;
 
   // Substring either way round, so both "Montefiore" → "Hotel Montefiore" and
   // "dinner at NOEMA tonight" → "NOEMA" resolve. Longest name first, so "Loulou
-  // Secret" is not shadowed by "Loulou 47" when both could match.
+  // Secret" is not shadowed by "Loulou 47" when both could match. Guarded on
+  // length in the "name inside query" direction: a squashed three-letter name
+  // would otherwise match inside almost any sentence.
   const byName = [...CURATED_VENUES]
     .sort((a, b) => b.name.length - a.name.length)
-    .find((venue) => {
-      const name = venue.name.toLowerCase();
-      return name.includes(lowered) || lowered.includes(name);
-    });
+    .find((venue) =>
+      squashedNamesOf(venue).some(
+        (own) => own.includes(wanted) || (own.length >= 4 && containsName(wanted, own)),
+      ),
+    );
 
   return byName;
+}
+
+/**
+ * Whether `haystack` contains `name`, allowing the same one transposition that
+ * {@link sameVenueName} allows, so "a table at Homies please" still reaches
+ * "Home'is". Plain `includes` first because it is the common case and free.
+ */
+function containsName(haystack: string, name: string): boolean {
+  if (haystack.includes(name)) return true;
+  for (let start = 0; start + name.length <= haystack.length; start += 1) {
+    if (sameVenueName(haystack.slice(start, start + name.length), name)) return true;
+  }
+  return false;
 }

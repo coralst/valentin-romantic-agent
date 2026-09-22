@@ -133,15 +133,9 @@ describe('BriefRail — zero state', () => {
     expect(screen.queryByTestId('brief-good-to-know')).not.toBeInTheDocument();
   });
 
-  it('still pins the nudge, which is what it is pinned for', () => {
-    renderRail();
-    expect(screen.getByTestId('brief-nudge')).toBeInTheDocument();
-  });
-
   it('carries no tally, and no progress meter of any kind', () => {
     // "0 of 20 known" is a score for the app rather than a fact about her, and it
-    // was charged twice — once here, once in the dossier's header. Both are gone;
-    // the nudge is what turns the same information into a question.
+    // was charged twice — once here, once in the dossier's header. Both are gone.
     renderRail();
     expect(screen.queryByTestId('brief-tally')).not.toBeInTheDocument();
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
@@ -301,37 +295,6 @@ describe('BriefRail — what to do next', () => {
     // heading over nothing is worse than no heading.
     renderRail([{ fieldId: 'partner_name', value: 'Coral' }]);
     expect(screen.queryByTestId('brief-next-actions')).not.toBeInTheDocument();
-  });
-});
-
-describe('BriefRail — the nudge', () => {
-  it('asks for the highest-payoff gap, not the first registry field', () => {
-    renderRail([{ fieldId: 'partner_name', value: 'Coral' }]);
-    expect(screen.getByTestId('brief-nudge').textContent).toContain('love language');
-  });
-
-  it('moves to the next gap when the user says Later', () => {
-    renderRail([{ fieldId: 'partner_name', value: 'Coral' }]);
-    fireEvent.click(screen.getByTestId('brief-nudge-later'));
-    const text = screen.getByTestId('brief-nudge').textContent ?? '';
-    expect(text).not.toContain('love language');
-    expect(text).toContain('anniversary');
-  });
-
-  it('hides once every field is known, rather than inventing filler', () => {
-    renderRail(
-      PROFILE_FIELD_REGISTRY.map((field) => ({
-        fieldId: field.id,
-        value: field.valueType === 'date' ? '2021-09-18' : 'known',
-      })),
-    );
-    expect(screen.queryByTestId('brief-nudge')).not.toBeInTheDocument();
-  });
-
-  it('never repeats the gap the nudge already holds in Worth asking next', () => {
-    renderRail([{ fieldId: 'partner_name', value: 'Coral' }]);
-    const listed = screen.getAllByTestId('brief-gap').map((el) => el.getAttribute('data-field-id'));
-    expect(listed).not.toContain('love_language');
   });
 });
 

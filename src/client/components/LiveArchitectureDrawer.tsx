@@ -236,7 +236,7 @@ function ServingChip({
 }
 
 /** Height of the grab strip at the drawer's top edge. */
-const RESIZE_HANDLE_HEIGHT = 12;
+const RESIZE_HANDLE_HEIGHT = 20;
 
 /** How much one arrow key press moves the edge. Shift multiplies it. */
 const RESIZE_STEP_PX = 24;
@@ -374,16 +374,22 @@ function DrawerResizeHandle({
         touchAction: 'none',
       }}
     >
-      {/* The visible grip. Widens and darkens while dragging, which is the only
-          feedback a 12px strip can give that the gesture was picked up. */}
+      {/* The visible grip. A wider, taller pill than before, always visible so a
+          presenter unfamiliar with the drawer knows the top edge is draggable at
+          all — the previous 34×3 sliver was invisible on a projector two rows
+          back. Widens and darkens further while dragging, which is the feedback a
+          20px strip can give that the gesture was picked up. */}
       <span
         aria-hidden="true"
         style={{
-          width: isDragging ? 56 : 34,
-          height: 3,
+          width: isDragging ? 96 : 72,
+          height: 5,
           borderRadius: 999,
-          background: isDragging ? colors.claret : '#D9C9C2',
+          background: isDragging ? colors.claret : '#B89E96',
           transition: 'width 120ms ease, background 120ms ease',
+          boxShadow: isDragging
+            ? '0 1px 2px rgba(74,24,38,0.28)'
+            : '0 1px 1px rgba(74,24,38,0.14)',
         }}
       />
     </div>

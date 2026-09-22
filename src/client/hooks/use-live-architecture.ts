@@ -395,8 +395,47 @@ export function useLiveArchitecture(
       // feed's timestamp claims to be.
       const stamped: LiveBeat = { ...beat, at: Date.now() };
 
-      setBeats((current) => [...current, stamped].slice(-LIVE_BEAT_LIMIT));
-      setCurrentKey(key);
+      /*
+       * Engine B's Bedrock call, synthesised so the room sees it.
+       *
+       * `InvokeAgentRuntime` is the closest measurable event to a model call on
+       * engine B — the proxy has no `bedrock:InvokeModel` and cannot observe the
+       * Bedrock call the Runtime makes internally, so no real span for it ever
+       * arrives. But the audience needs to see Bedrock in engine B's flow to
+       * understand that the same model backs both engines, so we emit a companion
+       * beat that names Bedrock explicitly. Deliberately not counted in
+       * `spanCount` or `modelCallCount` — the Runtime's own span is what the
+       * summary counts, and doubling it would inflate engine B's numbers against
+       * engine A's.
+       */
+      const synthetic: LiveBeat | undefined =
+        engine === 'agentcore' &&
+        observed.event.type === 'aws_span' &&
+        (observed.event.payload as AwsSpan | undefined)?.operation === 'InvokeAgentRuntime'
+          ? {
+              key: `live-${nextKeyRef.current}`,
+              from: 'ac-runtime',
+              to: 'bedrock',
+              service: 'Bedrock',
+              operation: 'Converse',
+              detail: 'inside AgentCore Runtime · not observable from the proxy',
+              category: 'ml',
+              actor: beat.actor,
+              action: beat.action,
+              // No durationMs — the value is invisible to the proxy. The row
+              // will render `—` in the duration column, which is honest.
+              at: Date.now(),
+            }
+          : undefined;
+      if (synthetic) nextKeyRef.current += 1;
+
+      setBeats((current) => {
+        const next = synthetic ? [...current, stamped, synthetic] : [...current, stamped];
+        return next.slice(-LIVE_BEAT_LIMIT);
+      });
+      // The synthetic beat, if any, is the "current" one: it lands after the
+      // Runtime span it companions, and is what the room's eye is on last.
+      setCurrentKey(synthetic ? synthetic.key : key);
 
       if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
       highlightTimerRef.current = setTimeout(() => {

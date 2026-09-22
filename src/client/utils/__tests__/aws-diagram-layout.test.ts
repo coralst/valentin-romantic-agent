@@ -379,6 +379,9 @@ describe('mid-leg chevrons', () => {
       'ac-lambda-tools-integrations',
       'ac-proxy-dynamodb',
       'ac-runtime-ac-memory',
+      // The Runtime's reach up to the shared Bedrock card. Bends twice — right out
+      // of the AgentCore box's boundary, then up the far side to bedrock's row.
+      'ac-runtime-bedrock',
       // The drop from the shared ALB down into engine B's band.
       'alb-ac-proxy',
       'cloudfront-s3',

@@ -386,10 +386,12 @@ describe('AwsTopologyDiagram', () => {
     });
 
     it('refuses to light a node left over from the engine just switched away from', () => {
-      // The failure this prevents: flipping to AgentCore while engine A's Bedrock
-      // node is still lit, leaving a shaded card glowing.
-      render(<AwsTopologyDiagram engine="agentcore" litNode="bedrock" />);
-      expect(screen.getByTestId('aws-node-bedrock')).toHaveAttribute('data-state', 'muted');
+      // The failure this prevents: flipping to AgentCore while an engine-A-only
+      // node is still lit, leaving a shaded card glowing. `fargate` is the natural
+      // stand-in here — bedrock used to be engine A alone but is now shared, and
+      // a shared node can honestly be lit on either engine.
+      render(<AwsTopologyDiagram engine="agentcore" litNode="fargate" />);
+      expect(screen.getByTestId('aws-node-fargate')).toHaveAttribute('data-state', 'muted');
     });
 
     it('refuses to animate a connector on the shaded half', () => {
@@ -404,11 +406,13 @@ describe('AwsTopologyDiagram', () => {
 
     it('withholds the duration pill from a shaded node', () => {
       // A measured latency belongs to one engine's turn. Showing engine A's 412 ms
-      // while engine B is on screen would be the most quietly wrong thing here.
+      // for its own Fargate task while engine B is on screen would be the most
+      // quietly wrong thing here. `fargate` is engine A alone; bedrock is shared
+      // now and can carry a duration on either engine.
       render(
-        <AwsTopologyDiagram engine="agentcore" durations={{ bedrock: { label: '412 ms' } }} />,
+        <AwsTopologyDiagram engine="agentcore" durations={{ fargate: { label: '412 ms' } }} />,
       );
-      expect(screen.queryByTestId('aws-duration-bedrock')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('aws-duration-fargate')).not.toBeInTheDocument();
     });
 
     it('animates engine B’s own hops', () => {

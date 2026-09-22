@@ -19,11 +19,9 @@ import { KeepInMind, deriveCautions } from './brief/KeepInMind';
 import { WorthAsking } from './brief/WorthAsking';
 import { GoodToKnow, type Chip } from './brief/GoodToKnow';
 import { BriefSkeleton } from './brief/BriefSkeleton';
-import { ValentinNudge } from './brief/ValentinNudge';
 import { PinnedEveryYear } from './brief/PinnedEveryYear';
 import { NextActions } from './brief/NextActions';
 import { onClaret } from './brief/rail-tones';
-import { LocationConsent } from './LocationConsent';
 import { useOptionalViewContext } from '../context/view-context';
 import { useOptionalSessionContext } from '../context/session-context';
 import { useOptionalTasksContext } from '../context/tasks-context';
@@ -218,9 +216,6 @@ export function BriefRail() {
   const session = useOptionalSessionContext();
   const activeSessionId = session?.state.activeSessionId ?? null;
 
-  /** Field ids whose nudge the user has waved off this session. */
-  const [dismissedGaps, setDismissedGaps] = useState<Set<string>>(new Set());
-
   const isFilled = useCallback(
     (fieldId: string) => getFieldValue(fieldId) !== null,
     [getFieldValue],
@@ -278,12 +273,7 @@ export function BriefRail() {
   const pinnedDates = useMemo(() => derivePinnedDates(birthdayValue), [birthdayValue]);
 
   const gaps = useMemo(() => rankUnfilledFields(isFilled), [isFilled]);
-  const nudgeGap = gaps.find((gap) => !dismissedGaps.has(gap.fieldId)) ?? null;
-  // The nudge already occupies the top gap, so the list starts after it.
-  const listedGaps = useMemo(
-    () => gaps.filter((gap) => gap.fieldId !== nudgeGap?.fieldId),
-    [gaps, nudgeGap],
-  );
+  const listedGaps = gaps;
 
   const chips = useMemo<Chip[]>(
     () =>
@@ -357,11 +347,6 @@ export function BriefRail() {
     [chatDispatch, view],
   );
 
-  const handleLater = useCallback(() => {
-    if (!nudgeGap) return;
-    setDismissedGaps((prev) => new Set(prev).add(nudgeGap.fieldId));
-  }, [nudgeGap]);
-
   const isCompletelyEmpty = filled === 0 && !profileState.partnerPhoto;
 
   return (
@@ -415,27 +400,6 @@ export function BriefRail() {
         </div>
 
         {!isCompletelyEmpty && <GoodToKnow chips={chips} onChipClick={askAboutField} />}
-
-        {nudgeGap && (
-          <ValentinNudge
-            reason={nudgeGap.reason}
-            onAsk={() => askAbout(nudgeGap)}
-            onLater={handleLater}
-            answerHere={
-              // The home city is the one gap nobody should have to hold a
-              // conversation about: the browser already knows the answer, and
-              // typing "Ra'anana" is faster than being asked for it.
-              nudgeGap.fieldId === 'home_city' && activeSessionId ? (
-                <LocationConsent
-                  sessionId={activeSessionId}
-                  onSaved={(preference) =>
-                    preferencesDispatch({ type: 'MERGE_PREFERENCE', preference })
-                  }
-                />
-              ) : undefined
-            }
-          />
-        )}
       </aside>
     </div>
   );

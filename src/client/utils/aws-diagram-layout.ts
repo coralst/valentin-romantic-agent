@@ -416,6 +416,36 @@ export const AWS_SEGMENT_GEOMETRY: Readonly<Record<AwsSegmentId, AwsSegmentGeome
     upstreamHead: '1026,426 1035,420 1035,432',
     elbowed: false,
   },
+  /*
+   * The Runtime's Bedrock call, drawn as a fact rather than a route the drawer will
+   * animate live.
+   *
+   * The call happens inside AWS's managed AgentCore Runtime on the Runtime's own
+   * role — the proxy has no `bedrock:InvokeModel` and cannot observe a span for
+   * this hop — but the model is the same Sonnet 4.5 engine A talks to directly.
+   * Naming Bedrock on both engines is the honest answer for the room; before this
+   * segment existed the diagram dimmed Bedrock on engine B, which read as "not
+   * used".
+   *
+   * The path leaves the AgentCore box at x=1044 (four pixels clear of the box's
+   * `left+width=1246`, so the escape run reads as leaving the managed boundary
+   * rather than travelling inside it), climbs to the bedrock row at y=130 (the
+   * bottom of the bedrock card, deliberately below fargate-bedrock's y=100 so
+   * the two arrows do not overlap on bedrock's left edge), then runs left back
+   * to bedrock. Live traffic never animates it — the Runtime card's caption
+   * names the model in the visual instead.
+   */
+  'ac-runtime-bedrock': {
+    id: 'ac-runtime-bedrock',
+    path: 'M1026,426 L1044,426 L1044,130 L834,130',
+    downstreamHead: '840,130 831,124 831,136',
+    upstreamHead: '1026,426 1035,420 1035,432',
+    elbowed: true,
+    // Bedrock sits above the AgentCore box: away-from-the-browser is up here —
+    // the same pair as `ac-runtime-ac-memory`, just longer.
+    midDownstreamHead: '1044,270 1038,279 1050,279',
+    midUpstreamHead: '1044,285 1038,276 1050,276',
+  },
   // The integration tool Lambda holds engine B's spine, so this is the one straight
   // link in the Gateway's column — 26 tools behind one MCP target.
   'ac-gateway-ac-lambda-tools': {

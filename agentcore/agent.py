@@ -253,6 +253,47 @@ def _bind_identity(tools: list[Any], identity: dict[str, str]) -> list[Any]:
     return bound
 
 
+def _final_text(result: Any) -> str:
+    """The model's final text reply — nothing else.
+
+    `str(AgentResult)` concatenates every text block on the last assistant
+    message, and in a tool-using turn the model routinely emits *two* text
+    blocks around a `toolUse` block ("Beautiful. Lori" then the tool call, then
+    "Lori — I'll remember that."). Their concatenation produces "Beautiful.
+    LoriLori — I'll remember that." — the demo's most reported bug on engine B.
+
+    The last text block is what the model wrote *after* seeing every tool
+    result, so that is the one legible answer to show. Falling back to `str()`
+    preserves the previous behaviour when the message shape is unfamiliar — a
+    surprising message is worth showing verbatim rather than dropping.
+
+    Kept defensive because Strands has moved the message structure across
+    versions; this file cannot import the version it will run against.
+    """
+    try:
+        message = getattr(result, "message", None)
+        if message is None:
+            return str(result)
+        content = (
+            message.get("content") if isinstance(message, dict) else getattr(message, "content", None)
+        )
+        if not content:
+            return str(result)
+        texts = [
+            block.get("text", "")
+            for block in content
+            if isinstance(block, dict) and "text" in block
+        ]
+        # Strip empties in case a text block is present but blank — an
+        # empty final block would silently swallow the reply.
+        texts = [t for t in texts if t]
+        if texts:
+            return texts[-1]
+    except Exception:  # noqa: BLE001 - never fail an answer over string extraction
+        log.warning("could not extract final text — falling back to str(result)")
+    return str(result)
+
+
 def _tools_used(agent: Agent) -> list[str]:
     """Which Gateway tools the agent called, in order.
 
@@ -370,7 +411,7 @@ def invoke(payload: dict[str, Any]) -> dict[str, Any]:
             )
             result = agent(prompt)
 
-            content = str(result)
+            content = _final_text(result)
             used = _tools_used(agent)
             proposals = _proposals(agent)
 

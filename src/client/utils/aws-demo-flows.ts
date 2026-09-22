@@ -362,6 +362,25 @@ const AGENTCORE_LEARNS_SOMETHING: readonly DemoStep[] = [
     actor: 'Valentin',
     action: 'writes a reply',
   },
+  /*
+   * The Runtime's own Bedrock call, drawn as a step even though the proxy cannot
+   * observe it directly. The Runtime holds the `bedrock:InvokeModel` permission
+   * and calls Claude Sonnet 4.5 for the model turn from inside AWS's managed
+   * service — the same model engine A calls directly. Showing it here makes the
+   * comparison legible: the audience sees Bedrock in *both* engines' flows, and
+   * the segment `ac-runtime-bedrock` is what carries the animation.
+   */
+  {
+    from: 'ac-runtime',
+    to: 'bedrock',
+    service: 'Bedrock',
+    operation: 'Converse',
+    detail: 'inside AgentCore Runtime',
+    category: 'ml',
+    durationMs: 402,
+    actor: 'Valentin',
+    action: 'writes a reply',
+  },
   {
     to: 'ac-gateway',
     service: 'Gateway',

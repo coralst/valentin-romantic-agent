@@ -326,10 +326,12 @@ def _final_text(result: Any) -> str:
 
     text = extracted if extracted is not None else str(result)
     # Catch `Word` immediately followed by same `Word` with no separator.
-    # `\b(\w+)\1\b` requires the second occurrence to be a word-boundary match
-    # right after the first, so `LilyLily` collapses to `Lily` but `very very`
-    # (with a space) is left alone.
-    return re.sub(r"\b(\w+)\1\b", r"\1", text)
+    # `\b([A-Za-z]{3,})\1\b` requires the second occurrence to be a word-boundary
+    # match right after the first — so `LilyLily` collapses to `Lily` but
+    # `very very` (space between) is left alone, and adjacent digit repeats
+    # inside dates like `2026-10-11` are not touched because the pattern
+    # requires at least three alphabetic characters.
+    return re.sub(r"\b([A-Za-z]{3,})\1\b", r"\1", text)
 
 
 def _tools_used(agent: Agent) -> list[str]:

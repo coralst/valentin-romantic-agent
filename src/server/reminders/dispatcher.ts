@@ -152,6 +152,13 @@ function bodyFor(reminder: Reminder, now: Date, origin: string, context: Reminde
     surprise: context.surprise,
     origin,
     sessionId: reminder.sessionId,
+    // Every scheduled reminder ships as a simple nudge — a date and a link back
+    // to the conversation. The full body's restaurant suggestions were the
+    // demo's most requested change: readers want to be reminded, not persuaded.
+    // The full path stays intact for callers that want it back (a future toggle,
+    // a different channel), and every test in email-body.test.ts still exercises
+    // it by omitting this flag.
+    simple: true,
   });
 }
 

@@ -71,8 +71,11 @@ describe('dispatchDue', () => {
     expect(subject).toBe('Her birthday is a week away');
     expect(body).toContain('Friday 12 June');
     expect(body).toContain(`${ORIGIN}/?s=session-1`);
-    // No search ran, so the mail says so rather than implying an empty result set.
-    expect(body).toContain('I have not found anything worth suggesting yet');
+    // A scheduled reminder is a bare nudge: the dispatcher passes `simple: true`,
+    // so the body neither offers suggestions nor apologises for having none. The
+    // full body is still exercised in email-body.test.ts, which omits the flag.
+    expect(body).not.toContain('I have not found anything worth suggesting yet');
+    expect(body).not.toContain('Here is what I found:');
     // And it must never claim anything was held.
     expect(body).not.toMatch(/reserved for you|booked/i);
   });

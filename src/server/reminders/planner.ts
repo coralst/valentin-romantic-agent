@@ -293,7 +293,27 @@ export function planReminders(input: PlanRemindersInput, now: Date): Reminder[] 
       : planRecurring(input, 'anniversary', input.anniversary, today, now),
     muted.has('occasion') ? null : planOccasion(input, today, now),
   ];
-  return planned
-    .filter((reminder): reminder is Reminder => reminder !== null)
-    .sort((a, b) => a.dueAt.localeCompare(b.dueAt));
+  const kept = planned.filter((reminder): reminder is Reminder => reminder !== null);
+
+  /*
+   * Drop a `next_occasion` reminder that coincides with the anniversary or the
+   * birthday. Two rows for the same date and the same reader is two emails saying
+   * essentially the same thing — the anniversary and the "occasion the user just
+   * mentioned" pointed at Sept 26 both fired, one after the other, on the demo.
+   *
+   * The recurring row wins: `anniversary` and `birthday` are the semantically
+   * stronger fact (they name a relationship), and `next_occasion` is often the
+   * *same* evening described in a different phrase ("our tenth anniversary" vs
+   * "anniversary dinner"). Kept as a filter here rather than in `planOccasion` so
+   * the two halves of the decision — "occasion exists" and "is it a duplicate" —
+   * stay in one place.
+   */
+  const anchoredDates = new Set(
+    kept.filter((r) => r.kind === 'birthday' || r.kind === 'anniversary').map((r) => r.occursOn),
+  );
+  const deduped = kept.filter(
+    (r) => r.kind !== 'occasion' || !anchoredDates.has(r.occursOn),
+  );
+
+  return deduped.sort((a, b) => a.dueAt.localeCompare(b.dueAt));
 }

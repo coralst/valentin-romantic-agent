@@ -38,14 +38,11 @@ export const PROFILE_FIELD_SECTIONS: readonly FieldSectionDefinition[] = [
   { id: 'interests', label: 'Interests', order: 2 },
   { id: 'style', label: 'Style & Aesthetics', order: 3 },
   /*
-   * Sizes are their own section rather than three more rows under Style.
-   *
-   * A dress size is not an aesthetic — it is the lookup you do standing in a
-   * shop with your phone out, and the three of them are always wanted together.
-   * Grouping them means the dossier shows one small block you can read in a
-   * glance instead of burying "Ring Size" between a fragrance and a colour.
+   * `order: 4` is vacant: it was the `sizes` section, now retired along with the
+   * four measurement fields it held. The remaining orders are left as they are
+   * rather than closed up, because they are only a sort key and renumbering them
+   * would touch every section for no visible change.
    */
-  { id: 'sizes', label: 'Sizes', order: 4 },
   { id: 'gifts', label: 'Gifts & Celebrations', order: 5 },
   /*
    * The first section whose rows are facts about *him*: where he is planning
@@ -126,20 +123,6 @@ export const PROFILE_FIELD_REGISTRY: readonly ProfileFieldDefinition[] = [
     section: 'relationship',
     mappings: [
       { category: 'personality_traits', key: 'how we met' },
-    ],
-  },
-  {
-    id: 'love_language',
-    label: 'Love Language',
-    valueType: 'enum',
-    section: 'relationship',
-    enumOptions: [
-      'Words of Affirmation', 'Acts of Service', 'Receiving Gifts',
-      'Quality Time', 'Physical Touch',
-    ],
-    mappings: [
-      { category: 'love_language', key: 'primary' },
-      { category: 'love_language', key: 'love language' },
     ],
   },
   {
@@ -267,67 +250,6 @@ export const PROFILE_FIELD_REGISTRY: readonly ProfileFieldDefinition[] = [
     mappings: [
       { category: 'gifts', key: 'fragrance' },
       { category: 'gifts', key: 'perfume' },
-    ],
-  },
-  /*
-   * Sizes
-   *
-   * All of them are `text`, not `enum` or a number: sizing is regional and a
-   * person's real answer is "UK 6 / EU 39" or "a 10 in most things, an 8 in
-   * Zara". An enum would force a made-up canonical scale and make the honest
-   * answer unenterable, and a number would lose the letter sizes entirely.
-   *
-   * Mappings avoid the bare key "size" on purpose. It is generic enough that
-   * extraction reaches for it about anything — a ring, a shoe, a canvas — and
-   * resolving it to a specific field would silently file the wrong fact.
-   */
-  {
-    /*
-     * Labelled "Trousers" rather than "Clothing Size" because the card shows
-     * several measurements side by side, and next to a shoe size and a shoulder
-     * width the generic word reads as though it covered them.
-     */
-    id: 'clothing_size',
-    label: 'Trousers',
-    valueType: 'text',
-    section: 'sizes',
-    mappings: [
-      { category: 'gifts', key: 'clothing size' },
-      { category: 'gifts', key: 'dress size' },
-      { category: 'gifts', key: 'clothes size' },
-      { category: 'gifts', key: 'trouser size' },
-    ],
-  },
-  {
-    id: 'shoe_size',
-    label: 'Shoe Size',
-    valueType: 'text',
-    section: 'sizes',
-    mappings: [
-      { category: 'gifts', key: 'shoe size' },
-      { category: 'gifts', key: 'shoes size' },
-      { category: 'gifts', key: 'boot size' },
-    ],
-  },
-  {
-    id: 'ring_size',
-    label: 'Ring Size',
-    valueType: 'text',
-    section: 'sizes',
-    mappings: [
-      { category: 'gifts', key: 'ring size' },
-      { category: 'gifts', key: 'finger size' },
-    ],
-  },
-  {
-    id: 'shoulder_width',
-    label: 'Shoulders',
-    valueType: 'text',
-    section: 'sizes',
-    mappings: [
-      { category: 'gifts', key: 'shoulder width' },
-      { category: 'gifts', key: 'shoulders' },
-      { category: 'gifts', key: 'shoulder measurement' },
     ],
   },
   // Gifts

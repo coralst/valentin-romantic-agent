@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 from typing import Any
 
@@ -119,7 +120,7 @@ def _build_model() -> BedrockModel:
     return BedrockModel(**kwargs)
 
 
-def _history_messages(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _history_messages(history: list[dict[str, Any]], current_prompt: str = "") -> list[dict[str, Any]]:
     """The proxy's history, in the shape Strands wants.
 
     Trimming already happened proxy-side against `MAX_CONTEXT_TOKENS`, so this
@@ -128,6 +129,17 @@ def _history_messages(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     Anything that is not a recognised role is dropped rather than coerced: a turn
     filed under the wrong speaker is worse than a turn missing.
+
+    **Drops the trailing user turn when it matches the current prompt.**
+
+    The proxy adds the user's message to conversation memory *before* reading
+    the context window, so `history` arrives with the current user turn already
+    on the end. Passing that on and *also* calling `agent(prompt)` sends the
+    same user turn to the model twice — which is how names became doubled
+    ("LilyLily", "LoriLori") on engine B. Dropping the last entry when it
+    duplicates the prompt keeps engine A's context-window semantics
+    (recent-messages-inclusive) without letting the model see the same turn on
+    both sides of the call.
     """
     messages: list[dict[str, Any]] = []
     for entry in history:
@@ -136,6 +148,19 @@ def _history_messages(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if role not in ("user", "assistant") or not isinstance(content, str):
             continue
         messages.append({"role": role, "content": [{"text": content}]})
+
+    # If the last message is a user turn matching the prompt about to be sent,
+    # drop it — `agent(prompt)` will append it back. Comparison is strict
+    # equality on the string, so a re-phrased history (very rare) does not
+    # accidentally drop context.
+    if messages and current_prompt:
+        last = messages[-1]
+        if last.get("role") == "user":
+            blocks = last.get("content") or []
+            last_text = blocks[0].get("text", "") if blocks else ""
+            if last_text == current_prompt:
+                messages.pop()
+
     return messages
 
 
@@ -253,6 +278,62 @@ def _bind_identity(tools: list[Any], identity: dict[str, str]) -> list[Any]:
     return bound
 
 
+def _final_text(result: Any) -> str:
+    """The model's final text reply — nothing else.
+
+    `str(AgentResult)` concatenates every text block on the last assistant
+    message, and in a tool-using turn the model routinely emits *two* text
+    blocks around a `toolUse` block ("Beautiful. Lori" then the tool call, then
+    "Lori — I'll remember that."). Their concatenation produces "Beautiful.
+    LoriLori — I'll remember that." — the demo's most reported bug on engine B.
+
+    The last text block is what the model wrote *after* seeing every tool
+    result, so that is the one legible answer to show. Falling back to `str()`
+    preserves the previous behaviour when the message shape is unfamiliar — a
+    surprising message is worth showing verbatim rather than dropping.
+
+    A final dedupe pass strips immediately-repeated words (`LoriLori`,
+    `LilyLily`) that survive block extraction — the model still occasionally
+    emits them as a single text block, and a regex on adjacent word boundaries
+    catches those without touching legitimate repetition like "very very"
+    (which has a space between).
+
+    Kept defensive because Strands has moved the message structure across
+    versions; this file cannot import the version it will run against.
+    """
+    extracted: str | None = None
+    try:
+        message = getattr(result, "message", None)
+        if message is not None:
+            content = (
+                message.get("content")
+                if isinstance(message, dict)
+                else getattr(message, "content", None)
+            )
+            if content:
+                texts = [
+                    block.get("text", "")
+                    for block in content
+                    if isinstance(block, dict) and "text" in block
+                ]
+                # Strip empties in case a text block is present but blank — an
+                # empty final block would silently swallow the reply.
+                texts = [t for t in texts if t]
+                if texts:
+                    extracted = texts[-1]
+    except Exception:  # noqa: BLE001 - never fail an answer over string extraction
+        log.warning("could not extract final text — falling back to str(result)")
+
+    text = extracted if extracted is not None else str(result)
+    # Catch `Word` immediately followed by same `Word` with no separator.
+    # `\b([A-Za-z]{3,})\1\b` requires the second occurrence to be a word-boundary
+    # match right after the first — so `LilyLily` collapses to `Lily` but
+    # `very very` (space between) is left alone, and adjacent digit repeats
+    # inside dates like `2026-10-11` are not touched because the pattern
+    # requires at least three alphabetic characters.
+    return re.sub(r"\b([A-Za-z]{3,})\1\b", r"\1", text)
+
+
 def _tools_used(agent: Agent) -> list[str]:
     """Which Gateway tools the agent called, in order.
 
@@ -365,12 +446,12 @@ def invoke(payload: dict[str, Any]) -> dict[str, Any]:
             agent = Agent(
                 model=model,
                 system_prompt=system_prompt,
-                messages=_history_messages(history),
+                messages=_history_messages(history, prompt),
                 tools=tools,
             )
             result = agent(prompt)
 
-            content = str(result)
+            content = _final_text(result)
             used = _tools_used(agent)
             proposals = _proposals(agent)
 

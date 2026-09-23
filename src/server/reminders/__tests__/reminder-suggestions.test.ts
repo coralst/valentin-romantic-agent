@@ -298,15 +298,16 @@ describe('the composed reminder, end to end', () => {
 
     expect(summary.sent).toBe(1);
     const { subject, body } = sender.sent[0].email;
-    expect(subject).toBe("Maya's anniversary is a week away — three ideas");
-    expect(body).toContain('she loves Mediterranean');
-    expect(body).toContain('dinner with her sister');
-    expect(body).toContain('Bookable through me');
-    // The line the old body was stuck on, now that there is something to offer.
+    // Her name reaches the subject even though the body is a bare nudge: the
+    // dispatcher passes `simple: true`, which drops the suggestions and the
+    // "— three ideas" tag but keeps the headline the context composed.
+    expect(subject).toBe("Maya's anniversary is a week away");
+    expect(body).toContain('Friday 12 June');
+    expect(body).toContain('Pick up where we left off:');
+    expect(body).not.toContain('Bookable through me');
     expect(body).not.toContain('I have not found anything worth suggesting yet');
     // And still nothing held: no availability was checked and no table was reserved.
     expect(body).not.toMatch(/reserved for you|booked|your table at/i);
-    expect(body).toContain('Nothing is reserved');
   });
 
   it('still sends the date when the profile has nothing else on it', async () => {
@@ -318,11 +319,13 @@ describe('the composed reminder, end to end', () => {
     });
 
     const { subject, body } = sender.sent[0].email;
-    // A thin profile still gets the curated list, so the mail is useful rather than
-    // apologetic — and says "here is what I found", claiming no criteria.
+    // A thin profile still gets the date and the way back into the conversation,
+    // which is the whole of the scheduled mail — no curated list either way, and
+    // nothing apologetic about having nothing to list.
     expect(subject).toContain('Her anniversary is a week away');
-    expect(body).toContain('Here is what I found:');
     expect(body).toContain('Friday 12 June');
+    expect(body).toContain('Pick up where we left off:');
+    expect(body).not.toContain('Here is what I found:');
   });
 
   /*
@@ -370,7 +373,7 @@ describe('the composed reminder, end to end', () => {
       expect(armed.dueAt).toBe(now.toISOString());
       expect(sender.sent).toHaveLength(1);
       // His own phrasing for the occasion, not "Maya's our third anniversary".
-      expect(sender.sent[0].email.subject).toBe('Our third anniversary is 5 days away — three ideas');
+      expect(sender.sent[0].email.subject).toBe('Our third anniversary is 5 days away');
     });
 
     it('waits until 08:30 tomorrow for an occasion eight days out', async () => {
@@ -406,9 +409,12 @@ describe('the composed reminder, end to end', () => {
       context: (reminder) => reminderContextFor(broken.forUser(reminder.userId), reminder),
     });
 
-    // The reminder is the thing the user is owed; the suggestions are a bonus.
+    // The reminder is the thing the user is owed; the suggestions are a bonus, and
+    // a scheduled mail carries none of them anyway. What matters here is that a
+    // throttled profile read costs the reader nothing: the date still goes out.
     expect(summary.sent).toBe(1);
-    expect(sender.sent[0].email.body).toContain('I have not found anything worth suggesting yet');
+    expect(sender.sent[0].email.body).toContain('Friday 12 June');
+    expect(sender.sent[0].email.body).toContain('Pick up where we left off:');
   });
 });
 

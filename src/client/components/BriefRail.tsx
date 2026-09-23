@@ -9,21 +9,17 @@ import {
 } from '../utils/profile-field-registry';
 import { deriveOccasions } from '../utils/occasion-derivation';
 import { portraitForPartner } from '../utils/persona-portrait';
-import { rankUnfilledFields, type FieldGap } from '../utils/field-payoff';
 import { getAgeBucketFromValue } from '../utils/age-bucket';
 import { formatBirthdayValue } from '../utils/birthday-display';
 import { PREFERENCE_CATEGORIES } from '../../shared/constants/categories';
 import { WhoHeader } from './brief/WhoHeader';
 import { NextUp } from './brief/NextUp';
 import { KeepInMind, deriveCautions } from './brief/KeepInMind';
-import { WorthAsking } from './brief/WorthAsking';
 import { GoodToKnow, type Chip } from './brief/GoodToKnow';
 import { BriefSkeleton } from './brief/BriefSkeleton';
-import { ValentinNudge } from './brief/ValentinNudge';
 import { PinnedEveryYear } from './brief/PinnedEveryYear';
 import { NextActions } from './brief/NextActions';
 import { onClaret } from './brief/rail-tones';
-import { LocationConsent } from './LocationConsent';
 import { useOptionalViewContext } from '../context/view-context';
 import { useOptionalSessionContext } from '../context/session-context';
 import { useOptionalTasksContext } from '../context/tasks-context';
@@ -218,9 +214,6 @@ export function BriefRail() {
   const session = useOptionalSessionContext();
   const activeSessionId = session?.state.activeSessionId ?? null;
 
-  /** Field ids whose nudge the user has waved off this session. */
-  const [dismissedGaps, setDismissedGaps] = useState<Set<string>>(new Set());
-
   const isFilled = useCallback(
     (fieldId: string) => getFieldValue(fieldId) !== null,
     [getFieldValue],
@@ -277,14 +270,6 @@ export function BriefRail() {
    */
   const pinnedDates = useMemo(() => derivePinnedDates(birthdayValue), [birthdayValue]);
 
-  const gaps = useMemo(() => rankUnfilledFields(isFilled), [isFilled]);
-  const nudgeGap = gaps.find((gap) => !dismissedGaps.has(gap.fieldId)) ?? null;
-  // The nudge already occupies the top gap, so the list starts after it.
-  const listedGaps = useMemo(
-    () => gaps.filter((gap) => gap.fieldId !== nudgeGap?.fieldId),
-    [gaps, nudgeGap],
-  );
-
   const chips = useMemo<Chip[]>(
     () =>
       CHIP_FIELDS.map(({ fieldId, label }) => {
@@ -306,34 +291,21 @@ export function BriefRail() {
   );
 
   /**
-   * Ask on the user's behalf: drop the question into the composer rather than
-   * sending it. Valentin is the one who asks questions here, so the user gets to
-   * see and edit the line before it goes.
-   */
-  /*
-   * Every ask here also has to move the user to the composer it writes into.
+   * Ask on the user's behalf, from a "Good to know" chip.
    *
-   * This rail is column 4 on BOTH surfaces, so these buttons are live while her
-   * file is up — but `MessageInput` lives in `ChatPanel`, which `AppLayout`
-   * unmounts for the dossier. Pressing Ask / Plan / Draft from her file set the
-   * line and changed nothing on screen. `returnToChat` is a no-op for the surface
-   * when the chat shell is already showing, so this is safe on both.
-   */
-  const askAbout = useCallback(
-    (gap: FieldGap) => {
-      chatDispatch({ type: 'SET_INPUT', value: `Ask me about her ${gap.label.toLowerCase()}.` });
-      view?.returnToChat();
-    },
-    [chatDispatch, view],
-  );
-
-  /**
-   * The same ask, from a "Good to know" chip.
-   *
+   * It drops the question into the composer rather than sending it: Valentin is the
+   * one who asks questions here, so the user gets to see and edit the line first.
    * Those chips were `<button>`s wired to `() => undefined` — a cursor, a hover
    * state and no effect, on both the filled pills and the `+ Colour` prompts whose
    * whole job is to be a call to action. A chip knows only its field id, so the
-   * label comes from the registry rather than from a `FieldGap`.
+   * label comes from the registry.
+   *
+   * The ask also has to move the user to the composer it writes into. This rail is
+   * column 4 on BOTH surfaces, so these buttons are live while her file is up — but
+   * `MessageInput` lives in `ChatPanel`, which `AppLayout` unmounts for the dossier.
+   * Pressing Ask from her file set the line and changed nothing on screen.
+   * `returnToChat` is a no-op when the chat shell is already showing, so this is
+   * safe on both.
    */
   const askAboutField = useCallback(
     (fieldId: string) => {
@@ -356,11 +328,6 @@ export function BriefRail() {
     },
     [chatDispatch, view],
   );
-
-  const handleLater = useCallback(() => {
-    if (!nudgeGap) return;
-    setDismissedGaps((prev) => new Set(prev).add(nudgeGap.fieldId));
-  }, [nudgeGap]);
 
   const isCompletelyEmpty = filled === 0 && !profileState.partnerPhoto;
 
@@ -409,33 +376,11 @@ export function BriefRail() {
                   ("Flowers yes — never roses"), which is where a constraint is read
                   at the moment it applies rather than as a standing warning. */}
               <NextActions tasks={tasks?.state.tasks ?? []} onAct={actOnTask} />
-              <WorthAsking gaps={listedGaps} onAsk={askAbout} />
             </>
           )}
         </div>
 
         {!isCompletelyEmpty && <GoodToKnow chips={chips} onChipClick={askAboutField} />}
-
-        {nudgeGap && (
-          <ValentinNudge
-            reason={nudgeGap.reason}
-            onAsk={() => askAbout(nudgeGap)}
-            onLater={handleLater}
-            answerHere={
-              // The home city is the one gap nobody should have to hold a
-              // conversation about: the browser already knows the answer, and
-              // typing "Ra'anana" is faster than being asked for it.
-              nudgeGap.fieldId === 'home_city' && activeSessionId ? (
-                <LocationConsent
-                  sessionId={activeSessionId}
-                  onSaved={(preference) =>
-                    preferencesDispatch({ type: 'MERGE_PREFERENCE', preference })
-                  }
-                />
-              ) : undefined
-            }
-          />
-        )}
       </aside>
     </div>
   );

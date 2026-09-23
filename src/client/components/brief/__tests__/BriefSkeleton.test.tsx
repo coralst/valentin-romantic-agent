@@ -18,26 +18,29 @@ describe('BriefSkeleton', () => {
     expect(rows.length).toBeGreaterThanOrEqual(8);
   });
 
-  it('shows the sizes a gift-giver actually needs', () => {
+  it('asks for no size, measurement or love language', () => {
     render(<BriefSkeleton />);
 
     const ids = screen
       .getAllByTestId('brief-skeleton-row')
       .map((row) => row.getAttribute('data-field-id'));
 
-    expect(ids).toContain('clothing_size');
-    expect(ids).toContain('shoe_size');
-    expect(ids).toContain('ring_size');
+    for (const id of ['clothing_size', 'shoe_size', 'ring_size', 'shoulder_width', 'love_language']) {
+      expect(ids).not.toContain(id);
+    }
   });
 
-  it('leads with the facts every plan depends on', () => {
+  it('leads with her name, then the facts every plan depends on', () => {
     render(<BriefSkeleton />);
 
     const ids = screen
       .getAllByTestId('brief-skeleton-row')
       .map((row) => row.getAttribute('data-field-id'));
 
-    for (const id of ['partner_name', 'birthday', 'anniversary', 'love_language']) {
+    // First row, not merely present: the zero state is read top-down and the name
+    // is the one thing Valentin asks for before anything else.
+    expect(ids[0]).toBe('partner_name');
+    for (const id of ['birthday', 'anniversary', 'favorite_cuisine']) {
       expect(ids).toContain(id);
     }
   });

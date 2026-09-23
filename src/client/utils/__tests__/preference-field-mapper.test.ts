@@ -24,10 +24,6 @@ describe('resolveField', () => {
     expect(resolveField('important_dates', 'anniversary')).toBe('anniversary');
   });
 
-  it('resolves love language mapping', () => {
-    expect(resolveField('love_language', 'primary')).toBe('love_language');
-  });
-
   it('resolves food-related mappings', () => {
     expect(resolveField('food', 'favorite cuisine')).toBe('favorite_cuisine');
     expect(resolveField('food', 'cuisine')).toBe('favorite_cuisine');

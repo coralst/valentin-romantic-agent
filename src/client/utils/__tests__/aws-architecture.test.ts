@@ -75,8 +75,20 @@ describe('AWS_NODES', () => {
     // not on the way in — they are at the far end of both engines, and they are the
     // *same* table and the *same* eight companies whichever engine answers. Claiming
     // either for one engine is what forced the diagram to draw two of each.
+    //
+    // Bedrock also joins the shared list: the same Sonnet 4.5 model is called from
+    // the task on engine A and from inside AgentCore Runtime on engine B, and
+    // claiming it for engine A alone was the misleading answer.
     const shared = AWS_NODES.filter((node) => node.engine === undefined).map((node) => node.id);
-    expect(shared).toEqual(['browser', 'cloudfront', 's3', 'alb', 'dynamodb', 'integrations']);
+    expect(shared).toEqual([
+      'browser',
+      'cloudfront',
+      's3',
+      'alb',
+      'bedrock',
+      'dynamodb',
+      'integrations',
+    ]);
   });
 
   it('resolves nodes by id and returns undefined for strangers', () => {
@@ -504,7 +516,10 @@ describe('engine membership', () => {
 
   it('excludes each engine from the other', () => {
     expect(isNodeInEngine('fargate', 'agentcore')).toBe(false);
-    expect(isNodeInEngine('bedrock', 'agentcore')).toBe(false);
+    // Bedrock is now shared: the same model backs engine A's Converse pipeline
+    // and engine B's AgentCore Runtime, so drawing it on both engines is honest
+    // even though the proxy running engine B cannot observe the call directly.
+    expect(isNodeInEngine('bedrock', 'agentcore')).toBe(true);
     expect(isNodeInEngine('ac-runtime', 'valentin')).toBe(false);
     expect(isNodeInEngine('ac-lambda-tools', 'valentin')).toBe(false);
   });

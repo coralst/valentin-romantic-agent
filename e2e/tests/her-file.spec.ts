@@ -103,11 +103,9 @@ test.describe('Her file — the board', () => {
   test('fills every tile from the seeded profile', async ({ page }) => {
     await seedAndOpenHerFile(page);
 
-    // The measurements card: both rows drawn from the seed, each with its own
-    // qualifier under the label.
-    const sizes = page.getByTestId('dossier-her-sizes');
-    await expect(sizes).toContainText('UK 10');
-    await expect(sizes).toContainText('38 cm');
+    // No measurements card: the size fields are retired, so the tile they fed is
+    // gone rather than sitting empty.
+    await expect(page.getByTestId('dossier-her-sizes')).toHaveCount(0);
 
     // Four named swatches, the first of them the lead.
     await expect(page.getByTestId('palette-swatch')).toHaveCount(4);

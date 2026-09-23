@@ -137,11 +137,11 @@ describe('dispatchServerEvent', () => {
 
     dispatchServerEvent(event, chatDispatch, preferencesDispatch);
 
-    expect(preferencesDispatch).toHaveBeenCalledWith({ type: 'ADD_PREFERENCE', preference: pref });
+    expect(preferencesDispatch).toHaveBeenCalledWith({ type: 'MERGE_PREFERENCE', preference: pref });
     expect(chatDispatch).not.toHaveBeenCalled();
   });
 
-  it('dispatches UPDATE_PREFERENCE to preferencesDispatch when isNew is false', () => {
+  it('dispatches MERGE_PREFERENCE to preferencesDispatch when isNew is false', () => {
     const pref = {
       id: 'pref-1',
       sessionId: 'sess-1',
@@ -165,7 +165,7 @@ describe('dispatchServerEvent', () => {
     dispatchServerEvent(event, chatDispatch, preferencesDispatch);
 
     expect(preferencesDispatch).toHaveBeenCalledWith({
-      type: 'UPDATE_PREFERENCE',
+      type: 'MERGE_PREFERENCE',
       preference: pref,
     });
   });

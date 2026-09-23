@@ -174,6 +174,18 @@ export interface ReminderEmailInput {
   origin: string;
   /** The conversation to reopen. The whole reason the link is worth clicking. */
   sessionId: string;
+  /**
+   * When true, the email is a bare reminder: the date, the resume link, and the
+   * sign-off. No restaurant suggestions, no "at home" ideas paragraph, no
+   * "— three ideas" in the subject. Set by the dispatcher; existing test cases
+   * omit it and continue to render the full body.
+   *
+   * The full-body path stays because it is what `composeReminderContext` still
+   * feeds — turning that off entirely would delete the assembled context on the
+   * road to the sender, and putting it back later would be a bigger change than
+   * the toggle it flipped. So the two shapes coexist and the caller picks.
+   */
+  simple?: boolean;
 }
 
 export interface ReminderEmail {
@@ -321,6 +333,13 @@ function activityOf(input: ReminderEmailInput): ReminderActivity {
 function buildSubject(input: ReminderEmailInput): string {
   const subject = headline(input);
 
+  // A simple reminder names the date and nothing else. The "— three ideas" tag
+  // implies a list the reader has to open the mail for, which is precisely what
+  // this flag turns off — see `ReminderEmailInput.simple`.
+  if (input.simple) {
+    return `${capitalise(subject)} is ${describeGap(input.daysUntil)}`;
+  }
+
   /*
    * The venue he settled on outranks a count of ideas: it is what he would want to see
    * from a lock screen, and "three ideas" beside a decision already made implies we
@@ -356,6 +375,31 @@ function capitalise(value: string): string {
 
 /** Build the reminder. Pure: no clock, no network, no model. */
 export function buildReminderEmail(input: ReminderEmailInput): ReminderEmail {
+  // A simple reminder: the date, one line pointing back to the conversation,
+  // and Valentin's sign-off. No suggestions, no ideas, no reservation
+  // confirmation — the reader gets a nudge and nothing else. See
+  // `ReminderEmailInput.simple`.
+  if (input.simple) {
+    const heading = headline(input);
+    const simpleParts: string[] = [
+      'Hi,',
+      '',
+      `${capitalise(heading)} is on ${formatDate(input.occasionDate)}, ` +
+        `${describeGap(input.daysUntil)}.`,
+    ];
+    const simpleTiming = input.timingNote?.trim();
+    if (simpleTiming) {
+      simpleParts.push('');
+      simpleParts.push(simpleTiming);
+    }
+    simpleParts.push('');
+    simpleParts.push('Pick up where we left off:');
+    simpleParts.push(resumeLink(input.origin, input.sessionId));
+    simpleParts.push('');
+    simpleParts.push('— Valentin');
+    return { subject: buildSubject(input), body: simpleParts.join('\n') };
+  }
+
   const suggestions = input.suggestions.slice(0, MAX_SUGGESTIONS);
   const ideas = (input.ideas ?? []).filter((idea) => idea.trim().length > 0);
   const activity = activityOf(input);

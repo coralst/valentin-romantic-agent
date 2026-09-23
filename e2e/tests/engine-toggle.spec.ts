@@ -149,9 +149,14 @@ test.describe('The engine toggle', () => {
 
     await expect(gateway).not.toHaveAttribute('data-state', 'muted', { timeout: 15_000 });
     await expect(toolLambda).not.toHaveAttribute('data-state', 'muted');
-    // And engine A's own model call greys out, so the two halves cannot be read as
-    // one diagram of everything running at once.
-    await expect(bedrock).toHaveAttribute('data-state', 'muted');
+    // Bedrock stays lit on both engines, because both call the model. It used to
+    // grey out here, on the reasoning that the greyed half is "what this engine
+    // does not use" — but 56b79c4 marked Bedrock shared and added the
+    // ac-runtime → bedrock edge precisely because dimming it told the audience
+    // engine B has no model call. The proxy cannot *observe* that call; that is a
+    // limit of the instrumentation, not of the architecture, and the diagram
+    // should not turn it into a missing component.
+    await expect(bedrock).not.toHaveAttribute('data-state', 'muted');
 
     // Back again, because the interesting failure is the sticky one: a branch that
     // lights on the first switch and never goes dark.

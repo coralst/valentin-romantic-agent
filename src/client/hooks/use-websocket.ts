@@ -149,11 +149,26 @@ export function dispatchServerEvent(
       break;
 
     case 'preference_update':
-      if (event.payload.isNew) {
-        preferencesDispatch({ type: 'ADD_PREFERENCE', preference: event.payload.preference });
-      } else {
-        preferencesDispatch({ type: 'UPDATE_PREFERENCE', preference: event.payload.preference });
-      }
+      // MERGE, not ADD/UPDATE.
+      //
+      // The server flags `isNew` from its own view — "did I just save this
+      // row?" — which is not the same question as "does this client already
+      // hold it?". Two cases where the two disagreed and broke the profile:
+      //
+      // 1. Engine B's Gateway-Lambda path writes a row that this client has
+      //    never seen, and the server has no way to tell (the row is written
+      //    in a Lambda the proxy did not observe). Server sends `isNew: false`
+      //    honestly, `UPDATE_PREFERENCE` looked it up by id, found nothing,
+      //    and dropped the row. Her name never appeared on the brief.
+      // 2. On reconnect the server re-emits every preference so a
+      //    just-reopened tab catches up. `ADD_PREFERENCE` would duplicate
+      //    every row the tab already had.
+      //
+      // MERGE handles both: it looks up by category+key OR id, updates in
+      // place if found and appends if not. `isNew` is left unused on this
+      // side — the flag remains meaningful to the server's telemetry, which
+      // is where it belongs.
+      preferencesDispatch({ type: 'MERGE_PREFERENCE', preference: event.payload.preference });
       break;
 
     // Both boards are on screen while he is talking, so a relative or a

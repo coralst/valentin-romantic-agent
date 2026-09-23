@@ -1,14 +1,14 @@
 import { PROFILE_FIELD_REGISTRY } from './profile-field-registry';
 
 /**
- * What each profile field is *worth* — the ranking behind "Worth asking next"
- * and behind which prompt Valentin pins in the rail.
+ * What each profile field is *worth* — the ranking behind her file's "ask me
+ * what's missing" and behind which prompt Valentin pins in the rail.
  *
  * The registry knows a field's shape (text, date, enum) but not its value to a
- * plan. Love language changes every suggestion Valentin makes; zodiac sign
- * changes none of them. Without a ranking the rail has to ask for every registry
- * field in declaration order, which means it opens by asking for a nickname while it
- * still has no idea what she likes.
+ * plan. An anniversary sets every deadline in the rail; a zodiac sign sets none
+ * of them. Without a ranking the rail has to ask for every registry field in
+ * declaration order, which means it opens by asking for a nickname while it still
+ * has no idea what she likes.
  *
  * `reason` is written to be shown verbatim, in Valentin's voice, as the second
  * line of the pinned nudge (option-5d-brief.html:341). It says why the answer
@@ -26,11 +26,22 @@ export interface FieldPayoff {
  * without renumbering the table.
  */
 export const FIELD_PAYOFFS: Readonly<Record<string, FieldPayoff>> = {
-  // --- Tier 1: changes every recommendation Valentin makes. ---
-  love_language: {
-    rank: 100,
-    reason: "I still don't know her love language — it's the fastest way to make the anniversary land.",
+  /*
+   * --- Tier 0: her name, and nothing else. ---
+   *
+   * Top of the table, above every date and every taste. It used to sit at 15, in
+   * "nice to have, never the thing to ask for next", on the reasoning that a name
+   * changes no recommendation — which is true of the *plan* and wrong about the
+   * conversation. Valentin cannot say one warm sentence about her without it: he
+   * is reduced to "her" and "your partner" while cheerfully asking which cuisine
+   * "she" likes. Ask who she is, then what she likes.
+   */
+  partner_name: {
+    rank: 110,
+    reason: 'What should I call her? I would rather not keep saying "she".',
   },
+
+  // --- Tier 1: changes every recommendation Valentin makes. ---
   anniversary: {
     rank: 95,
     reason: 'Without your anniversary I cannot tell you when to start planning it.',
@@ -135,29 +146,10 @@ export const FIELD_PAYOFFS: Readonly<Record<string, FieldPayoff>> = {
     reason: 'Her style keeps me from suggesting something she would never put on.',
   },
   /*
-   * The four sizes sit as a contiguous cluster between style (26) and colour
-   * (20) rather than on the 5-spacing, because in practice they are one
-   * question — nobody asks for a shoe size on Tuesday and a dress size on
-   * Thursday. Keeping their ranks adjacent means the queue offers them
-   * together, and keeping them integers means the ordering stays total without
-   * relying on the registry tie-break.
+   * Ranks 21–24 are vacant: they were the four sizes, retired with their fields.
+   * Nothing is renumbered to close the gap — the only thing these numbers have to
+   * do is order, and a gap costs nothing while a renumbering touches every row.
    */
-  clothing_size: {
-    rank: 24,
-    reason: 'Her trouser size is the difference between a gift she wears and one she returns.',
-  },
-  shoe_size: {
-    rank: 23,
-    reason: 'A shoe size opens up half the gifts I would otherwise not dare suggest.',
-  },
-  ring_size: {
-    rank: 22,
-    reason: 'Her ring size is worth knowing long before the day you need it.',
-  },
-  shoulder_width: {
-    rank: 21,
-    reason: 'A shoulder measurement is what anything tailored actually turns on.',
-  },
   favorite_color: {
     rank: 20,
     reason: 'A colour she reaches for makes even a small gift feel chosen.',
@@ -168,10 +160,6 @@ export const FIELD_PAYOFFS: Readonly<Record<string, FieldPayoff>> = {
   },
 
   // --- Tier 4: nice to have, never the thing to ask for next. ---
-  partner_name: {
-    rank: 15,
-    reason: 'What should I call her?',
-  },
   nickname: {
     rank: 10,
     reason: 'Does she have a name only you use for her?',

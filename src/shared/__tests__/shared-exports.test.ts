@@ -17,8 +17,10 @@ import type {
 } from '../index';
 
 describe('shared barrel exports', () => {
-  it('exports PREFERENCE_CATEGORIES with exactly 8 entries', () => {
-    expect(PREFERENCE_CATEGORIES).toHaveLength(8);
+  it('exports PREFERENCE_CATEGORIES with exactly 7 entries', () => {
+    // Was 8. `love_language` is retired — it asked for a five-item taxonomy the
+    // conversation answers better in her own words.
+    expect(PREFERENCE_CATEGORIES).toHaveLength(7);
   });
 
   it('PREFERENCE_CATEGORIES contains all expected categories', () => {
@@ -28,7 +30,6 @@ describe('shared barrel exports', () => {
       'music',
       'travel',
       'gifts',
-      'love_language',
       'important_dates',
       'personality_traits',
     ];

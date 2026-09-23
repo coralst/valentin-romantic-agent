@@ -37,8 +37,15 @@ describe('FIELD_PAYOFFS', () => {
     }
   });
 
-  it('ranks love language above zodiac sign, which is the whole point', () => {
-    expect(getFieldRank('love_language')).toBeGreaterThan(getFieldRank('zodiac_sign'));
+  it('ranks her name above every other field, which is the whole point', () => {
+    // Valentin cannot say one warm sentence about her without it, so it outranks
+    // the dates and the tastes rather than sitting among the nice-to-haves.
+    const others = Object.entries(FIELD_PAYOFFS).filter(([id]) => id !== 'partner_name');
+    for (const [id, payoff] of others) {
+      expect(getFieldRank('partner_name'), `partner_name should outrank ${id}`).toBeGreaterThan(
+        payoff.rank,
+      );
+    }
   });
 });
 
@@ -54,11 +61,13 @@ describe('rankUnfilledFields', () => {
     expect(rankUnfilledFields(nothingFilled)).toHaveLength(PROFILE_FIELD_REGISTRY.length);
   });
 
-  it('leads with love language, not with whatever the registry declares first', () => {
+  it('leads with her name, then by payoff rather than by declaration order', () => {
     const gaps = rankUnfilledFields(nothingFilled);
-    expect(gaps[0].fieldId).toBe('love_language');
-    // partner_name is registry index 0 and would win a declaration-order sort.
-    expect(gaps[0].fieldId).not.toBe('partner_name');
+    expect(gaps[0].fieldId).toBe('partner_name');
+    // `partner_name` is also registry index 0, so it cannot show the sort is by
+    // rank. The second row can: the registry declares `nickname` next, and rank
+    // puts `anniversary` there.
+    expect(gaps[1].fieldId).toBe('anniversary');
   });
 
   it('orders strictly by descending rank', () => {
@@ -67,8 +76,8 @@ describe('rankUnfilledFields', () => {
   });
 
   it('drops a field once it is known', () => {
-    const gaps = rankUnfilledFields((fieldId) => fieldId === 'love_language');
-    expect(gaps.some((gap) => gap.fieldId === 'love_language')).toBe(false);
+    const gaps = rankUnfilledFields((fieldId) => fieldId === 'partner_name');
+    expect(gaps.some((gap) => gap.fieldId === 'partner_name')).toBe(false);
     expect(gaps[0].fieldId).toBe('anniversary');
   });
 
@@ -85,7 +94,7 @@ describe('rankUnfilledFields', () => {
 
 describe('getTopFieldGap', () => {
   it('is the highest-payoff unanswered field', () => {
-    expect(getTopFieldGap(nothingFilled)?.fieldId).toBe('love_language');
+    expect(getTopFieldGap(nothingFilled)?.fieldId).toBe('partner_name');
   });
 
   it('is null once nothing is left to ask, so the nudge can hide', () => {

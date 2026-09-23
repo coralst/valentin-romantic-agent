@@ -671,19 +671,19 @@ describe('her people, his tasks and his corrections over HTTP', () => {
     const sessionId = await ownSession('ivan');
 
     const put = await send(
-      `/api/session/${sessionId}/manual/clothing_size`,
+      `/api/session/${sessionId}/manual/favorite_color`,
       'PUT',
       'ivan',
-      { value: 'UK 10' },
+      { value: 'deep green' },
     );
     expect(put.status).toBe(200);
 
     const stored = (await (
       await get(`/api/session/${sessionId}/manual`, 'ivan')
     ).json()) as { manualValues: Record<string, string> };
-    expect(stored.manualValues).toEqual({ clothing_size: 'UK 10' });
+    expect(stored.manualValues).toEqual({ favorite_color: 'deep green' });
 
-    await send(`/api/session/${sessionId}/manual/clothing_size`, 'DELETE', 'ivan');
+    await send(`/api/session/${sessionId}/manual/favorite_color`, 'DELETE', 'ivan');
 
     const cleared = (await (
       await get(`/api/session/${sessionId}/manual`, 'ivan')
@@ -702,8 +702,8 @@ describe('her people, his tasks and his corrections over HTTP', () => {
     await send(`/api/session/${sessionId}/tasks`, 'POST', 'ivan', {
       title: 'Draft the card',
     });
-    await send(`/api/session/${sessionId}/manual/clothing_size`, 'PUT', 'ivan', {
-      value: 'UK 10',
+    await send(`/api/session/${sessionId}/manual/favorite_color`, 'PUT', 'ivan', {
+      value: 'deep green',
     });
 
     const detail = (await (await get(`/api/session/${sessionId}`, 'ivan')).json()) as {
@@ -713,7 +713,7 @@ describe('her people, his tasks and his corrections over HTTP', () => {
     };
     expect(detail.people).toHaveLength(1);
     expect(detail.tasks).toHaveLength(1);
-    expect(detail.manualValues).toEqual({ clothing_size: 'UK 10' });
+    expect(detail.manualValues).toEqual({ favorite_color: 'deep green' });
   });
 
   it("hides another caller's people, tasks and corrections", async () => {

@@ -165,9 +165,12 @@ export const AWS_NODES: readonly AwsNode[] = [
     id: 'bedrock',
     service: 'Amazon Bedrock',
     resourceName: 'Claude Sonnet 4.5',
-    caption: 'Converse API · VPC endpoint',
+    // Called directly from the task on engine A (VPC interface endpoint) and
+    // reached through AgentCore Runtime on engine B — the model is the same on
+    // both. Left as `engine: undefined` because it belongs to neither engine
+    // alone, and dimming it on engine B was the misleading answer.
+    caption: 'Converse on A · via Runtime on B',
     tier: 'data',
-    engine: 'valentin',
   },
   /*
    * One table, and no `engine` field — the single most load-bearing omission in
@@ -454,6 +457,12 @@ const PARENT_BY_ENGINE: Readonly<
     'ac-runtime': 'ac-proxy',
     'ac-memory': 'ac-runtime',
     'ac-gateway': 'ac-runtime',
+    // Bedrock is shared, and on this engine the model call happens inside the
+    // Runtime — so its parent on engine B is `ac-runtime`, not `fargate`. The
+    // drawer never animates this hop live (there is no span for it from the
+    // proxy), but the topology has to include it or the tree test cannot reach
+    // the bedrock node from the browser on engine B.
+    bedrock: 'ac-runtime',
     'ac-lambda-profile': 'ac-gateway',
     'ac-lambda-tools': 'ac-gateway',
     /*
@@ -490,6 +499,7 @@ export type AwsSegmentId =
   | 'ac-proxy-dynamodb'
   | 'ac-runtime-ac-memory'
   | 'ac-runtime-ac-gateway'
+  | 'ac-runtime-bedrock'
   | 'ac-gateway-ac-lambda-profile'
   | 'ac-gateway-ac-lambda-tools'
   | 'ac-lambda-profile-dynamodb'
@@ -538,6 +548,17 @@ export const AWS_SEGMENTS: readonly AwsSegment[] = [
     from: 'ac-runtime',
     to: 'ac-gateway',
     label: 'MCP tool call',
+  },
+  {
+    // Not observable from the proxy (see the ac-runtime node's caption) — but it
+    // *happens*, and drawing it on engine B is the honest answer. The Runtime
+    // calls Bedrock Converse from inside AWS's managed service, on the Runtime's
+    // own role, so this connector is here as a fact rather than as a route the
+    // drawer will ever animate live.
+    id: 'ac-runtime-bedrock',
+    from: 'ac-runtime',
+    to: 'bedrock',
+    label: 'inside AgentCore Runtime',
   },
   {
     id: 'ac-gateway-ac-lambda-profile',

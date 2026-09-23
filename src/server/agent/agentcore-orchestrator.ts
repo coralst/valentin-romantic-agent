@@ -35,6 +35,32 @@ import type { Outing } from '../../shared/interfaces/outing';
  */
 const INTEGRATIONS_TARGET = 'valentin-integrations';
 
+/**
+ * The Gateway tools that write a preference into DynamoDB.
+ *
+ * `agent.py` reports tool names in `toolsUsed` with the Gateway prefix stripped,
+ * so this is the bare name the profile Lambda registers. Kept as a set so a
+ * caller can ask about a single name in constant time — this runs on every turn.
+ */
+const PREFERENCE_WRITE_TOOLS: ReadonlySet<string> = new Set([
+  'save_preference',
+  'update_preference',
+]);
+
+/** True when `tool` is a preference-writing Gateway call, prefix or bare. */
+function isPreferenceWriteTool(tool: string): boolean {
+  // The Runtime sometimes returns the prefixed name (`valentin-profile___save_preference`)
+  // and sometimes the bare one, depending on the SDK version the agent image ran with.
+  // Accept both so a mid-rolling-deploy does not silently stop notifying.
+  const bare = tool.includes('___') ? (tool.split('___')[1] ?? tool) : tool;
+  return PREFERENCE_WRITE_TOOLS.has(bare);
+}
+
+/** True when at least one preference-writing tool ran in this turn. */
+function shouldRefreshPreferences(toolsUsed: readonly string[]): boolean {
+  return toolsUsed.some(isPreferenceWriteTool);
+}
+
 /** The outside world engine B talks to when a proposal is accepted. */
 export interface AgentCoreToolSupport {
   /** Called once per proposal raised, after the agent's reply has been stored. */
@@ -176,6 +202,7 @@ export class AgentCoreOrchestrator implements AgentOrchestratorInterface {
 
     let responseContent: string;
     let raised: GatewayProposal[] = [];
+    let toolsUsed: readonly string[] = [];
     try {
       const reply = await this.runtime.invoke({
         sessionId,
@@ -198,6 +225,7 @@ export class AgentCoreOrchestrator implements AgentOrchestratorInterface {
       });
       responseContent = reply.content;
       raised = reply.proposals ?? [];
+      toolsUsed = reply.toolsUsed ?? [];
     } catch (err) {
       // No retry, and no Bedrock fallback.
       //
@@ -243,7 +271,74 @@ export class AgentCoreOrchestrator implements AgentOrchestratorInterface {
     // telemetry feeds flatter AgentCore by exactly the calls it also defers.
     recordSideWork(this.rememberTurn(sessionId, userMessage, agentMessage));
 
+    /*
+     * Engine B's Gateway-side profile writes, notified back to the UI.
+     *
+     * The `save_preference` tool call is handled entirely inside the Gateway's
+     * Lambda — it writes to DynamoDB from there, and the proxy has no way to
+     * observe that write directly. The AgentCore Memory managed extraction was
+     * meant to be the notification path (`mirrorPreferences` reads it above), but
+     * `ListMemoryRecords` empirically returns zero records for durations well
+     * beyond the "one message" lag the design comment claimed — long enough that
+     * a demo audience sees engine B look silent while engine A's dossier updates
+     * live.
+     *
+     * So: when the Runtime reported a `save_preference` (or `update_preference`)
+     * tool call, we go read DynamoDB directly and re-emit each preference through
+     * `onPreferenceUpdate`. The client dedupes by `(sessionId, category, key)`,
+     * so re-emitting an unchanged preference is a no-op on screen — it costs one
+     * message per stored fact per turn that actually wrote one, and it makes
+     * engine B's profile update at the same time as engine A's.
+     *
+     * Fire-and-forget for the same reason `rememberTurn` is: a slow read must not
+     * sit between the model's answer and the user seeing it.
+     */
+    if (shouldRefreshPreferences(toolsUsed)) {
+      recordSideWork(this.syncPreferencesFromStore(sessionId, userMessage.id, toolsUsed));
+    }
+
     return agentMessage;
+  }
+
+  /**
+   * Read the session's preferences out of the shared table and re-emit them.
+   *
+   * The receiving side (`onPreferenceUpdate` → `event-router.ts`) turns each into
+   * a `preference_update` WebSocket frame. Existing preferences reach the client
+   * with `isNew: false` — the client's reducer treats that as an idempotent
+   * refresh and does not double-render, so this is cheap even on a long session.
+   *
+   * Fire-and-forget: registered with the turn's side work, and errors are logged
+   * rather than thrown. A missed profile update is a worse experience than a
+   * caught error but is not a broken conversation.
+   */
+  private async syncPreferencesFromStore(
+    sessionId: string,
+    sourceMessageId: string,
+    toolsUsed: readonly string[],
+  ): Promise<void> {
+    try {
+      const preferences = await this.storage.getPreferencesBySession(sessionId);
+      logger.info('agentcore.preferences.synced', {
+        sessionId,
+        sourceMessageId,
+        toolsUsed: toolsUsed.filter(isPreferenceWriteTool).length,
+        preferenceCount: preferences.length,
+      });
+      for (const pref of preferences) {
+        // `isNew: false` — the truth we can name honestly. We do not know whether
+        // *this turn* created or updated any given row; the Gateway's Lambda owns
+        // that history, and telling the UI "new" when it was created three turns
+        // ago would put a "Noted" badge on the wrong message. The reducer keeps
+        // the row on refresh either way.
+        this.onPreferenceUpdate?.(pref, false);
+      }
+    } catch (err) {
+      logger.warn('agentcore.preferences.sync_failed', {
+        sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**

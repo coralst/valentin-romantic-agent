@@ -285,7 +285,7 @@ Open any merged PR to read the multi-persona review dialogue — start with
 Valentin is an AI romantic concierge that builds a detailed profile of your
 partner's preferences through natural conversation. You chat with a warm,
 sophisticated agent; it listens and automatically extracts structured insights —
-favourite foods, hobbies, love languages, important dates — into a live Partner
+favourite foods, hobbies, music, important dates — into a live Partner
 Profile dashboard.
 
 1. **Conversational onboarding** — Valentin collects basic partner info (name,
@@ -352,7 +352,6 @@ Profile dashboard.
 | `music` | Genres, artists, concert preferences |
 | `travel` | Dream destinations, travel style |
 | `gifts` | Wish-list items, preferred gift types |
-| `love_language` | How they give and receive love |
 | `important_dates` | Birthdays, anniversaries, milestones |
 | `personality_traits` | Temperament, social style, values |
 

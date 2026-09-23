@@ -94,13 +94,6 @@ export const DEMO_PROFILE_PREFERENCES: readonly ExtractedPreference[] = [
     confidence: 0.89,
   },
   {
-    category: 'love_language',
-    key: 'primary',
-    fieldId: 'love_language',
-    value: 'Quality Time',
-    confidence: 0.92,
-  },
-  {
     category: 'important_dates',
     key: 'together since',
     fieldId: 'relationship_duration',
@@ -172,52 +165,9 @@ export const DEMO_PROFILE_PREFERENCES: readonly ExtractedPreference[] = [
     confidence: 0.79,
   },
 
-  // --- Sizes ---
-  //
-  // Both scales, the way someone who has actually bought her something writes it
-  // down. Confidence is high because a size is either known or it is not — there
-  // is no "probably a 6" that is worth acting on.
-  //
-  // Deliberately absent from `demo-history.ts`: the transcripts are pinned to
-  // the profile by `__tests__/demo-personas.test.ts`, and inventing a line where
-  // she announces her ring size to make the numbers match would be a worse
-  // demo than a panel that simply knows something the visible history does not.
-  // Valentin is meant to remember more than the last five conversations.
-  {
-    category: 'gifts',
-    key: 'clothing size',
-    fieldId: 'clothing_size',
-    // Shortened when this became one of the numbers in a measurements row: the
-    // old "UK 10 / EU 38 — sizes up for knitwear" wrapped to two lines and threw
-    // the other measurements out of alignment. The knitwear note belongs in
-    // her style notes, not in a size cell.
-    value: 'UK 10',
-    confidence: 0.9,
-  },
-  {
-    category: 'gifts',
-    key: 'shoe size',
-    fieldId: 'shoe_size',
-    value: 'UK 6 / EU 39',
-    confidence: 0.94,
-  },
-  {
-    category: 'gifts',
-    key: 'ring size',
-    fieldId: 'ring_size',
-    value: 'UK M (US 6)',
-    confidence: 0.82,
-  },
-  // The ones the measurements card shows. Bare numbers, not sentences: they sit
-  // in a row of their own on the card, where a clause like "sizes up for
-  // knitwear" would wrap and break the alignment.
-  {
-    category: 'gifts',
-    key: 'shoulder width',
-    fieldId: 'shoulder_width',
-    value: '38 cm',
-    confidence: 0.72,
-  },
+  // No sizes, no measurements, no love language: those fields are retired, and a
+  // seed row for one would resolve to nothing and land in "Also mentioned" as a
+  // stray. See the note where the ids used to be in `profile-fields.ts`.
 
   // --- Style ---
   //

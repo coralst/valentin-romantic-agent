@@ -200,9 +200,17 @@ const rowStyle: React.CSSProperties = {
   // The time is the last column, not the first: the eye scans this list for *what*
   // happened, and a leading clock column would push the service name away from the
   // coloured category chip that qualifies it.
-  gridTemplateColumns: '16px 66px 1fr 46px 52px',
+  //
+  // Column widths sized so common engine-B service names ("AgentCore Runtime",
+  // "AgentCore Memory", "Profile tools", "Integration tools") fit on one line at
+  // 10.5px, and the duration column has room for the four-digit millisecond
+  // labels a real AgentCore call routinely produces (`4550ms`).
+  gridTemplateColumns: '16px 100px 1fr 52px 56px',
   gap: 8,
-  alignItems: 'center',
+  // `start` rather than `center` because rows can wrap now: a two-line detail
+  // next to a one-line duration used to leave the duration floating in the
+  // middle of the row, which is what "looks bad" pointed at.
+  alignItems: 'start',
   padding: '5px 0',
   borderBottom: `1px solid ${colors.border}`,
   fontSize: 10.5,
@@ -426,9 +434,12 @@ export function AwsFlowFeed({
                   color: isSelected || isCurrent ? '#8C2F45' : '#756A70',
                   lineHeight: 1.3,
                   minWidth: 0,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
+                  // Wraps by default so a presenter can always read the whole
+                  // action label. The list is no longer a compact one-line-per-row
+                  // scan; in exchange the group header is legible on stage.
+                  overflow: 'visible',
+                  textOverflow: 'clip',
+                  whiteSpace: 'normal',
                 }}
               >
                 {group.action}
@@ -589,15 +600,21 @@ export function AwsFlowFeed({
                             {row.service}
                           </span>
                           <span
+                            title={`${row.operation} ${row.detail}`}
                             style={{
                               color: '#756A70',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
+                              // Wraps by default so a presenter can always read the
+                              // whole caption without hovering or selecting. The
+                              // list is no longer a compact one-line-per-row scan;
+                              // in exchange the row it captions is legible on stage.
+                              overflow: 'visible',
+                              textOverflow: 'clip',
+                              whiteSpace: 'normal',
+                              lineHeight: 1.4,
                               // A grid item's automatic minimum is its content, so `1fr`
                               // could not actually shrink: the row stayed as wide as the
                               // longest detail string and the clock column hung off the
-                              // panel's right edge. This is what makes the ellipsis work.
+                              // panel's right edge.
                               minWidth: 0,
                             }}
                           >

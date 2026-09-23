@@ -210,7 +210,9 @@ describe('AgentOrchestrator', () => {
       const greeting = await orchestrator.greetIfEmpty('sess-1');
 
       expect(greeting?.content).toContain('Samantha');
-      expect(greeting?.content).not.toMatch(/what's something your partner absolutely loves/i);
+      // The stranger's greeting asks her name; a session that already has one must
+      // not be asked again.
+      expect(greeting?.content).not.toMatch(/what's her name/i);
     });
   });
 

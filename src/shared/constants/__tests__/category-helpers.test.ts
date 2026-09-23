@@ -25,7 +25,7 @@ describe('isPreferenceCategory', () => {
 describe('getCategoryLabel', () => {
   it('returns the display label for a known category', () => {
     expect(getCategoryLabel('food')).toBe('Food');
-    expect(getCategoryLabel('love_language')).toBe('Love Language');
+    expect(getCategoryLabel('important_dates')).toBe('Important Dates');
   });
 
   it('returns undefined for an unknown category', () => {
@@ -37,10 +37,10 @@ describe('preferenceCategoryCount', () => {
   // Assert the concrete count rather than PREFERENCE_CATEGORIES.length. The
   // implementation returns that length, so comparing against it restates the
   // implementation and would keep passing if a category were accidentally added
-  // or dropped. Pinning 8 makes such a change fail here deliberately, and 8 is
-  // the number documented in the README.
-  it('reports the eight documented categories', () => {
-    expect(preferenceCategoryCount()).toBe(8);
+  // or dropped. Pinning 7 makes such a change fail here deliberately, and 7 is
+  // the number documented in the README. (Was 8; `love_language` is retired.)
+  it('reports the seven documented categories', () => {
+    expect(preferenceCategoryCount()).toBe(7);
   });
 
   it('stays in sync with the category constant', () => {

@@ -1099,11 +1099,11 @@ describe('createHttpRoutes', () => {
     });
 
     it('stores the user\'s own answer for a field', async () => {
-      const result = await routes.setManualValue(sessionId, 'clothing_size', { value: 'UK 10' });
+      const result = await routes.setManualValue(sessionId, 'favorite_color', { value: 'deep green' });
 
       expect(result.status).toBe(200);
       expect((await routes.getManualValues(sessionId)).body).toEqual({
-        manualValues: { clothing_size: 'UK 10' },
+        manualValues: { favorite_color: 'deep green' },
       });
     });
 
@@ -1119,18 +1119,18 @@ describe('createHttpRoutes', () => {
 
     it('rejects a blank value, since clearing has its own verb', async () => {
       expect(
-        (await routes.setManualValue(sessionId, 'clothing_size', { value: '  ' })).status,
+        (await routes.setManualValue(sessionId, 'favorite_color', { value: '  ' })).status,
       ).toBe(400);
     });
 
     it('clears one value and leaves the others', async () => {
-      await routes.setManualValue(sessionId, 'clothing_size', { value: 'UK 10' });
-      await routes.setManualValue(sessionId, 'shoe_size', { value: 'UK 6' });
+      await routes.setManualValue(sessionId, 'favorite_color', { value: 'deep green' });
+      await routes.setManualValue(sessionId, 'music_genre', { value: 'rock' });
 
-      await routes.clearManualValue(sessionId, 'clothing_size');
+      await routes.clearManualValue(sessionId, 'favorite_color');
 
       expect((await routes.getManualValues(sessionId)).body).toEqual({
-        manualValues: { shoe_size: 'UK 6' },
+        manualValues: { music_genre: 'rock' },
       });
     });
 
@@ -1151,8 +1151,8 @@ describe('createHttpRoutes', () => {
 
     it('leaves reminders alone for a field no reminder is derived from', async () => {
       // The gate matters: a re-plan is two reads and up to four writes, and almost
-      // every correction ("UK 10") has nothing to do with a date.
-      await routes.setManualValue(sessionId, 'clothing_size', { value: 'UK 10' });
+      // every correction ("deep green") has nothing to do with a date.
+      await routes.setManualValue(sessionId, 'favorite_color', { value: 'deep green' });
 
       expect(await store.getRemindersBySession(sessionId)).toEqual([]);
     });
@@ -1537,9 +1537,9 @@ describe('createHttpRoutes', () => {
 
       const corrected = await routes.handleRequest({
         method: 'PUT',
-        url: `/session/${sessionId}/manual/clothing_size`,
+        url: `/session/${sessionId}/manual/favorite_color`,
         params: {},
-        body: { value: 'UK 10' },
+        body: { value: 'deep green' },
       });
       expect(corrected.status).toBe(200);
 

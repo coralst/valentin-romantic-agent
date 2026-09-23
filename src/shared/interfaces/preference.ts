@@ -1,11 +1,18 @@
-/** The defined preference categories for spouse profiling */
+/**
+ * The defined preference categories for spouse profiling.
+ *
+ * `love_language` used to be one of them. It is retired: it asked the user to
+ * pick from a five-item taxonomy, which the conversation answers better in her
+ * own words, and every plan it was supposed to shape is shaped by `hobbies`,
+ * `gifts` and `food` anyway. Rows persisted under it are dropped on load rather
+ * than rendered — see `bucketFor` in `use-preferences-state.ts`.
+ */
 export type PreferenceCategory =
   | 'food'
   | 'hobbies'
   | 'music'
   | 'travel'
   | 'gifts'
-  | 'love_language'
   | 'important_dates'
   | 'personality_traits';
 

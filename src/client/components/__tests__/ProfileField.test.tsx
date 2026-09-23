@@ -21,12 +21,12 @@ const dateField: ProfileFieldDefinition = {
 };
 
 const enumField: ProfileFieldDefinition = {
-  id: 'love_language',
-  label: 'Love Language',
+  id: 'zodiac_sign',
+  label: 'Zodiac Sign',
   valueType: 'enum',
-  section: 'relationship',
-  enumOptions: ['Words of Affirmation', 'Acts of Service', 'Receiving Gifts', 'Quality Time', 'Physical Touch'],
-  mappings: [{ category: 'love_language', key: 'primary' }],
+  section: 'basics',
+  enumOptions: ['Aries', 'Taurus', 'Gemini', 'Cancer'],
+  mappings: [{ category: 'personality_traits', key: 'zodiac sign' }],
 };
 
 describe('ProfileField', () => {
@@ -140,8 +140,8 @@ describe('ProfileField', () => {
 
   it('renders enum as select input', () => {
     render(<ProfileField {...defaultProps} definition={enumField} value={null} />);
-    fireEvent.click(screen.getByTestId('edit-btn-love_language'));
-    const select = screen.getByTestId('input-love_language');
+    fireEvent.click(screen.getByTestId('edit-btn-zodiac_sign'));
+    const select = screen.getByTestId('input-zodiac_sign');
     expect(select.tagName.toLowerCase()).toBe('select');
   });
 

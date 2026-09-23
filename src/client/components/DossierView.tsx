@@ -14,7 +14,6 @@ import { getAgeBucketFromValue } from '../utils/age-bucket';
 import { formatBirthdayValue } from '../utils/birthday-display';
 import { deriveCautions } from './brief/KeepInMind';
 import { IdentityHeader } from './dossier/IdentityHeader';
-import { HerSizes } from './dossier/HerSizes';
 import { HerPalette } from './dossier/HerPalette';
 import { GiftShortlist } from './dossier/GiftShortlist';
 import { HerWeek } from './dossier/HerWeek';
@@ -441,9 +440,9 @@ export function DossierView({ isMobile = false }: DossierViewProps) {
     [occasions, outingList],
   );
 
+  // Three tiles, not four: "What fits her" is gone with the size fields.
   const tiles = (
     <>
-      <HerSizes getFieldValue={getFieldValue} onAsk={askAbout} />
       <HerPalette
         shades={palette}
         caution={cautions[0]?.title ?? null}

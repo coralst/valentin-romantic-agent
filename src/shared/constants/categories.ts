@@ -7,7 +7,6 @@ export const PREFERENCE_CATEGORIES: readonly PreferenceCategory[] = [
   'music',
   'travel',
   'gifts',
-  'love_language',
   'important_dates',
   'personality_traits',
 ] as const;
@@ -38,10 +37,6 @@ export const CATEGORY_LABELS: Record<PreferenceCategory, CategoryMeta> = {
   gifts: {
     label: 'Gifts',
     description: 'Gift preferences, wish list items, price range',
-  },
-  love_language: {
-    label: 'Love Language',
-    description: 'How they express and receive love',
   },
   important_dates: {
     label: 'Important Dates',

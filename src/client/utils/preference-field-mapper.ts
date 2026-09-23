@@ -112,10 +112,6 @@ const KEY_SYNONYMS: Readonly<Record<string, string | null>> = {
   'how we met': 'how_we_met',
   'how they met': 'how_we_met',
   'meeting story': 'how_we_met',
-  // --- love_language ---
-  'love language': 'love_language',
-  'primary love language': 'love_language',
-  primary: 'love_language',
   // --- favorite_cuisine ---
   cuisine: 'favorite_cuisine',
   'favorite cuisine': 'favorite_cuisine',
@@ -225,6 +221,22 @@ const KEY_SYNONYMS: Readonly<Record<string, string | null>> = {
   intolerance: null,
   pronoun: null,
   gender: null,
+  /*
+   * Sizes and measurements, retired along with their registry fields.
+   *
+   * They are listed rather than simply absent so that a size the user volunteers
+   * anyway resolves to "not a field" instead of being token-matched into a
+   * neighbouring `gifts` field — filing a shoe size under her wish list would be
+   * worse than not filing it at all. Nothing asks for these any more; see the note
+   * where the ids used to be in `profile-fields.ts`.
+   */
+  'clothing size': null,
+  'dress size': null,
+  'trouser size': null,
+  'shoe size': null,
+  'ring size': null,
+  'shoulder width': null,
+  'love language': null,
 };
 
 /**
@@ -251,7 +263,6 @@ const CATEGORY_DEFAULT_FIELD: Partial<Record<PreferenceCategory, string>> = {
   hobbies: 'hobbies',
   music: 'music_genre',
   travel: 'travel_destination',
-  love_language: 'love_language',
 };
 
 /** Build the lookup map from registry mappings, keys normalized. */

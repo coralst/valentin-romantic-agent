@@ -512,7 +512,7 @@ export class AgentCoreStack extends cdk.Stack {
     const categoryArg = {
       type: 'string',
       description:
-        'One of: food, hobbies, music, travel, gifts, love_language, important_dates, personality_traits',
+        'One of: food, hobbies, music, travel, gifts, important_dates, personality_traits',
     };
 
     const gatewayTarget = new agentcore.CfnGatewayTarget(this, 'ProfileToolsTarget', {

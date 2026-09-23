@@ -18,22 +18,25 @@ import { SectionHead } from './SectionHead';
  *
  * WHY THIS IS NOT SHOWN ONCE SOMETHING IS KNOWN
  *
- * The rail already has two modules whose job is the filled-in and the still-
- * missing view — the "Good to know" chip strip and "Worth asking next", which is
- * ranked by payoff rather than by this hand-picked order. A permanent third list
- * would say the same things a third time. So the skeleton is the zero state's
- * content and hands over to them at the first fact.
+ * The rail already has the module whose job is the filled-in view — the "Good to
+ * know" chip strip, which keeps its first two slots visible while they are empty
+ * precisely so it can invite an answer. A permanent second list would say the same
+ * things twice. So the skeleton is the zero state's content and hands over to it at
+ * the first fact.
  */
 
 /**
  * The curated rows, by field id.
  *
- * NOT the whole registry. Twenty-one dashes is a wall, it pushes the pinned
- * nudge off the fold on a laptop, and it makes the profile look like a form to
- * complete rather than a conversation to have. These are the ten a person would
- * actually expect a romantic assistant to hold: the highest-payoff facts from
- * `field-payoff.ts`, plus the three sizes — which are the ones visitors are
- * surprised and pleased to see a place for.
+ * NOT the whole registry. Twenty dashes is a wall, it pushes the pinned nudge off
+ * the fold on a laptop, and it makes the profile look like a form to complete
+ * rather than a conversation to have. These are the ones a person would actually
+ * expect a romantic assistant to hold: the highest-payoff facts from
+ * `field-payoff.ts`.
+ *
+ * Her name is the first row, and it is first for the same reason it now tops
+ * `field-payoff.ts`: the shape of what Valentin is about to learn should open with
+ * who she is, not with what she likes.
  *
  * Labels are read from the registry rather than repeated here, so a relabelled
  * field cannot end up named two different things in two places.
@@ -45,25 +48,19 @@ const SKELETON_GROUPS: ReadonlyArray<{ label: string; fieldIds: readonly string[
       'partner_name',
       'birthday',
       'anniversary',
-      'love_language',
       'hobbies',
       'favorite_cuisine',
       'gift_budget',
     ],
   },
   {
-    // Their own group because that is how they are used: you look up all three
-    // at once, standing in a shop.
-    label: 'Her sizes',
-    fieldIds: ['clothing_size', 'shoe_size', 'ring_size'],
-  },
-  {
     /*
      * The only group that is about him, and two rows rather than one per
      * logistics field, because the skeleton is capped at twelve — a longer wall
      * of dashes pushes the pinned nudge off the fold, which is the bug pinning it
-     * was meant to fix (`BriefSkeleton.test.tsx`). The twelve are already spoken
-     * for, so a new logistics field does not get a row here by default.
+     * was meant to fix (`BriefSkeleton.test.tsx`). It now runs to eight rather than
+     * twelve, having lost a love language and three sizes, and the spare slots stay
+     * spare: a shorter zero state is a better one.
      *
      * These two earn the slots because they are the ones with no usable default:
      * with no city there is nowhere to search from and with no occasion there is

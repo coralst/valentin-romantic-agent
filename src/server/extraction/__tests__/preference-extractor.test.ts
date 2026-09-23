@@ -256,7 +256,7 @@ describe('categoryMapper', () => {
   it('maps valid categories directly', () => {
     expect(mapCategory('food')).toBe('food');
     expect(mapCategory('hobbies')).toBe('hobbies');
-    expect(mapCategory('love_language')).toBe('love_language');
+    expect(mapCategory('important_dates')).toBe('important_dates');
   });
 
   it('maps known aliases', () => {
@@ -490,7 +490,7 @@ describe('PreferenceExtractor — date canonicalisation', () => {
   });
 
   it('never touches non-date fields, whatever their value looks like', async () => {
-    extracting('03-02', 'clothing_size');
+    extracting('03-02', 'favorite_color');
     await extractor.extract(makeMessage(), []);
     expect(savedValue()).toBe('03-02');
   });

@@ -124,15 +124,6 @@ function buildSentences(getFieldValue: FieldLookup, name: string | null): string
     sentences.push(`Her week: ${said.join(', and ')}.`);
   }
 
-  /*
-   * Lower-cased whole, not just its first letter: `love_language` is a
-   * Title-Cased enum ("Quality Time"), so `uncapitalize` left "quality Time"
-   * mid-sentence. Safe to flatten because the option list is a closed set of
-   * common nouns — no proper noun can appear here.
-   */
-  const love = read(getFieldValue, 'love_language');
-  if (love) sentences.push(`What lands with her is ${love.toLowerCase()}.`);
-
   return sentences;
 }
 
@@ -151,7 +142,6 @@ const TASTE_CHIP_FIELDS: readonly { fieldId: string; prefix?: string }[] = [
   { fieldId: 'favorite_color' },
   { fieldId: 'fragrance_preference' },
   { fieldId: 'travel_destination' },
-  { fieldId: 'love_language' },
   { fieldId: 'clothing_style' },
 ];
 

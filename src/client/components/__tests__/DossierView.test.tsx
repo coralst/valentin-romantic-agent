@@ -112,17 +112,17 @@ describe('DossierView — three bands', () => {
     expect(screen.getByTestId('dossier-identity')).not.toHaveTextContent('How well I know her');
   });
 
-  it('puts the four tiles inside "Everything I know", not in a band of their own', () => {
+  it('puts the three tiles inside "Everything I know", not in a band of their own', () => {
     renderDossier([{ fieldId: 'partner_name', value: 'Samantha' }]);
     const card = screen.getByTestId('dossier-everything');
-    for (const tile of [
-      'dossier-her-sizes',
-      'dossier-her-palette',
-      'dossier-gift-shortlist',
-      'dossier-her-week',
-    ]) {
+    for (const tile of ['dossier-her-palette', 'dossier-gift-shortlist', 'dossier-her-week']) {
       expect(card).toContainElement(screen.getByTestId(tile));
     }
+  });
+
+  it('has no "What fits her" tile — the size fields are retired', () => {
+    renderDossier([{ fieldId: 'partner_name', value: 'Samantha' }]);
+    expect(screen.queryByTestId('dossier-her-sizes')).not.toBeInTheDocument();
   });
 
   it('draws four weeks of real days, and lights at most one of them', () => {

@@ -55,13 +55,13 @@ describe('DEMO_PROFILE_PREFERENCES', () => {
     expect(resolved.size).toBe(DEMO_PROFILE_PREFERENCES.length);
   });
 
-  it('knows her sizes, including the scale they are quoted in', () => {
-    // The demo is a gift assistant. A size with no scale ("6") is a fact you
-    // cannot act on, so the fixture states both and this pins it.
-    for (const id of ['clothing_size', 'shoe_size'] as const) {
-      expect(resolved.get(id)).toMatch(/UK|EU|US/);
+  it('seeds no size, measurement or love language', () => {
+    // Those fields are retired, and the fixture is the one place a retired field
+    // can come back to life unnoticed: a seeded row would resolve to no field and
+    // surface as a stray in "Also mentioned".
+    for (const id of ['clothing_size', 'shoe_size', 'ring_size', 'shoulder_width', 'love_language']) {
+      expect(resolved.has(id)).toBe(false);
     }
-    expect(resolved.get('ring_size')).toBeTruthy();
   });
 
   /**

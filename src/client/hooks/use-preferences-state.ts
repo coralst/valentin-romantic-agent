@@ -51,13 +51,30 @@ export type PreferencesAction =
   | { type: 'CLEAR_HIGHLIGHT'; preferenceId: string }
   | { type: 'LOAD_PREFERENCES'; preferences: PreferenceWithHistory[] };
 
-/** Build an empty preferences record with all 8 categories */
+/** Build an empty preferences record with one bucket per live category */
 function createEmptyPreferences(): Record<PreferenceCategory, PreferenceWithHistory[]> {
   const result = {} as Record<PreferenceCategory, PreferenceWithHistory[]>;
   for (const cat of PREFERENCE_CATEGORIES) {
     result[cat] = [];
   }
   return result;
+}
+
+/**
+ * The bucket for a category, or null when there is no such bucket.
+ *
+ * A row can arrive in a category this build no longer has — `love_language` was
+ * retired, and every session persisted before that still holds rows filed under
+ * it. This used to be `state.preferences[category]` read straight, so one retired
+ * row spread `undefined` (or pushed onto it in `LOAD_PREFERENCES`) and took the
+ * whole dossier down on hydration. Retiring a category has to be survivable by
+ * the data already written under it, so an unknown one is dropped, not thrown.
+ */
+function bucketFor(
+  preferences: Record<PreferenceCategory, PreferenceWithHistory[]>,
+  category: PreferenceCategory,
+): PreferenceWithHistory[] | null {
+  return preferences[category] ?? null;
 }
 
 const initialState: PreferencesState = {
@@ -74,11 +91,13 @@ export function preferencesReducer(
   switch (action.type) {
     case 'ADD_PREFERENCE': {
       const category = action.preference.category;
+      const rows = bucketFor(state.preferences, category);
+      if (!rows) return state;
       return {
         ...state,
         preferences: {
           ...state.preferences,
-          [category]: [...state.preferences[category], action.preference],
+          [category]: [...rows, action.preference],
         },
         // Only the socket dispatches this, and only for an extraction that has
         // just happened — so this is exactly the set worth announcing.
@@ -88,7 +107,9 @@ export function preferencesReducer(
 
     case 'UPDATE_PREFERENCE': {
       const category = action.preference.category;
-      const updated = state.preferences[category].map((p) =>
+      const existingRows = bucketFor(state.preferences, category);
+      if (!existingRows) return state;
+      const updated = existingRows.map((p) =>
         p.id === action.preference.id ? action.preference : p,
       );
       const newRecentlyUpdated = new Set(state.recentlyUpdated);
@@ -107,7 +128,8 @@ export function preferencesReducer(
 
     case 'MERGE_PREFERENCE': {
       const category = action.preference.category;
-      const rows = state.preferences[category];
+      const rows = bucketFor(state.preferences, category);
+      if (!rows) return state;
       const existing = rows.findIndex(
         (p) => p.key === action.preference.key || p.id === action.preference.id,
       );
@@ -139,7 +161,9 @@ export function preferencesReducer(
     case 'LOAD_PREFERENCES': {
       const grouped = createEmptyPreferences();
       for (const pref of action.preferences) {
-        grouped[pref.category].push(pref);
+        // Rows in a retired category are dropped here rather than crashing the
+        // load — see `bucketFor`.
+        bucketFor(grouped, pref.category)?.push(pref);
       }
       return {
         preferences: grouped,

@@ -26,7 +26,6 @@ export const PROFILE_FIELD_IDS = [
   // Relationship
   'anniversary',
   'how_we_met',
-  'love_language',
   'relationship_duration',
   // Interests
   'favorite_cuisine',
@@ -39,11 +38,14 @@ export const PROFILE_FIELD_IDS = [
   'favorite_color',
   'color_palette',
   'fragrance_preference',
-  // Sizes
-  'clothing_size',
-  'shoe_size',
-  'ring_size',
-  'shoulder_width',
+  /*
+   * There is deliberately no size or measurement field here, and there should not
+   * be one: a dress size, a shoe size and a shoulder width are the most intimate
+   * facts a person could hand this app, they are worth nothing to the planning it
+   * actually does, and a chatbot that asks for them reads as a chatbot that is
+   * profiling her body. `love_language` went the same way — it invited a taxonomy
+   * answer to a question the conversation answers better in her own words.
+   */
   // Gifts
   'gift_budget',
   'wish_list',
@@ -99,11 +101,10 @@ export const PROFILE_FIELD_IDS = [
  * How far from home the user will go for an evening out.
  *
  * A closed set rather than free text because this value is **parsed**: it becomes
- * `radius=` metres on a Places request. `shoulder_width` gets away with "38 cm"
- * because that string is only ever shown to a human who is buying a jacket, while
- * "about twenty minutes away" is a perfectly natural thing to type and parses to
- * nothing at all. A field whose value has to round-trip into an integer should not
- * be free text.
+ * `radius=` metres on a Places request. "About twenty minutes away" is a perfectly
+ * natural thing to type and parses to nothing at all, so a field whose value has to
+ * round-trip into an integer should not be free text — unlike `gift_budget`, whose
+ * string is only ever read by a human.
  *
  * Here rather than in the client registry because the server does the parsing and
  * cannot import from `src/client/` — which is the reason this file exists.
@@ -246,8 +247,6 @@ export const PROFILE_FIELD_GUIDANCE: Readonly<Record<ProfileFieldId, string>> = 
   zodiac_sign: 'Her star sign, if named or unambiguously implied by a birth date.',
   anniversary: 'The date the couple married or formally celebrates as their anniversary.',
   how_we_met: 'The story or setting of how the couple first met.',
-  love_language:
-    'How she most feels loved: words of affirmation, acts of service, receiving gifts, quality time, or physical touch.',
   relationship_duration: 'When the couple got together, or how long they have been together.',
   favorite_cuisine: 'A style of food or cuisine she loves.',
   music_genre: 'A genre, artist, or style of music she loves.',
@@ -260,15 +259,6 @@ export const PROFILE_FIELD_GUIDANCE: Readonly<Record<ProfileFieldId, string>> = 
   color_palette:
     'The named colours she actually wears or decorates with, most characteristic first — "Deep sage, Linen, Oat, Blush". Use her words for the shade, not a hex code or a colour you consider close. Use favorite_color for a single colour she has called her favourite; use this for the range.',
   fragrance_preference: 'A perfume or scent family she wears or likes.',
-  // Sizes are recorded verbatim, in whatever scale the user says them in — a
-  // model that "helpfully" converts UK 6 to EU 39 has invented a fact.
-  clothing_size:
-    'Her clothing, dress or trouser size, exactly as stated, including the scale (UK, EU, US, S/M/L).',
-  shoe_size: 'Her shoe size, exactly as stated, including the scale (UK, EU, US).',
-  ring_size:
-    'Her ring size, exactly as stated. Use this only for a ring — never for a clothing or shoe size.',
-  shoulder_width:
-    'Her shoulder measurement, with its unit — "38 cm", "15 in". Only for a measured width across the shoulders, which is what tailoring needs; not a jacket size.',
   gift_budget: 'What the user is comfortable spending on a gift.',
   wish_list: 'Something specific she has said she wants.',
   gift_shortlist:

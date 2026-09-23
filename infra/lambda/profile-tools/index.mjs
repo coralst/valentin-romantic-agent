@@ -69,7 +69,8 @@ const CATEGORIES = new Set([
   'music',
   'travel',
   'gifts',
-  'love_language',
+  // No `love_language`: it is retired from the union. A row written under it here
+  // would be dropped when the profile UI hydrates.
   'important_dates',
   'personality_traits',
 ]);

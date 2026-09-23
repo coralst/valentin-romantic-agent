@@ -84,12 +84,12 @@ describe('EverythingIKnow', () => {
 
     const row = screen
       .getAllByTestId('dossier-field')
-      .find((node) => node.getAttribute('data-field-id') === 'love_language');
+      .find((node) => node.getAttribute('data-field-id') === 'fragrance_preference');
     expect(row).toHaveAttribute('data-known', 'false');
 
-    await user.click(screen.getByRole('button', { name: 'Ask about her love language' }));
+    await user.click(screen.getByRole('button', { name: 'Ask about her fragrance' }));
     expect(onAsk).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'love_language' }),
+      expect.objectContaining({ id: 'fragrance_preference' }),
     );
   });
 

@@ -52,43 +52,30 @@ describe('PROFILE_FIELD_REGISTRY', () => {
   });
 
   /**
-   * The sizing facts a gift assistant is expected to hold.
+   * The retired fields, pinned by id so they cannot come back by accident.
    *
-   * Pinned by id rather than left to the general shape tests above, because
-   * these three are the ones a well-meaning tidy-up would fold back into
-   * "Style" or drop as niche — and they are the ones visitors ask for first.
+   * A dress size, a shoe size and a shoulder width are the most intimate facts a
+   * person could hand this app, they are worth nothing to the planning it does,
+   * and asking for them reads as profiling her body. `love_language` went the
+   * same way: it invited a taxonomy answer to a question the conversation
+   * answers better in her own words.
    */
-  it('holds the gift-relevant sizes, grouped as sizes', () => {
-    for (const id of ['clothing_size', 'shoe_size', 'ring_size']) {
-      const field = getFieldById(id);
-      expect(field, `missing field "${id}"`).toBeDefined();
-      expect(field!.section).toBe('sizes');
-      // Free text, not an enum: real answers are "UK 6 / EU 39" and "a 10 in
-      // most things", neither of which fits a canonical scale.
-      expect(field!.valueType).toBe('text');
+  it('holds no size, measurement or love language field', () => {
+    for (const id of [
+      'clothing_size',
+      'shoe_size',
+      'ring_size',
+      'shoulder_width',
+      'love_language',
+    ]) {
+      expect(getFieldById(id), `retired field "${id}" is back`).toBeUndefined();
     }
   });
 
-  /**
-   * The measurements the dossier's "What fits her" card draws.
-   *
-   * Pinned separately from the gift sizes above because the card shows exactly
-   * these two, in this order, and a tidy-up that renamed `clothing_size` back to
-   * "Clothing Size" would leave the card claiming a generic word for a row
-   * sitting beside a shoulder measurement.
-   */
-  it('holds the measurements the card shows, labelled for it', () => {
-    const expected: Array<[string, string]> = [
-      ['clothing_size', 'Trousers'],
-      ['shoulder_width', 'Shoulders'],
-    ];
-    for (const [id, label] of expected) {
-      const field = getFieldById(id);
-      expect(field, `missing field "${id}"`).toBeDefined();
-      expect(field!.section).toBe('sizes');
-      expect(field!.valueType).toBe('text');
-      expect(field!.label).toBe(label);
-    }
+  it('has no sizes section left to put one in', () => {
+    // Pinned so a restored field cannot quietly bring the whole band back with
+    // it: a section with rows is a heading on screen.
+    expect(PROFILE_FIELD_REGISTRY.some((field) => field.section === 'sizes')).toBe(false);
   });
 
   /**

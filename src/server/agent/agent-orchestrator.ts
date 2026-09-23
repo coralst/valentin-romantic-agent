@@ -168,9 +168,14 @@ export function buildWelcomeMessage(
   // The demo login seeds a complete partner *before* the browser has loaded, so
   // the transcript is empty while the profile is full — and the introduction
   // then reads as though Valentin had forgotten her between visits.
+  // The stranger's greeting asks her name and nothing else. It used to open on
+  // "what's something your partner absolutely loves?", which put a taste question
+  // ahead of the one fact every later sentence depends on — and left Valentin
+  // calling her "your partner" while cheerfully discussing what "she" likes. The
+  // prompt's GOAL 1 makes the same ordering rule for every turn after this one.
   const content = partnerName
     ? `Welcome back. I've got ${partnerName} on file and I'm keeping an eye on the dates that matter. Anything you'd like to plan, or anything new I should know about her?`
-    : "Hello! I'm Valentin, your romantic concierge. I'm here to help you build a thoughtful profile of your special someone. Tell me — what's something your partner absolutely loves?";
+    : "Hello! I'm Valentin, your romantic concierge. I'm here to help you plan something she'll remember. Let's start with the basics — what's her name?";
 
   return {
     id: crypto.randomUUID(),

@@ -29,8 +29,6 @@ export function mapCategory(raw: string): PreferenceCategory | null {
     gift: 'gifts',
     present: 'gifts',
     presents: 'gifts',
-    love_languages: 'love_language',
-    lovelanguage: 'love_language',
     dates: 'important_dates',
     anniversary: 'important_dates',
     birthday: 'important_dates',

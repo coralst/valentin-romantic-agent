@@ -192,12 +192,6 @@ export const REALISTIC_KEY_VARIANTS: readonly LiveExtractionRow[] = [
     expectedFieldId: 'travel_destination',
   },
   {
-    category: 'love_language',
-    key: 'love_language',
-    value: 'Quality Time',
-    expectedFieldId: 'love_language',
-  },
-  {
     category: 'gifts',
     key: 'perfume',
     value: 'something woody',
